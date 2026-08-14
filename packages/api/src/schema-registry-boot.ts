@@ -5,10 +5,12 @@
  * it differs from the latest stored one. Extracted from the server entrypoint
  * so the logic is unit-testable without booting the full server.
  *
- * Recording auto-approves the migration plan: a breaking pack change is
- * *recorded* (with the `breaking` flag set for the caller to log) rather than
- * blocking startup. Enforcement of breaking changes is a governance-time
- * concern (a future schema-management API), not a boot gate.
+ * Recording auto-approves the migration plan. Whether a BREAKING pack change
+ * gates boot depends on `breakingPolicy`:
+ *   - 'warn' (default): the change is *recorded* (with the `breaking` flag set
+ *     for the caller to log) and startup continues.
+ *   - 'block' (SCHEMA_BREAKING_POLICY=block): a BREAKING diff throws
+ *     BreakingSchemaChangeError and no version is recorded — boot is the gate.
  */
 
 import { diff, classify } from '@altius/odl';
@@ -34,6 +36,17 @@ function canonicalKey(schema: ParsedSchema): string {
   });
 }
 
+/** Thrown (instead of recording) when the diff is BREAKING and breakingPolicy is 'block'. */
+export class BreakingSchemaChangeError extends Error {
+  constructor() {
+    super(
+      'BREAKING schema change detected at boot and SCHEMA_BREAKING_POLICY=block — version not recorded. ' +
+      'Review the pack change, or set SCHEMA_BREAKING_POLICY=warn to record it and continue.',
+    );
+    this.name = 'BreakingSchemaChangeError';
+  }
+}
+
 export interface SchemaRecordResult {
   /** Current version after the call. */
   version: number;
@@ -50,6 +63,7 @@ export interface SchemaRecordResult {
 export async function recordSchemaVersion(
   registry: SchemaRegistry,
   schema: ParsedSchema,
+  breakingPolicy: 'warn' | 'block' = 'warn',
 ): Promise<SchemaRecordResult> {
   const currentVersion = await registry.getCurrentVersion();
 
@@ -64,6 +78,9 @@ export async function recordSchemaVersion(
   }
 
   const breaking = !!priorSchema && classify(diff(priorSchema, schema)) === 'BREAKING';
+  if (breaking && breakingPolicy === 'block') {
+    throw new BreakingSchemaChangeError();
+  }
 
   const { version } = await registry.applySchema(schema, {
     migrationPlan: { description: 'Recorded at server boot', approved: true },
