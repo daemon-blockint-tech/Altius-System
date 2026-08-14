@@ -69,6 +69,7 @@ import {
   parsePostgresUrl,
   createFgaClient,
   createSecurityLayer,
+  assertActionAuthzCoverage,
   extractUser,
   parseSchemaBreakingPolicy,
   REQUIRED_PROD_VARS,
@@ -602,6 +603,9 @@ async function main(): Promise<void> {
   // Derive action-to-FGA mappings from schema actionTypes.
   // E.g., AdmitPatient → check can_admit on patient:<id>
   const actionMappings = deriveActionAuthzMappings(schema);
+  // Actions with no ObjectType @param are allowed by the ReBAC layer by design;
+  // their only gate is the manifest's preconditions, so verify one exists.
+  assertActionAuthzCoverage(schema, manifestRegistry, actionMappings, isDev);
   let security: SecurityLayer;
   if (!isDev) {
     security = createSecurityLayer(authorizationService, actionMappings);
