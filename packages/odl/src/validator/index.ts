@@ -10,6 +10,8 @@ import type {
   LinkType,
   FieldDefinition,
   FieldDirective,
+  FieldTypeRef,
+  InterfaceDefinition,
 } from '../parser/types.js';
 
 import type { ValidationResult, ValidationIssue } from './types.js';
@@ -44,6 +46,7 @@ export function validateSchema(schema: ParsedSchema): ValidationResult {
   // enumValues available for future use if needed:
   // const enumValues = new Map(schema.enums.map(e => [e.name, new Set(e.values.map(v => v.name))]));
   const interfaceNames = new Set(schema.interfaces.map(i => i.name));
+  const interfaceMap = new Map(schema.interfaces.map(i => [i.name, i]));
   const scalarNames = new Set(schema.scalars.map(s => s.name));
   const actionTypeNames = new Set(schema.actionTypes.map(a => a.name));
 
@@ -144,6 +147,11 @@ export function validateSchema(schema: ParsedSchema): ValidationResult {
     for (const field of at.fields) {
       validateFieldTypeRef(at.name, field, allTypeNames, errors);
     }
+  }
+
+  // ─── Rule 13: ObjectType `implements` targets exist and are honored ───
+  for (const ot of schema.objectTypes) {
+    validateInterfaceConformance(ot, interfaceMap, errors);
   }
 
   return {
@@ -509,6 +517,68 @@ function validateFieldTypeRef(
       fieldName: field.name,
     });
   }
+}
+
+/**
+ * Rule 13: an ObjectType's `implements` list must reference declared
+ * interfaces, and the ObjectType must carry every interface field with an
+ * identical type. GraphQL's own SDL parser accepts `implements A & B`
+ * with no such check, so a mismatch here would otherwise surface only as
+ * a runtime "must implement" error from the GraphQL server, or worse, be
+ * silently wrong if the generated SDL didn't emit the interface at all.
+ */
+function validateInterfaceConformance(
+  ot: ObjectType,
+  interfaceMap: Map<string, InterfaceDefinition>,
+  errors: ValidationIssue[],
+): void {
+  for (const ifaceName of ot.interfaces) {
+    const iface = interfaceMap.get(ifaceName);
+    if (!iface) {
+      errors.push({
+        severity: 'error',
+        code: 'UNKNOWN_INTERFACE',
+        message: `ObjectType "${ot.name}" implements unknown interface "${ifaceName}".`,
+        typeName: ot.name,
+      });
+      continue;
+    }
+
+    const ownFields = new Map(ot.fields.map(f => [f.name, f]));
+    for (const ifaceField of iface.fields) {
+      const ownField = ownFields.get(ifaceField.name);
+      if (!ownField) {
+        errors.push({
+          severity: 'error',
+          code: 'INTERFACE_FIELD_MISSING',
+          message: `ObjectType "${ot.name}" implements "${ifaceName}" but is missing required field "${ifaceField.name}: ${fieldTypeLabel(ifaceField)}".`,
+          typeName: ot.name,
+          fieldName: ifaceField.name,
+        });
+        continue;
+      }
+      if (!fieldTypesMatch(ownField.type, ifaceField.type)) {
+        errors.push({
+          severity: 'error',
+          code: 'INTERFACE_FIELD_TYPE_MISMATCH',
+          message: `ObjectType "${ot.name}" field "${ifaceField.name}" has type "${fieldTypeLabel(ownField)}" but interface "${ifaceName}" requires "${fieldTypeLabel(ifaceField)}".`,
+          typeName: ot.name,
+          fieldName: ifaceField.name,
+        });
+      }
+    }
+  }
+}
+
+function fieldTypesMatch(a: FieldTypeRef, b: FieldTypeRef): boolean {
+  if (a.name !== b.name || a.nonNull !== b.nonNull || a.isList !== b.isList) return false;
+  return !a.isList || a.listElementNonNull === b.listElementNonNull;
+}
+
+function fieldTypeLabel(f: FieldDefinition): string {
+  const { type } = f;
+  const elem = type.isList ? `[${type.name}${type.listElementNonNull ? '!' : ''}]` : type.name;
+  return `${elem}${type.nonNull ? '!' : ''}`;
 }
 
 export type { ValidationResult, ValidationIssue, ValidationSeverity } from './types.js';

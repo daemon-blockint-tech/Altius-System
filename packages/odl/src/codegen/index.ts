@@ -11,6 +11,7 @@ import type {
   LinkType,
   ActionType,
   FieldDefinition,
+  InterfaceDefinition,
 } from '../parser/types.js';
 
 // ─── Scalar type mapping from ODL to GraphQL ───
@@ -117,7 +118,10 @@ function lowerFirst(s: string): string {
 
 function generateObjectType(obj: ObjectType): string {
   const lines: string[] = [];
-  lines.push(`type ${obj.name} {`);
+  const implementsClause = obj.interfaces.length > 0
+    ? ` implements ${obj.interfaces.join(' & ')}`
+    : '';
+  lines.push(`type ${obj.name}${implementsClause} {`);
 
   for (const field of obj.fields) {
     const gqlType = fieldToGqlType(field);
@@ -127,6 +131,29 @@ function generateObjectType(obj: ObjectType): string {
   // Spec: metadata fields for redaction/consent
   lines.push(`  _redactedFields: [String!]`);
   lines.push(`  _consentRestricted: Boolean`);
+
+  lines.push('}');
+  return lines.join('\n');
+}
+
+/**
+ * Interface fields use the same fieldToGqlType policy as ObjectType fields
+ * (non-primary fields rendered nullable, Section 7.1.3's redaction rule) —
+ * NOT forced non-null. GraphQL requires an implementing type's field to be
+ * at least as strict as the interface's; since every implementing
+ * ObjectType downgrades its own non-primary fields to nullable, an
+ * interface field declared non-null here would make every implementer's
+ * matching field an invalid (less-strict) override. Rendering both sides
+ * through the identical rule keeps `implements` valid by construction.
+ */
+function generateInterfaceType(iface: InterfaceDefinition): string {
+  const lines: string[] = [];
+  lines.push(`interface ${iface.name} {`);
+
+  for (const field of iface.fields) {
+    const gqlType = fieldToGqlType(field);
+    lines.push(`  ${field.name}: ${gqlType}`);
+  }
 
   lines.push('}');
   return lines.join('\n');
@@ -160,7 +187,7 @@ function generateConnection(typeName: string): string {
   ].join('\n');
 }
 
-function generateFilter(obj: ObjectType): string {
+function generateFilter(obj: ObjectType, enumNames: Set<string>): string {
   const lines: string[] = [];
   lines.push(`input ${obj.name}Filter {`);
 
@@ -170,8 +197,11 @@ function generateFilter(obj: ObjectType): string {
     if (BUILTIN_SCALARS.has(typeName)) {
       lines.push(`  ${field.name}: ${typeName}Filter`);
     }
-    // Enum fields get their own filter
-    if (!BUILTIN_SCALARS.has(typeName) && !field.type.isList) {
+    // Enum fields get their own filter. Non-enum, non-builtin types
+    // (interfaces, or an ObjectType referenced outside @link) have no
+    // generated *Filter input to reference — filtering on them is not
+    // supported, so they're excluded rather than emitting a dangling type.
+    if (enumNames.has(typeName) && !field.type.isList) {
       lines.push(`  ${field.name}: ${typeName}Filter`);
     }
   }
@@ -194,13 +224,13 @@ function generateScalarFilter(typeName: string): string {
   return lines.join('\n');
 }
 
-function generateOrderBy(obj: ObjectType): string {
+function generateOrderBy(obj: ObjectType, enumNames: Set<string>): string {
   const lines: string[] = [];
   lines.push(`input ${obj.name}OrderBy {`);
 
   const scalarFields = getScalarFields(obj.fields);
   for (const field of scalarFields) {
-    if (ORDERABLE_TYPES.has(field.type.name) || !BUILTIN_SCALARS.has(field.type.name)) {
+    if (ORDERABLE_TYPES.has(field.type.name) || enumNames.has(field.type.name)) {
       lines.push(`  ${field.name}: SortDirection`);
     }
   }
@@ -557,6 +587,7 @@ export interface GraphQLSchemaOptions {
 export function generateGraphQLSchema(schema: ParsedSchema, options?: GraphQLSchemaOptions): string {
   const sections: string[] = [];
   const objectTypeNames = new Set(schema.objectTypes.map(o => o.name));
+  const enumNames = new Set(schema.enums.map(e => e.name));
 
   // 1. Custom scalar declarations
   const scalars = generateCustomScalars(schema);
@@ -565,6 +596,12 @@ export function generateGraphQLSchema(schema: ParsedSchema, options?: GraphQLSch
   // 2. Enums from the ODL schema
   const enums = generateEnums(schema);
   if (enums) sections.push(enums);
+
+  // 2b. Interfaces — must precede ObjectTypes so `implements` targets and
+  // any interface-typed field reference an already-declared type.
+  for (const iface of schema.interfaces) {
+    sections.push(generateInterfaceType(iface));
+  }
 
   // 3. Shared types
   sections.push(generateSharedTypes());
@@ -593,8 +630,8 @@ export function generateGraphQLSchema(schema: ParsedSchema, options?: GraphQLSch
   for (const obj of schema.objectTypes) {
     sections.push(generateObjectType(obj));
     sections.push(generateConnection(obj.name));
-    sections.push(generateFilter(obj));
-    sections.push(generateOrderBy(obj));
+    sections.push(generateFilter(obj, enumNames));
+    sections.push(generateOrderBy(obj, enumNames));
     sections.push(generateChangeEvent(obj.name));
   }
 
