@@ -48,7 +48,7 @@ import {
   ComputedFieldEvaluator,
 } from '@altius/engine';
 import { ActionExecutor, CelClient, SideEffectExecutor } from '@altius/actions';
-import type { SecurityLayer, CelEvaluator, ActionEventPublisher, EventBus as SideEffectEventBus, HttpClient as SideEffectHttpClient, LinkTupleMap } from '@altius/actions';
+import type { SecurityLayer, CelEvaluator, EventBus as SideEffectEventBus, HttpClient as SideEffectHttpClient, LinkTupleMap } from '@altius/actions';
 import { AuthorizationService, OidcAuthenticator, AuditWriter, MemoryAuditStore, ConsentService, MemoryConsentStore } from '@altius/security';
 import type { OpenFgaClientInterface } from '@altius/security';
 import type { StorageProvider, RequestContext } from '@altius/spi';
@@ -75,6 +75,7 @@ import {
   REQUIRED_PROD_VARS,
 } from './config.js';
 import type { ActionAuthzMapping } from './config.js';
+import { createActionEventPublisher } from './events/action-event-publisher.js';
 import { loadDomainPacks } from './schema-loader.js';
 import { generateOpenFGASchema, mergeOpenFGAOverrides, actionPermissionRelation, InMemorySchemaRegistry } from '@altius/odl';
 import type { SchemaRegistry } from '@altius/odl';
@@ -661,21 +662,7 @@ async function main(): Promise<void> {
   }
 
   // ── Action Executor ──
-  // Bridge the engine event bus to the action event publisher interface
-  const actionEventPublisher: ActionEventPublisher = {
-    async publishObjectChange(changeType, objectType, objectId, _before, _after, cause, ctx) {
-      const version = 1; // Actions don't track version; use placeholder
-      const eventCause = { actionType: cause.actionType, actionId: cause.actionId, actor: cause.actor };
-      if (changeType === 'created') await emitter.emitObjectCreated(ctx, objectType, objectId, version, eventCause);
-      else if (changeType === 'updated') await emitter.emitObjectUpdated(ctx, objectType, objectId, version, {}, eventCause);
-      else if (changeType === 'deleted') await emitter.emitObjectDeleted(ctx, objectType, objectId, version, eventCause);
-    },
-    async publishLinkChange(changeType, linkType, linkId, fromId, toId, cause, ctx) {
-      const eventCause = { actionType: cause.actionType, actionId: cause.actionId, actor: cause.actor };
-      if (changeType === 'created') await emitter.emitLinkCreated(ctx, linkType, linkId, fromId, toId, 1, eventCause);
-      else if (changeType === 'deleted') await emitter.emitLinkDeleted(ctx, linkType, linkId, fromId, toId, 1, eventCause);
-    },
-  };
+  const actionEventPublisher = createActionEventPublisher(emitter, schema.linkTypes);
   // ── Side-effect handler (webhooks + CloudEvents after action commit) ──
   const sideEffectHttpClient: SideEffectHttpClient = {
     async post(url, body, options) {
