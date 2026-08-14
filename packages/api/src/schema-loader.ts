@@ -565,11 +565,12 @@ function deriveSensitiveFieldDefaults(
     const sensitive: string[] = [];
     const visible: string[] = [];
 
-    // Mirrors validateFieldPermissions' stored-field rules: primary maps to
-    // 'id'; @link/@computed are virtual and never redacted.
+    // Mirrors validateFieldPermissions' stored-field rules: the @primary field
+    // is an alias for _id and is always visible under its declared name;
+    // @link/@computed are virtual and never redacted.
     for (const field of objType.fields) {
       if (field.directives.some(d => d.kind === 'primary')) {
-        visible.push('id');
+        visible.push(field.name);
         continue;
       }
       if (field.directives.some(d => d.kind === 'link' || d.kind === 'computed')) continue;
@@ -624,11 +625,13 @@ function validateFieldPermissions(
       continue;
     }
 
-    // Collect stored field names (excluding @link, @computed, @primary)
+    // Collect stored field names (excluding @link, @computed, @primary).
+    // The @primary field is an alias for _id — it is always visible under its
+    // declared name, so include that name in the stored set.
     const storedFields = new Set<string>();
     for (const field of objType.fields) {
       if (field.directives.some(d => d.kind === 'primary')) {
-        storedFields.add('id'); // primary maps to 'id' in API
+        storedFields.add(field.name);
         continue;
       }
       if (field.directives.some(d => d.kind === 'link' || d.kind === 'computed')) continue;
@@ -637,7 +640,7 @@ function validateFieldPermissions(
 
     // Validate alwaysVisible
     for (const f of config.alwaysVisible) {
-      if (f !== 'id' && !storedFields.has(f)) {
+      if (!storedFields.has(f)) {
         logger.warn(
           `Field permissions [${config.objectType}]: alwaysVisible field "${f}" not in schema. ` +
           `Valid: ${[...storedFields].join(', ')}`,

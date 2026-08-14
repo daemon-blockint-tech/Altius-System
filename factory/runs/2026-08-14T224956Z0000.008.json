@@ -1,0 +1,15 @@
+{
+  "agent": "claude",
+  "command": [
+    "claude",
+    "-p",
+    "$(cat /Users/macbook/Developer/Altius-System/factory/prompts/008.implement.claude.md)"
+  ],
+  "created_at": "2026-08-14T22:49:56+00:00",
+  "id": "008",
+  "prompt_path": "/Users/macbook/Developer/Altius-System/factory/prompts/008.implement.claude.md",
+  "spec_path": "/Users/macbook/Developer/Altius-System/factory/specs/active/008-arbitrary-primary-field.md",
+  "spec_sha256": "7c595047d756bcc995c53a2be44abe4c41a298e80494f3a4698354301628790c",
+  "status": "planned",
+  "title": "Full arbitrary @primary field name support"
+}

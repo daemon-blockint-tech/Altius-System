@@ -212,7 +212,12 @@ function hasDirective(directives: FieldDirective[], kind: FieldDirective['kind']
 }
 
 /**
- * Rule 1: Every ObjectType must have exactly one @primary field, named "id".
+ * Rule 1: Every ObjectType must have exactly one @primary field of type ID!.
+ *
+ * The primary field is an alias for the system `_id` column — its value IS the
+ * object identity. The field name can be anything (e.g. `id`, `mrn`, `sku`);
+ * the API shapers expose `obj._id` under that name. The field does NOT get its
+ * own stored column.
  */
 function validatePrimaryField(ot: ObjectType, errors: ValidationIssue[]): void {
   const primaryFields = ot.fields.filter(f => hasDirective(f.directives, 'primary'));
@@ -232,18 +237,13 @@ function validatePrimaryField(ot: ObjectType, errors: ValidationIssue[]): void {
       typeName: ot.name,
     });
   } else {
-    // The primary value is stored as `_id` and exposed as `id` throughout the
-    // API: schema-loader skips the field when building DDL (no column is
-    // created) and maps it to 'id' for field permissions, while the GraphQL and
-    // REST shapers read `_${field.name}`. That convention only lines up when the
-    // name IS 'id' — any other name parses, validates, gets no column, and reads
-    // back null. Reject it here instead, mirroring Rule 11 for LinkTypes.
+    // The primary field must be ID! — it aliases the system _id column.
     const primary = primaryFields[0]!;
-    if (primary.name !== 'id') {
+    if (primary.type.name !== 'ID' || !primary.type.nonNull) {
       errors.push({
         severity: 'error',
-        code: 'INVALID_PRIMARY_NAME',
-        message: `ObjectType "${ot.name}" @primary field must be named "id". Found "${primary.name}". The primary value is stored as _id and exposed as id, so any other name reads back null.`,
+        code: 'INVALID_PRIMARY_TYPE',
+        message: `ObjectType "${ot.name}" @primary field must be of type "ID!". Found "${primary.name}: ${primary.type.name}${primary.type.nonNull ? '!' : ''}".`,
         typeName: ot.name,
         fieldName: primary.name,
       });

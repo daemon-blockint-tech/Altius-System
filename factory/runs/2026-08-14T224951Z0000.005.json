@@ -1,0 +1,15 @@
+{
+  "agent": "claude",
+  "command": [
+    "claude",
+    "-p",
+    "$(cat /Users/macbook/Developer/Altius-System/factory/prompts/005.implement.claude.md)"
+  ],
+  "created_at": "2026-08-14T22:49:51+00:00",
+  "id": "005",
+  "prompt_path": "/Users/macbook/Developer/Altius-System/factory/prompts/005.implement.claude.md",
+  "spec_path": "/Users/macbook/Developer/Altius-System/factory/specs/active/005-client-version-conflict.md",
+  "spec_sha256": "e6d9d2ff8d389181a06af0183223fa52e8ceacd61abf56d9d8bc737fc82c3eff",
+  "status": "planned",
+  "title": "Client-facing optimistic concurrency (If-Match + GraphQL expectedVersion)"
+}

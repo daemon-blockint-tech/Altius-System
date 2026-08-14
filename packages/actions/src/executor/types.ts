@@ -31,6 +31,17 @@ export interface ActionContext {
   consentPurpose?: DataPurpose;
   /** Subject ID for consent checks (e.g. patient ID). */
   consentSubjectId?: string;
+  /**
+   * The `_version` the caller believes the action's target object carries —
+   * i.e. the version the data they decided on was read at.
+   *
+   * Distinct from the storage-level `expectedVersion` guard, which protects the
+   * read-modify-write window inside one request (milliseconds). This protects
+   * against a stale decision (minutes): a clinician opens a patient at v3,
+   * deliberates, and submits while someone else has moved it to v4. Omit to
+   * keep the previous behaviour — the intra-request guard still applies.
+   */
+  expectedVersion?: number;
 }
 
 // ---------------------------------------------------------------------------

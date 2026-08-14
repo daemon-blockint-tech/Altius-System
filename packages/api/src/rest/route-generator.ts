@@ -72,7 +72,9 @@ function objectToRest(obj: OntologyObject, objectType: ObjectType): Record<strin
 
   for (const field of objectType.fields) {
     if (isPrimaryField(field)) {
-      result[field.name] = obj[`_${field.name}`] ?? obj[field.name];
+      // Primary field is an alias for the system _id column — the field name
+      // can be anything (id, mrn, sku); the value always comes from obj._id.
+      result[field.name] = obj._id;
     } else {
       result[field.name] = obj[field.name];
     }
@@ -187,8 +189,7 @@ async function resolveConsentedIds(
     typeName, combinedFilter, { limit: 10000, offset: 0 }, requestContext,
   );
 
-  const primaryField = obj.fields.find(f => isPrimaryField(f));
-  const getPrimaryId = (item: OntologyObject) => String(item[primaryField?.name ?? 'id'] ?? '');
+  const getPrimaryId = (item: OntologyObject) => String(item._id ?? '');
   const consentResult = await deps.consentService.filterList(
     scan.items, getPrimaryId, DEFAULT_CONSENT_PURPOSE as DataPurpose,
     userId, requestContext.tenantId,
@@ -359,10 +360,7 @@ function generateListRoute(
           // Consent removes records, so it must be applied BEFORE slicing the
           // page (see consent-pagination.ts) — DB-level pagination then consent
           // drops drift totalCount/hasNextPage and can hide later pages.
-          const getPrimaryId = (item: Record<string, unknown>) => {
-            const primaryField = obj.fields.find(f => isPrimaryField(f));
-            return String(item[primaryField?.name ?? 'id'] ?? '');
-          };
+          const getPrimaryId = (item: Record<string, unknown>) => String(item._id ?? '');
           const result = await paginateWithConsent<OntologyObject, Record<string, unknown>>(
             offset,
             limit,
@@ -777,10 +775,7 @@ function generateHistoryRoute(
 
         // Consent filtering — only for types that have a data subject.
         if (deps.consentService && isConsentSubjectType(typeName, deps.consentSubjectTypes)) {
-          const getPrimaryId = (item: Record<string, unknown>) => {
-            const primaryField = obj.fields.find(f => isPrimaryField(f));
-            return String(item[primaryField?.name ?? 'id'] ?? '');
-          };
+          const getPrimaryId = (item: Record<string, unknown>) => String(item._id ?? '');
           const consentResult = await deps.consentService.filterList(
             items,
             getPrimaryId,
@@ -989,10 +984,7 @@ function generateSearchRoute(
         let hasNextPage: boolean;
 
         if (deps.consentService && isConsentSubjectType(typeName, deps.consentSubjectTypes)) {
-          const getPrimaryId = (hit: ShapedHit) => {
-            const primaryField = obj.fields.find(f => isPrimaryField(f));
-            return String(hit.node[primaryField?.name ?? 'id'] ?? '');
-          };
+          const getPrimaryId = (hit: ShapedHit) => String(hit.node._id ?? '');
           const result = await paginateWithConsent<Hit, ShapedHit>(
             offset,
             limit,

@@ -61,14 +61,72 @@ function failResult(actionId: string, errors: ActionError[]): ActionResult {
 }
 
 /**
- * Add an `id` alias for `_id` on an OntologyObject so CEL expressions can
- * reference `object.id` (the ODL @primary name) as well as `object._id`.
+ * Compare the caller's asserted version against the action's target object.
+ *
+ * The target is the first @param field that resolved to an object — the same
+ * rule the OpenFGA codegen uses to pick an action's target type, so the object
+ * whose permission gates the action is the object whose version guards it.
+ *
+ * Returns an ActionError on mismatch, undefined when it matches or when there
+ * is no object param to compare against (a creation action like RegisterPatient
+ * has nothing to be stale about).
  */
-function addIdAlias(obj: OntologyObject): OntologyObject {
-  if (!('id' in obj)) {
+function checkExpectedVersion(
+  actionTypeDef: ActionType | undefined,
+  resolvedVariables: Record<string, unknown>,
+  expectedVersion: number,
+): ActionError | undefined {
+  if (!actionTypeDef) return undefined;
+
+  for (const field of actionTypeDef.fields) {
+    if (!field.directives.some((d) => d.kind === 'param')) continue;
+    const value = resolvedVariables[field.name];
+    if (!value || typeof value !== 'object') continue;
+    const actual = (value as Record<string, unknown>)['_version'];
+    if (typeof actual !== 'number') continue;
+
+    if (actual !== expectedVersion) {
+      return {
+        code: 'VERSION_CONFLICT',
+        message:
+          `${field.type.name} was modified since you loaded it ` +
+          `(you have v${expectedVersion}, it is now v${actual}). Reload and reapply your change.`,
+        details: { expected: expectedVersion, actual, param: field.name },
+      };
+    }
+    return undefined;
+  }
+
+  return undefined;
+}
+
+/**
+ * Add an alias for `_id` on an OntologyObject so CEL expressions can
+ * reference the object by its declared ODL @primary field name (e.g.
+ * `object.externalId`) as well as `object._id`. When the declared primary
+ * field name is `id` (the historical default) this preserves the legacy
+ * `object.id` alias.
+ */
+function addIdAlias(obj: OntologyObject, primaryName?: string): OntologyObject {
+  const alias = primaryName ?? 'id';
+  if (!(alias in obj)) {
+    (obj as Record<string, unknown>)[alias] = obj._id;
+  }
+  // Always preserve the legacy `id` alias for CEL expressions that still
+  // reference `object.id` regardless of the declared primary field name.
+  if (alias !== 'id' && !('id' in obj)) {
     (obj as Record<string, unknown>)['id'] = obj._id;
   }
   return obj;
+}
+
+/** Look up the declared @primary field name for an object type. */
+function primaryFieldName(schema: ParsedSchema | undefined, typeName: string): string | undefined {
+  if (!schema) return undefined;
+  const ot = schema.objectTypes.find((o) => o.name === typeName);
+  if (!ot) return undefined;
+  const primary = ot.fields.find((f) => f.directives.some((d) => d.kind === 'primary'));
+  return primary?.name;
 }
 
 /** System field prefixes that storage manages internally. */
@@ -191,6 +249,20 @@ export class ActionExecutor {
       schema,
       reqCtx,
     );
+
+    // Optimistic concurrency against the CALLER's assumption. Checked here,
+    // before CEL and before the transaction opens, so a stale caller costs
+    // nothing and leaves no partial work to compensate. The storage-level
+    // expectedVersion guard (see applyUpdateObject) is a different thing: it
+    // closes the read-modify-write window within this request.
+    if (context.expectedVersion !== undefined) {
+      const conflict = checkExpectedVersion(
+        actionTypeDef,
+        resolvedVariables,
+        context.expectedVersion,
+      );
+      if (conflict) return failResult(actionId, [conflict]);
+    }
 
     // Add standard variables
     resolvedVariables['actor'] = { id: actor.id, roles: actor.roles, type: actor.type };
@@ -513,7 +585,7 @@ export class ActionExecutor {
           field.type.name,
           paramValue,
         );
-        resolved[field.name] = obj ? addIdAlias(obj) : null;
+        resolved[field.name] = obj ? addIdAlias(obj, primaryFieldName(schema, field.type.name)) : null;
       } else {
         // Scalar param — pass through
         resolved[field.name] = paramValue;
@@ -1178,7 +1250,7 @@ export class ActionExecutor {
               const targetType = direction === 'outbound' ? link._toType : link._fromType;
               const resolved = await this.config.storage.getObject(reqCtx, targetType, targetId);
               if (resolved) {
-                addIdAlias(resolved);
+                addIdAlias(resolved, primaryFieldName(schema, targetType));
                 // Cache in context so subsequent references don't re-query
                 (current as Record<string, unknown>)[part] = resolved;
                 current = resolved;

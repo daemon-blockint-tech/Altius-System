@@ -219,9 +219,9 @@ function objectToGraphQL(obj: OntologyObject, objectType: ObjectType): Record<st
 
   for (const field of objectType.fields) {
     if (isPrimaryField(field)) {
-      // Primary field maps to _id. ODL validator Rule 1 pins the name to 'id',
-      // which is what makes `_${field.name}` line up with the stored `_id`.
-      result[field.name] = obj[`_${field.name}`] ?? obj[field.name];
+      // Primary field is an alias for the system _id column — the field name
+      // can be anything (id, mrn, sku); the value always comes from obj._id.
+      result[field.name] = obj._id;
     } else {
       result[field.name] = obj[field.name];
     }
@@ -248,7 +248,8 @@ function linkToGraphQL(link: OntologyLink, linkType: LinkType): Record<string, u
   const result: Record<string, unknown> = {};
   for (const field of linkType.fields) {
     if (isPrimaryField(field)) {
-      result[field.name] = link[`_${field.name}`] ?? link[field.name];
+      // Primary field is an alias for the system _id column.
+      result[field.name] = link._id;
     } else {
       result[field.name] = link[field.name];
     }
@@ -654,10 +655,7 @@ function generateQueryResolvers(
         // Consent removes records, so filter BEFORE slicing the page (see
         // consent-pagination.ts) — DB-pagination then consent drops drifts
         // totalCount/hasNextPage and can hide later pages.
-        const getPrimaryId = (item: Record<string, unknown>) => {
-          const primaryField = obj.fields.find(f => isPrimaryField(f));
-          return String(item[primaryField?.name ?? 'id'] ?? '');
-        };
+        const getPrimaryId = (item: Record<string, unknown>) => String(item._id ?? '');
         const result = await paginateWithConsent<OntologyObject, Record<string, unknown>>(
           offset,
           limit,
@@ -733,8 +731,7 @@ async function resolveConsentedIds(
   );
 
   // Apply consent filter to remove non-consented records
-  const primaryField = obj.fields.find(f => isPrimaryField(f));
-  const getPrimaryId = (item: OntologyObject) => String(item[primaryField?.name ?? 'id'] ?? '');
+  const getPrimaryId = (item: OntologyObject) => String(item._id ?? '');
   const consentResult = await deps.consentService.filterList(
     scan.items, getPrimaryId, DEFAULT_CONSENT_PURPOSE as DataPurpose,
     userId, requestContext.tenantId,
@@ -974,10 +971,7 @@ function generateSearchResolver(
       let hasNextPage: boolean;
 
       if (deps.consentService && isConsentSubjectType(typeName, deps.consentSubjectTypes)) {
-        const getPrimaryId = (hit: ShapedHit) => {
-          const primaryField = obj.fields.find(f => isPrimaryField(f));
-          return String(hit.node[primaryField?.name ?? 'id'] ?? '');
-        };
+        const getPrimaryId = (hit: ShapedHit) => String(hit.node._id ?? '');
         const result = await paginateWithConsent<Hit, ShapedHit>(
           offset,
           limit,
