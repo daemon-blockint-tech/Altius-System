@@ -74,4 +74,19 @@ spec:
           annotations:
             summary: "Sync datasource has not processed a record recently"
             description: "{{ "{{ $labels.datasource }}" }} last processed a record over 5 minutes ago."
+        # A CDC record that fails to map or apply is logged, counted, and then
+        # skipped: the checkpoint advances past it with the next successful
+        # record, so it is never retried. That is silent data loss, and
+        # altius_sync_records_failed was the only trace of it — nothing alerted
+        # on it. Note SyncRecordsFailing above watches poll-tick failures, not
+        # records, despite the name.
+        - alert: SyncRecordsDropped
+          expr: |
+            delta(altius_sync_records_failed[15m]) > 0
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Sync datasource is dropping records"
+            description: "{{ "{{ $labels.datasource }}" }} failed to apply {{ "{{ $value }}" }} record(s) in the last 15m. They are skipped permanently — the checkpoint moves past them."
 {{- end }}
