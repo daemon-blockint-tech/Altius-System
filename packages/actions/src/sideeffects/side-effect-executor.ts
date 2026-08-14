@@ -148,7 +148,7 @@ export class SideEffectExecutor implements SideEffectHandler {
       ? this.resolveBody(config.body, context)
       : context;
 
-    const response = await this.config.httpClient.post(config.url, body, {
+    const response = await this.config.httpClient.post(this.expandUrl(config.url), body, {
       headers: {
         'Content-Type': 'application/json',
         ...config.headers,
@@ -211,5 +211,28 @@ export class SideEffectExecutor implements SideEffectHandler {
    */
   private resolveBody(body: unknown, _context: Record<string, unknown>): unknown {
     return body;
+  }
+
+  /**
+   * Expand `${VAR}` placeholders in a webhook URL from the injected environment.
+   *
+   * Manifests write deployment-specific endpoints as `${REGULATORY_WEBHOOK_URL}`.
+   * These were previously passed through verbatim, so the client received a
+   * literal `${...}` string that no URL parser accepts. An unset variable throws
+   * rather than POSTing to a bogus address; the caller's retry/rollback policy
+   * then applies. Retries on a config error are wasted but bounded — the fix is
+   * a set variable, and the thrown message names it.
+   */
+  private expandUrl(url: string): string {
+    return url.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (_match, name: string) => {
+      const value = this.config.env?.[name];
+      if (value === undefined || value === '') {
+        throw new Error(
+          `Webhook URL references environment variable '${name}', which is unset. ` +
+          `Set it on the deployment or remove the placeholder from the action manifest.`,
+        );
+      }
+      return value;
+    });
   }
 }

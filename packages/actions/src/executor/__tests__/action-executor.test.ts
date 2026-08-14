@@ -264,6 +264,24 @@ rollback:
   onSideEffectFailure: LOG_AND_CONTINUE
 `;
 
+/** Same action, but the side-effect is a webhook — exercises body interpolation. */
+const ADMIT_PATIENT_WEBHOOK_YAML = ADMIT_PATIENT_YAML.replace(
+  `  - name: emitAdmissionEvent
+    type: event
+    config:
+      type: "nhs.acute.patient.admitted"
+      data:
+        patientId: "patient.id"
+        status: "'admitted'"`,
+  `  - name: notifyDownstream
+    type: webhook
+    config:
+      url: "https://example.invalid/hook"
+      body:
+        patientId: "patient.id"
+        status: "'admitted'"`,
+);
+
 const DISCHARGE_PATIENT_YAML = `
 action: DischargePatient
 version: 1
@@ -1414,6 +1432,37 @@ effects:
       expect(data['patientId']).not.toBe('patient.id');
       // Quoted literal passes through unwrapped.
       expect(data['status']).toBe('admitted');
+    });
+
+    it('interpolates webhook body against the action context, like event data', async () => {
+      const { manifest } = parseActionManifest(ADMIT_PATIENT_WEBHOOK_YAML);
+
+      await executor.execute(
+        manifest!,
+        { patient: patient._id, ward: ward._id, consultant: consultant._id, bed: null, reason: 'Test' },
+        ACTOR,
+        ACTION_CTX,
+        NHS_SCHEMA,
+      );
+
+      const body = sideEffectHandler.calls[0]!.config['body'] as Record<string, unknown>;
+      // Regression: body used to be passed through verbatim, so the webhook
+      // POSTed the string "patient.id" instead of the patient's id.
+      expect(body['patientId']).toBe(patient._id);
+      expect(body['patientId']).not.toBe('patient.id');
+      expect(body['status']).toBe('admitted');
+    });
+
+    it('rejects a non-POST webhook method at parse time', () => {
+      const { manifest, errors } = parseActionManifest(
+        ADMIT_PATIENT_WEBHOOK_YAML.replace(
+          '      url: "https://example.invalid/hook"',
+          '      url: "https://example.invalid/hook"\n      method: PUT',
+        ),
+      );
+
+      expect(manifest).toBeUndefined();
+      expect(errors.some(e => e.path === 'sideEffects[0].config.method')).toBe(true);
     });
   });
 

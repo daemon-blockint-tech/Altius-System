@@ -110,6 +110,47 @@ describe('SideEffectExecutor', () => {
       expect(httpClient.calls[0]!.url).toBe('https://pas.nhs.uk/webhook/admission');
     });
 
+    it('expands ${VAR} in the URL from the injected env', async () => {
+      const httpClient = createMockHttpClient([{ status: 200 }]);
+      const executor = new SideEffectExecutor({
+        httpClient,
+        env: { REGULATORY_WEBHOOK_URL: 'https://regulator.example/ingest' },
+      });
+
+      const results = await executor.executeAll(
+        [{
+          ...WEBHOOK_SIDE_EFFECT,
+          config: { url: '${REGULATORY_WEBHOOK_URL}' },
+        }],
+        { sarNumber: 'SAR-1' },
+        'LOG_AND_CONTINUE',
+      );
+
+      expect(results[0]!.success).toBe(true);
+      // Regression: the literal "${REGULATORY_WEBHOOK_URL}" used to reach the client.
+      expect(httpClient.calls[0]!.url).toBe('https://regulator.example/ingest');
+    });
+
+    it('fails the webhook when a URL placeholder is unset', async () => {
+      const httpClient = createMockHttpClient([{ status: 200 }]);
+      const executor = new SideEffectExecutor({ httpClient, env: {} });
+
+      const results = await executor.executeAll(
+        [{
+          ...WEBHOOK_SIDE_EFFECT,
+          config: { url: '${MISSING_WEBHOOK_URL}' },
+          retries: 1,
+        }],
+        {},
+        'LOG_AND_CONTINUE',
+      );
+
+      expect(results[0]!.success).toBe(false);
+      expect(results[0]!.error).toContain('MISSING_WEBHOOK_URL');
+      // Never POSTed to a bogus address.
+      expect(httpClient.calls).toHaveLength(0);
+    });
+
     it('retries on failure and succeeds on 3rd attempt', async () => {
       // Fail twice, succeed on 3rd
       const httpClient = createFailingHttpClient(2, 200);

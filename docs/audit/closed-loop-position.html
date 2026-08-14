@@ -1,0 +1,300 @@
+<title>Altius in the Closed-Loop Pattern</title>
+<style>
+  :root {
+    --bg: #F3F6F8;
+    --surface: #FFFFFF;
+    --surface-2: #E9EEF2;
+    --ink: #16202B;
+    --muted: #586673;
+    --line: #D7DFE6;
+    --accent: #1F4E79;
+    --built: #1A6B4E;
+    --built-bg: #E3F0E9;
+    --partial: #8A6210;
+    --partial-bg: #F6EDD8;
+    --absent: #A03A38;
+    --absent-bg: #F6E5E4;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0F141A;
+      --surface: #171F28;
+      --surface-2: #1E2833;
+      --ink: #E3EAF1;
+      --muted: #8F9DAB;
+      --line: #26313D;
+      --accent: #7FB0DC;
+      --built: #4CB88A;
+      --built-bg: #14291F;
+      --partial: #D8A63E;
+      --partial-bg: #2E2611;
+      --absent: #E07875;
+      --absent-bg: #331A19;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0F141A;
+    --surface: #171F28;
+    --surface-2: #1E2833;
+    --ink: #E3EAF1;
+    --muted: #8F9DAB;
+    --line: #26313D;
+    --accent: #7FB0DC;
+    --built: #4CB88A;
+    --built-bg: #14291F;
+    --partial: #D8A63E;
+    --partial-bg: #2E2611;
+    --absent: #E07875;
+    --absent-bg: #331A19;
+  }
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    margin: 0;
+    font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  .wrap { max-width: 940px; margin: 0 auto; padding: 44px 24px 100px; }
+  .eyebrow {
+    font: 600 11.5px/1 var(--mono);
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+  h1 {
+    font-family: var(--serif);
+    font-size: clamp(30px, 5vw, 44px);
+    line-height: 1.1;
+    font-weight: 600;
+    margin: 14px 0 12px;
+    letter-spacing: -.01em;
+    text-wrap: balance;
+  }
+  .lede { color: var(--muted); max-width: 64ch; margin: 0 0 8px; font-size: 17px; }
+
+  figure { margin: 34px 0 10px; }
+  figure svg { width: 100%; max-width: 100%; height: auto; display: block; color: var(--ink); }
+  figcaption { color: var(--muted); font-size: 13.5px; margin-top: 12px; max-width: 72ch; }
+
+  /* diagram encodings */
+  .n-built   { fill: var(--built-bg);   stroke: var(--built);   stroke-width: 2; }
+  .n-partial { fill: var(--partial-bg); stroke: var(--partial); stroke-width: 2; }
+  .n-absent  { fill: none;              stroke: var(--absent);  stroke-width: 1.5; stroke-dasharray: 4 4; }
+  .n-ext     { fill: var(--surface);    stroke: var(--accent);  stroke-width: 2; }
+  .n-src     { fill: var(--surface-2);  stroke: var(--line);    stroke-width: 1.5; }
+  .envelope  { fill: none; stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 2 5; opacity: .8; }
+
+  .lbl  { font: 600 13px var(--mono); fill: var(--ink); }
+  .lbl-dim { font: 600 13px var(--mono); fill: var(--muted); }
+  .sub  { font: 10.5px var(--mono); fill: var(--muted); }
+  .edge-lbl { font: 10.5px var(--mono); fill: var(--muted); }
+  .edge-lbl-bad { font: 10.5px var(--mono); fill: var(--absent); }
+  .gov-lbl { font: 600 11.5px var(--mono); fill: var(--accent); }
+
+  .e       { stroke: var(--ink); stroke-width: 1.6; fill: none; }
+  .e-built { stroke: var(--built); stroke-width: 2.2; fill: none; }
+  .e-bad   { stroke: var(--absent); stroke-width: 1.6; fill: none; stroke-dasharray: 5 5; }
+  .m-ink polygon   { fill: var(--ink); }
+  .m-built polygon { fill: var(--built); }
+  .m-bad polygon   { fill: var(--absent); }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 8px 22px; font: 11.5px var(--mono); color: var(--muted); margin: 4px 0 0; }
+  .legend span { display: flex; align-items: center; gap: 7px; }
+  .swatch { width: 22px; height: 0; border-top-width: 2px; border-top-style: solid; }
+
+  h2 {
+    font-family: var(--serif);
+    font-size: 25px;
+    font-weight: 600;
+    margin: 52px 0 6px;
+    letter-spacing: -.01em;
+    border-bottom: 2px solid var(--ink);
+    padding-bottom: 7px;
+  }
+  h2 + p { color: var(--muted); margin-top: 12px; max-width: 70ch; }
+
+  .stage { border: 1px solid var(--line); border-left-width: 4px; border-radius: 0 8px 8px 0; background: var(--surface); padding: 15px 18px; margin: 12px 0; }
+  .stage.built   { border-left-color: var(--built); }
+  .stage.partial { border-left-color: var(--partial); }
+  .stage.absent  { border-left-color: var(--absent); }
+  .stage-head { display: flex; align-items: baseline; gap: 11px; flex-wrap: wrap; }
+  .stage-head h3 { font-size: 16px; margin: 0; font-weight: 650; }
+  .chip { font: 700 9.5px/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; padding: 4px 7px; border-radius: 3px; }
+  .chip.built   { color: var(--built);   background: var(--built-bg); }
+  .chip.partial { color: var(--partial); background: var(--partial-bg); }
+  .chip.absent  { color: var(--absent);  background: var(--absent-bg); }
+  .stage p { margin: 10px 0 0; font-size: 14.5px; max-width: 76ch; }
+  .stage .ev { font-family: var(--mono); font-size: 12.5px; color: var(--muted); }
+  .miss { color: var(--absent); font-weight: 600; }
+
+  .break { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 18px 20px; margin: 14px 0; }
+  .break h3 { margin: 0 0 8px; font-size: 16.5px; font-weight: 650; display: flex; align-items: baseline; gap: 10px; }
+  .break h3 .num { font: 700 12px var(--mono); color: var(--absent); }
+  .break p { margin: 8px 0 0; font-size: 14.5px; max-width: 76ch; }
+
+  .keybox { border: 2px solid var(--accent); border-radius: 10px; padding: 22px 24px; margin: 26px 0; background: var(--surface); }
+  .keybox h3 { margin: 0 0 10px; font-family: var(--serif); font-size: 21px; font-weight: 600; }
+  .keybox p { margin: 10px 0 0; font-size: 15px; max-width: 74ch; }
+  .keybox code { font-family: var(--mono); font-size: 13px; background: var(--surface-2); padding: 1.5px 5px; border-radius: 3px; }
+
+  .recipe { list-style: none; padding: 0; margin: 16px 0 0; counter-reset: r; }
+  .recipe li { counter-increment: r; display: flex; gap: 14px; align-items: baseline; padding: 11px 0; border-bottom: 1px solid var(--line); font-size: 14.5px; }
+  .recipe li::before { content: counter(r); font: 700 12px var(--mono); color: var(--accent); flex: none; width: 14px; }
+  .recipe b { font-weight: 650; }
+  .tag { font: 700 9.5px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; padding: 3px 6px; border-radius: 3px; margin-left: auto; flex: none; align-self: center; }
+  .tag.have { color: var(--built); background: var(--built-bg); }
+  .tag.need { color: var(--absent); background: var(--absent-bg); }
+
+  footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--line); font-size: 12.5px; color: var(--muted); }
+</style>
+<div class="wrap">
+  <p class="eyebrow">Architecture position · 2026-08-14</p>
+  <h1>Altius in the closed-loop pattern</h1>
+  <p class="lede">The reference loop is: connect data → organize it in an Ontology → run models → present actions → write decisions back → learn continuously. Altius holds the two hardest ends of that loop and breaks in exactly two places.</p>
+
+  <figure>
+    <svg viewBox="0 0 1040 350" role="img" aria-label="The closed operational loop: data sources feed ingest, ingest feeds the Ontology, the Ontology feeds an absent model layer and an absent app layer, decisions flow to governed write-back, and an absent feedback consumer would return to the Ontology. Ingest, Ontology, write-back and governance are built; the model layer, app layer and feedback consumer are missing. An external model or agent reaches the governed action pipeline through the built MCP server.">
+      <defs>
+        <marker id="ah" class="m-ink" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><polygon points="0,1 10,5 0,9"/></marker>
+        <marker id="ahb" class="m-built" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><polygon points="0,1 10,5 0,9"/></marker>
+        <marker id="ahx" class="m-bad" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><polygon points="0,1 10,5 0,9"/></marker>
+      </defs>
+
+      <!-- governance envelope -->
+      <rect class="envelope" x="136" y="14" width="892" height="308" rx="12"/>
+      <text class="gov-lbl" x="152" y="308">GOVERNANCE · one pipeline every surface funnels through: authenticate → FGA → redact → consent → audit</text>
+
+      <!-- external data sources (outside the perimeter) -->
+      <rect class="n-src" x="16" y="164" width="100" height="52" rx="6"/>
+      <text class="lbl-dim" x="66" y="186" text-anchor="middle">Data</text>
+      <text class="sub" x="66" y="201" text-anchor="middle">ERP · PAS · API</text>
+
+      <!-- spine -->
+      <rect class="n-partial" x="160" y="164" width="118" height="52" rx="6"/>
+      <text class="lbl" x="219" y="186" text-anchor="middle">Ingest</text>
+      <text class="sub" x="219" y="201" text-anchor="middle">sync + scheduler</text>
+
+      <rect class="n-built" x="308" y="164" width="118" height="52" rx="6"/>
+      <text class="lbl" x="367" y="186" text-anchor="middle">Ontology</text>
+      <text class="sub" x="367" y="201" text-anchor="middle">ODL · objects · actions</text>
+
+      <rect class="n-absent" x="598" y="164" width="118" height="52" rx="6"/>
+      <text class="lbl-dim" x="657" y="186" text-anchor="middle">Apps</text>
+      <text class="sub" x="657" y="201" text-anchor="middle">headless by design</text>
+
+      <rect class="n-built" x="746" y="164" width="118" height="52" rx="6"/>
+      <text class="lbl" x="805" y="186" text-anchor="middle">Write-back</text>
+      <text class="sub" x="805" y="201" text-anchor="middle">8-stage pipeline</text>
+
+      <rect class="n-absent" x="890" y="164" width="118" height="52" rx="6"/>
+      <text class="lbl-dim" x="949" y="186" text-anchor="middle">Feedback</text>
+      <text class="sub" x="949" y="201" text-anchor="middle">no consumer</text>
+
+      <!-- upper row: absent model layer, built external-agent path -->
+      <rect class="n-absent" x="430" y="52" width="128" height="52" rx="6"/>
+      <text class="lbl-dim" x="494" y="74" text-anchor="middle">Models &amp; AI</text>
+      <text class="sub" x="494" y="89" text-anchor="middle">not hosted</text>
+
+      <rect class="n-ext" x="700" y="52" width="150" height="52" rx="6"/>
+      <text class="lbl" x="775" y="74" text-anchor="middle">External model / agent</text>
+      <text class="sub" x="775" y="89" text-anchor="middle">Claude · Cursor · SDK</text>
+
+      <!-- spine edges -->
+      <line class="e" x1="116" y1="190" x2="154" y2="190" marker-end="url(#ah)"/>
+      <line class="e" x1="278" y1="190" x2="302" y2="190" marker-end="url(#ah)"/>
+      <line class="e" x1="426" y1="190" x2="592" y2="190" marker-end="url(#ah)"/>
+      <text class="edge-lbl" x="509" y="183" text-anchor="middle">objects · links · actions</text>
+      <line class="e" x1="716" y1="190" x2="740" y2="190" marker-end="url(#ah)"/>
+      <line class="e-bad" x1="864" y1="190" x2="884" y2="190" marker-end="url(#ahx)"/>
+
+      <!-- broken model edges -->
+      <path class="e-bad" d="M 380 164 C 380 120, 400 78, 424 78" marker-end="url(#ahx)"/>
+      <path class="e-bad" d="M 558 78 C 600 78, 630 120, 640 158" marker-end="url(#ahx)"/>
+      <text class="edge-lbl-bad" x="494" y="122" text-anchor="middle">no model layer to call</text>
+
+      <!-- built MCP edge -->
+      <path class="e-built" d="M 790 104 L 790 158" marker-end="url(#ahb)"/>
+      <text class="edge-lbl" x="800" y="132" text-anchor="start">MCP · reads + governed actions</text>
+
+      <!-- broken feedback return -->
+      <path class="e-bad" d="M 949 216 L 949 268 L 367 268 L 367 222" marker-end="url(#ahx)"/>
+      <text class="edge-lbl-bad" x="658" y="262" text-anchor="middle">substrate exists (audit · events · history) — nothing reads it</text>
+    </svg>
+    <figcaption><strong>Where the loop holds and where it breaks.</strong> Solid green = built and in use; amber dashed = partial; red dashed = absent. The hosted-model path (Ontology → Models → Apps) does not exist, but the inverted path does: an external agent reaches the same governed action pipeline through the MCP server. The return edge is drawn broken because its data is complete and its consumer is missing — not the other way round.</figcaption>
+  </figure>
+
+  <p class="legend">
+    <span><span class="swatch" style="border-top-color: var(--built)"></span> built</span>
+    <span><span class="swatch" style="border-top-color: var(--partial); border-top-style: dashed"></span> partial</span>
+    <span><span class="swatch" style="border-top-color: var(--absent); border-top-style: dashed"></span> absent</span>
+    <span><span class="swatch" style="border-top-color: var(--accent); border-top-style: dotted"></span> governance perimeter</span>
+  </p>
+
+  <h2>The two breaks</h2>
+  <p>Everything else in the loop is either built or deliberately out of scope. These two edges are what stop it from closing.</p>
+
+  <div class="break">
+    <h3><span class="num">BREAK 1</span> No model layer — but the edge is inverted, not missing</h3>
+    <p>There is no model registry, no inference runtime, no LLM gateway, no embeddings. Nothing in Altius can run a forecast or a simulation, and there is no what-if branching to run one against — every action writes live.</p>
+    <p>What landed instead is <code>packages/mcp-server</code>: Streamable HTTP + JSON-RPC 2.0 mounted at <code>/mcp</code> when a pack declares the <code>mcp</code> capability, exposing governed actions as MCP tools. So the binding the pattern demands — <em>models bound to Ontology objects, usable inside real workflows</em> — is achieved by <strong>exposure rather than hosting</strong>. An external model is just another OIDC principal running the same 8-stage pipeline: same ReBAC, same consent, same audit. For a headless platform that is the stronger position; it is also the cheaper one.</p>
+    <p>What is still genuinely missing for the <em>loop</em> is not the model — it is capturing <span class="miss">suggestion → decision → outcome</span> as first-class data.</p>
+  </div>
+
+  <div class="break">
+    <h3><span class="num">BREAK 2</span> No feedback consumer — the data is already there</h3>
+    <p>Unusually, the hard half is done. Every action is audited including denials, every object and link change emits a CloudEvent, <code>*_history</code> tables hold the full state-transition record, and sync now exports processed/failed/staleness metrics. That is a high-quality event log for learning.</p>
+    <p>Nothing reads it. There is no aggregation, no monitoring rule, no retraining trigger, and no general scheduler — the <code>SyncScheduler</code> that just landed drives data intake only; it is not an Automate-equivalent. This is the same missing component already sitting at #2 on the roadmap: <strong>a trigger engine consuming the event bus</strong>. Closing it closes the loop.</p>
+  </div>
+
+  <h2>Stage by stage</h2>
+
+  <div class="stage partial">
+    <div class="stage-head"><h3>Ingest &amp; Connect</h3><span class="chip partial">partial · just upgraded</span></div>
+    <p class="ev">packages/sync · JdbcConnector · mapping DSL · CdcConsumer · ConflictResolver · SyncScheduler (a5705b9)</p>
+    <p>The driver loop that made this an inert library now exists, opt-in via <code>SYNC_SCHEDULER_ENABLED</code>, with per-field conflict resolution and bounded ticks. <span class="miss">Missing:</span> push intake (pull-only — no Listeners equivalent), no Debezium/Kafka consumer, REST connector is a stub, lineage is in-memory only. Sync writes bypass the action pipeline by design, so ingest is outside the governed write path.</p>
+  </div>
+
+  <div class="stage built">
+    <div class="stage-head"><h3>Ontology</h3><span class="chip built">built · strongest layer</span></div>
+    <p class="ev">packages/odl → one ParsedSchema IR drives GraphQL SDL · OpenFGA model · REST routes · OpenAPI/AsyncAPI · action-manifest validation · MCP tool descriptors</p>
+    <p>This is the "common thread" property, mechanically real: every artifact is a pure function of one schema, so data, logic, actions and security cannot drift apart. Objects, links, actions, object sets, temporal history, and a schema registry that classifies changes SAFE/COMPATIBLE/BREAKING and gates breaking applies behind a migration plan. Interfaces are being operationalized right now. <span class="miss">Missing:</span> branching, media, time series, struct types, geo semantics.</p>
+  </div>
+
+  <div class="stage absent">
+    <div class="stage-head"><h3>Apps &amp; Workflows</h3><span class="chip absent">absent · by design</span></div>
+    <p>Headless is the stance, not an oversight — the substrate a UI needs is exposed: generated GraphQL/REST, FGA-checked subscriptions, and JSON-Schema action descriptors from which forms auto-generate. <span class="miss">The real backend gap hiding here</span> is scenarios: no staging, no what-if, no comparison. The SPI transaction contract and history tables are the hooks, but nothing stages an un-applied change today.</p>
+  </div>
+
+  <div class="stage built">
+    <div class="stage-head"><h3>Operator decisions → Write-back</h3><span class="chip built">built · second-strongest</span></div>
+    <p class="ev">packages/actions · validate → authorise → consent → preconditions → execute → side-effects → audit → emit</p>
+    <p>Transactional effects with ROLLBACK_ALL compensation, webhook side-effects out to source systems, append-only audit now enforced at the database (trigger + REVOKE), CloudEvents emitted post-commit. <span class="miss">Asymmetry worth naming:</span> sync is one-way in; the only path back out to a system of record is a webhook (POST-only, no managed credentials or OAuth).</p>
+  </div>
+
+  <div class="stage built">
+    <div class="stage-head"><h3>Governance</h3><span class="chip built">built · cross-cutting</span></div>
+    <p>The reference diagram draws governance as dotted lines to each layer. In Altius it is a single pipeline every surface funnels through — one insertion point, not five — which is why adding a new control lands everywhere at once. <span class="miss">Missing:</span> markings (mandatory controls), durable lineage, and row-level security (tenancy is app-layer only).</p>
+  </div>
+
+  <div class="keybox">
+    <h3>The cheapest way to close the loop is a domain pack, not a platform feature</h3>
+    <p>The feedback stage does not need new platform machinery to start. Because the Ontology is the common thread, <strong>Suggestion, Decision and Outcome can be modeled as ODL object types with their own actions</strong> — shipped as a pack, no core change. The audit trail and CloudEvents give capture for free; MCP lets an external model write suggestions in through the same governed pipeline a human uses; the <code>*_history</code> tables record what actually happened next.</p>
+    <p>That turns the loop from a platform project into pack content, and leaves exactly one platform-level dependency: the trigger engine that reads the event bus and acts on it.</p>
+  </div>
+
+  <h2>The start-small recipe, scored</h2>
+  <p>Your own sequencing — one source, one ontology, one app, one model, one decision workflow, then write-back, audit and feedback capture — measured against what exists today.</p>
+  <ol class="recipe">
+    <li><b>One data source</b> — nhs-acute PAS connector, JDBC, now schedulable<span class="tag have">have</span></li>
+    <li><b>One Ontology</b> — Patient · Ward · Bed · Consultant, versioned and gated<span class="tag have">have</span></li>
+    <li><b>One decision workflow</b> — Admit · Discharge · Transfer as governed actions<span class="tag have">have</span></li>
+    <li><b>Write-back + audit logs</b> — webhooks out, append-only audit enforced in-database<span class="tag have">have</span></li>
+    <li><b>One app</b> — no UI layer; an external client consumes the generated API<span class="tag need">need</span></li>
+    <li><b>One model</b> — not hosted; reachable today only as an external agent over MCP<span class="tag need">need</span></li>
+    <li><b>Feedback capture</b> — substrate complete, consumer absent<span class="tag need">need</span></li>
+  </ol>
+
+  <footer>Status derived from a 179-capability parity analysis, a 10-subsystem architecture map, a 371-entry surface map, and a 6-gap adversarial verification pass over the Altius repository at commit a5705b9. Stage verdicts cite code, not intent.</footer>
+</div>

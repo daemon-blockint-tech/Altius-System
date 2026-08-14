@@ -14,7 +14,7 @@ import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { loadDomainPacks } from '../schema-loader.js';
+import { loadDomainPacks, universallyVisibleSensitive } from '../schema-loader.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DOMAIN_PACKS_DIR = resolve(__dirname, '..', '..', '..', '..', 'domain-packs');
@@ -676,5 +676,74 @@ describe.skipIf(!rcePackAvailable)('loadDomainPacks with external RCE pack', () 
     // SPI has combined types
     expect(spiSchema.objectTypes.length).toBe(16); // 7 nhs-acute + 9 rce
     expect(spiSchema.linkTypes.length).toBe(15);   // 6 nhs-acute + 9 rce
+  });
+});
+
+describe('@sensitive enforcement', () => {
+  it('redacts @sensitive fields for packs shipping no field-permissions.yaml', async () => {
+    // aml declares @sensitive on Customer (name, dateOfBirth, taxId) and
+    // Account (accountNumber) but ships no permissions/field-permissions.yaml.
+    const { fieldPermissions } = await loadDomainPacks(DOMAIN_PACKS_DIR, ['core', 'aml']);
+
+    const customer = fieldPermissions.find(c => c.objectType === 'Customer');
+    expect(customer).toBeDefined();
+    // No relation grants them, and they are not alwaysVisible => redacted for all.
+    expect(customer!.fieldsByRelation).toEqual({});
+    for (const f of ['name', 'dateOfBirth', 'taxId']) {
+      expect(customer!.alwaysVisible).not.toContain(f);
+    }
+    // Non-sensitive fields stay readable.
+    expect(customer!.alwaysVisible).toContain('id');
+    expect(customer!.alwaysVisible).toContain('riskLevel');
+
+    const account = fieldPermissions.find(c => c.objectType === 'Account');
+    expect(account!.alwaysVisible).not.toContain('accountNumber');
+  });
+
+  it('leaves an explicit pack config untouched', async () => {
+    // nhs-acute ships field-permissions.yaml, so its Patient entry must be the
+    // authored one (relation grants preserved), not a derived deny-all.
+    const { fieldPermissions } = await loadDomainPacks(DOMAIN_PACKS_DIR, ['core', 'nhs-acute']);
+
+    const patient = fieldPermissions.filter(c => c.objectType === 'Patient');
+    expect(patient).toHaveLength(1);
+    expect(patient[0]!.fieldsByRelation['clinician']).toContain('nhsNumber');
+  });
+
+  it('does not synthesize a config for types without @sensitive fields', async () => {
+    const { fieldPermissions } = await loadDomainPacks(DOMAIN_PACKS_DIR, ['core', 'aml']);
+    // Alert has no @sensitive field, so it must stay unconfigured (no redaction).
+    expect(fieldPermissions.find(c => c.objectType === 'Alert')).toBeUndefined();
+  });
+
+  it('counts a viewer grant as universally visible, like alwaysVisible', () => {
+    // `viewer` is checked on every read, so granting a @sensitive field there
+    // hides nothing — it must be reported exactly like alwaysVisible.
+    const config = {
+      objectType: 'Patient',
+      alwaysVisible: ['id', 'leaked'],
+      fieldsByRelation: {
+        viewer: ['name', 'family'],
+        clinician: ['dateOfBirth', 'nhsNumber'],
+      },
+    };
+    const sensitive = ['leaked', 'name', 'family', 'dateOfBirth'];
+
+    const exposed = universallyVisibleSensitive(config, sensitive);
+
+    expect(exposed).toEqual(['leaked', 'name', 'family']);
+    // Granted only to a narrower relation => genuinely protected.
+    expect(exposed).not.toContain('dateOfBirth');
+  });
+
+  it('flags the shipped nhs-acute Patient grant', async () => {
+    const { fieldPermissions } = await loadDomainPacks(DOMAIN_PACKS_DIR, ['core', 'nhs-acute']);
+    const patient = fieldPermissions.find(c => c.objectType === 'Patient')!;
+
+    // patient.odl marks name/family/given/dateOfBirth @sensitive; the pack
+    // grants the first three to viewer, so only dateOfBirth stays protected.
+    const exposed = universallyVisibleSensitive(patient, ['name', 'family', 'given', 'dateOfBirth']);
+
+    expect(exposed).toEqual(['name', 'family', 'given']);
   });
 });

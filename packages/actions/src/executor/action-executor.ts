@@ -912,6 +912,7 @@ export class ActionExecutor {
     config: Record<string, unknown>,
     context: Record<string, unknown>,
   ): Record<string, unknown> {
+    if (type === 'webhook') return this.resolveWebhookConfig(config, context);
     if (type !== 'event') return config;
     const data = config['data'];
     if (!data || typeof data !== 'object') return config;
@@ -920,6 +921,30 @@ export class ActionExecutor {
       resolvedData[key] = typeof value === 'string' ? this.resolveExpression(value, context) : value;
     }
     return { ...config, data: resolvedData };
+  }
+
+  /**
+   * Resolve a webhook side-effect config the same way event `data` is resolved:
+   * each string in `body` becomes its resolved context value rather than the
+   * literal expression text. Without this a manifest declaring
+   * `body: { reason: "params.reason" }` POSTed the string "params.reason".
+   *
+   * Runs post-commit, so it never throws: an unsupported `method` is rejected by
+   * the manifest parser instead, before any effect is written. `url` is passed
+   * through untouched — `${VAR}` placeholders are not expanded here.
+   */
+  private resolveWebhookConfig(
+    config: Record<string, unknown>,
+    context: Record<string, unknown>,
+  ): Record<string, unknown> {
+    const body = config['body'];
+    if (!body || typeof body !== 'object' || Array.isArray(body)) return config;
+
+    const resolvedBody: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(body as Record<string, unknown>)) {
+      resolvedBody[key] = typeof value === 'string' ? this.resolveExpression(value, context) : value;
+    }
+    return { ...config, body: resolvedBody };
   }
 
   /**

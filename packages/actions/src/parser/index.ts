@@ -593,6 +593,22 @@ function parseSideEffects(
       continue;
     }
 
+    // The webhook HttpClient contract is POST-only. Accepting `method` and then
+    // POSTing anyway would send a verb the manifest did not ask for, so reject
+    // it at load time rather than at execution — side-effects run post-commit.
+    if (item['type'] === 'webhook') {
+      const method = (item['config'] as Record<string, unknown>)['method'];
+      if (typeof method === 'string' && method.toUpperCase() !== 'POST') {
+        errors.push({
+          severity: 'error',
+          code: 'UNSUPPORTED_VALUE',
+          message: `${path}.config.method "${method}" is not supported — webhooks are POST-only.`,
+          path: `${path}.config.method`,
+        });
+        continue;
+      }
+    }
+
     const se: SideEffect = {
       name: item['name'],
       type: item['type'],

@@ -100,4 +100,10 @@ export interface SideEffectExecutorConfig {
   eventBus?: EventBus;
   /** Default rollback policy if not specified on the manifest. */
   defaultPolicy?: RollbackPolicy;
+  /**
+   * Environment used to expand `${VAR}` placeholders in webhook URLs.
+   * Injected rather than read from `process.env` so this package stays
+   * env-agnostic and testable. Unset → placeholders cannot be expanded.
+   */
+  env?: Record<string, string | undefined>;
 }

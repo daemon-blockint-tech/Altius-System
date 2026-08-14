@@ -529,6 +529,82 @@ function validatePackDependencies(manifests: PackManifest[]): void {
 // ---------------------------------------------------------------------------
 
 /**
+ * Which of an ObjectType's @sensitive fields are readable by every caller who
+ * can read the object at all.
+ *
+ * Two mechanisms are equally wide: `alwaysVisible`, and a grant to `viewer` —
+ * assertFgaModelCoverage treats a missing `viewer` as fatal precisely because
+ * every read checks it, so granting a field there hides nothing.
+ */
+export function universallyVisibleSensitive(
+  config: FieldPermissionConfig,
+  sensitiveFields: readonly string[],
+): string[] {
+  const viewerGranted = config.fieldsByRelation['viewer'] ?? [];
+  return sensitiveFields.filter(
+    f => config.alwaysVisible.includes(f) || viewerGranted.includes(f),
+  );
+}
+
+/**
+ * Make @sensitive enforceable.
+ *
+ * Redaction is driven entirely by field-permissions.yaml: AuthorizationService
+ * .getVisibleFields returns undefined for an ObjectType with no config, and
+ * redactFields then passes every field through. So an ObjectType that marks
+ * fields @sensitive but ships no config leaks exactly the fields it declared as
+ * sensitive. This derives a deny-by-default config for those types so the
+ * directive means what it says; access is granted back the normal way, by
+ * listing the field under a relation in the pack's field-permissions.yaml.
+ */
+function deriveSensitiveFieldDefaults(
+  configs: FieldPermissionConfig[],
+  schema: ParsedSchema,
+): void {
+  for (const objType of schema.objectTypes) {
+    const sensitive: string[] = [];
+    const visible: string[] = [];
+
+    // Mirrors validateFieldPermissions' stored-field rules: primary maps to
+    // 'id'; @link/@computed are virtual and never redacted.
+    for (const field of objType.fields) {
+      if (field.directives.some(d => d.kind === 'primary')) {
+        visible.push('id');
+        continue;
+      }
+      if (field.directives.some(d => d.kind === 'link' || d.kind === 'computed')) continue;
+      if (field.directives.some(d => d.kind === 'sensitive')) {
+        sensitive.push(field.name);
+      } else {
+        visible.push(field.name);
+      }
+    }
+
+    if (sensitive.length === 0) continue;
+
+    const existing = configs.find(c => c.objectType === objType.name);
+    if (existing) {
+      const exposed = universallyVisibleSensitive(existing, sensitive);
+      if (exposed.length > 0) {
+        logger.warn(
+          `Field permissions [${objType.name}]: @sensitive field(s) ${exposed.join(', ')} are readable by every ` +
+          `caller who can read the object (listed in alwaysVisible and/or granted to 'viewer', which every read ` +
+          `checks). Move them under a narrower relation if that is not intended.`,
+        );
+      }
+      continue;
+    }
+
+    configs.push({ objectType: objType.name, alwaysVisible: visible, fieldsByRelation: {} });
+    logger.warn(
+      `Field permissions: '${objType.name}' declares @sensitive field(s) ${sensitive.join(', ')} but the pack ships ` +
+      `no permissions/field-permissions.yaml entry — redacting them for all callers. Add an entry granting them ` +
+      `under a relation to restore access.`,
+    );
+  }
+}
+
+/**
  * Validate field permission configs against the merged schema.
  * Warns on invalid object types or field names to catch config drift early.
  */
@@ -878,8 +954,10 @@ export async function loadDomainPacks(
     );
   }
 
-  // Phase 4: Validate field permissions against merged schema
+  // Phase 4: Validate field permissions against merged schema, then make
+  // @sensitive enforceable for any type the packs left unconfigured.
   validateFieldPermissions(fieldPermissions, merged);
+  deriveSensitiveFieldDefaults(fieldPermissions, merged);
 
   // Phase 5: Validate pack dependency constraints
   validatePackDependencies(manifests);

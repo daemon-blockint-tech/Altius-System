@@ -698,6 +698,7 @@ async function main(): Promise<void> {
   const sideEffectHandler = new SideEffectExecutor({
     httpClient: sideEffectHttpClient,
     eventBus: sideEffectBus,
+    env: process.env,
   });
 
   const actionExecutor = new ActionExecutor({

@@ -40,6 +40,7 @@ import type {
 
 // ─── Module imports ───
 import { generateDDL } from './schema/index.js';
+import { planAdditiveMigration } from './schema/ddl-migrate.js';
 import { pgIdent, snakeCase, pgIndexMethod } from './schema/type-mapping.js';
 import {
   createObject as pgCreateObject,
@@ -238,23 +239,21 @@ export class PostgresStorageProvider implements StorageProvider {
     );
     if (existing.rows.length > 0) {
       const storedChecksum = existing.rows[0].checksum;
-      if (storedChecksum && storedChecksum !== checksum) {
-        throw new Error(
-          `Schema migration: version ${schema.version} already applied but DDL checksum differs. ` +
-          `Expected ${storedChecksum}, got ${checksum}. ` +
-          `Increment schema version or resolve the drift before deploying.`,
-        );
+      // DDL drift falls through to the advisory-locked path below, which
+      // reconciles additive changes and refuses destructive ones; reconciling
+      // here would race concurrent pods.
+      if (!storedChecksum || storedChecksum === checksum) {
+        // Schema version already applied — still run platform DDL (consent)
+        // for upgrades that add new platform tables/columns. These statements
+        // are idempotent (IF NOT EXISTS, ADD COLUMN IF NOT EXISTS).
+        for (const stmt of ddl.consent) {
+          await this._pool.query(stmt);
+        }
+        this._currentSchemaVersion = schema.version;
+        this._schemas.set(schema.version, schema);
+        const now = new Date().toISOString() as DateTime;
+        return { success: true, fromVersion, toVersion: schema.version, appliedAt: now };
       }
-      // Schema version already applied — still run platform DDL (consent)
-      // for upgrades that add new platform tables/columns. These statements
-      // are idempotent (IF NOT EXISTS, ADD COLUMN IF NOT EXISTS).
-      for (const stmt of ddl.consent) {
-        await this._pool.query(stmt);
-      }
-      this._currentSchemaVersion = schema.version;
-      this._schemas.set(schema.version, schema);
-      const now = new Date().toISOString() as DateTime;
-      return { success: true, fromVersion, toVersion: schema.version, appliedAt: now };
     }
 
     // Use a dedicated client for the entire migration to ensure advisory lock
@@ -273,11 +272,36 @@ export class PostgresStorageProvider implements StorageProvider {
       if (recheck.rows.length > 0) {
         const storedChecksum = recheck.rows[0].checksum;
         if (storedChecksum && storedChecksum !== checksum) {
-          throw new Error(
-            `Schema migration: version ${schema.version} already applied but DDL checksum differs. ` +
-            `Expected ${storedChecksum}, got ${checksum}. ` +
-            `Increment schema version or resolve the drift before deploying.`,
+          // DDL drift on an applied version. Reconcile what can be reconciled
+          // without touching existing data (new tables via CREATE IF NOT
+          // EXISTS, new columns via ADD COLUMN); refuse anything destructive.
+          const plan = await planAdditiveMigration(client, schema, this._dataSchema);
+          if (plan.blocked.length > 0) {
+            throw new Error(
+              `Schema migration: version ${schema.version} is already applied and the new schema is not an ` +
+              `additive change:\n  - ${plan.blocked.join('\n  - ')}\n` +
+              `These require an approved migration; the additive parts were not applied either.`,
+            );
+          }
+          for (const stmt of ddl.consent) {
+            await client.query(stmt);
+          }
+          // Creates any newly-declared tables/indexes; existing tables are untouched.
+          for (const stmt of ddl.all) {
+            await client.query(stmt);
+          }
+          for (const stmt of plan.statements) {
+            await client.query(stmt);
+          }
+          await client.query(
+            'UPDATE _schema_migrations SET checksum = $1, applied_at = NOW() WHERE version = $2',
+            [checksum, schema.version],
           );
+          await client.query('COMMIT');
+          this._currentSchemaVersion = schema.version;
+          this._schemas.set(schema.version, schema);
+          const reconciledAt = new Date().toISOString() as DateTime;
+          return { success: true, fromVersion, toVersion: schema.version, appliedAt: reconciledAt };
         }
         // Platform DDL under advisory lock for concurrent startup safety
         for (const stmt of ddl.consent) {

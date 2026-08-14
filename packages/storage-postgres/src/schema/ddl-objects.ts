@@ -117,7 +117,7 @@ function generateIndex(tableName: string, idx: IndexDefinition, schema: string):
 /**
  * Convert a JS value to a PostgreSQL literal for DEFAULT clauses.
  */
-function pgLiteral(value: unknown): string {
+export function pgLiteral(value: unknown): string {
   if (value === null || value === undefined) return 'NULL';
   if (typeof value === 'string') return `'${value.replace(/'/g, "''")}'`;
   if (typeof value === 'number') return String(value);
