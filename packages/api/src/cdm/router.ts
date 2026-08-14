@@ -17,6 +17,7 @@
 import type { FilterExpression, FieldPredicate } from '@altius/spi';
 import { DataPurpose } from '@altius/spi';
 import type { ApiDependencies, AuthenticatedUserInfo } from '../graphql/types.js';
+import { isConsentSubjectType } from '../graphql/types.js';
 import { logger } from '../logger.js';
 import { toSnakeCase } from '../utils.js';
 import { NHS_ACUTE_CDM_PROFILE } from './profile.js';
@@ -148,10 +149,6 @@ function ctxFor(user: AuthenticatedUserInfo) {
   return { tenantId: user.tenantId, actorId: user.id, traceId: `cdm-${Date.now()}` };
 }
 
-/** Patient is the consent subject; other types are not consent-gated here. */
-function isConsentSubject(sourceType: string): boolean {
-  return sourceType === 'Patient';
-}
 
 export async function handleObjectRead(
   deps: ApiDependencies,
@@ -174,7 +171,7 @@ export async function handleObjectRead(
       user.id, user.roles, sourceType, obj as unknown as Record<string, unknown>,
     );
 
-    if (deps.consentService && isConsentSubject(sourceType)) {
+    if (deps.consentService && isConsentSubjectType(sourceType, deps.consentSubjectTypes)) {
       const consent = await deps.consentService.checkSingleObject(
         data, id, DataPurpose.DIRECT_CARE, user.id, user.tenantId,
       );
@@ -278,7 +275,7 @@ export async function collectRawRecords(
 
   let rows = redacted.map(r => r.data);
 
-  if (deps.consentService && isConsentSubject(sourceType)) {
+  if (deps.consentService && isConsentSubjectType(sourceType, deps.consentSubjectTypes)) {
     const consentResult = await deps.consentService.filterList(
       rows,
       (item: Record<string, unknown>) => String(item['_id'] ?? item['id'] ?? ''),

@@ -404,3 +404,52 @@ describe('CDM truncation signalling', () => {
     expect((res.body as { truncated: boolean }).truncated).toBe(false);
   });
 });
+
+describe('CDM consent scoping honours CONSENT_SUBJECT_TYPES', () => {
+  // The consent gate here used to be a local `isConsentSubject` hardcoding
+  // 'Patient', while every other read path resolved the subject types from
+  // config. A deployment setting CONSENT_SUBJECT_TYPES to anything else got a
+  // CDM facade that gated the wrong type.
+  function depsWithConsent(subjectTypes: readonly string[]) {
+    const checkSingleObject = vi.fn(async (data: Record<string, unknown>) => ({
+      data,
+      _consentRestricted: false,
+    }));
+    const deps = {
+      authorizationService: {
+        clearFieldCache: () => {},
+        check: vi.fn(async () => true),
+        listObjects: vi.fn(async () => ['*']),
+        redactFields: (_i: string, _r: string[], _t: string, obj: Record<string, unknown>) => ({ data: obj, _redactedFields: [] as string[] }),
+        redactFieldsBatch: (_i: string, _r: string[], _t: string, items: Record<string, unknown>[]) => items.map(data => ({ data, _redactedFields: [] as string[] })),
+      },
+      objectManager: {
+        get: vi.fn(async () => ({ _id: 'p-1', _version: 1, nhsNumber: '123', status: 'ACTIVE' })),
+        query: vi.fn(async () => ({ items: [] })),
+      },
+      linkManager: { getLinks: vi.fn(async () => ({ items: [] })) },
+      consentService: { checkSingleObject, filterList: vi.fn(async (items: unknown[]) => ({ edges: items, totalCount: items.length })) },
+      consentSubjectTypes: subjectTypes,
+    } as unknown as ApiDependencies;
+    return { deps, checkSingleObject };
+  }
+
+  it('gates a Patient read when Patient is a configured subject type', async () => {
+    const { deps, checkSingleObject } = depsWithConsent(['Patient']);
+    const router = createCdmRouter({ deps });
+
+    await router({ method: 'GET', path: 'Patient/p-1', query: {}, user: makeUser() });
+
+    expect(checkSingleObject).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not gate a Patient read when the deployment configures other subject types', async () => {
+    const { deps, checkSingleObject } = depsWithConsent(['DischargeRecord']);
+    const router = createCdmRouter({ deps });
+
+    await router({ method: 'GET', path: 'Patient/p-1', query: {}, user: makeUser() });
+
+    // Hardcoding 'Patient' would have consulted consent regardless of config.
+    expect(checkSingleObject).not.toHaveBeenCalled();
+  });
+});
