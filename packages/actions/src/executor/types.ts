@@ -160,6 +160,12 @@ export interface ActionError {
   message: string;
   /** Dot-path to relevant field, if applicable. */
   path?: string;
+  /**
+   * Machine-readable specifics a caller can act on — e.g. a VERSION_CONFLICT
+   * carries `{ expected, actual }` so a client can show what changed under it
+   * rather than parsing the message.
+   */
+  details?: Record<string, unknown>;
 }
 
 export type ChangeType = 'created' | 'updated' | 'deleted';

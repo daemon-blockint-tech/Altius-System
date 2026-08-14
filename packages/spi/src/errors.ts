@@ -10,6 +10,7 @@ export type ErrorCategory =
   | 'authorization'
   | 'consent'
   | 'conflict'
+  | 'precondition'
   | 'rate_limit'
   | 'quota'
   | 'not_found'

@@ -1041,6 +1041,7 @@ async function main(): Promise<void> {
           query: req.query as Record<string, string>,
           body: req.body as Record<string, unknown>,
           user,
+          headers: req.headers as Record<string, string | undefined>,
         };
         const ctx: ResolverContext = buildResolverContext(user, deps);
         const result = await route.handler(restReq, ctx);

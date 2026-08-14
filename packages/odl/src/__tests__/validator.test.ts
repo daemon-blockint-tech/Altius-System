@@ -221,10 +221,10 @@ describe('ODL Validator', () => {
       expect(errs[0]!.message).toContain('2 @primary fields');
     });
 
-    it('errors when the @primary field is not named "id"', () => {
-      // Regression: this parsed and validated clean, then got no DDL column and
-      // read back null, because the read path looks for `_<fieldName>` while the
-      // value is always stored as `_id`.
+    it('accepts an arbitrary @primary field name (e.g. customerRef: ID! @primary)', () => {
+      // Full arbitrary-primary support: the declared @primary field is an
+      // alias for the system _id column. Any ID! field name is accepted;
+      // the API/CEL layers expose _id under the declared name.
       const odl = `
         type Foo @objectType {
           customerRef: ID! @primary
@@ -234,11 +234,8 @@ describe('ODL Validator', () => {
       const schema = parseOdl(odl);
       const result = validateSchema(schema);
 
-      expect(result.valid).toBe(false);
-      const errs = findErrors(result, 'INVALID_PRIMARY_NAME');
-      expect(errs).toHaveLength(1);
-      expect(errs[0]!.typeName).toBe('Foo');
-      expect(errs[0]!.fieldName).toBe('customerRef');
+      expect(result.valid).toBe(true);
+      expect(findErrors(result, 'INVALID_PRIMARY_NAME')).toHaveLength(0);
     });
 
     it('accepts the conventional id primary', () => {

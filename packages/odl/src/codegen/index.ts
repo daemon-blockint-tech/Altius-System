@@ -237,6 +237,12 @@ function generateMutationInputType(action: ActionType, objectTypeNames: Set<stri
     lines.push(`  ${field.name}: ${typeName}`);
   }
 
+  // Optimistic concurrency, opt-in: the `_version` the caller believes the
+  // action's target object carries. Mismatch fails with VERSION_CONFLICT
+  // before any effect runs. The REST equivalent is the If-Match header.
+  lines.push('  """`_version` this action asserts its target object is at. Omit to skip the check."""');
+  lines.push('  _expectedVersion: Int');
+
   lines.push('}');
   return lines.join('\n');
 }

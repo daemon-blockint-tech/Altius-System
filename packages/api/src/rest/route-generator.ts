@@ -174,7 +174,6 @@ async function resolveAllowedIds(
 async function resolveConsentedIds(
   deps: ApiDependencies,
   typeName: string,
-  obj: ObjectType,
   allowedIds: string[],
   userFilter: FilterExpression | undefined,
   userId: string,
@@ -861,7 +860,7 @@ function generateAggregateRoute(
         // Consent gate: for consent-subject types, constrain the aggregate to
         // consented records only (parity with the GraphQL aggregate resolver).
         const consentedIds = await resolveConsentedIds(
-          deps, typeName, obj, allowedIds, userFilter, user.id, requestContext,
+          deps, typeName, allowedIds, userFilter, user.id, requestContext,
         );
         if (consentedIds.length === 0) {
           return { status: 200, body: { data: { groups: [], totalGroups: 0 } } };
@@ -1064,12 +1063,21 @@ function generateActionRoute(
         const consentSubjectId = subjectParam
           ? String(input[subjectParam.name] ?? '')
           : undefined;
+        // Optimistic concurrency: If-Match carries the object version the
+        // caller decided on (RFC 9110 conditional request). A non-numeric or
+        // absent value simply leaves the check off.
+        const ifMatch = req.headers?.['if-match'];
+        const expectedVersion = ifMatch !== undefined
+          ? Number.parseInt(String(ifMatch).replace(/^W\/|"/g, ''), 10)
+          : Number.NaN;
+
         const actionCtx: ActionContext = {
           requestContext,
           ...(consentSubjectId ? {
             consentPurpose: DEFAULT_CONSENT_PURPOSE,
             consentSubjectId,
           } : {}),
+          ...(Number.isInteger(expectedVersion) ? { expectedVersion } : {}),
         };
 
         // Resolve manifest from registry — fail closed if not found

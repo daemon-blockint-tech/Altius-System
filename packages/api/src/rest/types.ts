@@ -18,6 +18,12 @@ export interface RestRequest {
   query: Record<string, string | string[] | undefined>;
   body: unknown;
   user: AuthenticatedUserInfo;
+  /**
+   * Lower-cased request headers. Populated for routes that honour HTTP
+   * preconditions — `If-Match` carries the object version an action is
+   * asserting it acts on.
+   */
+  headers?: Record<string, string | undefined>;
 }
 
 /**

@@ -714,7 +714,6 @@ function generateQueryResolvers(
 async function resolveConsentedIds(
   deps: ApiDependencies,
   typeName: string,
-  obj: ObjectType,
   allowedIds: string[],
   userFilter: FilterExpression | undefined,
   userId: string,
@@ -841,7 +840,7 @@ function generateAggregateResolver(
       // aggregate returns groups, so we resolve the consented ID set up front
       // and pass it as a filter to the storage aggregate.
       const consentedIds = await resolveConsentedIds(
-        deps, typeName, obj, allowedIds, userFilter, user.id, requestContext,
+        deps, typeName, allowedIds, userFilter, user.id, requestContext,
       );
       if (consentedIds.length === 0 || (consentedIds.length === 1 && consentedIds[0] === '*' && allowedIds.length === 0)) {
         return { groups: [], totalGroups: 0 };
@@ -1039,12 +1038,18 @@ function generateMutationResolver(
       const consentSubjectId = subjectParam
         ? String(args.input[subjectParam.name] ?? '')
         : undefined;
+      // Optimistic concurrency: GraphQL hides transport, so the version the
+      // caller decided on arrives as a reserved input field rather than an
+      // If-Match header (the REST equivalent).
+      const expectedVersion = args.input?.['_expectedVersion'];
+
       const actionCtx: ActionContext = {
         requestContext,
         ...(consentSubjectId ? {
           consentPurpose: DEFAULT_CONSENT_PURPOSE,
           consentSubjectId,
         } : {}),
+        ...(typeof expectedVersion === 'number' ? { expectedVersion } : {}),
       };
 
       // Resolve manifest from registry — fail closed if not found

@@ -2108,4 +2108,60 @@ effects:
       expect(errors.some(e => e.code === 'MISSING_FIELD')).toBe(true);
     });
   });
+
+  // -------------------------------------------------------------------------
+  // Optimistic concurrency against the caller's assumption (ctx.expectedVersion)
+  // -------------------------------------------------------------------------
+
+  describe('expectedVersion', () => {
+    it('rejects an action whose caller holds a stale version', async () => {
+      const { manifest } = parseActionManifest(TRANSFER_WARD_YAML);
+
+      // Caller decided on v1 while the patient has since moved on.
+      const stale = (patient._version as number) - 1;
+      const result = await executor.execute(
+        manifest!,
+        { patient: patient._id, toWard: ward2._id, toBed: bed2._id, reason: 'x' },
+        ACTOR,
+        { ...ACTION_CTX, expectedVersion: stale },
+        NHS_SCHEMA,
+      );
+
+      expect(result.success).toBe(false);
+      const conflict = result.errors?.find(e => e.code === 'VERSION_CONFLICT');
+      expect(conflict).toBeDefined();
+      // Machine-readable, so a client can show what moved under it.
+      expect(conflict!.details).toMatchObject({ expected: stale, actual: patient._version });
+      // Rejected before any effect ran — nothing to compensate.
+      expect(result.affectedObjects).toHaveLength(0);
+    });
+
+    it('proceeds when the caller holds the current version', async () => {
+      const { manifest } = parseActionManifest(TRANSFER_WARD_YAML);
+
+      const result = await executor.execute(
+        manifest!,
+        { patient: patient._id, toWard: ward2._id, toBed: bed2._id, reason: 'x' },
+        ACTOR,
+        { ...ACTION_CTX, expectedVersion: patient._version as number },
+        NHS_SCHEMA,
+      );
+
+      expect(result.errors?.some(e => e.code === 'VERSION_CONFLICT')).toBeFalsy();
+    });
+
+    it('omitting expectedVersion keeps the previous behaviour', async () => {
+      const { manifest } = parseActionManifest(TRANSFER_WARD_YAML);
+
+      const result = await executor.execute(
+        manifest!,
+        { patient: patient._id, toWard: ward2._id, toBed: bed2._id, reason: 'x' },
+        ACTOR,
+        ACTION_CTX,
+        NHS_SCHEMA,
+      );
+
+      expect(result.errors?.some(e => e.code === 'VERSION_CONFLICT')).toBeFalsy();
+    });
+  });
 });

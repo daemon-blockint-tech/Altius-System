@@ -255,11 +255,11 @@ export class ActionExecutor {
     // nothing and leaves no partial work to compensate. The storage-level
     // expectedVersion guard (see applyUpdateObject) is a different thing: it
     // closes the read-modify-write window within this request.
-    if (context.expectedVersion !== undefined) {
+    if (ctx.expectedVersion !== undefined) {
       const conflict = checkExpectedVersion(
         actionTypeDef,
         resolvedVariables,
-        context.expectedVersion,
+        ctx.expectedVersion,
       );
       if (conflict) return failResult(actionId, [conflict]);
     }
@@ -707,7 +707,7 @@ export class ActionExecutor {
         await this.executeDeleteLink(effect, context, txn, reqCtx, affectedObjects, beforeStates, schema);
         break;
       case 'createObject':
-        await this.executeCreateObject(effect, context, txn, affectedObjects, afterStates);
+        await this.executeCreateObject(effect, context, txn, affectedObjects, afterStates, schema);
         break;
       case 'deleteObject':
         await this.executeDeleteObject(effect, context, txn, reqCtx, affectedObjects, beforeStates, schema);
@@ -895,6 +895,7 @@ export class ActionExecutor {
     txn: Transaction,
     affectedObjects: AffectedObject[],
     afterStates: Map<string, Record<string, unknown>>,
+    schema?: ParsedSchema,
   ): Promise<void> {
     // Resolve property values
     const properties: Record<string, unknown> = {};
@@ -903,6 +904,7 @@ export class ActionExecutor {
     }
 
     const created = await txn.createObject(effect.objectType, properties);
+    addIdAlias(created, primaryFieldName(schema, effect.objectType));
 
     // Inject created object into context so subsequent effects (e.g. createLink)
     // can reference it. Key is the camelCase form of the objectType name:
