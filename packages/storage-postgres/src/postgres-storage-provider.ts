@@ -592,20 +592,27 @@ export class PostgresStorageProvider implements StorageProvider {
       // Basic connectivity
       await this._pool.query('SELECT 1');
 
-      // Check AGE extension (required for graph/link traversal)
+      // AGE presence is reported, never used to fail the check.
+      //
+      // The graph is write-only: object-crud/link-crud mirror vertices and edges
+      // into it, and both ageQuery() helpers deliberately swallow failures as
+      // "graceful degradation". Nothing reads it back — traversal.ts resolves
+      // paths with SQL JOINs on the link tables.
+      //
+      // Treating it as required made a missing extension fail readiness: /health
+      // answers 503 when unhealthy, so the pod would be pulled out of service
+      // (and StorageUnhealthy paged) over a graph no query touches, while the
+      // write layer in the same package considered it optional.
       const extResult = await this._pool.query(
         `SELECT extname FROM pg_extension WHERE extname = 'age'`,
       );
       const ageLoaded = extResult.rows.length > 0;
-
-      // AGE is required when link types are registered (graph features active)
       const hasGraphFeatures = this._currentSchemaVersion > 0 &&
         [...this._schemas.values()].some(s => s.linkTypes.length > 0);
-      const healthy = !hasGraphFeatures || ageLoaded;
 
       const latencyMs = Date.now() - start;
       return {
-        healthy,
+        healthy: true,
         provider: 'postgres',
         latencyMs,
         details: {
