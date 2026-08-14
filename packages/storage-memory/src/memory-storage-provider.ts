@@ -35,7 +35,7 @@ import type {
   SearchQuery,
   SearchResult,
   SearchHit,
-} from '@openfoundry/spi';
+} from '@altius/spi';
 
 // ---------------------------------------------------------------------------
 // Helpers

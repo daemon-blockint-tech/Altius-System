@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { MemoryStorageProvider } from '@openfoundry/storage-memory';
-import type { RequestContext, OntologySchema } from '@openfoundry/spi';
-import type { ParsedSchema } from '@openfoundry/odl';
+import { MemoryStorageProvider } from '@altius/storage-memory';
+import type { RequestContext, OntologySchema } from '@altius/spi';
+import type { ParsedSchema } from '@altius/odl';
 import { ObjectManager } from '../objects/object-manager.js';
 import { LinkManager } from '../links/link-manager.js';
 import { EngineEventEmitter } from '../events/event-emitter.js';

@@ -2,7 +2,7 @@
  * Action manifest types.
  *
  * These types represent the parsed and validated structure of a YAML action
- * manifest per Open Foundry spec Section 5.1.
+ * manifest per Altius spec Section 5.1.
  */
 
 // ─── Effect types (discriminated union) ───

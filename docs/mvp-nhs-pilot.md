@@ -1,14 +1,14 @@
-# Open Foundry — MVP Design: NHS Acute Pilot
+# Altius — MVP Design: NHS Acute Pilot
 
 **Status:** Draft
 **Date:** February 2026
-**Parent Spec:** open-foundry-spec-v2.md
+**Parent Spec:** altius-spec-v2.md
 
 ---
 
 ## 1. Purpose
 
-This document defines the minimum viable product (MVP) for Open Foundry — a vertical slice sufficient to onboard an NHS acute trust as a pilot customer. It identifies exactly what ships, what is deferred, and how the deferred items are stubbed so the architecture remains intact for later expansion.
+This document defines the minimum viable product (MVP) for Altius — a vertical slice sufficient to onboard an NHS acute trust as a pilot customer. It identifies exactly what ships, what is deferred, and how the deferred items are stubbed so the architecture remains intact for later expansion.
 
 The pilot must demonstrate:
 
@@ -27,7 +27,7 @@ The pilot must demonstrate:
 
 | # | Component | Spec Section | Scope |
 |---|-----------|-------------|-------|
-| 1 | **ODL Compiler** | 2 | Full ODL parser + validator + GraphQL API generator. TypeScript. Ships as `@openfoundry/odl` CLI and library. |
+| 1 | **ODL Compiler** | 2 | Full ODL parser + validator + GraphQL API generator. TypeScript. Ships as `@altius/odl` CLI and library. |
 | 2 | **Schema Registry** | 2.5, 4.1 | Git-backed primary (ODL files in repo), database-backed runtime cache in PostgreSQL. Schema lifecycle per Section 2.5; registry is an Ontology Engine responsibility per Section 4.1. No schema workspaces yet. |
 | 3 | **PostgreSQL+AGE Storage Provider** | 3 | Sole provider. Full SPI conformance for REQUIRED categories: Schema, CRUD, Links, Queries, Transactions, Multi-tenancy, Governance, Lineage. Temporal queries via object `_version` history table. |
 | 4 | **In-Memory Storage Provider** | 3.7 | For unit/integration tests only. |
@@ -100,7 +100,7 @@ The pilot must demonstrate:
 ### 3.1 Monorepo Structure (MVP Scope)
 
 ```
-openfoundry/
+altius/
 ├── packages/
 │   ├── odl/                      # ODL compiler, parser, validator, codegen
 │   │   ├── src/
@@ -176,9 +176,9 @@ openfoundry/
 │       ├── evaluator/            # CEL environment setup, ODL type mapping
 │       └── go.mod
 ├── domain-packs/
-│   ├── core/                     # openfoundry.core (base interfaces + scalars)
+│   ├── core/                     # altius.core (base interfaces + scalars)
 │   └── nhs-acute/                # NHS acute pilot Domain Pack (see Section 4)
-├── deploy/
+├── Orion/
 │   ├── helm/                     # Helm chart
 │   └── docker-compose.yaml       # Local dev deployment
 ├── tests/
@@ -198,7 +198,7 @@ openfoundry/
 ```graphql
 # schema: nhs.acute
 # version: 0.1.0
-# depends: openfoundry.core >= 1.0.0
+# depends: altius.core >= 1.0.0
 
 extend schema @namespace(name: "nhs.acute", version: "0.1.0")
 
@@ -636,7 +636,7 @@ When both PAS (via CDC) and Actions (via GraphQL) can modify patient state, the 
 
 Conflict resolution behaviour:
 
-1. When a CDC update arrives for a field governed by `ACTION_PRIORITY` and the field was last modified by an Action (lineage `kind: ACTION`), the CDC value is **logged as a conflict** (`openfoundry.sync.conflict` event) but **not applied**.
+1. When a CDC update arrives for a field governed by `ACTION_PRIORITY` and the field was last modified by an Action (lineage `kind: ACTION`), the CDC value is **logged as a conflict** (`altius.sync.conflict` event) but **not applied**.
 2. A nightly **reconciliation job** compares PAS state and ontology state, producing a divergence report. Fields with persistent divergence are flagged for manual review.
 3. Fields governed by `SOURCE_PRIORITY` are always overwritten by CDC, regardless of Action history.
 
@@ -647,7 +647,7 @@ Real PAS data has missing or inconsistent identifiers. The MVP uses a determinis
 1. **Primary key:** `patient_id` from PAS, transformed to `prefix('patient-')`. This is the ontology `id` and is always present.
 2. **NHS Number:** Used as a `@unique` secondary identifier. When present, it enables cross-system correlation.
 3. **Missing NHS Number:** Objects are created with `nhsNumber: null`. A data quality rule flags these as `HIGH` severity violations for manual resolution.
-4. **Duplicate detection:** On CDC insert, the Sync Engine checks for existing objects with the same `nhsNumber` (if non-null). If a match is found with a different `id`, the record is routed to a **quarantine queue** — a separate table of unresolved identity conflicts. Quarantined records emit `openfoundry.sync.identity_conflict` events and require manual merge or disambiguation.
+4. **Duplicate detection:** On CDC insert, the Sync Engine checks for existing objects with the same `nhsNumber` (if non-null). If a match is found with a different `id`, the record is routed to a **quarantine queue** — a separate table of unresolved identity conflicts. Quarantined records emit `altius.sync.identity_conflict` events and require manual merge or disambiguation.
 5. **Merge policy:** Manual-only for MVP. An operator reviews quarantined records and decides whether to merge (update the existing object's `id` mapping) or create a new object (distinct patient). Automated merge is deferred to post-MVP.
 
 ### 4.5 OpenFGA Model
@@ -710,7 +710,7 @@ description: "NHS acute healthcare domain pack — pilot slice"
 namespace: nhs.acute
 
 dependencies:
-  openfoundry.core: ">=1.0.0"
+  altius.core: ">=1.0.0"
 
 provides:
   objectTypes: 5
@@ -730,12 +730,12 @@ provides:
 
 | Service | Image | Port | Notes |
 |---------|-------|------|-------|
-| `api-gateway` | `openfoundry/api:0.1` | 4000 | GraphQL + REST + FHIR endpoints. Stateless. |
-| `ontology-engine` | `openfoundry/engine:0.1` | 4001 (internal) | Core engine. Called by api-gateway. |
-| `action-executor` | `openfoundry/actions:0.1` | 4002 (internal) | Action pipeline. Called by api-gateway on mutations. |
-| `sync-engine` | `openfoundry/sync:0.1` | 4003 (internal) | CDC consumer + overlay query proxy. |
-| `security-service` | `openfoundry/security:0.1` | 4004 (internal) | Auth + authz + consent + audit. |
-| `cel-evaluator` | `openfoundry/cel:0.1` | 50051 (gRPC) | Go sidecar. CEL expression evaluation. |
+| `api-gateway` | `altius/api:0.1` | 4000 | GraphQL + REST + FHIR endpoints. Stateless. |
+| `ontology-engine` | `altius/engine:0.1` | 4001 (internal) | Core engine. Called by api-gateway. |
+| `action-executor` | `altius/actions:0.1` | 4002 (internal) | Action pipeline. Called by api-gateway on mutations. |
+| `sync-engine` | `altius/sync:0.1` | 4003 (internal) | CDC consumer + overlay query proxy. |
+| `security-service` | `altius/security:0.1` | 4004 (internal) | Auth + authz + consent + audit. |
+| `cel-evaluator` | `altius/cel:0.1` | 50051 (gRPC) | Go sidecar. CEL expression evaluation. |
 | `openfga` | `openfga/openfga:latest` | 8280 | ReBAC engine. |
 | `postgresql` | `postgres:17` | 5432 | Ontology store + audit log + OpenFGA store. |
 | `redpanda` | `redpandadata/redpanda:latest` | 9092 | Event bus (Kafka-compatible). |
@@ -757,7 +757,7 @@ docker compose up
 ### 5.3 Production (Kubernetes / Helm)
 
 ```bash
-helm install nhs-pilot openfoundry/openfoundry \
+helm install nhs-pilot altius/altius \
   --set storage.provider=postgres \
   --set storage.postgres.host=pg-cluster.internal \
   --set eventBus.redpanda.bootstrapServers=redpanda.internal:9092 \
@@ -777,7 +777,7 @@ This is the sequence for onboarding an NHS trust as a pilot.
 
 ### Phase 1: Connect (Week 1-2)
 
-1. Deploy Open Foundry stack into trust's infrastructure (Kubernetes or Docker Compose for evaluation).
+1. Deploy Altius stack into trust's infrastructure (Kubernetes or Docker Compose for evaluation).
 2. Configure OIDC integration with NHS CIS2 (or Keycloak for sandbox).
 3. Deploy JDBC connector pointing at the trust's PAS database in **overlay mode**.
 4. Run `odl validate` + `odl apply` to load the NHS Acute Domain Pack schema.
@@ -937,7 +937,7 @@ THEN  a FHIR Patient resource is returned with:
 GIVEN a PAS datasource configured in CDC mode
 WHEN  a patient record is updated in the PAS database
 THEN  within 30 seconds, the corresponding Patient object in the ontology reflects the change
-  AND a CloudEvent openfoundry.object.updated is emitted
+  AND a CloudEvent altius.object.updated is emitted
   AND a lineage record is created with source kind SYNC
 ```
 
@@ -947,7 +947,7 @@ THEN  within 30 seconds, the corresponding Patient object in the ontology reflec
 GIVEN Patient-1 was discharged via DischargePatient action (status set to DISCHARGED by Action)
 WHEN  a CDC update arrives from PAS setting the status-equivalent field to "active"
 THEN  the CDC update is NOT applied (status is ACTION_PRIORITY)
-  AND an openfoundry.sync.conflict event is emitted with both values
+  AND an altius.sync.conflict event is emitted with both values
   AND the conflict is logged for the nightly reconciliation report
 
 GIVEN Patient-1.name was set by CDC from PAS
@@ -962,7 +962,7 @@ THEN  the update is rejected (name is SOURCE_PRIORITY, PAS-owned)
 GIVEN Patient-A exists in the ontology with nhsNumber=1234567890
 WHEN  a CDC insert arrives from PAS with a different patient_id but nhsNumber=1234567890
 THEN  the record is routed to the quarantine queue (not merged automatically)
-  AND an openfoundry.sync.identity_conflict event is emitted
+  AND an altius.sync.identity_conflict event is emitted
   AND the quarantine record contains both the existing and incoming patient data
 
 GIVEN a CDC insert arrives with nhsNumber=null

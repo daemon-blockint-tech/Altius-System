@@ -5,7 +5,7 @@
  * (objects and links) and publishes them to the configured EventBus.
  */
 
-import type { CloudEvent, CloudEventType, RequestContext, DateTime } from '@openfoundry/spi';
+import type { CloudEvent, CloudEventType, RequestContext, DateTime } from '@altius/spi';
 import type { EventBus } from './event-bus.js';
 
 /** Describes who/what caused the state change. */
@@ -52,7 +52,7 @@ export class EngineEventEmitter {
   private readonly source: string;
   private readonly bus: EventBus;
 
-  constructor(bus: EventBus, source = 'openfoundry://engine/ontology') {
+  constructor(bus: EventBus, source = 'altius://engine/ontology') {
     this.source = source;
     this.bus = bus;
   }
@@ -67,7 +67,7 @@ export class EngineEventEmitter {
     version: number,
     cause?: EventCause,
   ): Promise<void> {
-    await this.emitEvent('openfoundry.object.created', `${objectType}/${objectId}`, ctx, {
+    await this.emitEvent('altius.object.created', `${objectType}/${objectId}`, ctx, {
       objectType,
       objectId,
       version,
@@ -84,7 +84,7 @@ export class EngineEventEmitter {
     changes: ChangeSet,
     cause?: EventCause,
   ): Promise<void> {
-    await this.emitEvent('openfoundry.object.updated', `${objectType}/${objectId}`, ctx, {
+    await this.emitEvent('altius.object.updated', `${objectType}/${objectId}`, ctx, {
       objectType,
       objectId,
       version,
@@ -101,7 +101,7 @@ export class EngineEventEmitter {
     version: number,
     cause?: EventCause,
   ): Promise<void> {
-    await this.emitEvent('openfoundry.object.deleted', `${objectType}/${objectId}`, ctx, {
+    await this.emitEvent('altius.object.deleted', `${objectType}/${objectId}`, ctx, {
       objectType,
       objectId,
       version,
@@ -121,7 +121,7 @@ export class EngineEventEmitter {
     version: number,
     cause?: EventCause,
   ): Promise<void> {
-    await this.emitEvent('openfoundry.link.created', `${linkType}/${linkId}`, ctx, {
+    await this.emitEvent('altius.link.created', `${linkType}/${linkId}`, ctx, {
       linkType,
       linkId,
       fromId,
@@ -142,7 +142,7 @@ export class EngineEventEmitter {
     changes: ChangeSet,
     cause?: EventCause,
   ): Promise<void> {
-    await this.emitEvent('openfoundry.link.updated', `${linkType}/${linkId}`, ctx, {
+    await this.emitEvent('altius.link.updated', `${linkType}/${linkId}`, ctx, {
       linkType,
       linkId,
       fromId,
@@ -163,7 +163,7 @@ export class EngineEventEmitter {
     version: number,
     cause?: EventCause,
   ): Promise<void> {
-    await this.emitEvent('openfoundry.link.deleted', `${linkType}/${linkId}`, ctx, {
+    await this.emitEvent('altius.link.deleted', `${linkType}/${linkId}`, ctx, {
       linkType,
       linkId,
       fromId,

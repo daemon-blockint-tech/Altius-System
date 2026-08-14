@@ -1,4 +1,4 @@
-// CEL Evaluator gRPC sidecar for the Open Foundry platform.
+// CEL Evaluator gRPC sidecar for the Altius platform.
 //
 // Per Spec v2 Section 5.2.4, CEL runtime evaluation MUST use a canonical
 // evaluator. This Go sidecar serves as the authoritative CEL runtime,
@@ -18,8 +18,8 @@ import (
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 
-	"github.com/openfoundry/cel-evaluator/evaluator"
-	pb "github.com/openfoundry/cel-evaluator/proto"
+	"github.com/daemon-blockint-tech/Altius-System/packages/cel-evaluator/evaluator"
+	pb "github.com/daemon-blockint-tech/Altius-System/packages/cel-evaluator/proto"
 )
 
 const (

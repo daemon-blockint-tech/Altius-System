@@ -12,10 +12,10 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseOdl, validateSchema } from '@openfoundry/odl';
-import { parseActionManifest } from '@openfoundry/actions';
+import { parseOdl, validateSchema } from '@altius/odl';
+import { parseActionManifest } from '@altius/actions';
 import { parse as parseYaml } from 'yaml';
-import type { ParsedSchema, FieldDirective } from '@openfoundry/odl';
+import type { ParsedSchema, FieldDirective } from '@altius/odl';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PACK_ROOT = resolve(__dirname, '..', '..');
@@ -530,13 +530,13 @@ describe('NHS Acute Domain Pack — pack.yaml manifest', () => {
     expect(pack['description']).toBe('NHS acute healthcare domain pack — pilot slice');
   });
 
-  it('declares correct dependency on openfoundry.core', () => {
+  it('declares correct dependency on altius.core', () => {
     const packYamlPath = resolve(PACK_ROOT, 'pack.yaml');
     const content = readFileSync(packYamlPath, 'utf-8');
     const pack = parseYaml(content) as Record<string, unknown>;
 
     const deps = pack['dependencies'] as Record<string, string>;
-    expect(deps['openfoundry.core']).toBe('>=1.0.0');
+    expect(deps['altius.core']).toBe('>=1.0.0');
   });
 
   it('declares correct provides counts', () => {

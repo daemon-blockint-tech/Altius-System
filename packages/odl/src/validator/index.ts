@@ -1,7 +1,7 @@
 /**
  * ODL Validator — type checking and constraint validation for parsed ODL schemas.
  *
- * Takes a ParsedSchema and checks structural correctness per the Open Foundry spec.
+ * Takes a ParsedSchema and checks structural correctness per the Altius spec.
  */
 
 import type {

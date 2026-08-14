@@ -1,4 +1,4 @@
-# Open Foundry — Technical Specification v2.0
+# Altius — Technical Specification v2.0
 
 **Status:** Draft
 **Date:** February 2026
@@ -7,13 +7,13 @@
 
 ## 1. Overview
 
-Open Foundry is an open-source ontology platform for building operational digital twins. It provides the semantic, kinetic, and security layers needed to turn commodity data infrastructure into a coherent, queryable, actionable model of a real-world system.
+Altius is an open-source ontology platform for building operational digital twins. It provides the semantic, kinetic, and security layers needed to turn commodity data infrastructure into a coherent, queryable, actionable model of a real-world system.
 
 The platform is domain-neutral. Domain-specific functionality is delivered through **Domain Packs** — composable schema and connector bundles. The first Domain Pack targets NHS acute healthcare.
 
 ### 1.1 What This Document Is
 
-This is an engineering specification. It defines the components, interfaces, data models, protocols, and contracts needed to build Open Foundry. It does not cover funding, staffing, timelines, or business strategy.
+This is an engineering specification. It defines the components, interfaces, data models, protocols, and contracts needed to build Altius. It does not cover funding, staffing, timelines, or business strategy.
 
 ### 1.2 Design Principles
 
@@ -62,7 +62,7 @@ Unless a section explicitly says otherwise, code snippets and examples are infor
 
 ## 2. Ontology Definition Language (ODL)
 
-ODL is the schema language for Open Foundry. It is an **extension of GraphQL SDL** — any valid ODL schema is parseable by standard GraphQL tooling, with Open Foundry-specific semantics expressed through directives.
+ODL is the schema language for Altius. It is an **extension of GraphQL SDL** — any valid ODL schema is parseable by standard GraphQL tooling, with Altius-specific semantics expressed through directives.
 
 This decision means: developers already know the syntax, existing GraphQL tooling (linters, formatters, IDE plugins) works out of the box, and the API layer can generate a GraphQL API directly from the schema with minimal transformation.
 
@@ -403,7 +403,7 @@ Schemas are organised into namespaces to avoid collisions across Domain Packs an
 ```graphql
 # schema: nhs.acute
 # version: 1.4.0
-# depends: openfoundry.core >= 1.0.0
+# depends: altius.core >= 1.0.0
 
 extend schema @namespace(name: "nhs.acute", version: "1.4.0")
 
@@ -412,7 +412,7 @@ type Patient @objectType {
 }
 ```
 
-Namespaces are dot-separated. The `openfoundry.core` namespace is always available and provides base interfaces (`Identifiable`, `Auditable`, `Locatable`, `Temporal`).
+Namespaces are dot-separated. The `altius.core` namespace is always available and provides base interfaces (`Identifiable`, `Auditable`, `Locatable`, `Temporal`).
 
 ### 2.5 Schema Lifecycle
 
@@ -709,7 +709,7 @@ TTL auto-purge rules:
 - The purge job runs on a configurable schedule (default: daily). It queries for soft-deleted objects where `_deletedAt + softDeleteTTL < now`.
 - `HARD_DELETE` permanently removes the object and its links via the existing hard-delete path (rule 6).
 - `ARCHIVE` exports the object (including links and lineage) to a configured archive store (e.g., object storage) before hard-deleting. The archive record includes sufficient metadata for regulatory retrieval.
-- Purge operations are audited. Each purge run emits an `openfoundry.retention.purge` event with counts per ObjectType.
+- Purge operations are audited. Each purge run emits an `altius.retention.purge` event with counts per ObjectType.
 - When no `softDeleteTTL` is configured for an ObjectType, soft-deleted objects are retained indefinitely (current default behaviour).
 
 ### 3.4 Transaction Semantics
@@ -858,8 +858,8 @@ All state changes produce CloudEvents published to the event bus.
 {
   "specversion": "1.0",
   "id": "evt-abc-123",
-  "source": "openfoundry://instance-1/ontology",
-  "type": "openfoundry.object.updated",
+  "source": "altius://instance-1/ontology",
+  "type": "altius.object.updated",
   "subject": "Patient/patient-abc-123",
   "time": "2026-02-06T14:30:00Z",
   "datacontenttype": "application/json",
@@ -883,16 +883,16 @@ Event types:
 
 | Type | Trigger |
 |------|---------|
-| `openfoundry.object.created` | New object instantiated |
-| `openfoundry.object.updated` | Object properties changed |
-| `openfoundry.object.deleted` | Object soft- or hard-deleted |
-| `openfoundry.link.created` | New link established |
-| `openfoundry.link.updated` | Link properties changed |
-| `openfoundry.link.deleted` | Link removed |
-| `openfoundry.action.submitted` | Action submitted (before execution) |
-| `openfoundry.action.completed` | Action executed successfully |
-| `openfoundry.action.failed` | Action execution failed |
-| `openfoundry.schema.updated` | Schema version applied |
+| `altius.object.created` | New object instantiated |
+| `altius.object.updated` | Object properties changed |
+| `altius.object.deleted` | Object soft- or hard-deleted |
+| `altius.link.created` | New link established |
+| `altius.link.updated` | Link properties changed |
+| `altius.link.deleted` | Link removed |
+| `altius.action.submitted` | Action submitted (before execution) |
+| `altius.action.completed` | Action executed successfully |
+| `altius.action.failed` | Action execution failed |
+| `altius.schema.updated` | Schema version applied |
 
 #### 4.2.1 Event Ordering Guarantees
 
@@ -994,46 +994,46 @@ The Ontology Engine emits OpenTelemetry traces and metrics for all operations.
 
 #### 4.5.1 Traces
 
-Every operation creates a span. Span naming follows the convention `openfoundry.<layer>.<operation>`.
+Every operation creates a span. Span naming follows the convention `altius.<layer>.<operation>`.
 
 | Span Name | Attributes | Notes |
 |-----------|-----------|-------|
-| `openfoundry.engine.getObject` | `object.type`, `object.id` | Includes child spans for SPI call and computed field evaluation |
-| `openfoundry.engine.queryObjects` | `object.type`, `filter.summary`, `result.count` | |
-| `openfoundry.engine.createObject` | `object.type`, `object.id` | Includes validation pipeline spans |
-| `openfoundry.engine.traverse` | `start.id`, `path.depth`, `result.count` | |
-| `openfoundry.action.execute` | `action.type`, `action.id`, `actor` | Parent span for the full action pipeline |
-| `openfoundry.action.preconditions` | `action.type`, `result` | Child of action.execute |
-| `openfoundry.action.effects` | `action.type`, `effect.count` | Child of action.execute |
-| `openfoundry.action.sideeffects` | `action.type`, `sideeffect.name` | Async, linked to parent via trace context |
-| `openfoundry.security.check` | `actor`, `resource`, `permission`, `result` | |
-| `openfoundry.security.consent` | `subject`, `purpose`, `result` | |
-| `openfoundry.sync.extract` | `connector`, `table`, `record.count` | |
-| `openfoundry.sync.map` | `connector`, `object.type`, `record.count` | |
-| `openfoundry.federation.query` | `source.instance`, `target.instance`, `dsa.id` | |
+| `altius.engine.getObject` | `object.type`, `object.id` | Includes child spans for SPI call and computed field evaluation |
+| `altius.engine.queryObjects` | `object.type`, `filter.summary`, `result.count` | |
+| `altius.engine.createObject` | `object.type`, `object.id` | Includes validation pipeline spans |
+| `altius.engine.traverse` | `start.id`, `path.depth`, `result.count` | |
+| `altius.action.execute` | `action.type`, `action.id`, `actor` | Parent span for the full action pipeline |
+| `altius.action.preconditions` | `action.type`, `result` | Child of action.execute |
+| `altius.action.effects` | `action.type`, `effect.count` | Child of action.execute |
+| `altius.action.sideeffects` | `action.type`, `sideeffect.name` | Async, linked to parent via trace context |
+| `altius.security.check` | `actor`, `resource`, `permission`, `result` | |
+| `altius.security.consent` | `subject`, `purpose`, `result` | |
+| `altius.sync.extract` | `connector`, `table`, `record.count` | |
+| `altius.sync.map` | `connector`, `object.type`, `record.count` | |
+| `altius.federation.query` | `source.instance`, `target.instance`, `dsa.id` | |
 
 #### 4.5.2 Metrics
 
 | Metric | Type | Labels |
 |--------|------|--------|
-| `openfoundry.engine.operations` | Counter | `operation`, `object_type`, `result` |
-| `openfoundry.engine.latency` | Histogram | `operation`, `object_type` |
-| `openfoundry.action.executions` | Counter | `action_type`, `result` |
-| `openfoundry.action.duration` | Histogram | `action_type` |
-| `openfoundry.security.checks` | Counter | `permission`, `result` |
-| `openfoundry.security.check_latency` | Histogram | `permission` |
-| `openfoundry.sync.records_processed` | Counter | `connector`, `operation` |
-| `openfoundry.sync.lag_seconds` | Gauge | `connector` |
-| `openfoundry.sync.conflicts` | Counter | `connector`, `resolution` |
-| `openfoundry.computed.evaluations` | Counter | `field`, `strategy`, `cache_hit` |
-| `openfoundry.federation.queries` | Counter | `source`, `target`, `result` |
-| `openfoundry.federation.latency` | Histogram | `source`, `target` |
+| `altius.engine.operations` | Counter | `operation`, `object_type`, `result` |
+| `altius.engine.latency` | Histogram | `operation`, `object_type` |
+| `altius.action.executions` | Counter | `action_type`, `result` |
+| `altius.action.duration` | Histogram | `action_type` |
+| `altius.security.checks` | Counter | `permission`, `result` |
+| `altius.security.check_latency` | Histogram | `permission` |
+| `altius.sync.records_processed` | Counter | `connector`, `operation` |
+| `altius.sync.lag_seconds` | Gauge | `connector` |
+| `altius.sync.conflicts` | Counter | `connector`, `resolution` |
+| `altius.computed.evaluations` | Counter | `field`, `strategy`, `cache_hit` |
+| `altius.federation.queries` | Counter | `source`, `target`, `result` |
+| `altius.federation.latency` | Histogram | `source`, `target` |
 
 All metrics MUST be exported via the OpenTelemetry SDK and MAY be scraped by Prometheus or pushed to any OTLP-compatible backend.
 
 ### 4.6 Lineage and Provenance
 
-Open Foundry tracks value provenance so operators can answer: where did this value come from, when, and through which transformation path.
+Altius tracks value provenance so operators can answer: where did this value come from, when, and through which transformation path.
 
 ```typescript
 interface FieldProvenance {
@@ -1076,7 +1076,7 @@ action:
 Quality rule requirements:
 
 1. Rules MAY reference related objects and time windows.
-2. Violations generate `openfoundry.quality.violation` events with severity and evidence.
+2. Violations generate `altius.quality.violation` events with severity and evidence.
 3. Rule evaluation MUST NOT block primary write paths by default; blocking mode is opt-in per rule.
 4. Rule packs MUST be versioned and MAY be enabled/disabled per tenant.
 
@@ -1405,7 +1405,7 @@ Execution contract:
 2. `dryRun: true` performs validation/authorisation/consent checks and returns impact without mutation.
 3. `allOrNothing: true` runs items in a single transaction scope where supported; otherwise request is rejected.
 4. Results include per-item status, error code, and correlation IDs for audit/lineage lookup.
-5. Bulk jobs emit `openfoundry.bulk.progress`, `openfoundry.bulk.completed`, and `openfoundry.bulk.failed` events.
+5. Bulk jobs emit `altius.bulk.progress`, `altius.bulk.completed`, and `altius.bulk.failed` events.
 6. If `supportsBulkMutations` is `false`, the action executor MAY emulate bulk execution via chunked single-item transactions, but MUST preserve idempotency and per-item reporting semantics.
 
 **Relationship to SPI bulk mutations:** `submitBulkAction` and `SPI.bulkMutate` operate at different layers. `submitBulkAction` is an API-layer operation that runs N action instances through the full pipeline (validation, auth, consent, preconditions, effects, audit). Each action instance produces one or more SPI mutations. When `allOrNothing: true` and the SPI advertises `supportsBulkMutations: true`, the Action Executor batches the SPI-level mutations from all items into a single `bulkMutate` call for atomicity. When `allOrNothing: false` (default), each action item executes in its own SPI transaction independently. The SPI's `bulkMutate` is never exposed directly to API consumers — it is an internal optimisation path only.
@@ -1592,7 +1592,7 @@ This prevents cascade failures during load spikes.
 
 #### 6.2.4 Initial Full Extract
 
-The CDC sync latency target of < 30 seconds (Section 13.1) applies to **steady-state incremental sync only**. Initial full extracts are not subject to this target and are expected to take significantly longer depending on source data volume. Full extracts run at the configured `rateLimit` and produce progress events (`openfoundry.sync.fullextract.progress`) reporting records processed and estimated time remaining.
+The CDC sync latency target of < 30 seconds (Section 13.1) applies to **steady-state incremental sync only**. Initial full extracts are not subject to this target and are expected to take significantly longer depending on source data volume. Full extracts run at the configured `rateLimit` and produce progress events (`altius.sync.fullextract.progress`) reporting records processed and estimated time remaining.
 
 ### 6.3 Datasource Mapping
 
@@ -1647,7 +1647,7 @@ sync:
 
 ### 6.4 Overlay Ingestion Mode
 
-Open Foundry supports an **overlay** (read-through) ingestion mode that maps existing source system schemas to ODL types without requiring a full data migration. This reduces time-to-value by allowing the ontology to query source data in place.
+Altius supports an **overlay** (read-through) ingestion mode that maps existing source system schemas to ODL types without requiring a full data migration. This reduces time-to-value by allowing the ontology to query source data in place.
 
 ```yaml
 # datasources/pas-patients-overlay.yaml
@@ -1681,7 +1681,7 @@ sync:
 1. In `OVERLAY` mode, the Sync Engine does **not** extract and store objects in the ontology store. Instead, when the Ontology Engine receives a query for the mapped ObjectType, it delegates to the connector in real time, applies the mapping transforms, and returns the result as if it were a native ontology object.
 2. Overlay results are cached locally (using the specified `cacheStrategy` and `cacheTTL`) to avoid redundant source queries. Cache invalidation is time-based only — CDC is not used in overlay mode.
 3. Overlay objects are **read-only**. Mutations (Actions) that target overlay objects are rejected with `OVERLAY_READ_ONLY` unless the datasource binding sets `writeback: true` and the connector implements the `write` method.
-4. Overlay objects participate in the security pipeline (ReBAC checks, field redaction, consent) identically to native objects. The source system is not aware of Open Foundry's permission model.
+4. Overlay objects participate in the security pipeline (ReBAC checks, field redaction, consent) identically to native objects. The source system is not aware of Altius's permission model.
 5. Overlay objects do **not** have version histories or lineage records. Lineage is reported as `{ kind: 'OVERLAY', connector, sourceSystem, sourcePointer }`.
 6. A datasource MAY be migrated from `OVERLAY` to `CDC`/`POLLING`/`BATCH` mode without changing the ODL schema. The migration triggers a full extract that populates the ontology store, after which the overlay cache is disabled.
 
@@ -1719,7 +1719,7 @@ When multiple sources provide conflicting data for the same object.
 | `MERGE` | Non-conflicting fields merged. Conflicting fields flagged for manual resolution. |
 | `CUSTOM` | Delegated to a registered conflict resolution function. |
 
-Conflicts are logged as events (`openfoundry.sync.conflict`) with full details of both values and the resolution applied.
+Conflicts are logged as events (`altius.sync.conflict`) with full details of both values and the resolution applied.
 
 ### 6.7 Reference Connectors
 
@@ -1739,7 +1739,7 @@ Conflicts are logged as events (`openfoundry.sync.conflict`) with full details o
 
 ### 7.1 Access Control Model
 
-Open Foundry uses Relationship-Based Access Control (ReBAC), implemented via the OpenFGA model (Google Zanzibar). Permissions are derived from the ontology graph itself — not from static role tables.
+Altius uses Relationship-Based Access Control (ReBAC), implemented via the OpenFGA model (Google Zanzibar). Permissions are derived from the ontology graph itself — not from static role tables.
 
 #### 7.1.1 Authorisation Model
 
@@ -1779,7 +1779,7 @@ This model encodes: a user assigned to a ward can view and edit patients admitte
 
 #### 7.1.3 Field-Level Security Behaviour
 
-Returning `null` for a non-null (`!`) field would trigger GraphQL's null-bubbling behaviour, which propagates the null up to the nearest nullable parent and can destroy entire response subtrees. Because Open Foundry always supports field-level redaction, the generated GraphQL API wraps non-primary ObjectType fields in a nullable envelope in all deployments.
+Returning `null` for a non-null (`!`) field would trigger GraphQL's null-bubbling behaviour, which propagates the null up to the nearest nullable parent and can destroy entire response subtrees. Because Altius always supports field-level redaction, the generated GraphQL API wraps non-primary ObjectType fields in a nullable envelope in all deployments.
 
 **Schema transformation:** The ODL compiler generates the *public* GraphQL schema with all non-primary ObjectType fields as nullable, regardless of their ODL nullability. The ODL-declared nullability (`!`) is enforced at the Ontology Engine level (writes are rejected if a required field is missing), not at the GraphQL transport level. This means:
 
@@ -1842,7 +1842,7 @@ Fail-closed policy:
 
 - When the OpenFGA circuit is open, all permission checks return **denied**. The system does not degrade to "allow all" — it fails closed.
 - When the consent circuit is open, consent-protected operations return `CONSENT_SERVICE_UNAVAILABLE` unless an emergency override policy is enabled (see Section 12.4 degraded mode).
-- Circuit breaker state transitions emit `openfoundry.security.circuit_breaker` events and are visible in the health endpoint (Section 3.1).
+- Circuit breaker state transitions emit `altius.security.circuit_breaker` events and are visible in the health endpoint (Section 3.1).
 
 ### 7.2 Audit Trail
 
@@ -2004,12 +2004,12 @@ Revocation semantics:
 2. **In-flight requests:** Requests that have already passed the consent check but are still assembling a response are NOT retroactively aborted. Revocation takes effect on the next request boundary.
 3. **Active subscriptions:** Any WebSocket subscriptions delivering data about the revoked subject for the revoked purpose MUST be terminated with a `CONSENT_REVOKED` close reason. The subscriber receives a final message indicating the subscription was closed due to consent change.
 4. **Audit:** Revocation produces an audit record with `operation.type: 'consent_revoked'`, including the previous consent state, the revocation reason, and a count of affected subscriptions.
-5. **Event emission:** A `openfoundry.consent.revoked` event is published, enabling downstream consumers to react (e.g., purging cached query results).
+5. **Event emission:** A `altius.consent.revoked` event is published, enabling downstream consumers to react (e.g., purging cached query results).
 6. **Idempotency:** Revoking consent that was not previously granted is a no-op and returns a `RevocationResult` with `activeSessions: 0`.
 
 ### 7.4 Authentication
 
-Open Foundry does not manage credentials. It delegates to external identity providers via:
+Altius does not manage credentials. It delegates to external identity providers via:
 
 | Protocol | Use Case |
 |----------|----------|
@@ -2022,7 +2022,7 @@ The platform extracts user identity, roles, and group memberships from the OIDC 
 
 ### 7.5 Multi-Tenancy Model
 
-Open Foundry uses a **shared control plane + logically isolated tenant data planes** model.
+Altius uses a **shared control plane + logically isolated tenant data planes** model.
 
 Tenant model contract:
 
@@ -2266,9 +2266,9 @@ Auto-generated typed SDKs are produced from the ODL schema.
 
 ```typescript
 // TypeScript SDK — auto-generated
-import { OpenFoundry, Redacted } from '@openfoundry/sdk';
+import { Altius, Redacted } from '@altius/sdk';
 
-const of = new OpenFoundry({ endpoint: 'https://trust-1.openfoundry.nhs.uk' });
+const of = new Altius({ endpoint: 'https://trust-1.altius.nhs.uk' });
 
 // Typed queries
 const patient = await of.Patient.get('patient-abc-123');
@@ -2340,7 +2340,7 @@ External systems MAY subscribe to platform events without operating a Kafka cons
 name: discharge_webhook
 tenantId: trust-leeds
 eventTypes:
-  - openfoundry.action.completed
+  - altius.action.completed
 filter: "data.causedBy.actionType == 'DischargePatient'"
 endpoint: "https://example.org/hooks/discharge"
 signing:
@@ -2358,7 +2358,7 @@ Webhook requirements:
 2. Payloads are signed; receivers verify signature and timestamp.
 3. Failures use retry + dead-letter routing.
 4. Registrations are tenant-scoped and permission-controlled.
-5. **Signing key rotation:** The platform MUST support zero-downtime signing key rotation. During rotation, both the old and new keys are valid for a configurable overlap window (default: 24 hours). The webhook payload includes a `X-OpenFoundry-Key-Id` header identifying which key was used to sign, allowing receivers to select the correct verification key. After the overlap window expires, the old key is deactivated and deliveries use only the new key. Key rotation events are audited.
+5. **Signing key rotation:** The platform MUST support zero-downtime signing key rotation. During rotation, both the old and new keys are valid for a configurable overlap window (default: 24 hours). The webhook payload includes a `X-Altius-Key-Id` header identifying which key was used to sign, allowing receivers to select the correct verification key. After the overlap window expires, the old key is deactivated and deliveries use only the new key. Key rotation events are audited.
 
 ### 8.7 API Governance and Quotas
 
@@ -2407,7 +2407,7 @@ Error categories:
 
 Transport mapping:
 
-1. GraphQL: error envelope appears in `errors[].extensions.openfoundry`.
+1. GraphQL: error envelope appears in `errors[].extensions.altius`.
 2. REST/FHIR: envelope is returned in response body with HTTP status mapping.
 3. SDKs: typed exceptions are generated from `code` + `category`.
 
@@ -2429,7 +2429,7 @@ Versioning rules:
 
 ### 9.1 Instance Identity
 
-Each Open Foundry instance has:
+Each Altius instance has:
 
 - A globally unique **instance ID** (UUID).
 - A human-readable **instance name** (e.g., `nhs-trust-leeds`).
@@ -2589,7 +2589,7 @@ The destination instance MAY already have a local object with the same identity 
 Conflict resolution requirements:
 
 1. Handoff conflicts MUST NOT be auto-resolved — they produce a quarantine record at the destination instance, analogous to the sync identity conflict quarantine (Section 6.6).
-2. Both instances emit `openfoundry.federation.handoff_conflict` events with the conflicting object states.
+2. Both instances emit `altius.federation.handoff_conflict` events with the conflicting object states.
 3. The source instance does NOT mark the object as `TRANSFERRED` until the destination acknowledges successful receipt. On conflict, the source object remains in its current state.
 
 ---
@@ -2642,11 +2642,11 @@ nhs-acute/
 # pack.yaml
 name: nhs-acute
 version: 1.0.0
-description: "NHS acute healthcare domain pack for Open Foundry"
+description: "NHS acute healthcare domain pack for Altius"
 namespace: nhs.acute
 
 dependencies:
-  openfoundry.core: ">=1.0.0"
+  altius.core: ">=1.0.0"
 
 # Platform capabilities this pack opts into. The FHIR (/fhir/*) and FDP/CDM
 # (/api/v1/cdm/*) projection facades — and their GraphQL equivalents — are
@@ -2689,10 +2689,10 @@ terminology:
 
 ### 10.3 Core Domain Pack
 
-The `openfoundry.core` pack ships with every installation and provides:
+The `altius.core` pack ships with every installation and provides:
 
 ```graphql
-# openfoundry.core — always available
+# altius.core — always available
 
 interface Identifiable {
   id: ID! @primary
@@ -2823,7 +2823,7 @@ Because these boot the stack in non-default modes (production, a distinct pack s
 
 ### 12.1 Container Architecture
 
-Open Foundry ships as a set of OCI-compliant container images.
+Altius ships as a set of OCI-compliant container images.
 
 | Service | Image | Scaling |
 |---------|-------|---------|
@@ -2842,7 +2842,7 @@ Open Foundry ships as a set of OCI-compliant container images.
 A Helm chart provides production-grade deployment. Domain Pack versions are explicitly pinned:
 
 ```bash
-helm install my-instance openfoundry/openfoundry \
+helm install my-instance altius/altius \
   --set storage.provider=typedb \
   --set storage.typedb.host=typedb-cluster:1729 \
   --set eventBus.kafka.bootstrapServers=kafka:9092 \
@@ -2851,7 +2851,7 @@ helm install my-instance openfoundry/openfoundry \
   --set domainPacks[0].version=1.0.0 \
   --set federation.enabled=true \
   --set federation.instanceId=nhs-trust-leeds \
-  --set federation.endpoint=https://openfoundry.leeds.nhs.uk \
+  --set federation.endpoint=https://altius.leeds.nhs.uk \
   --set observability.otlp.endpoint=https://otel-collector:4317
 ```
 
@@ -2967,7 +2967,7 @@ Degraded mode requirements:
 
 | Term | Definition |
 |------|-----------|
-| **ODL** | Ontology Definition Language. The GraphQL SDL-based schema language for Open Foundry. |
+| **ODL** | Ontology Definition Language. The GraphQL SDL-based schema language for Altius. |
 | **ObjectType** | A schema definition of a real-world entity or event (e.g., Patient, Ward). |
 | **Object** | A single instance of an ObjectType. |
 | **LinkType** | A schema definition of a relationship between two ObjectTypes, with optional properties. Links have their own identity (ID). |
@@ -2980,7 +2980,7 @@ Degraded mode requirements:
 | **ReBAC** | Relationship-Based Access Control. Permissions derived from graph relationships. |
 | **DSA** | Data Sharing Agreement. Machine-readable contract governing cross-instance data access. |
 | **CloudEvent** | CNCF standard envelope format for events. Used for all ontology state changes. |
-| **Tenant** | An isolated security and data boundary within an Open Foundry instance. |
+| **Tenant** | An isolated security and data boundary within an Altius instance. |
 | **Schema Workspace** | An isolated branch-like environment for developing and validating schema/migration changes before merge. |
 | **Provenance** | Metadata describing where a field value originated and how it was produced. |
 | **Bulk Action Job** | An asynchronous execution record for batch action submissions with per-item outcomes. |
@@ -2995,28 +2995,28 @@ Degraded mode requirements:
 
 | Event Type | Trigger | Payload |
 |------------|---------|---------|
-| `openfoundry.object.created` | Object instantiated | Full object state |
-| `openfoundry.object.updated` | Object properties changed | Changed fields with old/new values |
-| `openfoundry.object.deleted` | Object soft/hard deleted | Object ID, deletion mode |
-| `openfoundry.link.created` | Link established | Link ID, link type, from/to IDs, link properties |
-| `openfoundry.link.updated` | Link properties changed | Link ID, changed fields with old/new values |
-| `openfoundry.link.deleted` | Link removed | Link ID, link type, from/to IDs |
-| `openfoundry.action.submitted` | Action submitted | Action type, parameters, actor |
-| `openfoundry.action.completed` | Action succeeded | Action ID, affected objects |
-| `openfoundry.action.failed` | Action failed | Action ID, error details |
-| `openfoundry.schema.updated` | Schema version applied | Old version, new version, diff summary |
-| `openfoundry.sync.completed` | Sync batch completed | Connector, records processed, errors |
-| `openfoundry.sync.conflict` | Sync conflict detected | Object ID, conflicting values, resolution |
-| `openfoundry.sync.fullextract.progress` | Full extract progress | Connector, records processed, estimated remaining |
-| `openfoundry.bulk.progress` | Bulk job progress updated | Job ID, processed count, failed count |
-| `openfoundry.bulk.completed` | Bulk job completed | Job ID, summary, duration |
-| `openfoundry.bulk.failed` | Bulk job failed | Job ID, failure reason, failed item sample |
-| `openfoundry.webhook.delivery_failed` | Webhook delivery exhausted retries | Registration ID, event ID, endpoint, dead-letter reference |
-| `openfoundry.quality.violation` | Data quality rule violation detected | Rule ID, severity, object refs, evidence |
-| `openfoundry.federation.query` | Cross-instance query executed | Source instance, target instance, query summary |
-| `openfoundry.federation.handoff` | Object handed off between instances | Object type/ID, source, destination |
-| `openfoundry.security.denied` | Access denied | Actor, resource, reason |
-| `openfoundry.consent.denied` | Consent check failed | Subject, purpose, actor |
+| `altius.object.created` | Object instantiated | Full object state |
+| `altius.object.updated` | Object properties changed | Changed fields with old/new values |
+| `altius.object.deleted` | Object soft/hard deleted | Object ID, deletion mode |
+| `altius.link.created` | Link established | Link ID, link type, from/to IDs, link properties |
+| `altius.link.updated` | Link properties changed | Link ID, changed fields with old/new values |
+| `altius.link.deleted` | Link removed | Link ID, link type, from/to IDs |
+| `altius.action.submitted` | Action submitted | Action type, parameters, actor |
+| `altius.action.completed` | Action succeeded | Action ID, affected objects |
+| `altius.action.failed` | Action failed | Action ID, error details |
+| `altius.schema.updated` | Schema version applied | Old version, new version, diff summary |
+| `altius.sync.completed` | Sync batch completed | Connector, records processed, errors |
+| `altius.sync.conflict` | Sync conflict detected | Object ID, conflicting values, resolution |
+| `altius.sync.fullextract.progress` | Full extract progress | Connector, records processed, estimated remaining |
+| `altius.bulk.progress` | Bulk job progress updated | Job ID, processed count, failed count |
+| `altius.bulk.completed` | Bulk job completed | Job ID, summary, duration |
+| `altius.bulk.failed` | Bulk job failed | Job ID, failure reason, failed item sample |
+| `altius.webhook.delivery_failed` | Webhook delivery exhausted retries | Registration ID, event ID, endpoint, dead-letter reference |
+| `altius.quality.violation` | Data quality rule violation detected | Rule ID, severity, object refs, evidence |
+| `altius.federation.query` | Cross-instance query executed | Source instance, target instance, query summary |
+| `altius.federation.handoff` | Object handed off between instances | Object type/ID, source, destination |
+| `altius.security.denied` | Access denied | Actor, resource, reason |
+| `altius.consent.denied` | Consent check failed | Subject, purpose, actor |
 
 ## Appendix C: Directive Quick Reference
 
@@ -3045,7 +3045,7 @@ Degraded mode requirements:
 ## Appendix D: Directory Structure
 
 ```
-openfoundry/
+altius/
 ├── packages/
 │   ├── core/                    # Ontology Engine
 │   │   ├── src/
@@ -3125,9 +3125,9 @@ openfoundry/
 │   ├── sdk-python/              # Python client SDK (auto-generated)
 │   └── cli/                     # Command-line tool (includes odl rollback)
 ├── domain-packs/
-│   ├── core/                    # openfoundry.core (always installed)
+│   ├── core/                    # altius.core (always installed)
 │   └── nhs-acute/               # NHS acute healthcare domain pack
-├── deploy/
+├── Orion/
 │   ├── helm/                    # Helm chart (with version-pinned domain packs)
 │   ├── docker-compose.yaml      # Local development
 │   └── terraform/               # Infrastructure examples

@@ -5,7 +5,7 @@
  * Production deployments use a persistent store backed by PostgreSQL.
  */
 
-import type { ConsentRecord } from "@openfoundry/spi";
+import type { ConsentRecord } from "@altius/spi";
 
 import type { ConsentStore } from "./types.js";
 

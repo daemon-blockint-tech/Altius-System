@@ -9,7 +9,7 @@
  * dedicated provenance store.
  */
 
-import type { FieldProvenance, ProvenanceSource, DateTime } from '@openfoundry/spi';
+import type { FieldProvenance, ProvenanceSource, DateTime } from '@altius/spi';
 
 // ── LineageStore interface ──────────────────────────────────────────────────
 

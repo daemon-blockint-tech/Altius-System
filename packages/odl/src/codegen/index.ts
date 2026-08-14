@@ -2,7 +2,7 @@
  * ODL Codegen — GraphQL API schema generation from ParsedSchema.
  *
  * Compiles a validated ParsedSchema into GraphQL SDL following
- * Open Foundry spec Section 8.1.
+ * Altius spec Section 8.1.
  */
 
 import type {
@@ -537,7 +537,7 @@ function collectFilterEnumNames(schema: ParsedSchema): Set<string> {
 /**
  * Generate a complete GraphQL SDL from a ParsedSchema.
  *
- * The generated schema follows the Open Foundry spec Section 8.1:
+ * The generated schema follows the Altius spec Section 8.1:
  * - ObjectTypes become query/subscription types with Relay pagination
  * - ActionTypes become mutations with input/result types
  * - Field nullability follows Section 7.1.3 (non-primary fields nullable)

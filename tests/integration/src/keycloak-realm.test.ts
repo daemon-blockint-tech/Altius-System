@@ -1,18 +1,18 @@
 /**
  * Keycloak realm import — Epic A3 coverage.
  *
- * Proves the auto-provisioned `openfoundry` realm mints tokens carrying the
+ * Proves the auto-provisioned `altius` realm mints tokens carrying the
  * three claims the OIDC authenticator requires: aud == clientId, a tenant_id
  * claim, and a flat top-level `roles` array. (The full non-stub end-to-end —
  * token drives a governed action against NODE_ENV=production — is verified
- * separately; see deploy/README.)
+ * separately; see Orion/README.)
  */
 
 import { describe, it, expect, beforeAll } from 'vitest';
 import { ensureStackUp, dockerAvailable } from './setup.js';
 
 const KEYCLOAK = process.env['KEYCLOAK_BASE_URL'] ?? 'http://localhost:8180/auth';
-const REALM = 'openfoundry';
+const REALM = 'altius';
 const describeWithDocker = dockerAvailable ? describe : describe.skip;
 
 function decodeClaims(jwt: string): Record<string, unknown> {
@@ -26,7 +26,7 @@ async function mintToken(username: string): Promise<string> {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
-      client_id: 'openfoundry', grant_type: 'password',
+      client_id: 'altius', grant_type: 'password',
       username, password: 'test-password', scope: 'openid',
     }),
   });
@@ -38,7 +38,7 @@ async function mintToken(username: string): Promise<string> {
 describeWithDocker('Keycloak realm import', () => {
   beforeAll(async () => { await ensureStackUp(); }, 180_000);
 
-  it('serves the openfoundry realm', async () => {
+  it('serves the altius realm', async () => {
     const res = await fetch(`${KEYCLOAK}/realms/${REALM}`);
     expect(res.status).toBe(200);
   });
@@ -47,7 +47,7 @@ describeWithDocker('Keycloak realm import', () => {
     const claims = decodeClaims(await mintToken('dr-test'));
     // aud == clientId (string or array containing it)
     const aud = claims['aud'];
-    expect(Array.isArray(aud) ? aud.includes('openfoundry') : aud).toBeTruthy();
+    expect(Array.isArray(aud) ? aud.includes('altius') : aud).toBeTruthy();
     expect(claims['tenant_id']).toBe('default');
     expect(claims['roles']).toEqual(expect.arrayContaining(['clinician', 'nurse_in_charge']));
     expect(String(claims['iss'])).toContain(`/realms/${REALM}`);

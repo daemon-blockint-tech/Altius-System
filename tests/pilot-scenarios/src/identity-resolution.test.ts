@@ -15,8 +15,8 @@ import {
   type IdentityStore,
   type QualityViolation,
   type IdentityConflictEvent,
-} from '@openfoundry/sync';
-import type { MappedObject } from '@openfoundry/sync';
+} from '@altius/sync';
+import type { MappedObject } from '@altius/sync';
 
 // ---------------------------------------------------------------------------
 // In-memory identity store
@@ -106,7 +106,7 @@ describe('Section 7.8: Identity Resolution', () => {
 
       // Identity conflict event emitted
       expect(conflictEvents.length).toBe(1);
-      expect(conflictEvents[0]!.eventType).toBe('openfoundry.sync.identity_conflict');
+      expect(conflictEvents[0]!.eventType).toBe('altius.sync.identity_conflict');
       expect(conflictEvents[0]!.existingId).toBe('patient-a');
       expect(conflictEvents[0]!.incomingId).toBe('patient-b');
       expect(conflictEvents[0]!.nhsNumber).toBe('1234567890');

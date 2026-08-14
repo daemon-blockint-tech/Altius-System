@@ -3,7 +3,7 @@
 # Seed-only pack (declares NO new ODL types) that bootstraps the reference data
 # the legacy integration suites expect — wards, beds, consultants and a few
 # discharged patients of the nhs-acute types. It is loaded ONLY during
-# integration tests via DOMAIN_PACKS_EXTRA_DIRS (wired in deploy/
+# integration tests via DOMAIN_PACKS_EXTRA_DIRS (wired in Orion/
 # docker-compose.test.yaml), so it never ships in the production image and never
 # pollutes a normal `docker compose up`.
 #
@@ -15,7 +15,7 @@
 name: integration-fixtures
 version: 0.0.1
 namespace: test.fixtures
-description: "Reference data for Open Foundry integration tests (test-only)"
+description: "Reference data for Altius integration tests (test-only)"
 
 seed:
   - seeds/reference-data.yaml

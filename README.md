@@ -1,8 +1,8 @@
-# Open Foundry
+# Altius
 
 **An open-source ontology platform for building operational digital twins.**
 
-Open Foundry provides the semantic, kinetic, and security layers needed to turn commodity data infrastructure into a coherent, queryable, actionable model of a real-world system. The platform is domain-neutral -- domain-specific functionality is delivered through composable **Domain Packs**.
+Altius provides the semantic, kinetic, and security layers needed to turn commodity data infrastructure into a coherent, queryable, actionable model of a real-world system. The platform is domain-neutral -- domain-specific functionality is delivered through composable **Domain Packs**.
 
 > Apache 2.0 licensed. No proprietary dependencies. Schema-driven. Storage-agnostic.
 
@@ -42,7 +42,7 @@ Each layer communicates only with adjacent layers through defined interfaces. No
 - **REST API** -- Per-object-type read endpoints (list, get, `/links`, `/history`, `/aggregate`), governed actions via `POST /api/v1/actions/{Name}`, and object-set CRUD, all with consistent error shapes. The platform is action-oriented: objects are created and mutated through governed actions, not generic per-type create/update/delete.
 - **FHIR R4** -- Read-only Patient/Encounter endpoints with `GET /fhir/metadata` CapabilityStatement.
 - **FDP/CDM projection** -- Read-only view (REST `/api/v1/cdm/*` and GraphQL `cdmMetadata`/`cdmRecord`/`cdmRecords`/`cdmEncounters`) that maps the operational ontology to an NHS Federated Data Platform Canonical Data Model shape, with provenance preserved per record and a published gap register. Starter slice for the NHS pilot (see [`docs/cdm-mapping-profile.md`](docs/cdm-mapping-profile.md)).
-- **API contract artifacts** -- OpenAPI 3.0.3, GraphQL SDL, and AsyncAPI 2.6.0 generated from the merged schema (`pnpm --filter @openfoundry/api spec:all`); OpenAPI served live at `/api/v1/openapi.json` and all three attached to tagged releases. See [`docs/api-spec.md`](docs/api-spec.md).
+- **API contract artifacts** -- OpenAPI 3.0.3, GraphQL SDL, and AsyncAPI 2.6.0 generated from the merged schema (`pnpm --filter @altius/api spec:all`); OpenAPI served live at `/api/v1/openapi.json` and all three attached to tagged releases. See [`docs/api-spec.md`](docs/api-spec.md).
 - **WebSocket subscriptions** -- Real-time object change events via graphql-ws with per-connection limits (50 max).
 - **Query complexity gate** -- Rejects expensive queries before execution (depth 10, breadth 50, cost 1000).
 - **Introspection disabled in production** -- Schema exploration available only in development mode.
@@ -126,7 +126,7 @@ Primary (monorepo) packs take precedence on name conflicts. Malformed or missing
 
 ### NHS Acute Pilot
 
-The NHS Acute pack is the primary vertical slice, targeting patient flow through wards, beds, and consultants at an acute trust. The demo positions Open Foundry as an **FDP-compatible, trust-controlled ontology runtime** — not an NHS FDP instance or a PET replacement — that can ingest read-only source data, map a bounded operational ontology to a version-pinned FDP/CDM subset, and evidence flows under ReBAC, consent, and audit.
+The NHS Acute pack is the primary vertical slice, targeting patient flow through wards, beds, and consultants at an acute trust. The demo positions Altius as an **FDP-compatible, trust-controlled ontology runtime** — not an NHS FDP instance or a PET replacement — that can ingest read-only source data, map a bounded operational ontology to a version-pinned FDP/CDM subset, and evidence flows under ReBAC, consent, and audit.
 
 - Live ontology modelling patients, wards, beds, and consultants
 - Data ingestion from a PAS (Patient Administration System) via JDBC/CDC (read-only)
@@ -144,7 +144,7 @@ effects → audit), with a Direct-link panel demonstrating ReBAC denial, consent
 denial, and audited success. It uses only the public action API — no SPI
 shortcuts.
 
-Stage plan and conformance boundary: [`docs/fdp-plan.md`](docs/fdp-plan.md). Production deployment, OIDC/CIS2 claims, and action-pipeline footguns: [`deploy/README.md`](deploy/README.md).
+Stage plan and conformance boundary: [`docs/fdp-plan.md`](docs/fdp-plan.md). Production deployment, OIDC/CIS2 claims, and action-pipeline footguns: [`Orion/README.md`](Orion/README.md).
 
 ---
 
@@ -179,41 +179,41 @@ The monorepo contains 20 packages across four workspace roots:
 
 | Package | Purpose |
 |---------|---------|
-| `@openfoundry/spi` | Storage Provider Interface -- core type definitions |
-| `@openfoundry/odl` | ODL parser, validator, code generator, CLI |
-| `@openfoundry/engine` | Object lifecycle, links, computed fields, events, lineage |
-| `@openfoundry/actions` | Action execution pipeline, CEL integration, side-effects, tool registry |
-| `@openfoundry/api` | GraphQL (Apollo), REST, FHIR R4, WebSocket subscriptions, governance |
-| `@openfoundry/security` | OIDC auth, OpenFGA ReBAC, consent manager, audit trail |
-| `@openfoundry/storage-memory` | In-memory SPI implementation (tests and development) |
-| `@openfoundry/storage-postgres` | PostgreSQL 17 + Apache AGE SPI implementation |
-| `@openfoundry/sync` | JDBC connectors, Debezium CDC, overlay mode, conflict resolution |
-| `@openfoundry/observability` | OpenTelemetry traces, metrics, and structured logging |
-| `@openfoundry/sdk` | Auto-generated TypeScript client SDK |
+| `@altius/spi` | Storage Provider Interface -- core type definitions |
+| `@altius/odl` | ODL parser, validator, code generator, CLI |
+| `@altius/engine` | Object lifecycle, links, computed fields, events, lineage |
+| `@altius/actions` | Action execution pipeline, CEL integration, side-effects, tool registry |
+| `@altius/api` | GraphQL (Apollo), REST, FHIR R4, WebSocket subscriptions, governance |
+| `@altius/security` | OIDC auth, OpenFGA ReBAC, consent manager, audit trail |
+| `@altius/storage-memory` | In-memory SPI implementation (tests and development) |
+| `@altius/storage-postgres` | PostgreSQL 17 + Apache AGE SPI implementation |
+| `@altius/sync` | JDBC connectors, Debezium CDC, overlay mode, conflict resolution |
+| `@altius/observability` | OpenTelemetry traces, metrics, and structured logging |
+| `@altius/sdk` | Auto-generated TypeScript client SDK |
 | `cel-evaluator` | Go gRPC sidecar for CEL expression evaluation |
 
 ### Domain Packs (`domain-packs/`)
 
 | Pack | Namespace | Contents |
 |------|-----------|----------|
-| `@openfoundry/domain-pack-core` | `openfoundry.core` | Base interfaces, 6 custom scalars |
-| `@openfoundry/domain-pack-nhs-acute` | `nhs.acute` | 7 ODL schemas, 5 actions, 1 connector, permissions |
-| `@openfoundry/domain-pack-aml` | `aml` | 8 ODL schemas, 6 actions, 1 connector, permissions |
-| `@openfoundry/domain-pack-supply-chain` | `supply.chain` | 8 ODL schemas, 4 actions, 1 connector, permissions |
+| `@altius/domain-pack-core` | `altius.core` | Base interfaces, 6 custom scalars |
+| `@altius/domain-pack-nhs-acute` | `nhs.acute` | 7 ODL schemas, 5 actions, 1 connector, permissions |
+| `@altius/domain-pack-aml` | `aml` | 8 ODL schemas, 6 actions, 1 connector, permissions |
+| `@altius/domain-pack-supply-chain` | `supply.chain` | 8 ODL schemas, 4 actions, 1 connector, permissions |
 
 ### Tests (`tests/`)
 
 | Package | Purpose |
 |---------|---------|
-| `@openfoundry/spi-conformance` | Reusable SPI conformance suite (10 categories) |
-| `@openfoundry/pilot-scenarios` | NHS pilot scenario tests |
-| `@openfoundry/integration-tests` | Full Docker Compose stack integration — governed action pipeline over REST/GraphQL/FHIR, plus env-gated production-mode security, capability-gating, and consent-vocabulary E2E specs |
+| `@altius/spi-conformance` | Reusable SPI conformance suite (10 categories) |
+| `@altius/pilot-scenarios` | NHS pilot scenario tests |
+| `@altius/integration-tests` | Full Docker Compose stack integration — governed action pipeline over REST/GraphQL/FHIR, plus env-gated production-mode security, capability-gating, and consent-vocabulary E2E specs |
 
 ### Tools (`tools/`)
 
 | Package | Purpose |
 |---------|---------|
-| `@openfoundry/seed-nhs-acute` | Synthetic NHS data generator (CLI, JSON, SQL output) |
+| `@altius/seed-nhs-acute` | Synthetic NHS data generator (CLI, JSON, SQL output) |
 
 ---
 
@@ -249,13 +249,13 @@ pnpm run test:all
 ### Local Development Stack
 
 ```bash
-cd deploy
+cd Orion
 cp .env.example .env
 docker compose up -d
 ./init-services.sh
 ```
 
-This starts PostgreSQL+AGE, Redpanda (Kafka), Redis, Debezium CDC, Keycloak (OIDC), OpenFGA (ReBAC), OpenTelemetry Collector, and all Open Foundry services. See [`deploy/README.md`](deploy/README.md) for the full service table.
+This starts PostgreSQL+AGE, Redpanda (Kafka), Redis, Debezium CDC, Keycloak (OIDC), OpenFGA (ReBAC), OpenTelemetry Collector, and all Altius services. See [`Orion/README.md`](Orion/README.md) for the full service table.
 
 ### Try the API
 
@@ -269,8 +269,8 @@ Once the stack is running:
 ### Kubernetes Deployment
 
 ```bash
-helm install openfoundry deploy/helm/openfoundry \
-  --namespace openfoundry \
+helm install altius Orion/helm/altius \
+  --namespace altius \
   --create-namespace
 ```
 
@@ -354,19 +354,19 @@ enforcement are verified on every push and pull request.
 
 | Document | Description |
 |----------|-------------|
-| [`docs/open-foundry-spec-v2.md`](docs/open-foundry-spec-v2.md) | Full technical specification |
+| [`docs/altius-spec-v2.md`](docs/altius-spec-v2.md) | Full technical specification |
 | [`docs/mvp-nhs-pilot.md`](docs/mvp-nhs-pilot.md) | NHS pilot design document |
 | [`docs/fdp-plan.md`](docs/fdp-plan.md) | NHS FDP integration plan, conformance boundary, stage roadmap |
 | [`docs/cdm-mapping-profile.md`](docs/cdm-mapping-profile.md) | FDP/CDM compatibility profile (S1.0) and gap register |
 | [`docs/api-spec.md`](docs/api-spec.md) | API contract artifacts (OpenAPI / GraphQL / AsyncAPI) and codegen |
 | [`docs/external-domain-packs.md`](docs/external-domain-packs.md) | Loading domain packs from outside the monorepo |
-| [`deploy/README.md`](deploy/README.md) | Deployment quickstart, production mode, OIDC/CIS2, action-pipeline footguns |
+| [`Orion/README.md`](Orion/README.md) | Deployment quickstart, production mode, OIDC/CIS2, action-pipeline footguns |
 
 ---
 
 ## How This Was Built
 
-Open Foundry was built in two phases -- an automated scaffold phase followed by human-agent collaboration for expansion and hardening.
+Altius was built in two phases -- an automated scaffold phase followed by human-agent collaboration for expansion and hardening.
 
 ### Phase 1: Cardinal
 

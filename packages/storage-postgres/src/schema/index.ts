@@ -10,7 +10,7 @@
  * - Lineage (provenance) schema and tables
  */
 
-import type { OntologySchema } from '@openfoundry/spi';
+import type { OntologySchema } from '@altius/spi';
 import { generateObjectTableDDL } from './ddl-objects.js';
 import { generateLinkTableDDL } from './ddl-links.js';
 import { generateAllGraphDDL } from './ddl-graph.js';

@@ -2,9 +2,9 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: {{ include "openfoundry.fullname" . }}-api-gateway
+  name: {{ include "altius.fullname" . }}-api-gateway
   labels:
-    {{- include "openfoundry.labels" . | nindent 4 }}
+    {{- include "altius.labels" . | nindent 4 }}
     app.kubernetes.io/component: api-gateway
   annotations:
     {{/* HELM-10: Rate limiting annotations for DDoS protection */}}
@@ -44,7 +44,7 @@ spec:
             pathType: {{ .pathType }}
             backend:
               service:
-                name: {{ include "openfoundry.fullname" $ }}-api-gateway
+                name: {{ include "altius.fullname" $ }}-api-gateway
                 port:
                   name: http
           {{- end }}

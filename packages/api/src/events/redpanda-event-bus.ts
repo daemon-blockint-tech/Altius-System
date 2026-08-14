@@ -19,18 +19,18 @@
 import crypto from 'node:crypto';
 import { Kafka, logLevel as KafkaLogLevel } from 'kafkajs';
 import type { Producer, Consumer } from 'kafkajs';
-import type { CloudEvent } from '@openfoundry/spi';
+import type { CloudEvent } from '@altius/spi';
 import type { SubscribableEventBus } from '../subscriptions/index.js';
 import { logger } from '../logger.js';
 
 export interface RedpandaEventBusConfig {
   /** Broker addresses (e.g. ['redpanda:9092']). */
   brokers: string[];
-  /** Kafka topic for all CloudEvents. Default: 'openfoundry.events'. */
+  /** Kafka topic for all CloudEvents. Default: 'altius.events'. */
   topic?: string;
-  /** Dead-letter topic for failed publishes. Default: 'openfoundry.events.dlq'. */
+  /** Dead-letter topic for failed publishes. Default: 'altius.events.dlq'. */
   dlqTopic?: string;
-  /** Kafka client ID. Default: 'openfoundry-api'. */
+  /** Kafka client ID. Default: 'altius-api'. */
   clientId?: string;
   /**
    * Consumer group ID. Default: unique per pod.
@@ -50,11 +50,11 @@ export class RedpandaEventBus implements SubscribableEventBus {
   private connected = false;
 
   constructor(config: RedpandaEventBusConfig) {
-    this.topic = config.topic ?? 'openfoundry.events';
+    this.topic = config.topic ?? 'altius.events';
     this.dlqTopic = config.dlqTopic ?? `${this.topic}.dlq`;
 
     this.kafka = new Kafka({
-      clientId: config.clientId ?? 'openfoundry-api',
+      clientId: config.clientId ?? 'altius-api',
       brokers: config.brokers,
       logLevel: KafkaLogLevel.WARN,
       // Retry with backoff for transient broker failures
@@ -65,7 +65,7 @@ export class RedpandaEventBus implements SubscribableEventBus {
 
     // Unique group per pod: each pod gets ALL events (required for subscriptions)
     const groupId = config.groupId
-      ?? `openfoundry-api-${process.env['HOSTNAME'] ?? crypto.randomUUID()}`;
+      ?? `altius-api-${process.env['HOSTNAME'] ?? crypto.randomUUID()}`;
     this.consumer = this.kafka.consumer({ groupId });
   }
 

@@ -1,7 +1,7 @@
 export { createGraphQLServer, buildResolverContext } from './server.js';
 export type { GraphQLServerConfig, GraphQLServerInstance } from './server.js';
 export { generateResolvers } from './resolver-generator.js';
-export { createOpenFoundryError, wrapError } from './errors.js';
+export { createAltiusError, wrapError } from './errors.js';
 export {
   encodeCursor,
   decodeCursor,

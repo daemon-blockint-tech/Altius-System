@@ -13,8 +13,8 @@
  * a first admission succeed without a prior consent record / care relation.
  */
 
-import type { DataPurpose } from '@openfoundry/spi';
-import { STANDARD_DATA_PURPOSES } from '@openfoundry/spi';
+import type { DataPurpose } from '@altius/spi';
+import { STANDARD_DATA_PURPOSES } from '@altius/spi';
 import type { ApiDependencies, ResolverContext } from '../graphql/types.js';
 import { DEFAULT_CONSENT_PURPOSE } from '../graphql/types.js';
 import type { RestRoute, RestRequest, RestResponse } from '../rest/types.js';

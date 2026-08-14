@@ -2,7 +2,7 @@
  * ODL Schema Diff types.
  *
  * Represents structural differences between two ParsedSchema versions,
- * per Open Foundry spec Section 2.5.
+ * per Altius spec Section 2.5.
  */
 
 import type {

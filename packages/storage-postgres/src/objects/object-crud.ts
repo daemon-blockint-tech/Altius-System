@@ -16,8 +16,8 @@ import type {
   QueryOptions,
   ObjectPage,
   DateTime,
-} from '@openfoundry/spi';
-import { createLogger } from '@openfoundry/observability';
+} from '@altius/spi';
+import { createLogger } from '@altius/observability';
 import { snakeCase, pgIdent, fieldCol } from '../schema/type-mapping.js';
 
 const logger = createLogger('storage-postgres');
@@ -28,7 +28,7 @@ import { PgTransaction, resolveQueryable } from '../transactions/index.js';
 // Helpers
 // ---------------------------------------------------------------------------
 
-const GRAPH_NAME = 'openfoundry';
+const GRAPH_NAME = 'altius';
 
 /**
  * Sanitize a value for inclusion in an AGE Cypher string literal.

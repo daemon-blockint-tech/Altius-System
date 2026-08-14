@@ -7,9 +7,9 @@
  */
 
 import type { PubSub } from 'graphql-subscriptions';
-import type { CloudEvent } from '@openfoundry/spi';
-import type { ObjectEventData, LinkEventData } from '@openfoundry/engine';
-import type { EventBus } from '@openfoundry/engine';
+import type { CloudEvent } from '@altius/spi';
+import type { ObjectEventData, LinkEventData } from '@altius/engine';
+import type { EventBus } from '@altius/engine';
 import type { AuthenticatedUserInfo, ResolverContext } from '../graphql/types.js';
 import { lowerFirst, toSnakeCase } from '../utils.js';
 import { logger } from '../logger.js';
@@ -43,15 +43,15 @@ export type ConnectionAuthenticator = (
 // ─── CloudEvent to ChangeEvent mapping ───
 
 const OBJECT_EVENT_CHANGE_MAP: Record<string, ChangeEvent['changeType']> = {
-  'openfoundry.object.created': 'CREATED',
-  'openfoundry.object.updated': 'UPDATED',
-  'openfoundry.object.deleted': 'DELETED',
+  'altius.object.created': 'CREATED',
+  'altius.object.updated': 'UPDATED',
+  'altius.object.deleted': 'DELETED',
 };
 
 const LINK_EVENT_TYPES: Set<string> = new Set([
-  'openfoundry.link.created',
-  'openfoundry.link.updated',
-  'openfoundry.link.deleted',
+  'altius.link.created',
+  'altius.link.updated',
+  'altius.link.deleted',
 ]);
 
 /**

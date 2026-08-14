@@ -1,6 +1,6 @@
 # API Specification Artifacts
 
-Open Foundry publishes three machine-readable API contracts. These are generated
+Altius publishes three machine-readable API contracts. These are generated
 from the merged schema at build time and attached to every GitHub release.
 
 ## Artifacts
@@ -14,7 +14,7 @@ from the merged schema at build time and attached to every GitHub release.
 ## Where to Find Them
 
 - **Release assets** — attached to every `v*` tagged release on GitHub
-- **Local generation** — `pnpm --filter @openfoundry/api spec:all` writes all three to `packages/api/spec/`
+- **Local generation** — `pnpm --filter @altius/api spec:all` writes all three to `packages/api/spec/`
 - **Live endpoint** — `GET /api/v1/openapi.json` returns the OpenAPI spec from the running server
 
 ## Generating Specs Locally
@@ -24,12 +24,12 @@ from the merged schema at build time and attached to every GitHub release.
 pnpm run build
 
 # Generate all three
-pnpm --filter @openfoundry/api spec:all
+pnpm --filter @altius/api spec:all
 
 # Or individually
-pnpm --filter @openfoundry/api spec:openapi spec/openapi.yaml
-pnpm --filter @openfoundry/api spec:graphql spec/schema.graphql
-pnpm --filter @openfoundry/api spec:asyncapi spec/asyncapi.yaml
+pnpm --filter @altius/api spec:openapi spec/openapi.yaml
+pnpm --filter @altius/api spec:graphql spec/schema.graphql
+pnpm --filter @altius/api spec:asyncapi spec/asyncapi.yaml
 ```
 
 The specs reflect whichever domain packs are configured via `DOMAIN_PACKS_DIR`,
@@ -37,7 +37,7 @@ The specs reflect whichever domain packs are configured via `DOMAIN_PACKS_DIR`,
 combination:
 
 ```bash
-DOMAIN_PACKS=core,nhs-acute pnpm --filter @openfoundry/api spec:all
+DOMAIN_PACKS=core,nhs-acute pnpm --filter @altius/api spec:all
 ```
 
 ## Pack Composition
@@ -58,7 +58,7 @@ openapi-generator-cli generate \
   -i openapi.yaml \
   -g python \
   -o ./generated/python \
-  --additional-properties=packageName=openfoundry
+  --additional-properties=packageName=altius
 ```
 
 ### Rust (progenitor / openapi-generator)
@@ -109,7 +109,7 @@ The spec round-trip test (`src/__tests__/spec-roundtrip.test.ts`) validates:
 Run the validation:
 
 ```bash
-pnpm --filter @openfoundry/api test spec-roundtrip
+pnpm --filter @altius/api test spec-roundtrip
 ```
 
 ## CI Release Workflow

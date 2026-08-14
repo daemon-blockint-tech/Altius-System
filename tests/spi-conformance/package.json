@@ -1,5 +1,5 @@
 {
-  "name": "@openfoundry/spi-conformance",
+  "name": "@altius/spi-conformance",
   "version": "0.0.1",
   "description": "SPI conformance test suite - provider-agnostic verification",
   "type": "module",
@@ -21,10 +21,10 @@
   "files": ["dist"],
   "license": "Apache-2.0",
   "dependencies": {
-    "@openfoundry/spi": "workspace:*"
+    "@altius/spi": "workspace:*"
   },
   "devDependencies": {
-    "@openfoundry/storage-memory": "workspace:*",
+    "@altius/storage-memory": "workspace:*",
     "vitest": "^3.0.0"
   }
 }

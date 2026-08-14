@@ -21,7 +21,7 @@ import {
   serializeVariables,
 } from '../serializer.js';
 import type { ProtobufValue } from '../serializer.js';
-import type { OntologyObject } from '@openfoundry/spi';
+import type { OntologyObject } from '@altius/spi';
 
 // ---------------------------------------------------------------------------
 // Proto path

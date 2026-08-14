@@ -2,13 +2,13 @@
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
-  name: {{ include "openfoundry.fullname" . }}-action-executor
+  name: {{ include "altius.fullname" . }}-action-executor
   labels:
-    {{- include "openfoundry.labels" . | nindent 4 }}
+    {{- include "altius.labels" . | nindent 4 }}
     app.kubernetes.io/component: action-executor
 spec:
   minAvailable: {{ .Values.actionExecutor.pdb.minAvailable | default 1 }}
   selector:
     matchLabels:
-      {{- include "openfoundry.selectorLabels" (dict "name" "action-executor" "release" .Release.Name) | nindent 6 }}
+      {{- include "altius.selectorLabels" (dict "name" "action-executor" "release" .Release.Name) | nindent 6 }}
 {{- end }}

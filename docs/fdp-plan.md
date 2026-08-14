@@ -1,4 +1,4 @@
-# Open Foundry → NHS FDP Integration Plan
+# Altius → NHS FDP Integration Plan
 
 **Status.** This is v3, incorporating the v2 audit-hardening corrections: pinned repo baseline, sharper CDM conformance method, explicit PET non-claim boundary, supplier/deployer clinical-safety responsibility split, named hosting-topology decision record, service-management/incident artefacts, a pilot-mode matrix that separates real-data-read-only from synthetic-action operation, and explicit non-goals. The strategic frame and component structure are unchanged from v2; this revision is about audit precision rather than scope.
 
@@ -6,7 +6,7 @@
 
 ## Conformance boundary (read this first)
 
-Stage 1 does not claim to be an NHS FDP instance, a PET replacement, or a production clinical system. It claims to be an **FDP-compatible, trust-controlled Open Foundry runtime** that can: ingest one source read-only; map a bounded operational ontology to a version-pinned FDP/CDM subset; register and evidence data flows; enforce ReBAC, markings, consent, audit-on-read, and export controls; support sandboxed operational actions without write-back to the clinical system of record; and produce the assurance evidence needed for IG, Caldicott, and clinical-safety review.
+Stage 1 does not claim to be an NHS FDP instance, a PET replacement, or a production clinical system. It claims to be an **FDP-compatible, trust-controlled Altius runtime** that can: ingest one source read-only; map a bounded operational ontology to a version-pinned FDP/CDM subset; register and evidence data flows; enforce ReBAC, markings, consent, audit-on-read, and export controls; support sandboxed operational actions without write-back to the clinical system of record; and produce the assurance evidence needed for IG, Caldicott, and clinical-safety review.
 
 Everything below sits inside that boundary.
 
@@ -23,7 +23,7 @@ To make the pilot approvable, the following are out of scope for Stage 1:
 - No claim of being an NHS-PET replacement or NHS-PET certified service.
 - No multi-trust federation.
 - No real-time operational dependency in live bed management — the trust's existing systems remain the operational source of truth during the pilot.
-- No reliance on tagged Open Foundry releases that do not yet exist.
+- No reliance on tagged Altius releases that do not yet exist.
 
 These non-goals are visible in the IG submission, not hidden in a backlog.
 
@@ -31,10 +31,10 @@ These non-goals are visible in the IG submission, not hidden in a backlog.
 
 ## Section 0 — Repo baseline, pinned
 
-This plan is grounded against a specific commit of `syzygyhack/open-foundry`. The OF team should fill in the SHA and verification date before submission to the pilot trust.
+This plan is grounded against a specific commit of `syzygyhack/altius`. The OF team should fill in the SHA and verification date before submission to the pilot trust.
 
 ```text
-Baseline source:           github.com/syzygyhack/open-foundry
+Baseline source:           github.com/syzygyhack/altius
 Commit SHA:                <fill in: full SHA>
 Verification date:         <fill in: YYYY-MM-DD>
 Release state:             no tagged release at verification date
@@ -75,7 +75,7 @@ Local results (verified 2026-05-25):
   SPI conformance:           PASS (tests/spi-conformance, 10 categories)
   Postgres integration:      PASS — against apache/age:release_PG17_1.6.0 with the
                              documented init (CREATE EXTENSION age +
-                             create_graph('openfoundry')) and PG_TEST_URL set.
+                             create_graph('altius')) and PG_TEST_URL set.
                              The earlier 28 ad-hoc failures were (1) a missing AGE
                              graph and (2) two test fixtures that under-modelled the
                              ODL link 'id' column — both fixed; not product bugs.
@@ -84,8 +84,8 @@ Local results (verified 2026-05-25):
                              integration suite passes against the live
                              stack (apache/age PG17), idempotent across fresh
                              reruns. Run with the test override:
-                             `docker compose -f deploy/docker-compose.yaml
-                             -f deploy/docker-compose.test.yaml up -d --wait`
+                             `docker compose -f Orion/docker-compose.yaml
+                             -f Orion/docker-compose.test.yaml up -d --wait`
                              then `pnpm run test:integration`. The override
                              loads a test-only reference-data seed pack
                              (tests/integration/fixtures/seed-pack) via
@@ -162,13 +162,13 @@ Stage 1 is built around what is missing in this table.
 
 ### Goal
 
-A named acute trust can deploy Open Foundry in a non-production environment, ingest **read-only** real data from at least one source system, model the relevant slice in the ontology **mapped to a version-pinned FDP/CDM subset**, allow CIS2-authenticated clinicians to perform operational actions inside Open Foundry (with **no write-back to clinical systems of record**), see those actions audited under registered data flows with PET-compatible treatment policies, and have the trust's IG lead, Caldicott Guardian, and Clinical Safety Officer sign off the supporting DPIA, manufacturer-side DCB0129 evidence, and DSPT-aligned assurance pack.
+A named acute trust can deploy Altius in a non-production environment, ingest **read-only** real data from at least one source system, model the relevant slice in the ontology **mapped to a version-pinned FDP/CDM subset**, allow CIS2-authenticated clinicians to perform operational actions inside Altius (with **no write-back to clinical systems of record**), see those actions audited under registered data flows with PET-compatible treatment policies, and have the trust's IG lead, Caldicott Guardian, and Clinical Safety Officer sign off the supporting DPIA, manufacturer-side DCB0129 evidence, and DSPT-aligned assurance pack.
 
 The bar is **"credible FDP-compatible pilot at one trust, defensible to a Caldicott Guardian"** — not "production-ready across England" and not "rebuilds FDP from scratch."
 
 ### Stage 1 hosting topology — decision record
 
-The Open Foundry team and the pilot trust must jointly decide and document one of:
+The Altius team and the pilot trust must jointly decide and document one of:
 
 ```text
 Option A — Trust-controlled cloud tenant
@@ -186,9 +186,9 @@ Option B — Trust on-prem / private cloud
   Cons: slower provisioning, depends on trust k8s maturity
 
 Option C — Supplier-managed pilot environment
-  Open Foundry team hosts; trust governs as controller via contracted processor model
+  Altius team hosts; trust governs as controller via contracted processor model
   Controller: trust
-  Processor: Open Foundry team / hosting partner
+  Processor: Altius team / hosting partner
   Pros: fastest path to demo
   Cons: weakens "trust-controlled" claim; needs explicit processor agreement and DPIA covering it
 ```
@@ -208,7 +208,7 @@ Mode A — Real source data, read-only
   Approval:  IG lead
 
 Mode B — Synthetic mirrored data, actions enabled
-  Inputs:    synthetic data generated from the @openfoundry/seed-nhs-acute tool, shaped to mirror trust workflows
+  Inputs:    synthetic data generated from the @altius/seed-nhs-acute tool, shaped to mirror trust workflows
   Actions:   enabled (admit, discharge, transfer, break-glass)
   Users:     named clinicians, bed managers, site managers
   Purpose:   prove the operational workflow, clinical-safety review, app usability
@@ -222,17 +222,17 @@ Mode C — De-identified or pseudonymised data, actions enabled
   Approval:  Caldicott Guardian + IG lead + CSO; usually a Stage 1b, not initial Stage 1
 ```
 
-Clinicians never "admit" real patients inside Open Foundry in Stage 1 unless the trust separately approves a Mode C extension. The audit log carries the active mode label on every record.
+Clinicians never "admit" real patients inside Altius in Stage 1 unless the trust separately approves a Mode C extension. The audit log carries the active mode label on every record.
 
 ### Stage 1 component plan
 
 #### S1.0 — FDP/CDM compatibility profile
 
-**Scope.** Make Open Foundry's ODL ontology demonstrably mappable to the NHS FDP Canonical Data Model for the operational subset in scope: Patient, Ward, Bed, Admission, Discharge, Transfer, Staff, Encounter. The CDM is the single most important interoperability artefact in FDP and is currently a draft-in-progress NHS England standard (DAPB4121) intended to standardise data structures across NHS England; the FDP CDM is the form used inside FDP today. Without an explicit mapping profile, Open Foundry cannot present as FDP-integrable.
+**Scope.** Make Altius's ODL ontology demonstrably mappable to the NHS FDP Canonical Data Model for the operational subset in scope: Patient, Ward, Bed, Admission, Discharge, Transfer, Staff, Encounter. The CDM is the single most important interoperability artefact in FDP and is currently a draft-in-progress NHS England standard (DAPB4121) intended to standardise data structures across NHS England; the FDP CDM is the form used inside FDP today. Without an explicit mapping profile, Altius cannot present as FDP-integrable.
 
 **Status — starter slice implemented.** A first vertical slice ships now:
 
-- Declarative mapping profile: `packages/api/src/cdm/profile.ts` (`@openfoundry/api`).
+- Declarative mapping profile: `packages/api/src/cdm/profile.ts` (`@altius/api`).
 - Provenance-preserving projection: `packages/api/src/cdm/mappers.ts` — every record carries a `_provenance` envelope (source type/version/timestamp + lossy fields).
 - Read API at `/api/v1/cdm/*`: public `metadata` (profile + compatibility matrix + gap register), authenticated per-resource list/by-id projections, and Encounter-by-patient (via `AdmittedTo`). Reuses the FHIR/GraphQL auth + redaction + consent pipeline.
 - Human-readable canonical mapping document: `docs/cdm-mapping-profile.md`.
@@ -250,7 +250,7 @@ layer (§S1.2) and full CDM coverage (§S2.2).
 **Deliverables.**
 
 - ODL ↔ FDP/CDM mapping profile for the Stage 1 operational subset, expressed as ODL directives plus a separate human-readable canonical mapping document. *(Done — declarative profile + `docs/cdm-mapping-profile.md`.)*
-- Provenance-preserving transform pipeline: source system → Open Foundry ontology → CDM-shaped export view, with lineage retained end-to-end. *(Done — projection preserves `_provenance`.)*
+- Provenance-preserving transform pipeline: source system → Altius ontology → CDM-shaped export view, with lineage retained end-to-end. *(Done — projection preserves `_provenance`.)*
 - A read API that emits ontology contents in the CDM shape (initially as a GraphQL view + REST projection; later a dataset export). *(Done — REST projection + GraphQL view + NDJSON/CSV dataset export, all capability-gated.)*
 - A versioned **CDM compatibility matrix**: which OF version targets which CDM revision, including the DAPB4121 status at the time of cut. *(Done — in profile + mapping doc.)*
 - Documented gap register: where ODL semantics and CDM semantics differ, where mappings are lossy, what the safe fallback is. *(Done — 5 entries.)*
@@ -261,7 +261,7 @@ layer (§S1.2) and full CDM coverage (§S2.2).
 Conformance test inputs:
   - Version-pinned public CDM schema / OpenAPI / glossary artefacts where available
     (DAPB4121 NHS England standard page; FDP CDM public artefacts as they are published)
-  - Synthetic patient / ward / bed / admission records generated from @openfoundry/seed-nhs-acute
+  - Synthetic patient / ward / bed / admission records generated from @altius/seed-nhs-acute
     and any pilot-specific extension fixtures
   - Local extension fixtures for trust-specific fields that fall outside the canonical subset
   - Negative fixtures: lossy mappings, invalid terminology, missing provenance, malformed identifiers
@@ -281,7 +281,7 @@ Where the public CDM artefact is unstable (DAPB4121 is currently draft in progre
 
 ---
 
-#### S1.1 — Ontology Manager UI (`@openfoundry/ontology-manager`)
+#### S1.1 — Ontology Manager UI (`@altius/ontology-manager`)
 
 **Scope.** Read-mostly UI: tree/graph view of object and link types, field-level directive display, workspace diff, schema version history.
 
@@ -318,7 +318,7 @@ Where the public CDM artefact is unstable (DAPB4121 is currently draft in progre
 
 ---
 
-#### S1.3 — Object Views generator (`@openfoundry/object-views`)
+#### S1.3 — Object Views generator (`@altius/object-views`)
 
 **Scope.** Generated default UI per ObjectType, configurable via `*.view.yaml`, rendered through the existing web console.
 
@@ -331,7 +331,7 @@ Where the public CDM artefact is unstable (DAPB4121 is currently draft in progre
 
 ---
 
-#### S1.4 — Bed Management reference app (`@openfoundry/app-bed-manager`)
+#### S1.4 — Bed Management reference app (`@altius/app-bed-manager`)
 
 **Status — precursor built (Nightingale, `../nightingale`).** A working reference
 app exists and runs in **Pilot Mode B** (synthetic data, real governed actions)
@@ -353,8 +353,8 @@ edge cases below.
 
 **Updates.**
 
-- All actions write to Open Foundry's ontology and audit only. **No write-back to PAS/EPR.**
-- A "source of truth" banner: the clinical system of record remains the trust's PAS/EPR; Open Foundry shows a coordinated operational view.
+- All actions write to Altius's ontology and audit only. **No write-back to PAS/EPR.**
+- A "source of truth" banner: the clinical system of record remains the trust's PAS/EPR; Altius shows a coordinated operational view.
 - Re-uses the Object Views generator for non-bed-specific inspection (patient detail, ward detail).
 - All actions go through the existing Action API — no shortcuts to the SPI.
 
@@ -378,12 +378,12 @@ This is the v2 expansion that v3 keeps intact, plus a **PET non-claim boundary**
 **PET non-claim boundary (sharpened).**
 
 ```text
-Open Foundry's Stage 1 IG layer does NOT claim:
+Altius's Stage 1 IG layer does NOT claim:
   - to be NHS-PET
   - to be an NHS-PET certified service
   - to be a drop-in PET replacement
 
-Open Foundry's Stage 1 IG layer DOES claim:
+Altius's Stage 1 IG layer DOES claim:
   - PET-compatible architecture:
       * data-flow registration as a first-class object
       * treatment-policy hooks behind a documented SPI
@@ -400,7 +400,7 @@ Open Foundry's Stage 1 IG layer DOES claim:
 
 ---
 
-#### S1.6 — Sandboxed AI layer (`@openfoundry/aip-*`)
+#### S1.6 — Sandboxed AI layer (`@altius/aip-*`)
 
 **Scope.** Tightly bounded sandbox, **read-only by default**. The differentiator narrative remains, but AI is no longer the gating risk for IG sign-off.
 
@@ -470,7 +470,7 @@ These items are unglamorous, but they are routinely where trust approval stalls.
 
 Cross-cutting throughout Stage 1, not at the end. Reviewed continuously by the pilot trust's IG lead, Caldicott Guardian, and Clinical Safety Officer.
 
-**Open Foundry produces (supplier / manufacturer side).**
+**Altius produces (supplier / manufacturer side).**
 
 - DCB0129 clinical safety case report.
 - Manufacturer hazard log (including hazards introduced by each AI function in S1.6).
@@ -503,7 +503,7 @@ The pilot trust signs off on **all** of the following:
 
 1. IG lead has reviewed the DPIA, data-flow register, marking enforcement, audit, and ReBAC for non-production data, and is satisfied.
 2. Caldicott Guardian has reviewed the need-to-know controls (markings + ReBAC + audit-on-read) and is satisfied for the declared purposes.
-3. Clinical Safety Officer has signed off the trust's DCB0160 deployment safety case, with Open Foundry's DCB0129 manufacturer evidence pack as input.
+3. Clinical Safety Officer has signed off the trust's DCB0160 deployment safety case, with Altius's DCB0129 manufacturer evidence pack as input.
 4. One source system is ingested **read-only** with reconciliation, lag metrics, and patient-merge handling validated.
 5. The ontology subset (Patient, Ward, Bed, Admission, Discharge, Transfer, Staff, Encounter) is demonstrably mapped to the FDP/CDM subset at the version pinned in the S1.0 compatibility matrix, with the gap register reviewed.
 6. Named users authenticate via CIS2 sandbox (or trust OIDC equivalent if CIS2 access is delayed).
@@ -549,7 +549,7 @@ The difference between these ranges is not code — it is CIS2 sandbox access ti
 
 ### Goal
 
-Open Foundry credibly competes for FDP successor opportunities. Multi-trust federation works under signed DSAs. The full AI surface is competitive with AIP. Non-developers can build apps. The platform is operable at significant scale by an entity other than the original author.
+Altius credibly competes for FDP successor opportunities. Multi-trust federation works under signed DSAs. The full AI surface is competitive with AIP. Non-developers can build apps. The platform is operable at significant scale by an entity other than the original author.
 
 ### Ordering (corrected from v1, retained from v2)
 
@@ -654,11 +654,11 @@ The corollary: engineering and pilot engagement must run in lockstep. Pilot-trus
 | Stage 2 ordering | Federation + full CDM first, then governance, then platform completion |
 | Realistic timeline | 12–18 months for trust-signed Stage 1; ~32–38 months end-to-end |
 
-The plan is positioned as **the credible open, trust-controlled, FDP-interoperable ontology runtime that exists today and can compete for successor work tomorrow** — leveraging the substantial baseline already in `syzygyhack/open-foundry`, with the precision needed to be defensible to an IG lead, a Caldicott Guardian, and a Clinical Safety Officer.
+The plan is positioned as **the credible open, trust-controlled, FDP-interoperable ontology runtime that exists today and can compete for successor work tomorrow** — leveraging the substantial baseline already in `syzygyhack/altius`, with the precision needed to be defensible to an IG lead, a Caldicott Guardian, and a Clinical Safety Officer.
 
 ---
 
-## Appendix A — Items the Open Foundry team must fill in before submission
+## Appendix A — Items the Altius team must fill in before submission
 
 ```text
 1. Commit SHA and verification date for Section 0.

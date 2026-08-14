@@ -7,7 +7,7 @@
  */
 
 import http from 'node:http';
-import { createLogger } from '@openfoundry/observability';
+import { createLogger } from '@altius/observability';
 
 const logger = createLogger('security-service');
 const PORT = parseInt(process.env['PORT'] ?? '4004', 10);

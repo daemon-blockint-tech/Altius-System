@@ -8,7 +8,7 @@
  * - Composite unique constraint on (_tenant_id, _id)
  */
 
-import type { ObjectTypeDefinition, PropertyDefinition, IndexDefinition } from '@openfoundry/spi';
+import type { ObjectTypeDefinition, PropertyDefinition, IndexDefinition } from '@altius/spi';
 import { pgType, pgIdent, snakeCase } from './type-mapping.js';
 
 /** System columns present on every object table. */

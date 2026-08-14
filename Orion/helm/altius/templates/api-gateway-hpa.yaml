@@ -2,15 +2,15 @@
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: {{ include "openfoundry.fullname" . }}-api-gateway
+  name: {{ include "altius.fullname" . }}-api-gateway
   labels:
-    {{- include "openfoundry.labels" . | nindent 4 }}
+    {{- include "altius.labels" . | nindent 4 }}
     app.kubernetes.io/component: api-gateway
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: {{ include "openfoundry.fullname" . }}-api-gateway
+    name: {{ include "altius.fullname" . }}-api-gateway
   minReplicas: {{ .Values.apiGateway.autoscaling.minReplicas }}
   maxReplicas: {{ .Values.apiGateway.autoscaling.maxReplicas }}
   metrics:

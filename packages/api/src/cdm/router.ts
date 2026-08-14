@@ -1,11 +1,11 @@
 /**
  * FDP/CDM read-only projection router (Stage 1 item S1.0).
  *
- * Emits the Open Foundry operational ontology in CDM shape, driven by the
+ * Emits the Altius operational ontology in CDM shape, driven by the
  * mapping profile. Read-only; passes through the same auth / redaction /
  * consent pipeline as the FHIR and GraphQL layers.
  *
- * Endpoints (addressed by Open Foundry source type for unambiguous routing;
+ * Endpoints (addressed by Altius source type for unambiguous routing;
  * each record's `resourceType` carries the CDM resource name):
  *   GET /api/v1/cdm/metadata                  → profile + compatibility matrix + gap register
  *   GET /api/v1/cdm/{SourceType}              → list projection (object-kind)
@@ -14,8 +14,8 @@
  *   GET /api/v1/cdm/Encounter?patient={id}    → admission projection (link-kind, via AdmittedTo)
  */
 
-import type { FilterExpression, FieldPredicate } from '@openfoundry/spi';
-import { DataPurpose } from '@openfoundry/spi';
+import type { FilterExpression, FieldPredicate } from '@altius/spi';
+import { DataPurpose } from '@altius/spi';
 import type { ApiDependencies, AuthenticatedUserInfo } from '../graphql/types.js';
 import { logger } from '../logger.js';
 import { toSnakeCase } from '../utils.js';

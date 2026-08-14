@@ -30,7 +30,7 @@ export async function initTelemetry(serviceName?: string): Promise<void> {
 
   const endpoint = process.env["OTEL_EXPORTER_OTLP_ENDPOINT"];
   const name =
-    serviceName ?? process.env["OTEL_SERVICE_NAME"] ?? "openfoundry";
+    serviceName ?? process.env["OTEL_SERVICE_NAME"] ?? "altius";
 
   // Set OTEL_SERVICE_NAME for the SDK resource detector
   process.env["OTEL_SERVICE_NAME"] = name;

@@ -9,12 +9,12 @@
  * - Factory functions for actors, contexts, and objects
  */
 
-import type { ParsedSchema } from '@openfoundry/odl';
+import type { ParsedSchema } from '@altius/odl';
 import type {
   OntologySchema,
   RequestContext,
   AuditRecord,
-} from '@openfoundry/spi';
+} from '@altius/spi';
 
 import type {
   ActionActor,
@@ -25,7 +25,7 @@ import type {
   AuditWriter,
   ActionEventPublisher,
   SideEffectHandler,
-} from '@openfoundry/actions';
+} from '@altius/actions';
 
 // ---------------------------------------------------------------------------
 // NHS ODL Schema

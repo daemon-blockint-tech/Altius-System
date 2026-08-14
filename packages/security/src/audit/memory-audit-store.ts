@@ -6,7 +6,7 @@
  * production deployments should use the PostgreSQL implementation.
  */
 
-import type { AuditRecord } from "@openfoundry/spi";
+import type { AuditRecord } from "@altius/spi";
 import type { AuditStore, AuditQueryFilter } from "./types.js";
 
 export class MemoryAuditStore implements AuditStore {

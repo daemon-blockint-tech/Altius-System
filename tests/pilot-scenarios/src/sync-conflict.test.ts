@@ -14,8 +14,8 @@ import {
   type ConflictEventData,
   type IncomingValue,
   type ExistingValue,
-} from '@openfoundry/sync';
-import type { DateTime } from '@openfoundry/spi';
+} from '@altius/sync';
+import type { DateTime } from '@altius/spi';
 
 // ---------------------------------------------------------------------------
 // Setup

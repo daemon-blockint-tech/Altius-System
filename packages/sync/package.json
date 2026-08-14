@@ -1,8 +1,8 @@
 {
-  "name": "@openfoundry/sync",
+  "name": "@altius/sync",
   "version": "0.0.1",
   "private": true,
-  "description": "Open Foundry Sync Engine - connector interface and source connectors",
+  "description": "Altius Sync Engine - connector interface and source connectors",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -19,8 +19,8 @@
     "clean": "rm -rf dist coverage"
   },
   "dependencies": {
-    "@openfoundry/observability": "workspace:*",
-    "@openfoundry/spi": "workspace:*",
+    "@altius/observability": "workspace:*",
+    "@altius/spi": "workspace:*",
     "pg": "^8.13.0",
     "yaml": "^2.8.2"
   },

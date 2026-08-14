@@ -12,10 +12,10 @@
  */
 
 import type { Pool } from 'pg';
-import type { AuditRecord, AuditActor, AuditOperation, AuditDetail } from '@openfoundry/spi';
+import type { AuditRecord, AuditActor, AuditOperation, AuditDetail } from '@altius/spi';
 
 // ---------------------------------------------------------------------------
-// Filter type (structurally compatible with @openfoundry/security AuditQueryFilter)
+// Filter type (structurally compatible with @altius/security AuditQueryFilter)
 // ---------------------------------------------------------------------------
 
 export interface AuditQueryFilter {

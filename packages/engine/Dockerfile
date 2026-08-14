@@ -12,7 +12,7 @@ COPY tests/ tests/
 COPY tools/ tools/
 
 RUN pnpm install --frozen-lockfile
-RUN pnpm turbo build --filter=@openfoundry/engine...
+RUN pnpm turbo build --filter=@altius/engine...
 
 FROM node:20-alpine
 

@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import type { OntologySchema, ObjectTypeDefinition, LinkTypeDefinition } from '@openfoundry/spi';
+import type { OntologySchema, ObjectTypeDefinition, LinkTypeDefinition } from '@altius/spi';
 import {
   generateDDL,
   generateObjectTableDDL,
@@ -283,24 +283,24 @@ describe('generateAllGraphDDL', () => {
     expect(ddl[0]).toBe("CREATE EXTENSION IF NOT EXISTS age;");
     expect(ddl[1]).toBe("LOAD 'age';");
     expect(ddl[2]).toContain('search_path');
-    expect(ddl[3]).toContain("create_graph('openfoundry')");
+    expect(ddl[3]).toContain("create_graph('altius')");
   });
 
   it('creates node labels for each ObjectType', () => {
     const ddl = generateAllGraphDDL(nhsSchema.objectTypes, nhsSchema.linkTypes);
     const allDDL = ddl.join('\n');
 
-    expect(allDDL).toContain("create_vlabel('openfoundry', 'Patient')");
-    expect(allDDL).toContain("create_vlabel('openfoundry', 'Encounter')");
-    expect(allDDL).toContain("create_vlabel('openfoundry', 'Ward')");
+    expect(allDDL).toContain("create_vlabel('altius', 'Patient')");
+    expect(allDDL).toContain("create_vlabel('altius', 'Encounter')");
+    expect(allDDL).toContain("create_vlabel('altius', 'Ward')");
   });
 
   it('creates edge labels for each LinkType', () => {
     const ddl = generateAllGraphDDL(nhsSchema.objectTypes, nhsSchema.linkTypes);
     const allDDL = ddl.join('\n');
 
-    expect(allDDL).toContain("create_elabel('openfoundry', 'PatientEncounter')");
-    expect(allDDL).toContain("create_elabel('openfoundry', 'EncounterWard')");
+    expect(allDDL).toContain("create_elabel('altius', 'PatientEncounter')");
+    expect(allDDL).toContain("create_elabel('altius', 'EncounterWard')");
   });
 
   it('AGE labels match ObjectTypes and LinkTypes exactly', () => {
@@ -315,12 +315,12 @@ describe('generateAllGraphDDL', () => {
 
     // Each ObjectType name must appear as a vlabel
     for (const ot of nhsSchema.objectTypes) {
-      expect(ddl.some(s => s.includes(`create_vlabel('openfoundry', '${ot.name}')`))).toBe(true);
+      expect(ddl.some(s => s.includes(`create_vlabel('altius', '${ot.name}')`))).toBe(true);
     }
 
     // Each LinkType name must appear as an elabel
     for (const lt of nhsSchema.linkTypes) {
-      expect(ddl.some(s => s.includes(`create_elabel('openfoundry', '${lt.name}')`))).toBe(true);
+      expect(ddl.some(s => s.includes(`create_elabel('altius', '${lt.name}')`))).toBe(true);
     }
   });
 });

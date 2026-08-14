@@ -1,26 +1,26 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "openfoundry.fullname" . }}-sync-engine
+  name: {{ include "altius.fullname" . }}-sync-engine
   labels:
-    {{- include "openfoundry.labels" . | nindent 4 }}
+    {{- include "altius.labels" . | nindent 4 }}
     app.kubernetes.io/component: sync-engine
 spec:
   replicas: {{ .Values.syncEngine.replicaCount }}
   selector:
     matchLabels:
-      {{- include "openfoundry.selectorLabels" (dict "name" "sync-engine" "release" .Release.Name) | nindent 6 }}
+      {{- include "altius.selectorLabels" (dict "name" "sync-engine" "release" .Release.Name) | nindent 6 }}
   template:
     metadata:
       labels:
-        {{- include "openfoundry.selectorLabels" (dict "name" "sync-engine" "release" .Release.Name) | nindent 8 }}
+        {{- include "altius.selectorLabels" (dict "name" "sync-engine" "release" .Release.Name) | nindent 8 }}
         app.kubernetes.io/component: sync-engine
     spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      serviceAccountName: {{ include "openfoundry.serviceAccountName" . }}
+      serviceAccountName: {{ include "altius.serviceAccountName" . }}
       {{/* HELM-07: Security context for all pods */}}
       securityContext:
         runAsNonRoot: true
@@ -28,7 +28,7 @@ spec:
         fsGroup: 1000
       containers:
         - name: sync-engine
-          image: {{ include "openfoundry.image" (dict "global" .Values.image "svc" .Values.syncEngine.image "name" "sync") }}
+          image: {{ include "altius.image" (dict "global" .Values.image "svc" .Values.syncEngine.image "name" "sync") }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           {{/* HELM-07: Container security context */}}
           securityContext:
@@ -59,7 +59,7 @@ spec:
                   name: {{ .Values.storage.postgres.existingSecret }}
                   key: {{ .Values.storage.postgres.secretKeys.password }}
             - name: POSTGRES_URL
-              value: {{ include "openfoundry.postgresUrl" . | quote }}
+              value: {{ include "altius.postgresUrl" . | quote }}
             {{- if .Values.sync.pas.existingSecret }}
             - name: PAS_DB_URL
               valueFrom:
@@ -72,7 +72,7 @@ spec:
             {{- end }}
           envFrom:
             - configMapRef:
-                name: {{ include "openfoundry.fullname" . }}-config
+                name: {{ include "altius.fullname" . }}-config
           livenessProbe:
             httpGet:
               path: /health

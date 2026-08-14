@@ -1,7 +1,7 @@
 import { trace, Tracer, Span, SpanStatusCode, context } from "@opentelemetry/api";
 
 /**
- * Standard attribute keys for Open Foundry spans.
+ * Standard attribute keys for Altius spans.
  */
 export const SpanAttributes = {
   OBJECT_TYPE: "object.type",
@@ -12,9 +12,9 @@ export const SpanAttributes = {
 } as const;
 
 /**
- * Attributes that can be attached to Open Foundry spans.
+ * Attributes that can be attached to Altius spans.
  */
-export interface OpenFoundrySpanAttributes {
+export interface AltiusSpanAttributes {
   [SpanAttributes.OBJECT_TYPE]?: string;
   [SpanAttributes.OBJECT_ID]?: string;
   [SpanAttributes.TENANT_ID]?: string;
@@ -24,10 +24,10 @@ export interface OpenFoundrySpanAttributes {
 }
 
 /**
- * Valid Open Foundry layers for tracer naming.
- * Tracers follow the convention: openfoundry.<layer>.<operation>
+ * Valid Altius layers for tracer naming.
+ * Tracers follow the convention: altius.<layer>.<operation>
  */
-export type FoundryLayer =
+export type AltiusLayer =
   | "engine"
   | "action"
   | "security"
@@ -37,29 +37,29 @@ export type FoundryLayer =
   | "domain";
 
 /**
- * Creates a named tracer following the openfoundry.<layer>.<operation> convention.
+ * Creates a named tracer following the altius.<layer>.<operation> convention.
  *
- * @param layer - The foundry layer (engine, action, security, etc.)
+ * @param layer - The Altius layer (engine, action, security, etc.)
  * @param operation - The specific operation within the layer
  * @returns An OpenTelemetry Tracer instance
  */
-export function getTracer(layer: FoundryLayer, operation: string): Tracer {
-  return trace.getTracer(`openfoundry.${layer}.${operation}`);
+export function getTracer(layer: AltiusLayer, operation: string): Tracer {
+  return trace.getTracer(`altius.${layer}.${operation}`);
 }
 
 /**
- * Creates a span with standard Open Foundry attributes.
+ * Creates a span with standard Altius attributes.
  *
  * @param tracer - The tracer to create the span on
  * @param name - The span name
- * @param attributes - Standard Open Foundry attributes
+ * @param attributes - Standard Altius attributes
  * @param fn - The function to execute within the span
  * @returns The result of the function
  */
 export function withSpan<T>(
   tracer: Tracer,
   name: string,
-  attributes: OpenFoundrySpanAttributes,
+  attributes: AltiusSpanAttributes,
   fn: (span: Span) => T,
 ): T {
   return tracer.startActiveSpan(name, { attributes }, (span: Span) => {

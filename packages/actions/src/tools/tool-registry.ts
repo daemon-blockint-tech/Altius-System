@@ -6,7 +6,7 @@
  * them with dry-run support and policy guards.
  */
 
-import type { ParsedSchema, ActionType, FieldDefinition } from '@openfoundry/odl';
+import type { ParsedSchema, ActionType, FieldDefinition } from '@altius/odl';
 import type { ActionManifest } from '../parser/types.js';
 import type { ActionExecutor } from '../executor/action-executor.js';
 import type { ActionActor, ActionContext, ActionResult } from '../executor/types.js';

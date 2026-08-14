@@ -4,7 +4,7 @@
  * Exposes three metrics expected by the Helm PrometheusRule:
  *   - http_requests_total         (Counter)
  *   - http_request_duration_seconds (Histogram)
- *   - openfoundry_storage_healthy   (Gauge)
+ *   - altius_storage_healthy   (Gauge)
  *
  * Usage:
  *   import { metricsMiddleware, metricsEndpoint, startStorageHealthGauge } from './metrics.js';
@@ -15,7 +15,7 @@
 
 import { Counter, Histogram, Gauge, register, collectDefaultMetrics } from 'prom-client';
 import type { Request, Response, NextFunction } from 'express';
-import type { StorageProvider } from '@openfoundry/spi';
+import type { StorageProvider } from '@altius/spi';
 
 // Collect Node.js default metrics (GC, event loop, memory, etc.)
 collectDefaultMetrics();
@@ -36,12 +36,12 @@ export const httpRequestDuration = new Histogram({
 });
 
 export const storageHealthy = new Gauge({
-  name: 'openfoundry_storage_healthy',
+  name: 'altius_storage_healthy',
   help: 'Storage backend health: 1 = healthy, 0 = unhealthy',
 });
 
 export const packLoaded = new Gauge({
-  name: 'openfoundry_pack_loaded',
+  name: 'altius_pack_loaded',
   help: 'Domain pack loaded: 1 = loaded',
   labelNames: ['name', 'version', 'origin'] as const,
 });
@@ -107,6 +107,21 @@ export function metricsMiddleware(req: Request, res: Response, next: NextFunctio
   });
 
   next();
+}
+
+/**
+ * Guard for pod-internal endpoints (/metrics, /admin/packs). Requests that
+ * arrive via ingress carry X-Forwarded-For and get 404 in production;
+ * direct pod access (Prometheus scrapes, kubectl port-forward) passes.
+ */
+export function podDirectOnly(isDev: boolean) {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    if (!isDev && req.headers['x-forwarded-for']) {
+      res.status(404).end();
+      return;
+    }
+    next();
+  };
 }
 
 /**

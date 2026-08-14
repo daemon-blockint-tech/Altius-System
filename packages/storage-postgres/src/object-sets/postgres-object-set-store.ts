@@ -2,7 +2,7 @@
  * PostgreSQL-backed ObjectSetStore.
  *
  * Persistent implementation of the `ObjectSetStore` interface (from
- * `@openfoundry/spi`), storing saved named query definitions in the
+ * `@altius/spi`), storing saved named query definitions in the
  * `_object_sets` table. Behaviourally identical to `InMemoryObjectSetStore`
  * (same tenant isolation, public/private visibility, and creator-only mutation
  * semantics) but durable across restarts and shared across pods.
@@ -18,7 +18,7 @@ import type {
   RequestContext,
   ObjectSetDefinition,
   ObjectSetStore,
-} from '@openfoundry/spi';
+} from '@altius/spi';
 
 /** Error shapes match InMemoryObjectSetStore for cross-implementation parity. */
 function notFoundError(id: string): never {

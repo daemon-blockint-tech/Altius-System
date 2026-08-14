@@ -1,5 +1,5 @@
 {
-  "name": "@openfoundry/pilot-scenarios",
+  "name": "@altius/pilot-scenarios",
   "version": "0.0.1",
   "description": "End-to-end pilot scenario tests (MVP Section 7)",
   "type": "module",
@@ -13,13 +13,13 @@
   },
   "license": "Apache-2.0",
   "dependencies": {
-    "@openfoundry/spi": "workspace:*",
-    "@openfoundry/odl": "workspace:*",
-    "@openfoundry/storage-memory": "workspace:*",
-    "@openfoundry/actions": "workspace:*",
-    "@openfoundry/security": "workspace:*",
-    "@openfoundry/sync": "workspace:*",
-    "@openfoundry/api": "workspace:*"
+    "@altius/spi": "workspace:*",
+    "@altius/odl": "workspace:*",
+    "@altius/storage-memory": "workspace:*",
+    "@altius/actions": "workspace:*",
+    "@altius/security": "workspace:*",
+    "@altius/sync": "workspace:*",
+    "@altius/api": "workspace:*"
   },
   "devDependencies": {
     "vitest": "^3.0.0"

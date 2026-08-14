@@ -1,36 +1,36 @@
 import { metrics, Meter, Counter, Histogram } from "@opentelemetry/api";
 
 /**
- * All metric names defined in Open Foundry Spec Section 4.5.2.
+ * All metric names defined in Altius Spec Section 4.5.2.
  */
 export const MetricNames = {
   // Engine metrics
-  ENGINE_OPERATIONS: "openfoundry.engine.operations",
-  ENGINE_LATENCY: "openfoundry.engine.latency",
+  ENGINE_OPERATIONS: "altius.engine.operations",
+  ENGINE_LATENCY: "altius.engine.latency",
 
   // Action metrics
-  ACTION_EXECUTIONS: "openfoundry.action.executions",
-  ACTION_DURATION: "openfoundry.action.duration",
+  ACTION_EXECUTIONS: "altius.action.executions",
+  ACTION_DURATION: "altius.action.duration",
 
   // Security metrics
-  SECURITY_CHECKS: "openfoundry.security.checks",
-  SECURITY_CHECK_LATENCY: "openfoundry.security.check_latency",
+  SECURITY_CHECKS: "altius.security.checks",
+  SECURITY_CHECK_LATENCY: "altius.security.check_latency",
 
   // Sync metrics
-  SYNC_RECORDS_PROCESSED: "openfoundry.sync.records_processed",
-  SYNC_LAG_SECONDS: "openfoundry.sync.lag_seconds",
-  SYNC_CONFLICTS: "openfoundry.sync.conflicts",
+  SYNC_RECORDS_PROCESSED: "altius.sync.records_processed",
+  SYNC_LAG_SECONDS: "altius.sync.lag_seconds",
+  SYNC_CONFLICTS: "altius.sync.conflicts",
 
   // Computed metrics
-  COMPUTED_EVALUATIONS: "openfoundry.computed.evaluations",
+  COMPUTED_EVALUATIONS: "altius.computed.evaluations",
 } as const;
 
 export type MetricName = (typeof MetricNames)[keyof typeof MetricNames];
 
 /**
- * Registered metric instruments for the Open Foundry platform.
+ * Registered metric instruments for the Altius platform.
  */
-export interface FoundryMetrics {
+export interface AltiusMetrics {
   // Engine
   engineOperations: Counter;
   engineLatency: Histogram;
@@ -53,16 +53,16 @@ export interface FoundryMetrics {
 }
 
 /**
- * Creates and registers all Open Foundry metric instruments on the given meter.
+ * Creates and registers all Altius metric instruments on the given meter.
  *
  * @param meter - The OTel Meter to register instruments on.
- *                Defaults to the global meter named "openfoundry".
+ *                Defaults to the global meter named "altius".
  * @returns All registered metric instruments.
  */
-export function createFoundryMetrics(
+export function createAltiusMetrics(
   meter?: Meter,
-): FoundryMetrics {
-  const m = meter ?? metrics.getMeter("openfoundry");
+): AltiusMetrics {
+  const m = meter ?? metrics.getMeter("altius");
 
   return {
     // Engine

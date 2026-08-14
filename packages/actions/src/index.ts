@@ -1,7 +1,7 @@
 /**
- * @openfoundry/actions - Action Engine
+ * @altius/actions - Action Engine
  *
- * CEL evaluation client and action execution for the Open Foundry platform.
+ * CEL evaluation client and action execution for the Altius platform.
  */
 
 export {

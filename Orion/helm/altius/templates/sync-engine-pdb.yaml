@@ -2,13 +2,13 @@
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
-  name: {{ include "openfoundry.fullname" . }}-sync-engine
+  name: {{ include "altius.fullname" . }}-sync-engine
   labels:
-    {{- include "openfoundry.labels" . | nindent 4 }}
+    {{- include "altius.labels" . | nindent 4 }}
     app.kubernetes.io/component: sync-engine
 spec:
   minAvailable: {{ .Values.syncEngine.pdb.minAvailable | default 1 }}
   selector:
     matchLabels:
-      {{- include "openfoundry.selectorLabels" (dict "name" "sync-engine" "release" .Release.Name) | nindent 6 }}
+      {{- include "altius.selectorLabels" (dict "name" "sync-engine" "release" .Release.Name) | nindent 6 }}
 {{- end }}

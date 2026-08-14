@@ -35,7 +35,7 @@ describe('TypeScript SDK codegen', () => {
   describe('Redacted sentinel', () => {
     it('exports REDACTED symbol', () => {
       const code = getIndexTs();
-      expect(code).toContain("export const REDACTED = Symbol.for('openfoundry.redacted');");
+      expect(code).toContain("export const REDACTED = Symbol.for('altius.redacted');");
     });
 
     it('exports Redacted type', () => {
@@ -65,9 +65,9 @@ describe('TypeScript SDK codegen', () => {
       expect(code).toContain('actionId: string;');
     });
 
-    it('exports OpenFoundryConfig interface', () => {
+    it('exports AltiusConfig interface', () => {
       const code = getIndexTs();
-      expect(code).toContain('export interface OpenFoundryConfig {');
+      expect(code).toContain('export interface AltiusConfig {');
       expect(code).toContain('endpoint: string;');
       expect(code).toContain('token: string;');
     });
@@ -210,14 +210,14 @@ describe('TypeScript SDK codegen', () => {
   });
 
   describe('Client class', () => {
-    it('generates OpenFoundry class', () => {
+    it('generates Altius class', () => {
       const code = getIndexTs();
-      expect(code).toContain('export class OpenFoundry {');
+      expect(code).toContain('export class Altius {');
     });
 
     it('has constructor accepting config', () => {
       const code = getIndexTs();
-      expect(code).toContain('constructor(config: OpenFoundryConfig)');
+      expect(code).toContain('constructor(config: AltiusConfig)');
     });
 
     it('generates patient accessor with get, list, onChange', () => {
@@ -265,7 +265,7 @@ describe('TypeScript SDK codegen', () => {
       expect(code).toContain('export const REDACTED');
       expect(code).toContain('export type Redacted');
       expect(code).toContain('export interface PageInfo');
-      expect(code).toContain('export class OpenFoundry');
+      expect(code).toContain('export class Altius');
     });
 
     it('contains no raw ODL types — all mapped to TS', () => {

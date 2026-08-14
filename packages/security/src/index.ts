@@ -1,7 +1,7 @@
 /**
- * @openfoundry/security
+ * @altius/security
  *
- * OIDC authentication and authorization for the Open Foundry platform.
+ * OIDC authentication and authorization for the Altius platform.
  * Supports NHS CIS2 token format with configurable role mapping.
  */
 

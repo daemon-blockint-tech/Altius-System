@@ -19,7 +19,7 @@ import {
   type InlineFragmentNode,
   type OperationDefinitionNode,
 } from 'graphql';
-import { createOpenFoundryError } from '../graphql/errors.js';
+import { createAltiusError } from '../graphql/errors.js';
 
 /** Complexity analyzer configuration. */
 export interface ComplexityConfig {
@@ -120,8 +120,8 @@ export class QueryComplexityAnalyzer {
   /**
    * Create a QUERY_TOO_COMPLEX error from an analysis result.
    */
-  createComplexityError(analysis: ComplexityAnalysis): ReturnType<typeof createOpenFoundryError> {
-    return createOpenFoundryError({
+  createComplexityError(analysis: ComplexityAnalysis): ReturnType<typeof createAltiusError> {
+    return createAltiusError({
       code: 'QUERY_TOO_COMPLEX',
       category: 'validation',
       message: `Query too complex: ${analysis.violations.join('; ')}`,

@@ -1,4 +1,4 @@
-// Package evaluator provides CEL expression evaluation with Open Foundry
+// Package evaluator provides CEL expression evaluation with Altius
 // custom functions and ODL type mapping per Spec v2 Sections 5.2.1-5.2.4.
 package evaluator
 
@@ -16,16 +16,16 @@ import (
 	"github.com/google/cel-go/common/types/traits"
 	jsonschema "github.com/santhosh-tekuri/jsonschema/v6"
 
-	pb "github.com/openfoundry/cel-evaluator/proto"
+	pb "github.com/daemon-blockint-tech/Altius-System/packages/cel-evaluator/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
-// Evaluator wraps a CEL environment with Open Foundry custom functions.
+// Evaluator wraps a CEL environment with Altius custom functions.
 type Evaluator struct {
 	baseEnv *cel.Env
 }
 
-// New creates an Evaluator with the base Open Foundry CEL environment.
+// New creates an Evaluator with the base Altius CEL environment.
 // The base environment includes standard CEL library plus custom functions
 // defined in Spec Section 5.2.1.
 //
@@ -39,7 +39,7 @@ func New() (*Evaluator, error) {
 				env.NewFunction("duration"),
 			},
 		})),
-		cel.Lib(&openFoundryLib{}),
+		cel.Lib(&altiusLib{}),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("creating CEL environment: %w", err)
@@ -202,11 +202,11 @@ func odlTypeToCEL(odlType string) *cel.Type {
 	}
 }
 
-// openFoundryLib implements cel.Library with Open Foundry custom functions
+// altiusLib implements cel.Library with Altius custom functions
 // from Spec Section 5.2.1.
-type openFoundryLib struct{}
+type altiusLib struct{}
 
-func (l *openFoundryLib) CompileOptions() []cel.EnvOption {
+func (l *altiusLib) CompileOptions() []cel.EnvOption {
 	return []cel.EnvOption{
 		// has_link(object, linkType) -> bool
 		// Whether the object has at least one active link of the given type.
@@ -277,7 +277,7 @@ func (l *openFoundryLib) CompileOptions() []cel.EnvOption {
 	}
 }
 
-func (l *openFoundryLib) ProgramOptions() []cel.ProgramOption {
+func (l *altiusLib) ProgramOptions() []cel.ProgramOption {
 	return nil
 }
 
@@ -486,7 +486,7 @@ func validateJsonSchemaImpl(data, schemaUri ref.Val) ref.Val {
 }
 
 // parseISO8601Duration parses a subset of ISO 8601 durations used in the
-// Open Foundry spec: P[nD]T[nH][nM][nS]
+// Altius spec: P[nD]T[nH][nM][nS]
 func parseISO8601Duration(s string) (time.Duration, error) {
 	if len(s) == 0 || s[0] != 'P' {
 		return 0, fmt.Errorf("ISO 8601 duration must start with 'P': %q", s)

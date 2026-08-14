@@ -1,4 +1,4 @@
-# Open Foundry — Development Deployment
+# Altius — Development Deployment
 
 Local development environment with all 13 services via Docker Compose.
 
@@ -120,7 +120,7 @@ Set it to the tenant your API requests actually use when the seeded reference
 data is meant to be readable through the API:
 
 ```bash
-SEED_TENANT=default   # deploy/.env — the integration stack uses this
+SEED_TENANT=default   # Orion/.env — the integration stack uses this
 ```
 
 The gateway logs the tenant it seeded under, and warns when `SEED_TENANT` is
@@ -134,7 +134,7 @@ unset, so check the boot log first if seeded data appears to be missing.
 
 ### Automated production-mode enforcement test
 
-`deploy/docker-compose.prod-test.yaml` is an override that runs the api-gateway
+`Orion/docker-compose.prod-test.yaml` is an override that runs the api-gateway
 in `NODE_ENV=production` with real OIDC + OpenFGA wired (it encodes the
 issuer/JWKS host split and the `OPENFGA_STORE_ID` requirement above). The
 integration suite uses it to exercise enforcement end-to-end without the
@@ -191,17 +191,17 @@ by the in-container gateway unless JWKS is fetched **in-network**
 — set both when the external issuer URL differs from the in-cluster address:
 
 ```bash
-OIDC_ISSUER=http://localhost:8180/realms/openfoundry      # must match token `iss`
-OIDC_JWKS_URI=http://keycloak:8080/realms/openfoundry/protocol/openid-connect/certs
+OIDC_ISSUER=http://localhost:8180/realms/altius      # must match token `iss`
+OIDC_JWKS_URI=http://keycloak:8080/realms/altius/protocol/openid-connect/certs
 ```
 
 ### Keycloak realm auto-provisioning  *(resolved in v0.2.0 — A3)*
 
 Keycloak now boots `start-dev --import-realm` and imports
-`deploy/keycloak/openfoundry-realm.json` on first start: the `openfoundry`
-realm, the `openfoundry` client, the pilot realm roles, two test users
+`Orion/keycloak/altius-realm.json` on first start: the `altius`
+realm, the `altius` client, the pilot realm roles, two test users
 (`dr-test`, `admin-test`, password `test-password`), and the **three protocol
-mappers the OIDC authenticator requires** — audience (`aud == openfoundry`),
+mappers the OIDC authenticator requires** — audience (`aud == altius`),
 `tenant_id` (from a user attribute), and a flat top-level `roles` array
 (realm-role mapper, not nested `realm_access.roles`). A host-minted token
 therefore carries `aud`/`tenant_id`/`roles` and passes token validation.
@@ -212,7 +212,7 @@ therefore carries `aud`/`tenant_id`/`roles` and passes token validation.
 > For the full non-stub end-to-end (a minted token driving a governed action
 > against `NODE_ENV=production`), set `OIDC_ISSUER` to match the token issuer —
 > note the issuer includes the `/auth` relative path,
-> e.g. `http://keycloak:8080/auth/realms/openfoundry`.
+> e.g. `http://keycloak:8080/auth/realms/altius`.
 
 ## Authorization Tuples for Actions
 
@@ -259,8 +259,8 @@ production stack:
 ```bash
 # 1. Get a token (client-credentials or password grant; must carry aud + tenant_id)
 TOKEN=$(curl -s -X POST \
-  "http://localhost:8180/realms/openfoundry/protocol/openid-connect/token" \
-  -d grant_type=password -d client_id=openfoundry \
+  "http://localhost:8180/realms/altius/protocol/openid-connect/token" \
+  -d grant_type=password -d client_id=altius \
   -d username=<user> -d password=<pass> | jq -r .access_token)
 
 # 2. Call the action (body keys are the action's @param fields)

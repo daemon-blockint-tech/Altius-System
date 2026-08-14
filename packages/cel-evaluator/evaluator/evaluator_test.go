@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	pb "github.com/openfoundry/cel-evaluator/proto"
+	pb "github.com/daemon-blockint-tech/Altius-System/packages/cel-evaluator/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 

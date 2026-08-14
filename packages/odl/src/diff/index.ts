@@ -1,7 +1,7 @@
 /**
  * ODL Schema Diff Engine — computes, classifies, and reverses schema diffs.
  *
- * Per Open Foundry spec Section 2.5.
+ * Per Altius spec Section 2.5.
  */
 
 import type {

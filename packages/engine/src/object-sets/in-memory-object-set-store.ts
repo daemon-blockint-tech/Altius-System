@@ -5,7 +5,7 @@
  * Used for testing and MVP; production will delegate to a persistent store.
  */
 
-import type { RequestContext, ObjectSetDefinition, ObjectSetStore } from '@openfoundry/spi';
+import type { RequestContext, ObjectSetDefinition, ObjectSetStore } from '@altius/spi';
 import { generateUUIDv7 } from '../links/index.js';
 
 export class InMemoryObjectSetStore implements ObjectSetStore {

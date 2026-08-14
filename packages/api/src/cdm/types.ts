@@ -3,7 +3,7 @@
  *
  * The NHS Federated Data Platform Canonical Data Model (CDM) is the
  * interoperability surface FDP standardises on (NHS England DAPB4121,
- * draft-in-progress). Open Foundry does not embed the CDM; instead it ships a
+ * draft-in-progress). Altius does not embed the CDM; instead it ships a
  * declarative *mapping profile* that projects the ODL operational ontology into
  * a CDM-shaped read view, preserving provenance end-to-end.
  *
@@ -13,7 +13,7 @@
 
 /** Provenance envelope attached to every projected CDM record. */
 export interface CdmProvenance {
-  /** Open Foundry object/link type this record was projected from. */
+  /** Altius object/link type this record was projected from. */
   sourceType: string;
   /** Source `_id`. */
   sourceId: string;
@@ -37,11 +37,11 @@ export interface CdmRecord {
   _provenance: CdmProvenance;
 }
 
-/** One CDM field, mapped from a single Open Foundry source field. */
+/** One CDM field, mapped from a single Altius source field. */
 export interface CdmFieldMapping {
   /** CDM target field name. */
   cdmField: string;
-  /** Open Foundry source field name (`_id`, a property, or a link property). */
+  /** Altius source field name (`_id`, a property, or a link property). */
   sourceField: string;
   /**
    * Optional enum value remap (OF enum value → CDM coded value).
@@ -54,11 +54,11 @@ export interface CdmFieldMapping {
   note?: string;
 }
 
-/** Maps one Open Foundry type to one CDM resource. */
+/** Maps one Altius type to one CDM resource. */
 export interface CdmResourceMapping {
   /** CDM resource name (the projected `resourceType`). */
   cdmResource: string;
-  /** Open Foundry source type (object type or link type name). */
+  /** Altius source type (object type or link type name). */
   sourceType: string;
   /** Whether the source is a stored object or a link. */
   sourceKind: 'object' | 'link';

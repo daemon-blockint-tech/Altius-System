@@ -1,5 +1,5 @@
 {
-  "name": "@openfoundry/storage-memory",
+  "name": "@altius/storage-memory",
   "version": "0.1.0",
   "description": "In-memory StorageProvider for testing",
   "type": "module",
@@ -20,7 +20,7 @@
   "files": ["dist"],
   "license": "Apache-2.0",
   "dependencies": {
-    "@openfoundry/spi": "workspace:*"
+    "@altius/spi": "workspace:*"
   },
   "devDependencies": {
     "vitest": "^3.0.0"

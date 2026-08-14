@@ -8,15 +8,15 @@
  * - Action pipeline integration: CONSENT_DENIED error (Section 7.3.2)
  */
 
-import { getTracer, withSpan } from "@openfoundry/observability";
+import { getTracer, withSpan } from "@altius/observability";
 import type {
   ConsentDecision,
   ConsentManager,
   ConsentRecord,
   DataPurpose,
   RevocationResult,
-} from "@openfoundry/spi";
-import { DataPurpose as DataPurposeEnum } from "@openfoundry/spi";
+} from "@altius/spi";
+import { DataPurpose as DataPurposeEnum } from "@altius/spi";
 
 import type { AuthorizationService } from "../authz/authorization-service.js";
 

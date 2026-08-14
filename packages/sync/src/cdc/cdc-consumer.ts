@@ -10,7 +10,7 @@ import type { Checkpoint, SourceRecord } from '../connectors/connector.js';
 import type { DatasourceMappingConfig } from '../mapping/mapping-parser.js';
 import type { MappedObject } from '../mapping/record-mapper.js';
 import { RecordMapper } from '../mapping/record-mapper.js';
-import { createLogger } from '@openfoundry/observability';
+import { createLogger } from '@altius/observability';
 
 const logger = createLogger('cdc-consumer');
 

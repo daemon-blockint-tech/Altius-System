@@ -34,7 +34,7 @@ import {
   type ConsentDecision,
 } from '../index.js';
 
-describe('@openfoundry/spi type exports', () => {
+describe('@altius/spi type exports', () => {
   it('exports DataPurpose enum with correct values', () => {
     expect(DataPurpose.DIRECT_CARE).toBe('DIRECT_CARE');
     expect(DataPurpose.CARE_PLANNING).toBe('CARE_PLANNING');
@@ -129,8 +129,8 @@ describe('@openfoundry/spi type exports', () => {
     const event: CloudEvent<{ objectType: string }> = {
       specversion: '1.0',
       id: 'evt-1',
-      source: 'openfoundry://instance-1/ontology',
-      type: 'openfoundry.object.created',
+      source: 'altius://instance-1/ontology',
+      type: 'altius.object.created',
       time: '2026-01-01T00:00:00Z',
       data: { objectType: 'Patient' },
     };

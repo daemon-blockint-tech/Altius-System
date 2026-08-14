@@ -1,11 +1,11 @@
 apiVersion: v2
-name: openfoundry
-description: Open Foundry — ontology-driven clinical data platform
+name: altius
+description: Altius — ontology-driven clinical data platform
 type: application
 version: 0.2.0
 appVersion: "0.2.0"
 keywords:
-  - openfoundry
+  - altius
   - ontology
   - clinical
   - nhs

@@ -8,8 +8,8 @@
  */
 
 import pg from "pg";
-import { getTracer, withSpan } from "@openfoundry/observability";
-import type { HealthStatus } from "@openfoundry/spi";
+import { getTracer, withSpan } from "@altius/observability";
+import type { HealthStatus } from "@altius/spi";
 import type {
   Connector,
   ConnectorConfig,

@@ -1,7 +1,7 @@
 {
-  "name": "@openfoundry/spi",
+  "name": "@altius/spi",
   "version": "0.1.0",
-  "description": "Open Foundry Storage Provider Interface - core type definitions",
+  "description": "Altius Storage Provider Interface - core type definitions",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

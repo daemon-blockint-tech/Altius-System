@@ -14,7 +14,7 @@ import type {
   OntologyObject,
   RequestContext,
   DateTime,
-} from '@openfoundry/spi';
+} from '@altius/spi';
 import { snakeCase, pgIdent } from '../schema/type-mapping.js';
 import { PgTransaction, resolveQueryable } from '../transactions/index.js';
 

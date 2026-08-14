@@ -1,4 +1,4 @@
-module github.com/openfoundry/cel-evaluator
+module github.com/daemon-blockint-tech/Altius-System/packages/cel-evaluator
 
 go 1.25.0
 

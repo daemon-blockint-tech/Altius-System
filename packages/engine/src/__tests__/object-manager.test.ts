@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { MemoryStorageProvider } from '@openfoundry/storage-memory';
-import type { RequestContext, OntologySchema } from '@openfoundry/spi';
-import type { ParsedSchema } from '@openfoundry/odl';
+import { MemoryStorageProvider } from '@altius/storage-memory';
+import type { RequestContext, OntologySchema } from '@altius/spi';
+import type { ParsedSchema } from '@altius/odl';
 import { ObjectManager } from '../objects/object-manager.js';
 import { EngineEventEmitter } from '../events/event-emitter.js';
 import { InMemoryEventBus } from '../events/event-bus.js';
@@ -431,8 +431,8 @@ describe('ObjectManager', () => {
       expect(eventBus.events).toHaveLength(1);
       const event = eventBus.events[0]!;
       expect(event.specversion).toBe('1.0');
-      expect(event.type).toBe('openfoundry.object.created');
-      expect(event.source).toBe('openfoundry://engine/ontology');
+      expect(event.type).toBe('altius.object.created');
+      expect(event.source).toBe('altius://engine/ontology');
       expect(event.subject).toMatch(/^Patient\//);
       expect(event.data).toMatchObject({
         objectType: 'Patient',
@@ -455,7 +455,7 @@ describe('ObjectManager', () => {
 
       expect(eventBus.events).toHaveLength(1);
       const event = eventBus.events[0]!;
-      expect(event.type).toBe('openfoundry.object.updated');
+      expect(event.type).toBe('altius.object.updated');
       expect(event.data).toMatchObject({
         objectType: 'Patient',
         version: 2,
@@ -478,7 +478,7 @@ describe('ObjectManager', () => {
 
       expect(eventBus.events).toHaveLength(1);
       const event = eventBus.events[0]!;
-      expect(event.type).toBe('openfoundry.object.deleted');
+      expect(event.type).toBe('altius.object.deleted');
       expect(event.data).toMatchObject({
         objectType: 'Patient',
         objectId: created._id,

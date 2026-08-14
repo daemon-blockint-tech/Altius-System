@@ -15,7 +15,7 @@
  *   struct → { structValue: { fields: { key: Value, ... } } }
  */
 
-import type { OntologyObject } from '@openfoundry/spi';
+import type { OntologyObject } from '@altius/spi';
 
 /** A google.protobuf.Value in its JSON representation. */
 export type ProtobufValue =

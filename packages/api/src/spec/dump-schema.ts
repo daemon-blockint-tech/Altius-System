@@ -10,7 +10,7 @@
 
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import { generateGraphQLSchema } from '@openfoundry/odl';
+import { generateGraphQLSchema } from '@altius/odl';
 import { loadDomainPacks } from '../schema-loader.js';
 
 async function main(): Promise<void> {

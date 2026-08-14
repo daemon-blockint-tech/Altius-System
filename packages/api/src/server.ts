@@ -1,5 +1,5 @@
 /**
- * Server entrypoint — starts the Open Foundry API gateway.
+ * Server entrypoint — starts the Altius API gateway.
  *
  * Mounts GraphQL, REST, and FHIR endpoints on a single Express server.
  * Used by the Dockerfile CMD and for local development.
@@ -33,20 +33,20 @@ import helmet from 'helmet';
 import { GraphQLError } from 'graphql';
 import { expressMiddleware } from '@apollo/server/express4';
 import { ApolloServerPluginDrainHttpServer } from '@apollo/server/plugin/drainHttpServer';
-import { MemoryStorageProvider } from '@openfoundry/storage-memory';
-import { PostgresStorageProvider, PostgresAuditStore, PostgresConsentStore, PostgresSchemaRegistry, PostgresObjectSetStore } from '@openfoundry/storage-postgres';
+import { MemoryStorageProvider } from '@altius/storage-memory';
+import { PostgresStorageProvider, PostgresAuditStore, PostgresConsentStore, PostgresSchemaRegistry, PostgresObjectSetStore } from '@altius/storage-postgres';
 import {
   ObjectManager,
   LinkManager,
   EngineEventEmitter,
   InMemoryObjectSetStore,
   ObjectSetManager,
-} from '@openfoundry/engine';
-import { ActionExecutor, CelClient, SideEffectExecutor } from '@openfoundry/actions';
-import type { SecurityLayer, CelEvaluator, ActionEventPublisher, EventBus as SideEffectEventBus, HttpClient as SideEffectHttpClient, LinkTupleMap } from '@openfoundry/actions';
-import { AuthorizationService, OidcAuthenticator, AuditWriter, MemoryAuditStore, ConsentService, MemoryConsentStore } from '@openfoundry/security';
-import type { OpenFgaClientInterface } from '@openfoundry/security';
-import type { StorageProvider, RequestContext } from '@openfoundry/spi';
+} from '@altius/engine';
+import { ActionExecutor, CelClient, SideEffectExecutor } from '@altius/actions';
+import type { SecurityLayer, CelEvaluator, ActionEventPublisher, EventBus as SideEffectEventBus, HttpClient as SideEffectHttpClient, LinkTupleMap } from '@altius/actions';
+import { AuthorizationService, OidcAuthenticator, AuditWriter, MemoryAuditStore, ConsentService, MemoryConsentStore } from '@altius/security';
+import type { OpenFgaClientInterface } from '@altius/security';
+import type { StorageProvider, RequestContext } from '@altius/spi';
 import { createGraphQLServer, buildResolverContext } from './graphql/index.js';
 import { generateRestRoutes, generateOpenApiSpec } from './rest/index.js';
 import { readPlatformVersion } from './version.js';
@@ -69,13 +69,13 @@ import {
 } from './config.js';
 import type { ActionAuthzMapping } from './config.js';
 import { loadDomainPacks } from './schema-loader.js';
-import { generateOpenFGASchema, mergeOpenFGAOverrides, actionPermissionRelation, InMemorySchemaRegistry } from '@openfoundry/odl';
-import type { SchemaRegistry } from '@openfoundry/odl';
+import { generateOpenFGASchema, mergeOpenFGAOverrides, actionPermissionRelation, InMemorySchemaRegistry } from '@altius/odl';
+import type { SchemaRegistry } from '@altius/odl';
 import { recordSchemaVersion } from './schema-registry-boot.js';
 import { SlidingWindowRateLimiter, RedisRateLimiter } from './governance/index.js';
 import type { RateLimiter, RateLimitIdentity } from './governance/index.js';
 import { toSnakeCase } from './utils.js';
-import { metricsMiddleware, metricsEndpoint, startStorageHealthGauge, packLoaded } from './metrics.js';
+import { metricsMiddleware, metricsEndpoint, startStorageHealthGauge, packLoaded, podDirectOnly } from './metrics.js';
 import { logger } from './logger.js';
 
 const PORT = parseInt(process.env['PORT'] ?? '4000', 10);
@@ -114,8 +114,8 @@ async function main(): Promise<void> {
   // ── OpenTelemetry ──
   // Must be initialized before significant work starts so the global
   // TracerProvider is registered for all getTracer()/withSpan() calls.
-  const { initTelemetry } = await import('@openfoundry/observability');
-  initTelemetry('openfoundry-api');
+  const { initTelemetry } = await import('@altius/observability');
+  initTelemetry('altius-api');
 
   // ── Validate production environment ──
   if (!isDev) {
@@ -373,11 +373,11 @@ async function main(): Promise<void> {
   }
 
   // ── Authentication ──
-  const oidcIssuer = process.env['OIDC_ISSUER'] ?? 'http://localhost:8180/realms/openfoundry';
+  const oidcIssuer = process.env['OIDC_ISSUER'] ?? 'http://localhost:8180/realms/altius';
   const authenticator = new OidcAuthenticator();
   authenticator.configure({
     issuer: oidcIssuer,
-    clientId: process.env['OIDC_CLIENT_ID'] ?? 'openfoundry',
+    clientId: process.env['OIDC_CLIENT_ID'] ?? 'altius',
     // OIDC_JWKS_URI overrides for non-Keycloak issuers (e.g. NHS CIS2).
     // Default: Keycloak-style path. Set OIDC_JWKS_URI for other providers.
     jwksUri: process.env['OIDC_JWKS_URI'] ?? `${oidcIssuer}/protocol/openid-connect/certs`,
@@ -639,7 +639,7 @@ async function main(): Promise<void> {
   };
   const sideEffectBus: SideEffectEventBus = {
     async emit(event) {
-      await eventBus.publish(event as unknown as import('@openfoundry/spi').CloudEvent);
+      await eventBus.publish(event as unknown as import('@altius/spi').CloudEvent);
     },
   };
   const sideEffectHandler = new SideEffectExecutor({
@@ -669,7 +669,7 @@ async function main(): Promise<void> {
   // ── Connector Registry ──
   // Create the default registry (jdbc + rest built-in), then validate that
   // all pack-declared connectors reference a registered plugin type.
-  const { createDefaultRegistry } = await import('@openfoundry/sync');
+  const { createDefaultRegistry } = await import('@altius/sync');
   const connectorRegistry = createDefaultRegistry();
   for (const cm of connectorManifests) {
     if (connectorRegistry.has(cm.connector)) {
@@ -849,13 +849,7 @@ async function main(): Promise<void> {
   app.use(metricsMiddleware);
   // Block external access to /metrics — Prometheus ServiceMonitor scrapes pod
   // directly (bypassing ingress). Requests through ingress carry X-Forwarded-For.
-  app.get('/metrics', (req, res, next) => {
-    if (!isDev && req.headers['x-forwarded-for']) {
-      res.status(404).end();
-      return;
-    }
-    next();
-  }, metricsEndpoint);
+  app.get('/metrics', podDirectOnly(isDev), metricsEndpoint);
   const stopHealthGauge = startStorageHealthGauge(storage);
 
   // ── Health check ──
@@ -892,8 +886,9 @@ async function main(): Promise<void> {
     );
   }
 
-  // GET /admin/packs — introspection of loaded domain packs
-  app.get('/admin/packs', (_req, res) => {
+  // GET /admin/packs — introspection of loaded domain packs; pod-internal
+  // only (same posture as /metrics — pack metadata is not for external eyes)
+  app.get('/admin/packs', podDirectOnly(isDev), (_req, res) => {
     res.json({
       packs: packInfos.map(info => ({
         name: info.manifest.name,
@@ -1154,7 +1149,7 @@ async function main(): Promise<void> {
       await storage.close();
     }
     // Flush pending OTEL spans before exit
-    const { shutdownTelemetry } = await import('@openfoundry/observability');
+    const { shutdownTelemetry } = await import('@altius/observability');
     await shutdownTelemetry();
     httpServer.close();
     process.exit(0);
@@ -1169,7 +1164,7 @@ async function main(): Promise<void> {
 
   const mode = isDev ? 'DEVELOPMENT' : 'PRODUCTION';
   const imageRevision = process.env['GIT_REVISION'] ?? 'unknown';
-  logger.info(`Open Foundry API gateway [${mode}] listening at http://localhost:${PORT} (rev: ${imageRevision.slice(0, 8)})`);
+  logger.info(`Altius API gateway [${mode}] listening at http://localhost:${PORT} (rev: ${imageRevision.slice(0, 8)})`);
   logger.info(`  GraphQL:  http://localhost:${PORT}/graphql`);
   logger.info(`  WS Subs:  ws://localhost:${PORT}/graphql`);
   logger.info(`  REST:     http://localhost:${PORT}/api/v1/`);
@@ -1185,7 +1180,7 @@ async function main(): Promise<void> {
  * model relation (e.g. dropped by a permission override) are skipped.
  */
 function buildLinkTupleMap(
-  schema: import('@openfoundry/odl').ParsedSchema,
+  schema: import('@altius/odl').ParsedSchema,
   model: FgaAuthorizationModel,
 ): LinkTupleMap {
   const relationsByType = new Map<string, Set<string>>();
@@ -1228,7 +1223,7 @@ function buildLinkTupleMap(
  */
 function assertFgaModelCoverage(
   model: FgaAuthorizationModel,
-  schema: import('@openfoundry/odl').ParsedSchema,
+  schema: import('@altius/odl').ParsedSchema,
   isDev: boolean,
 ): void {
   const relationsByType = new Map<string, Set<string>>();
@@ -1294,12 +1289,12 @@ function assertFgaModelCoverage(
 }
 
 function deriveActionAuthzMappings(
-  schema: import('@openfoundry/odl').ParsedSchema,
+  schema: import('@altius/odl').ParsedSchema,
 ): Map<string, ActionAuthzMapping> {
   const mappings = new Map<string, ActionAuthzMapping>();
   const objectTypeNames = new Set(schema.objectTypes.map(o => o.name));
 
-  // Relation names come from @openfoundry/odl so the runtime checks exactly what
+  // Relation names come from @altius/odl so the runtime checks exactly what
   // the generated model declares. Deriving them independently here is what let
   // the two drift (the generator strips words matching ObjectType names, so
   // adding a `Transfer` ObjectType silently renamed TransferWard's relation from

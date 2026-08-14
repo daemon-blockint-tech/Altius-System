@@ -4,17 +4,17 @@ export {
   withSpan,
   getActiveSpan,
   SpanAttributes,
-  type FoundryLayer,
-  type OpenFoundrySpanAttributes,
+  type AltiusLayer,
+  type AltiusSpanAttributes,
 } from "./tracer.js";
 
 // Metric definitions
 export {
-  createFoundryMetrics,
+  createAltiusMetrics,
   registerSyncLagGauge,
   MetricNames,
   type MetricName,
-  type FoundryMetrics,
+  type AltiusMetrics,
 } from "./metrics.js";
 
 // SDK lifecycle

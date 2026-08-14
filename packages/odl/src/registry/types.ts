@@ -2,7 +2,7 @@
  * ODL Schema Registry types.
  *
  * Defines the interface for versioned schema storage,
- * per Open Foundry spec Section 2.5 and MVP Section 2.1.
+ * per Altius spec Section 2.5 and MVP Section 2.1.
  */
 
 import type { ParsedSchema } from '../parser/types.js';

@@ -10,12 +10,12 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { DataPurpose } from '@openfoundry/spi';
+import { DataPurpose } from '@altius/spi';
 import {
   ConsentService,
   MemoryConsentStore,
   AuthorizationService,
-} from '@openfoundry/security';
+} from '@altius/security';
 
 // ---------------------------------------------------------------------------
 // In-memory OpenFGA stub

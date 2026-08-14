@@ -2,7 +2,7 @@
  * Integration test configuration.
  *
  * Reads from environment variables with sensible defaults matching
- * the deploy/docker-compose.yaml and deploy/.env.example.
+ * the Orion/docker-compose.yaml and Orion/.env.example.
  */
 
 export const CONFIG = {
@@ -33,7 +33,7 @@ export const CONFIG = {
    * For local dev, set POSTGRES_URL or individual PGUSER/PGPASSWORD env vars.
    */
   postgresUrl: process.env['POSTGRES_URL'] ??
-    `postgresql://${process.env['PGUSER'] ?? 'openfoundry'}:${process.env['PGPASSWORD'] ?? ''}@${process.env['PGHOST'] ?? 'localhost'}:${process.env['PGPORT'] ?? '5432'}/${process.env['PGDATABASE'] ?? 'openfoundry'}`,
+    `postgresql://${process.env['PGUSER'] ?? 'altius'}:${process.env['PGPASSWORD'] ?? ''}@${process.env['PGHOST'] ?? 'localhost'}:${process.env['PGPORT'] ?? '5432'}/${process.env['PGDATABASE'] ?? 'altius'}`,
 
   /** Performance thresholds (MVP Section 8) */
   perf: {

@@ -6,7 +6,7 @@
  * as specified in Section 6.2.1.
  */
 
-import type { DateTime, HealthStatus } from "@openfoundry/spi";
+import type { DateTime, HealthStatus } from "@altius/spi";
 
 // ---------------------------------------------------------------------------
 // Configuration types

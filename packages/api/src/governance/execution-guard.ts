@@ -6,7 +6,7 @@
  * - Response size cap
  */
 
-import { createOpenFoundryError } from '../graphql/errors.js';
+import { createAltiusError } from '../graphql/errors.js';
 
 /** Execution guard configuration. */
 export interface ExecutionGuardConfig {
@@ -84,8 +84,8 @@ export function checkResponseSize(
 /**
  * Create an OPERATION_TIMEOUT error.
  */
-export function createTimeoutError(timeoutMs: number): ReturnType<typeof createOpenFoundryError> {
-  return createOpenFoundryError({
+export function createTimeoutError(timeoutMs: number): ReturnType<typeof createAltiusError> {
+  return createAltiusError({
     code: 'OPERATION_TIMEOUT',
     category: 'timeout',
     message: `Operation timed out after ${timeoutMs}ms`,
@@ -100,8 +100,8 @@ export function createTimeoutError(timeoutMs: number): ReturnType<typeof createO
 export function createResponseTooLargeError(
   actualBytes: number,
   maxBytes: number,
-): ReturnType<typeof createOpenFoundryError> {
-  return createOpenFoundryError({
+): ReturnType<typeof createAltiusError> {
+  return createAltiusError({
     code: 'VALIDATION_ERROR',
     category: 'validation',
     message: `Response size ${actualBytes} bytes exceeds maximum ${maxBytes} bytes`,

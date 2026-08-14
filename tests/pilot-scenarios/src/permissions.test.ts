@@ -10,12 +10,12 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { MemoryStorageProvider } from '@openfoundry/storage-memory';
-import type { RequestContext } from '@openfoundry/spi';
+import { MemoryStorageProvider } from '@altius/storage-memory';
+import type { RequestContext } from '@altius/spi';
 import {
   AuthorizationService,
   type FieldPermissionConfig,
-} from '@openfoundry/security';
+} from '@altius/security';
 
 import {
   SPI_SCHEMA,

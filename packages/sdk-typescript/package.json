@@ -1,7 +1,7 @@
 {
-  "name": "@openfoundry/sdk",
+  "name": "@altius/sdk",
   "version": "0.0.1",
-  "description": "Auto-generated TypeScript SDK for Open Foundry",
+  "description": "Auto-generated TypeScript SDK for Altius",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

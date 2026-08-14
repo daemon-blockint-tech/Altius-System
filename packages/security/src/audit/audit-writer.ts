@@ -1,5 +1,5 @@
 /**
- * Audit writer for the Open Foundry platform (Section 7.2).
+ * Audit writer for the Altius platform (Section 7.2).
  *
  * Every platform operation produces an immutable audit record.
  * The AuditWriter captures actor, operation, and detail information
@@ -16,8 +16,8 @@ import type {
   AuditActor,
   AuditOperation,
   AuditDetail,
-} from "@openfoundry/spi";
-import { getTracer, getTraceId, withSpan } from "@openfoundry/observability";
+} from "@altius/spi";
+import { getTracer, getTraceId, withSpan } from "@altius/observability";
 
 import type { AuditStore } from "./types.js";
 

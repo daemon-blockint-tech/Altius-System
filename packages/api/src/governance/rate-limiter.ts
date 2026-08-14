@@ -5,7 +5,7 @@
  * Uses a sliding-window counter backed by an in-memory store.
  */
 
-import { createOpenFoundryError } from '../graphql/errors.js';
+import { createAltiusError } from '../graphql/errors.js';
 
 /** Configuration for a single rate limit window. */
 export interface RateLimitWindow {
@@ -169,8 +169,8 @@ export class SlidingWindowRateLimiter implements RateLimiter {
   /**
    * Create a RATE_LIMITED GraphQL error.
    */
-  createRateLimitError(result: RateLimitResult): ReturnType<typeof createOpenFoundryError> {
-    return createOpenFoundryError({
+  createRateLimitError(result: RateLimitResult): ReturnType<typeof createAltiusError> {
+    return createAltiusError({
       code: 'RATE_LIMITED',
       category: 'rate_limit',
       message: `Rate limit exceeded${result.exceededBy ? ` (by ${result.exceededBy})` : ''}`,

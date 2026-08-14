@@ -12,8 +12,8 @@ import {
 export const PropagationHeaders = {
   TRACEPARENT: "traceparent",
   TRACESTATE: "tracestate",
-  TENANT_ID: "x-openfoundry-tenant-id",
-  REQUEST_ID: "x-openfoundry-request-id",
+  TENANT_ID: "x-altius-tenant-id",
+  REQUEST_ID: "x-altius-request-id",
 } as const;
 
 /**

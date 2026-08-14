@@ -17,8 +17,8 @@
  * (auth, authz, consent) as the GraphQL layer.
  */
 
-import type { OntologyObject, FilterExpression, FieldPredicate } from '@openfoundry/spi';
-import { DataPurpose } from '@openfoundry/spi';
+import type { OntologyObject, FilterExpression, FieldPredicate } from '@altius/spi';
+import { DataPurpose } from '@altius/spi';
 import type { ApiDependencies, AuthenticatedUserInfo } from '../graphql/types.js';
 import type {
   FhirResource,
@@ -477,14 +477,14 @@ function handleCapabilityStatement(baseUrl: string): FhirResponse {
     headers: fhirHeaders(),
     body: {
       resourceType: 'CapabilityStatement',
-      id: 'openfoundry',
+      id: 'altius',
       status: 'active',
       date: new Date().toISOString().split('T')[0],
       kind: 'instance',
       fhirVersion: '4.0.1',
       format: ['json'],
       implementation: {
-        description: 'Open Foundry FHIR R4 read-only facade',
+        description: 'Altius FHIR R4 read-only facade',
         url: baseUrl || undefined,
       },
       rest: [

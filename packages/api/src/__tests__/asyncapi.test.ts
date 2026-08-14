@@ -13,7 +13,7 @@ describe('generateAsyncApiSpec', () => {
     const spec = generateAsyncApiSpec(parsed);
 
     expect(spec['asyncapi']).toBe('2.6.0');
-    expect((spec['info'] as Record<string, unknown>)['title']).toBe('Open Foundry Event API');
+    expect((spec['info'] as Record<string, unknown>)['title']).toBe('Altius Event API');
   });
 
   it('generates two channels per object type', async () => {

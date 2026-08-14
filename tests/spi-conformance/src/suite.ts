@@ -6,7 +6,7 @@
  * describe() block that operates on a fresh provider instance.
  */
 
-import type { StorageProvider } from '@openfoundry/spi';
+import type { StorageProvider } from '@altius/spi';
 import { registerSchemaTests } from './categories/schema.js';
 import { registerCrudTests } from './categories/crud.js';
 import { registerLinkTests } from './categories/links.js';

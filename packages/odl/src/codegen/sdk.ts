@@ -9,7 +9,7 @@
  * - Redacted field sentinel type
  *
  * The generated SDK is a complete package source that can be compiled
- * with tsc and published as @openfoundry/sdk.
+ * with tsc and published as @altius/sdk.
  */
 
 import type {
@@ -149,7 +149,7 @@ function generateRedactedType(): string {
     ' * Sentinel value indicating a field has been redacted due to',
     ' * access control or consent restrictions.',
     ' */',
-    "export const REDACTED = Symbol.for('openfoundry.redacted');",
+    "export const REDACTED = Symbol.for('altius.redacted');",
     '',
     '/** Redacted field sentinel type. */',
     'export type Redacted = typeof REDACTED;',
@@ -219,7 +219,7 @@ function generateSharedTypes(): string {
     '  unsubscribe(): void;',
     '}',
     '',
-    'export interface OpenFoundryConfig {',
+    'export interface AltiusConfig {',
     '  endpoint: string;',
     '  token: string;',
     '}',
@@ -365,11 +365,11 @@ function generateClientClass(schema: ParsedSchema): string {
   return [
     '// ─── Client class ───',
     '',
-    'export class OpenFoundry {',
+    'export class Altius {',
     '  private readonly endpoint: string;',
     '  private readonly token: string;',
     '',
-    '  constructor(config: OpenFoundryConfig) {',
+    '  constructor(config: AltiusConfig) {',
     '    this.endpoint = config.endpoint;',
     '    this.token = config.token;',
     '  }',

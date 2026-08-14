@@ -18,7 +18,7 @@
  * This is a pre-existing divergence in the GraphQL codegen layer.
  */
 
-import type { ParsedSchema, ObjectType } from '@openfoundry/odl';
+import type { ParsedSchema, ObjectType } from '@altius/odl';
 
 function lowerFirst(s: string): string {
   return s.charAt(0).toLowerCase() + s.slice(1);
@@ -111,9 +111,9 @@ export function generateAsyncApiSpec(schema: ParsedSchema, version = '1.0.0'): R
   return {
     asyncapi: '2.6.0',
     info: {
-      title: 'Open Foundry Event API',
+      title: 'Altius Event API',
       version,
-      description: 'Real-time change events for the Open Foundry ontology platform.',
+      description: 'Real-time change events for the Altius ontology platform.',
       license: { name: 'Apache-2.0', url: 'https://www.apache.org/licenses/LICENSE-2.0' },
     },
     servers: {

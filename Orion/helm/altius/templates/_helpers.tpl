@@ -1,14 +1,14 @@
 {{/*
 Expand the name of the chart.
 */}}
-{{- define "openfoundry.name" -}}
+{{- define "altius.name" -}}
 {{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
 {{/*
 Create a default fully qualified app name.
 */}}
-{{- define "openfoundry.fullname" -}}
+{{- define "altius.fullname" -}}
 {{- if .Values.fullnameOverride }}
 {{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" }}
 {{- else }}
@@ -24,24 +24,24 @@ Create a default fully qualified app name.
 {{/*
 Create chart name and version as used by the chart label.
 */}}
-{{- define "openfoundry.chart" -}}
+{{- define "altius.chart" -}}
 {{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
 {{/*
 Common labels.
 */}}
-{{- define "openfoundry.labels" -}}
-helm.sh/chart: {{ include "openfoundry.chart" . }}
+{{- define "altius.labels" -}}
+helm.sh/chart: {{ include "altius.chart" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
-app.kubernetes.io/part-of: openfoundry
+app.kubernetes.io/part-of: altius
 {{- end }}
 
 {{/*
 Selector labels for a specific component.
 */}}
-{{- define "openfoundry.selectorLabels" -}}
+{{- define "altius.selectorLabels" -}}
 app.kubernetes.io/name: {{ .name }}
 app.kubernetes.io/instance: {{ .release }}
 {{- end }}
@@ -49,7 +49,7 @@ app.kubernetes.io/instance: {{ .release }}
 {{/*
 PostgreSQL connection URL.
 */}}
-{{- define "openfoundry.postgresUrl" -}}
+{{- define "altius.postgresUrl" -}}
 postgresql://$(POSTGRES_USERNAME):$(POSTGRES_PASSWORD)@{{ .Values.storage.postgres.host }}:{{ .Values.storage.postgres.port }}/{{ .Values.storage.postgres.database }}
 {{- end }}
 
@@ -58,18 +58,18 @@ Service account name.
 HELM-14: Explicit service account for all deployments.
 Falls back to release-scoped name (not cluster default) when no override is set.
 */}}
-{{- define "openfoundry.serviceAccountName" -}}
+{{- define "altius.serviceAccountName" -}}
 {{- if and .Values.serviceAccount .Values.serviceAccount.name -}}
 {{- .Values.serviceAccount.name }}
 {{- else -}}
-{{- include "openfoundry.fullname" . }}
+{{- include "altius.fullname" . }}
 {{- end -}}
 {{- end }}
 
 {{/*
 Image reference for a service.
 */}}
-{{- define "openfoundry.image" -}}
+{{- define "altius.image" -}}
 {{- $tag := default .global.tag .svc.tag -}}
 {{- if .svc.repository -}}
 {{ .svc.repository }}:{{ $tag }}

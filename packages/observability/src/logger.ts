@@ -1,5 +1,5 @@
 /**
- * Structured logger factory for all Open Foundry services.
+ * Structured logger factory for all Altius services.
  *
  * Uses pino for JSON-formatted, leveled output in production and
  * human-readable output in development.

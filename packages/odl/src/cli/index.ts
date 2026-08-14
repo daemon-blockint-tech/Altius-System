@@ -47,7 +47,7 @@ const program = new Command();
 
 program
   .name('odl')
-  .description('Open Foundry ODL (Ontology Definition Language) CLI')
+  .description('Altius ODL (Ontology Definition Language) CLI')
   .version('0.0.1');
 
 // ─── validate ───

@@ -11,7 +11,7 @@ import type {
   AggregateQuery,
   AggregateResult,
   AggregateGroup,
-} from '@openfoundry/spi';
+} from '@altius/spi';
 import { snakeCase, pgIdent, fieldCol, fieldColName } from '../schema/type-mapping.js';
 import { filterToSql } from './filter-to-sql.js';
 import { PgTransaction, resolveQueryable } from '../transactions/index.js';

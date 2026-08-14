@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-import { DataPurpose } from "@openfoundry/spi";
+import { DataPurpose } from "@altius/spi";
 
 import { AuthorizationService } from "../authz/authorization-service.js";
 import type { OpenFgaClientInterface } from "../authz/authorization-service.js";

@@ -18,7 +18,7 @@ let keyPair: GenerateKeyPairResult;
 let wrongKeyPair: GenerateKeyPairResult;
 
 const ISSUER = "https://auth.test.nhs.uk";
-const CLIENT_ID = "openfoundry-test";
+const CLIENT_ID = "altius-test";
 
 beforeAll(async () => {
   keyPair = await generateKeyPair("RS256");

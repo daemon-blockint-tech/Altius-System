@@ -1,5 +1,5 @@
 /**
- * Provenance-preserving projection from Open Foundry records to CDM shape.
+ * Provenance-preserving projection from Altius records to CDM shape.
  *
  * The projection is fully driven by the mapping profile (`profile.ts`): no
  * per-resource code. Each projected record carries a `_provenance` envelope so
@@ -17,7 +17,7 @@ import type {
 const CONST_PREFIX = '__const_';
 
 /**
- * Project a single Open Foundry record into a CDM record using a resource
+ * Project a single Altius record into a CDM record using a resource
  * mapping. `source` is an ontology object (or a link flattened to object shape,
  * as the FHIR Encounter path does).
  */
@@ -71,7 +71,7 @@ export function projectToCdm(
 }
 
 /**
- * Find the resource mapping for a given Open Foundry source type.
+ * Find the resource mapping for a given Altius source type.
  * (CDM resource names are not unique — Ward and Bed both map to Location — so
  * lookups are keyed by the source type, which is unique.)
  */

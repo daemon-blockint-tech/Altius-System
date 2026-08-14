@@ -11,8 +11,8 @@
  * concern (a future schema-management API), not a boot gate.
  */
 
-import { diff, classify } from '@openfoundry/odl';
-import type { ParsedSchema, SchemaRegistry } from '@openfoundry/odl';
+import { diff, classify } from '@altius/odl';
+import type { ParsedSchema, SchemaRegistry } from '@altius/odl';
 
 /**
  * Order-insensitive canonical key for change detection. Pack discovery and

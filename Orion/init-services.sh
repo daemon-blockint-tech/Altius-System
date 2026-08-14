@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Open Foundry — Development Environment Setup
+# Altius — Development Environment Setup
 # Waits for infrastructure and initializes all dependent services.
 # Runs psql via `docker compose exec` so no host-side pg tools are needed.
 set -euo pipefail
@@ -12,8 +12,8 @@ if [ -f "${SCRIPT_DIR}/.env" ]; then
   set -a; source "${SCRIPT_DIR}/.env"; set +a
 fi
 
-POSTGRES_DB="${POSTGRES_DB:-openfoundry}"
-POSTGRES_USER="${POSTGRES_USER:-openfoundry}"
+POSTGRES_DB="${POSTGRES_DB:-altius}"
+POSTGRES_USER="${POSTGRES_USER:-altius}"
 OPENFGA_HOST="${OPENFGA_HOST:-localhost}"
 OPENFGA_PORT="${OPENFGA_PORT:-8280}"
 
@@ -52,8 +52,8 @@ init_age() {
 CREATE EXTENSION IF NOT EXISTS age;
 LOAD 'age';
 SET search_path = ag_catalog, "$user", public;
-SELECT create_graph('openfoundry') WHERE NOT EXISTS (
-  SELECT 1 FROM ag_catalog.ag_graph WHERE name = 'openfoundry'
+SELECT create_graph('altius') WHERE NOT EXISTS (
+  SELECT 1 FROM ag_catalog.ag_graph WHERE name = 'altius'
 );
 SQL
   log "AGE extension initialized."
@@ -85,7 +85,7 @@ load_openfga_model() {
   local store_response
   store_response=$(curl -sf -X POST "http://${OPENFGA_HOST}:${OPENFGA_PORT}/stores" \
     -H "Content-Type: application/json" \
-    -d '{"name": "openfoundry"}')
+    -d '{"name": "altius"}')
 
   local store_id
   store_id=$(echo "${store_response}" | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
@@ -184,7 +184,7 @@ SQL
 # ─── Main ─────────────────────────────────────────────────────────
 
 main() {
-  log "Starting Open Foundry development environment setup..."
+  log "Starting Altius development environment setup..."
   log ""
 
   wait_for_postgres

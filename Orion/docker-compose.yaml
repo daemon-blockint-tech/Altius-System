@@ -1,4 +1,4 @@
-# Open Foundry — NHS Acute Pilot — Development Deployment
+# Altius — NHS Acute Pilot — Development Deployment
 # Per MVP Section 5.2: all 12 services for local development.
 
 services:
@@ -9,13 +9,13 @@ services:
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-openfoundry}
-      POSTGRES_USER: ${POSTGRES_USER:-openfoundry}
+      POSTGRES_DB: ${POSTGRES_DB:-altius}
+      POSTGRES_USER: ${POSTGRES_USER:-altius}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
     volumes:
       - pg_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-openfoundry}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-altius}"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -50,7 +50,7 @@ services:
     command: migrate
     environment:
       OPENFGA_DATASTORE_ENGINE: postgres
-      OPENFGA_DATASTORE_URI: "postgres://${POSTGRES_USER:-openfoundry}:${POSTGRES_PASSWORD}@postgresql:5432/${POSTGRES_DB:-openfoundry}?sslmode=disable"
+      OPENFGA_DATASTORE_URI: "postgres://${POSTGRES_USER:-altius}:${POSTGRES_PASSWORD}@postgresql:5432/${POSTGRES_DB:-altius}?sslmode=disable"
     depends_on:
       postgresql:
         condition: service_healthy
@@ -65,7 +65,7 @@ services:
       - "8281:8081"
     environment:
       OPENFGA_DATASTORE_ENGINE: postgres
-      OPENFGA_DATASTORE_URI: "postgres://${POSTGRES_USER:-openfoundry}:${POSTGRES_PASSWORD}@postgresql:5432/${POSTGRES_DB:-openfoundry}?sslmode=disable"
+      OPENFGA_DATASTORE_URI: "postgres://${POSTGRES_USER:-altius}:${POSTGRES_PASSWORD}@postgresql:5432/${POSTGRES_DB:-altius}?sslmode=disable"
       OPENFGA_PLAYGROUND_ENABLED: "true"
     depends_on:
       openfga-migrate:
@@ -77,19 +77,19 @@ services:
 
   keycloak:
     image: quay.io/keycloak/keycloak:25.0
-    # --import-realm provisions the `openfoundry` realm on first boot with the
+    # --import-realm provisions the `altius` realm on first boot with the
     # client + three protocol mappers (audience, tenant_id, flat roles) the
     # OIDC authenticator requires, plus pilot roles and test users. Removes the
-    # "Keycloak realm is not auto-provisioned" footgun (deploy/README).
+    # "Keycloak realm is not auto-provisioned" footgun (Orion/README).
     command: start-dev --import-realm
     volumes:
-      - ./keycloak/openfoundry-realm.json:/opt/keycloak/data/import/openfoundry-realm.json:ro
+      - ./keycloak/altius-realm.json:/opt/keycloak/data/import/altius-realm.json:ro
     ports:
       - "${KEYCLOAK_PORT:-8180}:8080"
     environment:
       KC_DB: postgres
-      KC_DB_URL: "jdbc:postgresql://postgresql:5432/${POSTGRES_DB:-openfoundry}"
-      KC_DB_USERNAME: ${POSTGRES_USER:-openfoundry}
+      KC_DB_URL: "jdbc:postgresql://postgresql:5432/${POSTGRES_DB:-altius}"
+      KC_DB_USERNAME: ${POSTGRES_USER:-altius}
       KC_DB_PASSWORD: ${POSTGRES_PASSWORD}
       KC_HOSTNAME_STRICT: "false"
       KC_HTTP_RELATIVE_PATH: /auth
@@ -113,7 +113,7 @@ services:
       - "${DEBEZIUM_PORT:-8083}:8083"
     environment:
       BOOTSTRAP_SERVERS: redpanda:9092
-      GROUP_ID: openfoundry-cdc
+      GROUP_ID: altius-cdc
       CONFIG_STORAGE_TOPIC: _cdc_configs
       OFFSET_STORAGE_TOPIC: _cdc_offsets
       STATUS_STORAGE_TOPIC: _cdc_status
@@ -194,14 +194,14 @@ services:
     environment:
       NODE_ENV: development
       PORT: "4000"
-      POSTGRES_URL: "postgresql://${POSTGRES_USER:-openfoundry}:${POSTGRES_PASSWORD}@postgresql:5432/${POSTGRES_DB:-openfoundry}"
+      POSTGRES_URL: "postgresql://${POSTGRES_USER:-altius}:${POSTGRES_PASSWORD}@postgresql:5432/${POSTGRES_DB:-altius}"
       OPENFGA_URL: "http://openfga:8080"
       OPENFGA_STORE_ID: ${OPENFGA_STORE_ID:-}
       CEL_EVALUATOR_URL: "cel-evaluator:50051"
       REDPANDA_BROKERS: "redpanda:9092"
       REDIS_URL: "redis://redis:6379"
       KEYCLOAK_URL: "http://keycloak:8080/auth"
-      KEYCLOAK_REALM: ${KEYCLOAK_REALM:-openfoundry}
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM:-altius}
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4317"
       OTEL_SERVICE_NAME: api-gateway
       DOMAIN_PACKS: ${DOMAIN_PACKS:-}
@@ -267,7 +267,7 @@ services:
     environment:
       NODE_ENV: development
       PORT: "4001"
-      POSTGRES_URL: "postgresql://${POSTGRES_USER:-openfoundry}:${POSTGRES_PASSWORD}@postgresql:5432/${POSTGRES_DB:-openfoundry}"
+      POSTGRES_URL: "postgresql://${POSTGRES_USER:-altius}:${POSTGRES_PASSWORD}@postgresql:5432/${POSTGRES_DB:-altius}"
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4317"
       OTEL_SERVICE_NAME: ontology-engine
     depends_on:
@@ -292,7 +292,7 @@ services:
       NODE_ENV: development
       PORT: "4002"
       CEL_EVALUATOR_URL: "cel-evaluator:50051"
-      POSTGRES_URL: "postgresql://${POSTGRES_USER:-openfoundry}:${POSTGRES_PASSWORD}@postgresql:5432/${POSTGRES_DB:-openfoundry}"
+      POSTGRES_URL: "postgresql://${POSTGRES_USER:-altius}:${POSTGRES_PASSWORD}@postgresql:5432/${POSTGRES_DB:-altius}"
       REDPANDA_BROKERS: "redpanda:9092"
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4317"
       OTEL_SERVICE_NAME: action-executor
@@ -321,7 +321,7 @@ services:
     environment:
       NODE_ENV: development
       PORT: "4003"
-      POSTGRES_URL: "postgresql://${POSTGRES_USER:-openfoundry}:${POSTGRES_PASSWORD}@postgresql:5432/${POSTGRES_DB:-openfoundry}"
+      POSTGRES_URL: "postgresql://${POSTGRES_USER:-altius}:${POSTGRES_PASSWORD}@postgresql:5432/${POSTGRES_DB:-altius}"
       REDPANDA_BROKERS: "redpanda:9092"
       DEBEZIUM_URL: "http://debezium:8083"
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4317"
@@ -351,11 +351,11 @@ services:
     environment:
       NODE_ENV: development
       PORT: "4004"
-      POSTGRES_URL: "postgresql://${POSTGRES_USER:-openfoundry}:${POSTGRES_PASSWORD}@postgresql:5432/${POSTGRES_DB:-openfoundry}"
+      POSTGRES_URL: "postgresql://${POSTGRES_USER:-altius}:${POSTGRES_PASSWORD}@postgresql:5432/${POSTGRES_DB:-altius}"
       OPENFGA_URL: "http://openfga:8080"
       OPENFGA_STORE_ID: ${OPENFGA_STORE_ID:-}
       KEYCLOAK_URL: "http://keycloak:8080/auth"
-      KEYCLOAK_REALM: ${KEYCLOAK_REALM:-openfoundry}
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM:-altius}
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4317"
       OTEL_SERVICE_NAME: security-service
     depends_on:

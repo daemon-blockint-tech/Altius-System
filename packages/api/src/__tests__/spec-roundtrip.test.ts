@@ -17,8 +17,8 @@ import { parse as gqlParse } from 'graphql';
 import { loadDomainPacks } from '../schema-loader.js';
 import { generateOpenApiSpec } from '../rest/openapi.js';
 import { generateAsyncApiSpec } from '../spec/asyncapi-generator.js';
-import { generateGraphQLSchema } from '@openfoundry/odl';
-import type { ParsedSchema } from '@openfoundry/odl';
+import { generateGraphQLSchema } from '@altius/odl';
+import type { ParsedSchema } from '@altius/odl';
 
 // Use all discovered packs — matches what spec:all / CI produces.
 const DOMAIN_PACKS_DIR = resolve(

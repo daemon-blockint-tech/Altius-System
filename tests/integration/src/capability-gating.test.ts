@@ -17,7 +17,7 @@
  * standard integration suite, which assumes the default all-packs stack. Run it
  * with, e.g.:
  *
- *   CAPABILITY_E2E=1 pnpm --filter @openfoundry/integration-tests exec \
+ *   CAPABILITY_E2E=1 pnpm --filter @altius/integration-tests exec \
  *     vitest run capability-gating
  *
  * It restores nothing: after it completes the stack is down. Bring the normal
@@ -36,12 +36,12 @@ const ENABLED = process.env['CAPABILITY_E2E'] === '1';
 const describeMaybe = dockerAvailable && ENABLED ? describe : describe.skip;
 
 // Absolute path to the base compose file. Invoking compose with just this file
-// (no -p) infers the project name from its parent directory ("deploy"), which
+// (no -p) infers the project name from its parent directory ("Orion", compose-lowercased to "orion"), which
 // matches the standard harness — so `down -v` cleans whatever stack is up and
 // `up` claims the same host ports.
 const COMPOSE_FILE = resolve(
   dirname(fileURLToPath(import.meta.url)),
-  '../../../deploy/docker-compose.yaml',
+  '../../../Orion/docker-compose.yaml',
 );
 
 function compose(cmd: string, env?: Record<string, string>): void {

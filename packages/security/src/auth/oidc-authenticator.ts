@@ -1,5 +1,5 @@
 /**
- * OIDC authenticator for the Open Foundry platform.
+ * OIDC authenticator for the Altius platform.
  *
  * Validates JWT tokens using JWKS, extracts claims, and maps
  * to platform identities. Supports NHS CIS2 token format.
@@ -7,7 +7,7 @@
 
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import type { JWTPayload, JWTVerifyResult } from "jose";
-import { getTracer, withSpan } from "@openfoundry/observability";
+import { getTracer, withSpan } from "@altius/observability";
 
 import type {
   AuthenticatedUser,

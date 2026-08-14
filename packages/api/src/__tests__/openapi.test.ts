@@ -13,7 +13,7 @@ describe('generateOpenApiSpec', () => {
     const spec = generateOpenApiSpec(parsed);
 
     expect(spec['openapi']).toBe('3.0.3');
-    expect((spec['info'] as Record<string, unknown>)['title']).toBe('Open Foundry API');
+    expect((spec['info'] as Record<string, unknown>)['title']).toBe('Altius API');
     // Default version when none supplied.
     expect((spec['info'] as Record<string, unknown>)['version']).toBe('1.0.0');
 

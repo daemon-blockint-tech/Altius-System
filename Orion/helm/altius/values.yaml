@@ -1,9 +1,9 @@
-# Open Foundry Helm Chart — values.yaml
+# Altius Helm Chart — values.yaml
 # Matches MVP Section 5.3 helm install parameters.
 
 # -- Global image settings
 image:
-  registry: openfoundry
+  registry: altius
   pullPolicy: IfNotPresent
   tag: "0.2"
 
@@ -18,8 +18,8 @@ storage:
   postgres:
     host: postgresql
     port: 5432
-    database: openfoundry
-    existingSecret: openfoundry-postgres
+    database: altius
+    existingSecret: altius-postgres
     secretKeys:
       username: username
       password: password
@@ -46,7 +46,7 @@ auth:
     # fail-closed (claimless tokens rejected); a real tenant_id claim always wins.
     # Single-tenant deployments set this (e.g. "default"); multi-tenant leave empty.
     defaultTenant: ""
-    existingSecret: openfoundry-oidc
+    existingSecret: altius-oidc
     secretKeys:
       clientSecret: clientSecret
 
@@ -88,7 +88,7 @@ observability:
 sync:
   pas:
     dbUrl: ""
-    existingSecret: openfoundry-pas
+    existingSecret: altius-pas
     secretKeys:
       dbUrl: dbUrl
   debezium:
@@ -151,7 +151,7 @@ serviceAccount:
 apiGateway:
   replicaCount: 2
   image:
-    repository: openfoundry/api
+    repository: altius/api
   port: 4000
   autoscaling:
     enabled: true
@@ -174,7 +174,7 @@ apiGateway:
 ontologyEngine:
   replicaCount: 2
   image:
-    repository: openfoundry/engine
+    repository: altius/engine
   port: 4001
   autoscaling:
     enabled: false
@@ -197,7 +197,7 @@ ontologyEngine:
 actionExecutor:
   replicaCount: 2
   image:
-    repository: openfoundry/actions
+    repository: altius/actions
   port: 4002
   autoscaling:
     enabled: false
@@ -220,7 +220,7 @@ actionExecutor:
 syncEngine:
   replicaCount: 1
   image:
-    repository: openfoundry/sync
+    repository: altius/sync
   port: 4003
   autoscaling:
     enabled: false
@@ -243,7 +243,7 @@ syncEngine:
 securityService:
   replicaCount: 2
   image:
-    repository: openfoundry/security
+    repository: altius/security
   port: 4004
   autoscaling:
     enabled: false
@@ -266,7 +266,7 @@ securityService:
 celEvaluatorService:
   replicaCount: 1
   image:
-    repository: openfoundry/cel
+    repository: altius/cel
   port: 50051
   resources:
     requests:
@@ -284,7 +284,7 @@ ingress:
   className: ""
   annotations: {}
   hosts:
-    - host: openfoundry.local
+    - host: altius.local
       paths:
         - path: /
           pathType: Prefix

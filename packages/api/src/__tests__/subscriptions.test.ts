@@ -11,10 +11,10 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { PubSub } from 'graphql-subscriptions';
-import { parseOdl } from '@openfoundry/odl';
-import type { ParsedSchema } from '@openfoundry/odl';
-import type { CloudEvent } from '@openfoundry/spi';
-import type { ObjectEventData, LinkEventData } from '@openfoundry/engine';
+import { parseOdl } from '@altius/odl';
+import type { ParsedSchema } from '@altius/odl';
+import type { CloudEvent } from '@altius/spi';
+import type { ObjectEventData, LinkEventData } from '@altius/engine';
 import {
   SubscriptionManager,
   InMemorySubscribableEventBus,
@@ -81,8 +81,8 @@ function createObjectUpdatedEvent(
   return {
     specversion: '1.0',
     id: `evt-${Date.now()}`,
-    source: 'openfoundry://engine/ontology',
-    type: 'openfoundry.object.updated',
+    source: 'altius://engine/ontology',
+    type: 'altius.object.updated',
     subject: `${objectType}/${objectId}`,
     time: '2025-01-15T10:30:00Z',
     datacontenttype: 'application/json',
@@ -104,8 +104,8 @@ function createObjectCreatedEvent(
   return {
     specversion: '1.0',
     id: `evt-${Date.now()}`,
-    source: 'openfoundry://engine/ontology',
-    type: 'openfoundry.object.created',
+    source: 'altius://engine/ontology',
+    type: 'altius.object.created',
     subject: `${objectType}/${objectId}`,
     time: '2025-01-15T10:30:00Z',
     datacontenttype: 'application/json',
@@ -127,8 +127,8 @@ function createLinkCreatedEvent(
   return {
     specversion: '1.0',
     id: `evt-${Date.now()}`,
-    source: 'openfoundry://engine/ontology',
-    type: 'openfoundry.link.created',
+    source: 'altius://engine/ontology',
+    type: 'altius.link.created',
     subject: `${linkType}/${linkId}`,
     time: '2025-01-15T10:30:00Z',
     datacontenttype: 'application/json',
@@ -228,8 +228,8 @@ describe('CloudEvent to ChangeEvent mapping', () => {
     const event: CloudEvent<ObjectEventData> = {
       specversion: '1.0',
       id: 'evt-del',
-      source: 'openfoundry://engine/ontology',
-      type: 'openfoundry.object.deleted',
+      source: 'altius://engine/ontology',
+      type: 'altius.object.deleted',
       subject: 'Patient/p-3',
       time: '2025-01-15T11:00:00Z',
       data: {
@@ -249,8 +249,8 @@ describe('CloudEvent to ChangeEvent mapping', () => {
     const event: CloudEvent<ObjectEventData> = {
       specversion: '1.0',
       id: 'evt-unknown',
-      source: 'openfoundry://engine/ontology',
-      type: 'openfoundry.action.completed',
+      source: 'altius://engine/ontology',
+      type: 'altius.action.completed',
       time: '2025-01-15T11:00:00Z',
       data: {
         objectType: 'Patient',
@@ -276,8 +276,8 @@ describe('CloudEvent to ChangeEvent mapping', () => {
     const event: CloudEvent<LinkEventData> = {
       specversion: '1.0',
       id: 'evt-nope',
-      source: 'openfoundry://engine/ontology',
-      type: 'openfoundry.object.updated',
+      source: 'altius://engine/ontology',
+      type: 'altius.object.updated',
       time: '2025-01-15T11:00:00Z',
       data: {
         linkType: 'Fake',

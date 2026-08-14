@@ -1,5 +1,5 @@
 {
-  "name": "@openfoundry/integration-tests",
+  "name": "@altius/integration-tests",
   "version": "0.0.1",
   "description": "Integration tests against full Docker Compose stack (MVP Section 8)",
   "type": "module",
@@ -9,8 +9,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:verbose": "vitest run --reporter=verbose",
-    "docker:up": "docker compose -f ../../deploy/docker-compose.yaml up -d --wait",
-    "docker:down": "docker compose -f ../../deploy/docker-compose.yaml down -v",
+    "docker:up": "docker compose -f ../../Orion/docker-compose.yaml up -d --wait",
+    "docker:down": "docker compose -f ../../Orion/docker-compose.yaml down -v",
     "clean": "rm -rf dist coverage"
   },
   "license": "Apache-2.0",

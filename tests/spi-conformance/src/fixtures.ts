@@ -2,7 +2,7 @@
  * Shared test fixtures for SPI conformance tests.
  */
 
-import type { RequestContext, OntologySchema } from '@openfoundry/spi';
+import type { RequestContext, OntologySchema } from '@altius/spi';
 
 // ---------------------------------------------------------------------------
 // Request contexts

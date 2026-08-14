@@ -200,7 +200,7 @@ describe('IdentityResolver', () => {
       await resolver.resolve(incoming);
 
       expect(conflictEvents).toHaveLength(1);
-      expect(conflictEvents[0]!.eventType).toBe('openfoundry.sync.identity_conflict');
+      expect(conflictEvents[0]!.eventType).toBe('altius.sync.identity_conflict');
       expect(conflictEvents[0]!.existingId).toBe('patient-001');
       expect(conflictEvents[0]!.incomingId).toBe('patient-002');
       expect(conflictEvents[0]!.nhsNumber).toBe('943 476 5919');

@@ -1,7 +1,7 @@
 /**
- * Authentication types for the Open Foundry security layer.
+ * Authentication types for the Altius security layer.
  *
- * Aligns with the AuditActor type from @openfoundry/spi (Section 7.2)
+ * Aligns with the AuditActor type from @altius/spi (Section 7.2)
  * to ensure authenticated users can be directly mapped to audit records.
  */
 

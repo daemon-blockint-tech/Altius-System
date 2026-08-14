@@ -6,7 +6,7 @@
  * per-field source-of-truth configuration for NHS pilot (MVP 4.4.1).
  */
 
-import type { DateTime } from '@openfoundry/spi';
+import type { DateTime } from '@altius/spi';
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -116,7 +116,7 @@ export class ConflictResolver {
   }
 
   /**
-   * Register a handler for conflict events (openfoundry.sync.conflict).
+   * Register a handler for conflict events (altius.sync.conflict).
    */
   setConflictHandler(handler: ConflictEventHandler): void {
     this.onConflict = handler;

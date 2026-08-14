@@ -31,7 +31,7 @@ jobs:
         run: pnpm run test
 
       - name: Generate spec artifacts
-        run: pnpm --filter @openfoundry/api spec:all
+        run: pnpm --filter @altius/api spec:all
 
       - name: Create release if it does not exist
         env:

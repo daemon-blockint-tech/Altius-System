@@ -4,7 +4,7 @@
  * The platform is action-oriented: there is NO generic object-CRUD create path,
  * so wards/beds/consultants cannot be created through the API. Instead the
  * stack boots with a test-only fixtures pack (tests/integration/fixtures/
- * seed-pack, wired via deploy/docker-compose.test.yaml) that seeds the
+ * seed-pack, wired via Orion/docker-compose.test.yaml) that seeds the
  * reference data. This module READS that seeded data back by stable natural
  * keys (ward name, bed number, consultant GMC number, patient NHS number) and
  * returns it in the SeededData shape the suites consume.
@@ -65,7 +65,7 @@ function pick(
     throw new Error(
       `Integration seed: expected reference object ${label} (${field}=${value}) ` +
         `not found. Is the fixtures seed pack loaded? ` +
-        `(deploy/docker-compose.test.yaml mounts it and sets SEED_TENANT=default.)`,
+        `(Orion/docker-compose.test.yaml mounts it and sets SEED_TENANT=default.)`,
     );
   }
   return match;

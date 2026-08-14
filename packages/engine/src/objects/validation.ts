@@ -13,12 +13,12 @@ import type {
   PlatformError,
   RequestContext,
   StorageProvider,
-} from '@openfoundry/spi';
+} from '@altius/spi';
 import type {
   ParsedSchema,
   ObjectType,
   FieldDefinition,
-} from '@openfoundry/odl';
+} from '@altius/odl';
 
 /** A single validation failure. */
 export interface ValidationFailure {

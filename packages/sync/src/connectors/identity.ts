@@ -32,7 +32,7 @@ export interface QualityViolation {
 /** Event emitted when an identity conflict is detected. */
 export interface IdentityConflictEvent {
   /** Fixed event type for identity conflicts. */
-  eventType: 'openfoundry.sync.identity_conflict';
+  eventType: 'altius.sync.identity_conflict';
   /** ID of the existing object in the store. */
   existingId: string;
   /** ID of the incoming object that conflicts. */
@@ -229,7 +229,7 @@ export class IdentityResolver {
   private emitIdentityConflict(existingId: string, incomingId: string, nhsNumber: string): void {
     if (this.onIdentityConflict) {
       this.onIdentityConflict({
-        eventType: 'openfoundry.sync.identity_conflict',
+        eventType: 'altius.sync.identity_conflict',
         existingId,
         incomingId,
         nhsNumber,

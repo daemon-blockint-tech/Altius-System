@@ -6,9 +6,9 @@ See values.yaml monitoring.serviceMonitor.enabled (default: false).
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
-  name: {{ include "openfoundry.fullname" . }}
+  name: {{ include "altius.fullname" . }}
   labels:
-    {{- include "openfoundry.labels" . | nindent 4 }}
+    {{- include "altius.labels" . | nindent 4 }}
   {{- if .Values.monitoring.serviceMonitor.namespace }}
   namespace: {{ .Values.monitoring.serviceMonitor.namespace }}
   {{- end }}

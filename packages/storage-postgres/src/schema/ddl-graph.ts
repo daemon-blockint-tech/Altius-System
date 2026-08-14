@@ -2,7 +2,7 @@
  * DDL generation for Apache AGE graph setup.
  *
  * Uses a shared graph with tenant labeling:
- * - Single graph named 'openfoundry' (created once)
+ * - Single graph named 'altius' (created once)
  * - Node labels per ObjectType
  * - Edge labels per LinkType
  *
@@ -12,9 +12,9 @@
  * statements for clarity and schema documentation.
  */
 
-import type { ObjectTypeDefinition, LinkTypeDefinition } from '@openfoundry/spi';
+import type { ObjectTypeDefinition, LinkTypeDefinition } from '@altius/spi';
 
-const GRAPH_NAME = 'openfoundry';
+const GRAPH_NAME = 'altius';
 
 /**
  * Generate DDL for AGE extension and graph setup.

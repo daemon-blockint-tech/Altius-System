@@ -18,9 +18,9 @@ import type {
   RequestContext,
   DateTime,
   DataPurpose,
-} from '@openfoundry/spi';
-import type { ParsedSchema, ActionType } from '@openfoundry/odl';
-import { createLogger } from '@openfoundry/observability';
+} from '@altius/spi';
+import type { ParsedSchema, ActionType } from '@altius/odl';
+import { createLogger } from '@altius/observability';
 import type {
   ActionManifest,
   ActionEffect,

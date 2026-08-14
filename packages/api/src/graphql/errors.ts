@@ -1,12 +1,12 @@
 import { GraphQLError } from 'graphql';
-import type { ErrorCategory, ErrorCode } from '@openfoundry/spi';
+import type { ErrorCategory, ErrorCode } from '@altius/spi';
 
 /**
  * Unified error model (Section 8.8).
- * Maps platform errors to GraphQL errors with extensions.openfoundry.
+ * Maps platform errors to GraphQL errors with extensions.altius.
  */
 
-interface OpenFoundryErrorOptions {
+interface AltiusErrorOptions {
   code: ErrorCode;
   category: ErrorCategory;
   message: string;
@@ -16,12 +16,12 @@ interface OpenFoundryErrorOptions {
 }
 
 /**
- * Create a GraphQL error with Open Foundry extensions.
+ * Create a GraphQL error with Altius extensions.
  */
-export function createOpenFoundryError(opts: OpenFoundryErrorOptions): GraphQLError {
+export function createAltiusError(opts: AltiusErrorOptions): GraphQLError {
   return new GraphQLError(opts.message, {
     extensions: {
-      openfoundry: {
+      altius: {
         code: opts.code,
         category: opts.category,
         retryable: opts.retryable,
@@ -34,7 +34,7 @@ export function createOpenFoundryError(opts: OpenFoundryErrorOptions): GraphQLEr
 }
 
 /**
- * Wrap an unknown error into a GraphQL-safe Open Foundry error.
+ * Wrap an unknown error into a GraphQL-safe Altius error.
  */
 export function wrapError(err: unknown, traceId?: string): GraphQLError {
   if (err instanceof GraphQLError) {
@@ -51,7 +51,7 @@ export function wrapError(err: unknown, traceId?: string): GraphQLError {
     ? 'An internal error occurred'
     : rawMessage;
 
-  return createOpenFoundryError({
+  return createAltiusError({
     code,
     category,
     message,

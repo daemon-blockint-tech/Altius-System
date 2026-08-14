@@ -11,13 +11,13 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { parseOdl } from '@openfoundry/odl';
-import type { ParsedSchema } from '@openfoundry/odl';
-import type { OntologyObject, ObjectPage } from '@openfoundry/spi';
-import type { ActionResult } from '@openfoundry/actions';
+import { parseOdl } from '@altius/odl';
+import type { ParsedSchema } from '@altius/odl';
+import type { OntologyObject, ObjectPage } from '@altius/spi';
+import type { ActionResult } from '@altius/actions';
 import { generateResolvers } from '../graphql/resolver-generator.js';
 import { buildConnection, encodeCursor, decodeCursor, resolvePagination } from '../graphql/pagination.js';
-import { createOpenFoundryError, wrapError } from '../graphql/errors.js';
+import { createAltiusError, wrapError } from '../graphql/errors.js';
 import type { ApiDependencies, ResolverContext, AuthenticatedUserInfo } from '../graphql/types.js';
 
 // ─── NHS Acute ODL fixture ───
@@ -846,8 +846,8 @@ describe('GraphQL API', () => {
   });
 
   describe('error handling', () => {
-    it('creates OpenFoundry error with extensions', () => {
-      const err = createOpenFoundryError({
+    it('creates Altius error with extensions', () => {
+      const err = createAltiusError({
         code: 'CONSENT_DENIED',
         category: 'consent',
         message: 'Consent denied',
@@ -857,24 +857,24 @@ describe('GraphQL API', () => {
       });
 
       expect(err.message).toBe('Consent denied');
-      expect(err.extensions?.['openfoundry']).toBeDefined();
-      const ext = err.extensions!['openfoundry'] as Record<string, unknown>;
+      expect(err.extensions?.['altius']).toBeDefined();
+      const ext = err.extensions!['altius'] as Record<string, unknown>;
       expect(ext['code']).toBe('CONSENT_DENIED');
       expect(ext['category']).toBe('consent');
       expect(ext['retryable']).toBe(false);
       expect(ext['traceId']).toBe('trace-abc');
     });
 
-    it('wraps unknown errors into OpenFoundry format', () => {
+    it('wraps unknown errors into Altius format', () => {
       const err = wrapError(new Error('Something broke'), 'trace-xyz');
-      expect(err.extensions?.['openfoundry']).toBeDefined();
-      const ext = err.extensions!['openfoundry'] as Record<string, unknown>;
+      expect(err.extensions?.['altius']).toBeDefined();
+      const ext = err.extensions!['altius'] as Record<string, unknown>;
       expect(ext['code']).toBe('INTERNAL_ERROR');
       expect(ext['category']).toBe('system');
     });
 
     it('preserves GraphQL errors as-is', () => {
-      const original = createOpenFoundryError({
+      const original = createAltiusError({
         code: 'OBJECT_NOT_FOUND',
         category: 'not_found',
         message: 'Not found',

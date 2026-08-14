@@ -15,11 +15,11 @@
  * as the GraphQL layer. Error responses use the unified error model (Section 8.8).
  */
 
-import type { ParsedSchema, ObjectType, ActionType, FieldDefinition } from '@openfoundry/odl';
-import { DataPurpose } from '@openfoundry/spi';
-import type { OntologyObject, FilterExpression, AggregateQuery, AggregateField, AggregateFunction, SearchQuery, ObjectSetDefinition } from '@openfoundry/spi';
-import type { ActionActor, ActionContext } from '@openfoundry/actions';
-import type { RedactionResult } from '@openfoundry/security';
+import type { ParsedSchema, ObjectType, ActionType, FieldDefinition } from '@altius/odl';
+import { DataPurpose } from '@altius/spi';
+import type { OntologyObject, FilterExpression, AggregateQuery, AggregateField, AggregateFunction, SearchQuery, ObjectSetDefinition } from '@altius/spi';
+import type { ActionActor, ActionContext } from '@altius/actions';
+import type { RedactionResult } from '@altius/security';
 import type { ApiDependencies, ResolverContext } from '../graphql/types.js';
 import { DEFAULT_CONSENT_PURPOSE, DEFAULT_CONSENT_SUBJECT_TYPES, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from '../graphql/types.js';
 import type { RestRequest, RestResponse, RestRoute } from './types.js';

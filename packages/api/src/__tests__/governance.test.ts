@@ -136,7 +136,7 @@ describe('SlidingWindowRateLimiter', () => {
     expect(error.message).toContain('Rate limit exceeded');
     expect(error.message).toContain('principal');
 
-    const ext = error.extensions?.['openfoundry'] as Record<string, unknown>;
+    const ext = error.extensions?.['altius'] as Record<string, unknown>;
     expect(ext['code']).toBe('RATE_LIMITED');
     expect(ext['category']).toBe('rate_limit');
     expect(ext['retryable']).toBe(true);
@@ -322,7 +322,7 @@ describe('QueryComplexityAnalyzer', () => {
     const error = analyzer.createComplexityError(analysis);
     expect(error.message).toContain('Query too complex');
 
-    const ext = error.extensions?.['openfoundry'] as Record<string, unknown>;
+    const ext = error.extensions?.['altius'] as Record<string, unknown>;
     expect(ext['code']).toBe('QUERY_TOO_COMPLEX');
     expect(ext['category']).toBe('validation');
     expect(ext['retryable']).toBe(false);
@@ -399,8 +399,8 @@ describe('withTimeout', () => {
     try {
       await promise;
     } catch (err: unknown) {
-      const error = err as { extensions?: { openfoundry?: Record<string, unknown> } };
-      const ext = error.extensions?.openfoundry;
+      const error = err as { extensions?: { altius?: Record<string, unknown> } };
+      const ext = error.extensions?.altius;
       expect(ext?.['code']).toBe('OPERATION_TIMEOUT');
       expect(ext?.['category']).toBe('timeout');
       expect(ext?.['retryable']).toBe(true);
@@ -424,7 +424,7 @@ describe('createTimeoutError', () => {
     const error = createTimeoutError(30_000);
     expect(error.message).toContain('30000ms');
 
-    const ext = error.extensions?.['openfoundry'] as Record<string, unknown>;
+    const ext = error.extensions?.['altius'] as Record<string, unknown>;
     expect(ext['code']).toBe('OPERATION_TIMEOUT');
     expect(ext['category']).toBe('timeout');
     expect(ext['retryable']).toBe(true);
@@ -468,7 +468,7 @@ describe('createResponseTooLargeError', () => {
     expect(error.message).toContain('10000000');
     expect(error.message).toContain('5000000');
 
-    const ext = error.extensions?.['openfoundry'] as Record<string, unknown>;
+    const ext = error.extensions?.['altius'] as Record<string, unknown>;
     expect(ext['code']).toBe('VALIDATION_ERROR');
     expect(ext['retryable']).toBe(false);
     const details = ext['details'] as Record<string, unknown>;

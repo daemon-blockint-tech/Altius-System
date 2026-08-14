@@ -7,7 +7,7 @@
  * - Property columns from the link type definition
  */
 
-import type { LinkTypeDefinition, PropertyDefinition } from '@openfoundry/spi';
+import type { LinkTypeDefinition, PropertyDefinition } from '@altius/spi';
 import { pgType, pgIdent, snakeCase } from './type-mapping.js';
 
 /**

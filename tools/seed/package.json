@@ -1,5 +1,5 @@
 {
-  "name": "@openfoundry/seed-nhs-acute",
+  "name": "@altius/seed-nhs-acute",
   "version": "0.0.1",
   "description": "Synthetic NHS acute data seed generator",
   "type": "module",

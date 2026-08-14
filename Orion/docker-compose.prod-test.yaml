@@ -6,8 +6,8 @@ services:
   api-gateway:
     environment:
       NODE_ENV: production
-      OIDC_ISSUER: "http://localhost:8180/auth/realms/openfoundry"
-      OIDC_CLIENT_ID: openfoundry
-      OIDC_JWKS_URI: "http://keycloak:8080/auth/realms/openfoundry/protocol/openid-connect/certs"
+      OIDC_ISSUER: "http://localhost:8180/auth/realms/altius"
+      OIDC_CLIENT_ID: altius
+      OIDC_JWKS_URI: "http://keycloak:8080/auth/realms/altius/protocol/openid-connect/certs"
       OPENFGA_STORE_ID: "${OPENFGA_STORE_ID:?set OPENFGA_STORE_ID}"
       FHIR_BASE_URL: "http://localhost:4000/fhir"

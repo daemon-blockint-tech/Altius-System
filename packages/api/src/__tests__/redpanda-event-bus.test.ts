@@ -10,7 +10,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import type { CloudEvent } from '@openfoundry/spi';
+import type { CloudEvent } from '@altius/spi';
 
 // Mock kafkajs before importing RedpandaEventBus
 const mockProducer = {
@@ -270,7 +270,7 @@ describe('RedpandaEventBus', () => {
     it('uses default topic and clientId when not specified', () => {
       const defaultBus = new RedpandaEventBus({ brokers: ['b:9092'] });
       const lastCall = kafkaConstructorCalls[kafkaConstructorCalls.length - 1];
-      expect(lastCall?.clientId).toBe('openfoundry-api');
+      expect(lastCall?.clientId).toBe('altius-api');
       expect(defaultBus).toBeDefined();
     });
   });

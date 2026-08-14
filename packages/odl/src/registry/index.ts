@@ -1,7 +1,7 @@
 /**
  * ODL Schema Registry — versioned schema storage with diff validation.
  *
- * Per Open Foundry spec Section 2.5 and MVP Section 2.1.
+ * Per Altius spec Section 2.5 and MVP Section 2.1.
  */
 
 import type { ParsedSchema } from '../parser/types.js';

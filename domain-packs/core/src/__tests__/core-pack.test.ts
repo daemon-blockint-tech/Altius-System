@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseOdl, validateSchema } from '@openfoundry/odl';
-import type { ParsedSchema, FieldDirective } from '@openfoundry/odl';
+import { parseOdl, validateSchema } from '@altius/odl';
+import type { ParsedSchema, FieldDirective } from '@altius/odl';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PACK_ROOT = resolve(__dirname, '..', '..');
@@ -30,9 +30,9 @@ describe('Core Domain Pack — ODL Parsing', () => {
   schema = parseOdl(coreOdlSource);
 
   describe('namespace', () => {
-    it('declares openfoundry.core namespace', () => {
+    it('declares altius.core namespace', () => {
       expect(schema.namespace).toBeDefined();
-      expect(schema.namespace!.name).toBe('openfoundry.core');
+      expect(schema.namespace!.name).toBe('altius.core');
       expect(schema.namespace!.version).toBe('1.0.0');
     });
   });
@@ -188,7 +188,7 @@ describe('Core Domain Pack — pack.yaml manifest', () => {
     // just verify the required fields are present
     expect(packYamlContent).toContain('name: core');
     expect(packYamlContent).toContain('version: 1.0.0');
-    expect(packYamlContent).toContain('namespace: openfoundry.core');
+    expect(packYamlContent).toContain('namespace: altius.core');
     expect(packYamlContent).toContain('schema:');
     expect(packYamlContent).toContain('schema/core.odl');
   });

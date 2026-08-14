@@ -1,8 +1,8 @@
 {
-  "name": "@openfoundry/actions",
+  "name": "@altius/actions",
   "version": "0.1.0",
   "private": true,
-  "description": "Open Foundry Action Engine - CEL evaluation and action execution",
+  "description": "Altius Action Engine - CEL evaluation and action execution",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -23,13 +23,13 @@
   "dependencies": {
     "@grpc/grpc-js": "^1.12.0",
     "@grpc/proto-loader": "^0.7.0",
-    "@openfoundry/observability": "workspace:*",
-    "@openfoundry/odl": "workspace:*",
-    "@openfoundry/spi": "workspace:*",
+    "@altius/observability": "workspace:*",
+    "@altius/odl": "workspace:*",
+    "@altius/spi": "workspace:*",
     "yaml": "^2.8.0"
   },
   "devDependencies": {
-    "@openfoundry/storage-memory": "workspace:*",
+    "@altius/storage-memory": "workspace:*",
     "@types/node": "^22.0.0",
     "vitest": "^3.0.0",
     "typescript": "^5.7.0"

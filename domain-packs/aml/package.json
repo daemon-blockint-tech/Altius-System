@@ -1,5 +1,5 @@
 {
-  "name": "@openfoundry/domain-pack-aml",
+  "name": "@altius/domain-pack-aml",
   "version": "0.1.0",
   "description": "Anti-money laundering and financial compliance domain pack",
   "type": "module",
@@ -9,8 +9,8 @@
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
-    "@openfoundry/odl": "workspace:*",
-    "@openfoundry/actions": "workspace:*",
+    "@altius/odl": "workspace:*",
+    "@altius/actions": "workspace:*",
     "@types/node": "^22.0.0",
     "vitest": "^3.0.0",
     "yaml": "^2.8.0"

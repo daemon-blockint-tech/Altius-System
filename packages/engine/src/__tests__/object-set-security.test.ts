@@ -8,7 +8,7 @@
  * 4. Unauthenticated create rejection — fail closed when actorId absent
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import type { RequestContext } from '@openfoundry/spi';
+import type { RequestContext } from '@altius/spi';
 import { InMemoryObjectSetStore } from '../object-sets/in-memory-object-set-store.js';
 
 const owner: RequestContext = { tenantId: 't-1', actorId: 'user-owner' };

@@ -6,7 +6,7 @@
  * source support is implemented.
  */
 
-import type { HealthStatus } from "@openfoundry/spi";
+import type { HealthStatus } from "@altius/spi";
 import type {
   Connector,
   ConnectorConfig,

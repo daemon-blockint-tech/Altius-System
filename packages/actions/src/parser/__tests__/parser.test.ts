@@ -10,7 +10,7 @@
 import { describe, it, expect } from 'vitest';
 
 import { parseActionManifest } from '../index.js';
-import type { ParsedSchema } from '@openfoundry/odl';
+import type { ParsedSchema } from '@altius/odl';
 
 // ---------------------------------------------------------------------------
 // NHS action manifest YAML fixtures

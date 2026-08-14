@@ -1,5 +1,5 @@
 {
-  "name": "@openfoundry/domain-pack-supply-chain",
+  "name": "@altius/domain-pack-supply-chain",
   "version": "0.1.0",
   "description": "Supply chain control tower domain pack",
   "type": "module",
@@ -9,8 +9,8 @@
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
-    "@openfoundry/odl": "workspace:*",
-    "@openfoundry/actions": "workspace:*",
+    "@altius/odl": "workspace:*",
+    "@altius/actions": "workspace:*",
     "@types/node": "^22.0.0",
     "vitest": "^3.0.0",
     "yaml": "^2.8.0"

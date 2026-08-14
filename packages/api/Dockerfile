@@ -12,7 +12,7 @@ COPY tests/ tests/
 COPY tools/ tools/
 
 RUN pnpm install --frozen-lockfile
-RUN pnpm turbo build --filter=@openfoundry/api...
+RUN pnpm turbo build --filter=@altius/api...
 
 # Runtime stage
 FROM node:20-alpine

@@ -22,7 +22,7 @@
  * integration suite. After it completes the stack is DOWN; bring the normal dev
  * stack back up before running the rest of the suite. Run with, e.g.:
  *
- *   CONSENT_VOCAB_E2E=1 pnpm --filter @openfoundry/integration-tests exec \
+ *   CONSENT_VOCAB_E2E=1 pnpm --filter @altius/integration-tests exec \
  *     vitest run open-consent-vocab
  */
 
@@ -37,11 +37,11 @@ import { CONFIG } from './config.js';
 const ENABLED = process.env['CONSENT_VOCAB_E2E'] === '1';
 const describeMaybe = dockerAvailable && ENABLED ? describe : describe.skip;
 
-// Base compose only (no -p → project "deploy", matching the standard harness so
+// Base compose only (no -p → project "orion", matching the standard harness so
 // `down -v` cleans whatever stack is up and `up` claims the same host ports).
 const COMPOSE_FILE = resolve(
   dirname(fileURLToPath(import.meta.url)),
-  '../../../deploy/docker-compose.yaml',
+  '../../../Orion/docker-compose.yaml',
 );
 
 function compose(cmd: string, env?: Record<string, string>): void {

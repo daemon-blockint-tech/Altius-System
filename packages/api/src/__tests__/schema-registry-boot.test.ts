@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { InMemorySchemaRegistry } from '@openfoundry/odl';
-import type { ParsedSchema } from '@openfoundry/odl';
+import { InMemorySchemaRegistry } from '@altius/odl';
+import type { ParsedSchema } from '@altius/odl';
 import { recordSchemaVersion } from '../schema-registry-boot.js';
 
 function emptySchema(): ParsedSchema {

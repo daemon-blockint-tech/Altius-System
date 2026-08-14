@@ -17,9 +17,9 @@ import type {
   AggregateResult,
   SearchQuery,
   SearchResult,
-} from '@openfoundry/spi';
-import type { ParsedSchema } from '@openfoundry/odl';
-import { getTracer, withSpan, SpanAttributes } from '@openfoundry/observability';
+} from '@altius/spi';
+import type { ParsedSchema } from '@altius/odl';
+import { getTracer, withSpan, SpanAttributes } from '@altius/observability';
 import {
   validateObjectProperties,
   validationError,
@@ -28,7 +28,7 @@ import {
 import { EngineEventEmitter, type ChangeSet, type EventCause } from '../events/event-emitter.js';
 import type { ComputedFieldEvaluator } from '../computed/computed-field-evaluator.js';
 import type { LineageRecorder } from '../lineage/lineage-recorder.js';
-import type { ProvenanceSource } from '@openfoundry/spi';
+import type { ProvenanceSource } from '@altius/spi';
 
 const tracer = getTracer('engine', 'objectManager');
 

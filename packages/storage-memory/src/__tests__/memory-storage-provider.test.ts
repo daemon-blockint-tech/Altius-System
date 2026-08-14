@@ -5,7 +5,7 @@ import type {
   OntologySchema,
   FilterExpression,
   BulkMutationRequest,
-} from '@openfoundry/spi';
+} from '@altius/spi';
 
 // ---------------------------------------------------------------------------
 // Fixtures

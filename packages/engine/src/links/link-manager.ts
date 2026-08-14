@@ -16,9 +16,9 @@ import type {
   TraversalOptions,
   TraversalResult,
   PlatformError,
-} from '@openfoundry/spi';
-import type { ParsedSchema, LinkType, Cardinality } from '@openfoundry/odl';
-import { getTracer, withSpan, SpanAttributes } from '@openfoundry/observability';
+} from '@altius/spi';
+import type { ParsedSchema, LinkType, Cardinality } from '@altius/odl';
+import { getTracer, withSpan, SpanAttributes } from '@altius/observability';
 import { EngineEventEmitter, type ChangeSet, type EventCause } from '../events/event-emitter.js';
 import { generateUUIDv7 } from './uuidv7.js';
 

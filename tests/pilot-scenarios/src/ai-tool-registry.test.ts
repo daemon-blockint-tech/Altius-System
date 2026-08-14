@@ -11,8 +11,8 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { ToolRegistry, parseActionManifest } from '@openfoundry/actions';
-import type { ActionManifest } from '@openfoundry/actions';
+import { ToolRegistry, parseActionManifest } from '@altius/actions';
+import type { ActionManifest } from '@altius/actions';
 
 import {
   NHS_SCHEMA,

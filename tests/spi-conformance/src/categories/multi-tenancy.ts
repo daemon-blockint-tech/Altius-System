@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import type { StorageProvider } from '@openfoundry/spi';
+import type { StorageProvider } from '@altius/spi';
 import type { ProviderFactory } from '../suite.js';
 import { tenantA, tenantB, tenantC, baseSchema } from '../fixtures.js';
 

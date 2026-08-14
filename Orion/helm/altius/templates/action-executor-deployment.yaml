@@ -1,26 +1,26 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "openfoundry.fullname" . }}-action-executor
+  name: {{ include "altius.fullname" . }}-action-executor
   labels:
-    {{- include "openfoundry.labels" . | nindent 4 }}
+    {{- include "altius.labels" . | nindent 4 }}
     app.kubernetes.io/component: action-executor
 spec:
   replicas: {{ .Values.actionExecutor.replicaCount }}
   selector:
     matchLabels:
-      {{- include "openfoundry.selectorLabels" (dict "name" "action-executor" "release" .Release.Name) | nindent 6 }}
+      {{- include "altius.selectorLabels" (dict "name" "action-executor" "release" .Release.Name) | nindent 6 }}
   template:
     metadata:
       labels:
-        {{- include "openfoundry.selectorLabels" (dict "name" "action-executor" "release" .Release.Name) | nindent 8 }}
+        {{- include "altius.selectorLabels" (dict "name" "action-executor" "release" .Release.Name) | nindent 8 }}
         app.kubernetes.io/component: action-executor
     spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      serviceAccountName: {{ include "openfoundry.serviceAccountName" . }}
+      serviceAccountName: {{ include "altius.serviceAccountName" . }}
       {{/* HELM-07: Security context for all pods */}}
       securityContext:
         runAsNonRoot: true
@@ -28,7 +28,7 @@ spec:
         fsGroup: 1000
       containers:
         - name: action-executor
-          image: {{ include "openfoundry.image" (dict "global" .Values.image "svc" .Values.actionExecutor.image "name" "actions") }}
+          image: {{ include "altius.image" (dict "global" .Values.image "svc" .Values.actionExecutor.image "name" "actions") }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           {{/* HELM-07: Container security context */}}
           securityContext:
@@ -59,10 +59,10 @@ spec:
                   name: {{ .Values.storage.postgres.existingSecret }}
                   key: {{ .Values.storage.postgres.secretKeys.password }}
             - name: POSTGRES_URL
-              value: {{ include "openfoundry.postgresUrl" . | quote }}
+              value: {{ include "altius.postgresUrl" . | quote }}
           envFrom:
             - configMapRef:
-                name: {{ include "openfoundry.fullname" . }}-config
+                name: {{ include "altius.fullname" . }}-config
           livenessProbe:
             httpGet:
               path: /health

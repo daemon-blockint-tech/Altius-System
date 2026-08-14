@@ -6,7 +6,7 @@
  * configurable TTL.
  */
 
-import type { DateTime, PlatformError } from '@openfoundry/spi';
+import type { DateTime, PlatformError } from '@altius/spi';
 import type { Connector, SourceRecord } from '../connectors/connector.js';
 import type { DatasourceMappingConfig } from '../mapping/mapping-parser.js';
 import type { MappedObject } from '../mapping/record-mapper.js';

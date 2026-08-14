@@ -7,7 +7,7 @@
  */
 
 import http from 'node:http';
-import { createLogger } from '@openfoundry/observability';
+import { createLogger } from '@altius/observability';
 
 const logger = createLogger('sync-engine');
 const PORT = parseInt(process.env['PORT'] ?? '4003', 10);

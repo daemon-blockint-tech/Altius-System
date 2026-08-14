@@ -1,5 +1,5 @@
 # OpenTelemetry Collector — development configuration
-# Receives traces/metrics from all Open Foundry services and logs to console.
+# Receives traces/metrics from all Altius services and logs to console.
 
 receivers:
   otlp:

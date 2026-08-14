@@ -1,9 +1,9 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ include "openfoundry.fullname" . }}-config
+  name: {{ include "altius.fullname" . }}-config
   labels:
-    {{- include "openfoundry.labels" . | nindent 4 }}
+    {{- include "altius.labels" . | nindent 4 }}
 data:
   STORAGE_PROVIDER: {{ .Values.storage.provider | quote }}
   POSTGRES_HOST: {{ .Values.storage.postgres.host | quote }}

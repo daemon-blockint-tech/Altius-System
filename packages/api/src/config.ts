@@ -5,10 +5,10 @@
  * for production deployment. Dev mode uses in-memory stubs instead.
  */
 
-import type { PostgresStorageConfig } from '@openfoundry/storage-postgres';
-import type { OpenFgaClientInterface, OidcAuthenticator } from '@openfoundry/security';
-import { AuthenticationError, AuthorizationService } from '@openfoundry/security';
-import type { SecurityLayer } from '@openfoundry/actions';
+import type { PostgresStorageConfig } from '@altius/storage-postgres';
+import type { OpenFgaClientInterface, OidcAuthenticator } from '@altius/security';
+import { AuthenticationError, AuthorizationService } from '@altius/security';
+import type { SecurityLayer } from '@altius/actions';
 import type { Request } from 'express';
 import type { AuthenticatedUserInfo } from './graphql/types.js';
 
@@ -118,7 +118,7 @@ export async function extractUser(
       return {
         id: 'dev-user',
         name: 'Development User',
-        email: 'dev@openfoundry.local',
+        email: 'dev@altius.local',
         roles: ['admin', 'clinician', 'nurse_in_charge', 'compliance_analyst', 'compliance_officer', 'bsa_officer', 'operator', 'governor', 'auditor'],
         groups: [],
         tenantId: 'default',

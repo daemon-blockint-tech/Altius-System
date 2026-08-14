@@ -4,12 +4,12 @@
  * Requires a running PostgreSQL instance. Set PG_TEST_URL env var or
  * these tests will be skipped. Example:
  *
- *   PG_TEST_URL=postgresql://localhost:5432/openfoundry_test npm test
+ *   PG_TEST_URL=postgresql://localhost:5432/altius_test npm test
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { Pool } from 'pg';
-import type { RequestContext, TraversalPath } from '@openfoundry/spi';
+import type { RequestContext, TraversalPath } from '@altius/spi';
 import {
   createObject,
   softDeleteObject,
@@ -827,7 +827,7 @@ describeWithPg('Link CRUD, Traversal, Temporal (PostgreSQL integration)', () => 
         // Query at the time between v1 and v2
         const atBetween = await getObjectAtTime(
           pool, ctx, 'Patient', created._id,
-          betweenTime as import('@openfoundry/spi').DateTime,
+          betweenTime as import('@altius/spi').DateTime,
         );
         expect(atBetween).not.toBeNull();
         expect(atBetween!._version).toBe(1);
@@ -847,7 +847,7 @@ describeWithPg('Link CRUD, Traversal, Temporal (PostgreSQL integration)', () => 
 
         const atFuture = await getObjectAtTime(
           pool, ctx, 'Patient', created._id,
-          futureTime as import('@openfoundry/spi').DateTime,
+          futureTime as import('@altius/spi').DateTime,
         );
         expect(atFuture).not.toBeNull();
         expect(atFuture!._version).toBe(2);
@@ -863,7 +863,7 @@ describeWithPg('Link CRUD, Traversal, Temporal (PostgreSQL integration)', () => 
 
         const result = await getObjectAtTime(
           pool, ctx, 'Patient', 'nonexistent',
-          pastTime as import('@openfoundry/spi').DateTime,
+          pastTime as import('@altius/spi').DateTime,
         );
         expect(result).toBeNull();
       });

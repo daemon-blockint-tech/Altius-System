@@ -1,7 +1,7 @@
 {
-  "name": "@openfoundry/odl",
+  "name": "@altius/odl",
   "version": "0.1.0",
-  "description": "Open Foundry ODL (Ontology Definition Language) parser",
+  "description": "Altius ODL (Ontology Definition Language) parser",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -29,7 +29,7 @@
     "graphql": "^16.10.0"
   },
   "devDependencies": {
-    "@openfoundry/spi": "workspace:*",
+    "@altius/spi": "workspace:*",
     "@types/node": "^22.0.0",
     "vitest": "^3.0.0"
   }

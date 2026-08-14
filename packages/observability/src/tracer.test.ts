@@ -40,7 +40,7 @@ describe("tracer", () => {
   });
 
   describe("getTracer", () => {
-    it("creates a tracer with openfoundry.<layer>.<operation> naming", () => {
+    it("creates a tracer with altius.<layer>.<operation> naming", () => {
       const tracer = getTracer("engine", "query");
       expect(tracer).toBeDefined();
       // Verify the tracer works by creating a span
@@ -52,7 +52,7 @@ describe("tracer", () => {
       // The instrumentation scope name follows our convention
       // (OTEL JS 2.x renamed instrumentationLibrary -> instrumentationScope).
       expect(spans[0]!.instrumentationScope.name).toBe(
-        "openfoundry.engine.query",
+        "altius.engine.query",
       );
     });
 
@@ -79,7 +79,7 @@ describe("tracer", () => {
 
       const names = spans.map((s) => s.instrumentationScope.name);
       for (const layer of layers) {
-        expect(names).toContain(`openfoundry.${layer}.test`);
+        expect(names).toContain(`altius.${layer}.test`);
       }
     });
   });

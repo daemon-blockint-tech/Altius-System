@@ -2,7 +2,7 @@ export {
   createGraphQLServer,
   buildResolverContext,
   generateResolvers,
-  createOpenFoundryError,
+  createAltiusError,
   wrapError,
   encodeCursor,
   decodeCursor,

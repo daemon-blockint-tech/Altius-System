@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { MemoryStorageProvider } from '@openfoundry/storage-memory';
-import type { RequestContext, OntologySchema } from '@openfoundry/spi';
-import type { ParsedSchema } from '@openfoundry/odl';
+import { MemoryStorageProvider } from '@altius/storage-memory';
+import type { RequestContext, OntologySchema } from '@altius/spi';
+import type { ParsedSchema } from '@altius/odl';
 import { ObjectManager } from '../objects/object-manager.js';
 import { LinkManager } from '../links/link-manager.js';
 import { generateUUIDv7 } from '../links/uuidv7.js';
@@ -607,12 +607,12 @@ describe('LinkManager', () => {
       await linkManager.createLink('PatientAssignedToBed', patientId, bedId, undefined, ctx);
 
       // Find the link event (skip any object events)
-      const linkEvents = eventBus.events.filter((e) => e.type === 'openfoundry.link.created');
+      const linkEvents = eventBus.events.filter((e) => e.type === 'altius.link.created');
       expect(linkEvents).toHaveLength(1);
       const event = linkEvents[0]!;
       expect(event.specversion).toBe('1.0');
-      expect(event.type).toBe('openfoundry.link.created');
-      expect(event.source).toBe('openfoundry://engine/ontology');
+      expect(event.type).toBe('altius.link.created');
+      expect(event.source).toBe('altius://engine/ontology');
       expect(event.subject).toMatch(/^PatientAssignedToBed\//);
       expect(event.data).toMatchObject({
         linkType: 'PatientAssignedToBed',
@@ -636,10 +636,10 @@ describe('LinkManager', () => {
 
       await linkManager.updateLink('PatientVisitsWard', link._id, { visitDate: '2025-02-20' }, ctx);
 
-      const linkEvents = eventBus.events.filter((e) => e.type === 'openfoundry.link.updated');
+      const linkEvents = eventBus.events.filter((e) => e.type === 'altius.link.updated');
       expect(linkEvents).toHaveLength(1);
       const event = linkEvents[0]!;
-      expect(event.type).toBe('openfoundry.link.updated');
+      expect(event.type).toBe('altius.link.updated');
       expect(event.data).toMatchObject({
         linkType: 'PatientVisitsWard',
         version: 2,
@@ -663,10 +663,10 @@ describe('LinkManager', () => {
 
       await linkManager.deleteLink('PatientAssignedToBed', link._id, ctx);
 
-      const linkEvents = eventBus.events.filter((e) => e.type === 'openfoundry.link.deleted');
+      const linkEvents = eventBus.events.filter((e) => e.type === 'altius.link.deleted');
       expect(linkEvents).toHaveLength(1);
       const event = linkEvents[0]!;
-      expect(event.type).toBe('openfoundry.link.deleted');
+      expect(event.type).toBe('altius.link.deleted');
       expect(event.data).toMatchObject({
         linkType: 'PatientAssignedToBed',
         linkId: link._id,
@@ -682,7 +682,7 @@ describe('LinkManager', () => {
 
       await linkManager.createLink('PatientAssignedToBed', patientId, bedId, undefined, ctx);
 
-      const linkEvents = eventBus.events.filter((e) => e.type === 'openfoundry.link.created');
+      const linkEvents = eventBus.events.filter((e) => e.type === 'altius.link.created');
       expect(linkEvents[0]!.data).toMatchObject({
         causedBy: { actor: 'user:user-1' },
       });
@@ -704,7 +704,7 @@ describe('LinkManager', () => {
       }
 
       const linkEvents = eventBus.events.filter((e) =>
-        e.type.startsWith('openfoundry.link.'),
+        e.type.startsWith('altius.link.'),
       );
       expect(linkEvents).toHaveLength(0);
     });

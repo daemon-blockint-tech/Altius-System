@@ -16,16 +16,16 @@ export interface CloudEvent<T = unknown> {
   data?: T;
 }
 
-/** Known Open Foundry event types emitted by the platform. */
+/** Known Altius event types emitted by the platform. */
 export type CloudEventType =
-  | 'openfoundry.object.created'
-  | 'openfoundry.object.updated'
-  | 'openfoundry.object.deleted'
-  | 'openfoundry.link.created'
-  | 'openfoundry.link.updated'
-  | 'openfoundry.link.deleted'
-  | 'openfoundry.action.submitted'
-  | 'openfoundry.action.completed'
-  | 'openfoundry.action.failed'
-  | 'openfoundry.schema.updated'
+  | 'altius.object.created'
+  | 'altius.object.updated'
+  | 'altius.object.deleted'
+  | 'altius.link.created'
+  | 'altius.link.updated'
+  | 'altius.link.deleted'
+  | 'altius.action.submitted'
+  | 'altius.action.completed'
+  | 'altius.action.failed'
+  | 'altius.schema.updated'
   | (string & {}); // Allow extension event types

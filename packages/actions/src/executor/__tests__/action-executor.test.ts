@@ -10,14 +10,14 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 
-import { MemoryStorageProvider } from '@openfoundry/storage-memory';
-import type { ParsedSchema } from '@openfoundry/odl';
+import { MemoryStorageProvider } from '@altius/storage-memory';
+import type { ParsedSchema } from '@altius/odl';
 import type {
   OntologyObject,
   OntologySchema,
   RequestContext,
   AuditRecord,
-} from '@openfoundry/spi';
+} from '@altius/spi';
 
 import { parseActionManifest } from '../../parser/index.js';
 import { ActionExecutor } from '../action-executor.js';
@@ -1344,7 +1344,7 @@ effects:
         async recordConsent() { /* noop */ },
         async revokeConsent() { return {}; },
         async getConsentRecord() { return []; },
-      } as unknown as import('@openfoundry/spi').ConsentManager;
+      } as unknown as import('@altius/spi').ConsentManager;
       const consentExecutor = new ActionExecutor({
         storage, security: createAllowAllSecurity(), cel: createMockCelEvaluator(),
         auditWriter, sideEffectHandler, consentManager: denyConsent,
@@ -1538,7 +1538,7 @@ effects:
   // -------------------------------------------------------------------------
 
   describe('recordConsent opt-out condition', () => {
-    function createRecordingConsentManager(): import('@openfoundry/spi').ConsentManager & {
+    function createRecordingConsentManager(): import('@altius/spi').ConsentManager & {
       calls: Array<{ subject: string; purpose: string; decision: string }>;
     } {
       const calls: Array<{ subject: string; purpose: string; decision: string }> = [];
@@ -1551,7 +1551,7 @@ effects:
         },
         async revokeConsent() { return {}; },
         async getConsentRecord() { return []; },
-      } as unknown as import('@openfoundry/spi').ConsentManager & {
+      } as unknown as import('@altius/spi').ConsentManager & {
         calls: Array<{ subject: string; purpose: string; decision: string }>;
       };
     }
@@ -1722,7 +1722,7 @@ effects:
         async recordConsent(subjectId: string, purpose: string, decision: string) { calls.push({ subjectId, purpose, decision }); },
         async revokeConsent() { return {}; },
         async getConsentRecord() { return []; },
-      } as unknown as import('@openfoundry/spi').ConsentManager;
+      } as unknown as import('@altius/spi').ConsentManager;
       const exec = new ActionExecutor({
         storage, security: createAllowAllSecurity(), cel: createMockCelEvaluator(), consentManager,
       });

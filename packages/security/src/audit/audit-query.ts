@@ -1,12 +1,12 @@
 /**
- * Audit query interface for the Open Foundry platform (Section 7.2).
+ * Audit query interface for the Altius platform (Section 7.2).
  *
  * Provides filtered access to audit records by multiple dimensions:
  * actor, objectType, objectId, actionType, time range, and traceId.
  */
 
-import type { AuditRecord } from "@openfoundry/spi";
-import { getTracer, withSpan } from "@openfoundry/observability";
+import type { AuditRecord } from "@altius/spi";
+import { getTracer, withSpan } from "@altius/observability";
 
 import type { AuditStore, AuditQueryFilter } from "./types.js";
 

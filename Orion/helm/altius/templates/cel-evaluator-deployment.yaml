@@ -1,26 +1,26 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "openfoundry.fullname" . }}-cel-evaluator
+  name: {{ include "altius.fullname" . }}-cel-evaluator
   labels:
-    {{- include "openfoundry.labels" . | nindent 4 }}
+    {{- include "altius.labels" . | nindent 4 }}
     app.kubernetes.io/component: cel-evaluator
 spec:
   replicas: {{ .Values.celEvaluatorService.replicaCount }}
   selector:
     matchLabels:
-      {{- include "openfoundry.selectorLabels" (dict "name" "cel-evaluator" "release" .Release.Name) | nindent 6 }}
+      {{- include "altius.selectorLabels" (dict "name" "cel-evaluator" "release" .Release.Name) | nindent 6 }}
   template:
     metadata:
       labels:
-        {{- include "openfoundry.selectorLabels" (dict "name" "cel-evaluator" "release" .Release.Name) | nindent 8 }}
+        {{- include "altius.selectorLabels" (dict "name" "cel-evaluator" "release" .Release.Name) | nindent 8 }}
         app.kubernetes.io/component: cel-evaluator
     spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      serviceAccountName: {{ include "openfoundry.serviceAccountName" . }}
+      serviceAccountName: {{ include "altius.serviceAccountName" . }}
       {{/* HELM-07: Security context for all pods */}}
       securityContext:
         runAsNonRoot: true
@@ -28,7 +28,7 @@ spec:
         fsGroup: 1000
       containers:
         - name: cel-evaluator
-          image: {{ include "openfoundry.image" (dict "global" .Values.image "svc" .Values.celEvaluatorService.image "name" "cel") }}
+          image: {{ include "altius.image" (dict "global" .Values.image "svc" .Values.celEvaluatorService.image "name" "cel") }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           {{/* HELM-07: Container security context */}}
           securityContext:

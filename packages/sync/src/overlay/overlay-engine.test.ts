@@ -12,7 +12,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { OverlayEngine } from './overlay-engine.js';
 import { parseMappingConfig } from '../mapping/mapping-parser.js';
 import type { Connector, SourceRecord } from '../connectors/connector.js';
-import type { PlatformError } from '@openfoundry/spi';
+import type { PlatformError } from '@altius/spi';
 
 // ── PAS Overlay YAML ─────────────────────────────────────────────────
 

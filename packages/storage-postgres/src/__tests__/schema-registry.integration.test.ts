@@ -2,7 +2,7 @@
  * PostgresSchemaRegistry integration tests.
  *
  * Requires a running PostgreSQL instance. Set PG_TEST_URL, e.g.:
- *   PG_TEST_URL=postgresql://localhost:5432/openfoundry_test pnpm test
+ *   PG_TEST_URL=postgresql://localhost:5432/altius_test pnpm test
  *
  * Skipped when PG_TEST_URL is unset. Mirrors the InMemorySchemaRegistry test
  * cases (parity) and adds the durability property: a fresh registry instance
@@ -11,7 +11,7 @@
 
 import { describe, it, expect, beforeEach, afterAll } from 'vitest';
 import { Pool } from 'pg';
-import type { ParsedSchema } from '@openfoundry/odl';
+import type { ParsedSchema } from '@altius/odl';
 import { PostgresSchemaRegistry } from '../schema-registry/postgres-schema-registry.js';
 
 const PG_TEST_URL = process.env['PG_TEST_URL'];

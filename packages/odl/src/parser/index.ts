@@ -1,10 +1,10 @@
 /**
- * ODL Parser — reads GraphQL SDL files with Open Foundry directives.
+ * ODL Parser — reads GraphQL SDL files with Altius directives.
  *
  * ODL (Ontology Definition Language) files are valid GraphQL SDL extended
- * with custom directives defined in the Open Foundry spec (Appendix C).
+ * with custom directives defined in the Altius spec (Appendix C).
  *
- * The parser uses graphql-js to parse the SDL, then extracts Open Foundry
+ * The parser uses graphql-js to parse the SDL, then extracts Altius
  * directives from the AST to produce a structured ParsedSchema.
  */
 

@@ -1,7 +1,7 @@
 /**
- * @openfoundry/storage-postgres
+ * @altius/storage-postgres
  *
- * PostgreSQL 17 + Apache AGE 1.5 storage provider for Open Foundry.
+ * PostgreSQL 17 + Apache AGE 1.5 storage provider for Altius.
  * Provides schema management, DDL generation, object CRUD, and transactions.
  */
 

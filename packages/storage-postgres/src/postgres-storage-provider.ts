@@ -2,7 +2,7 @@
  * PostgresStorageProvider — full StorageProvider implementation.
  *
  * Composes the object, link, transaction, temporal, and schema modules
- * into a single class that implements the @openfoundry/spi StorageProvider
+ * into a single class that implements the @altius/spi StorageProvider
  * interface. Uses pg Pool for connection pooling.
  */
 
@@ -36,7 +36,7 @@ import type {
   AggregateResult,
   SearchQuery,
   SearchResult,
-} from '@openfoundry/spi';
+} from '@altius/spi';
 
 // ─── Module imports ───
 import { generateDDL } from './schema/index.js';

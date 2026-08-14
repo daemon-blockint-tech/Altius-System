@@ -2,7 +2,7 @@
  * PostgreSQL-backed ODL schema registry.
  *
  * Persistent implementation of the `SchemaRegistry` interface (from
- * `@openfoundry/odl`), storing versioned `ParsedSchema` snapshots in the
+ * `@altius/odl`), storing versioned `ParsedSchema` snapshots in the
  * `_schema_registry` table. Behaviourally identical to `InMemorySchemaRegistry`
  * (same version numbering, diff/classification, and breaking-change gating) but
  * durable across restarts and shared across pods.
@@ -17,13 +17,13 @@
  */
 
 import type { Pool } from 'pg';
-import { diff, classify } from '@openfoundry/odl';
+import { diff, classify } from '@altius/odl';
 import type {
   ParsedSchema,
   SchemaRegistry,
   SchemaVersion,
   ApplySchemaOptions,
-} from '@openfoundry/odl';
+} from '@altius/odl';
 
 /** Advisory-lock key for serialising schema-version assignment ('SR'). */
 const ADVISORY_LOCK_KEY = 0x5352;

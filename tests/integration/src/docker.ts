@@ -14,11 +14,11 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const COMPOSE_FILE = resolve(__dirname, '../../../deploy/docker-compose.yaml');
+const COMPOSE_FILE = resolve(__dirname, '../../../Orion/docker-compose.yaml');
 // Integration-test override: mounts the fixtures seed pack + sets SEED_TENANT so
 // the stack boots with the reference data the suites need. Layered on top of the
 // base file for every harness compose command.
-const COMPOSE_TEST_FILE = resolve(__dirname, '../../../deploy/docker-compose.test.yaml');
+const COMPOSE_TEST_FILE = resolve(__dirname, '../../../Orion/docker-compose.test.yaml');
 const COMPOSE_FILES = `-f "${COMPOSE_FILE}" -f "${COMPOSE_TEST_FILE}"`;
 
 const EXEC_OPTS: ExecSyncOptionsWithStringEncoding = {

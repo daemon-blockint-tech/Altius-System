@@ -2,9 +2,9 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: {{ include "openfoundry.fullname" . }}-postgresql
+  name: {{ include "altius.fullname" . }}-postgresql
   labels:
-    {{- include "openfoundry.labels" . | nindent 4 }}
+    {{- include "altius.labels" . | nindent 4 }}
     app.kubernetes.io/component: postgresql
 spec:
   accessModes:

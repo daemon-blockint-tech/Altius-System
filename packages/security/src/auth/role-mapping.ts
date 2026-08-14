@@ -1,7 +1,7 @@
 /**
  * Role mapping for NHS CIS2 and custom OIDC providers.
  *
- * Maps external token role claims to Open Foundry platform roles.
+ * Maps external token role claims to Altius platform roles.
  */
 
 import type { RoleMappingConfig } from "./types.js";
@@ -11,7 +11,7 @@ import type { RoleMappingConfig } from "./types.js";
  *
  * NHS CIS2 (Care Identity Service 2) issues tokens with specific
  * role identifiers. These are mapped to platform roles used by
- * the Open Foundry authorization layer.
+ * the Altius authorization layer.
  */
 export const CIS2_ROLE_MAPPINGS: RoleMappingConfig = {
   claimName: "nhsroles",

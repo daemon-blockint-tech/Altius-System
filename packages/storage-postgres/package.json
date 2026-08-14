@@ -1,5 +1,5 @@
 {
-  "name": "@openfoundry/storage-postgres",
+  "name": "@altius/storage-postgres",
   "version": "0.1.0",
   "description": "PostgreSQL 17 + Apache AGE 1.5 StorageProvider",
   "type": "module",
@@ -20,9 +20,9 @@
   "files": ["dist"],
   "license": "Apache-2.0",
   "dependencies": {
-    "@openfoundry/observability": "workspace:*",
-    "@openfoundry/odl": "workspace:*",
-    "@openfoundry/spi": "workspace:*",
+    "@altius/observability": "workspace:*",
+    "@altius/odl": "workspace:*",
+    "@altius/spi": "workspace:*",
     "pg": "^8.13.0"
   },
   "devDependencies": {

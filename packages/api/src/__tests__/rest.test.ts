@@ -12,10 +12,10 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { parseOdl } from '@openfoundry/odl';
-import type { ParsedSchema } from '@openfoundry/odl';
-import type { OntologyObject, ObjectPage, LinkPage } from '@openfoundry/spi';
-import type { ActionResult } from '@openfoundry/actions';
+import { parseOdl } from '@altius/odl';
+import type { ParsedSchema } from '@altius/odl';
+import type { OntologyObject, ObjectPage, LinkPage } from '@altius/spi';
+import type { ActionResult } from '@altius/actions';
 import { generateRestRoutes } from '../rest/route-generator.js';
 import { mapErrorToHttpStatus, createRestErrorResponse } from '../rest/errors.js';
 import type { RestRequest, RestRoute } from '../rest/types.js';

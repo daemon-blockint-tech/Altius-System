@@ -4,7 +4,7 @@ namespace: test.external
 description: "Minimal external pack fixture for CI testing"
 
 dependencies:
-  openfoundry.core: ">=1.0.0"
+  altius.core: ">=1.0.0"
 
 schema:
   - schema/widget.odl

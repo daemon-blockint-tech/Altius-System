@@ -6,7 +6,7 @@
  * field-level redaction, and permission batching.
  */
 
-import { getTracer, withSpan, createLogger } from "@openfoundry/observability";
+import { getTracer, withSpan, createLogger } from "@altius/observability";
 
 import type {
   FieldPermissionConfig,

@@ -1,9 +1,9 @@
-# Open Foundry Core Domain Pack — openfoundry.core v1.0.0
+# Altius Core Domain Pack — altius.core v1.0.0
 #
 # Ships with every installation. Provides base interfaces, value types,
-# and custom scalars per Open Foundry spec Section 10.3.
+# and custom scalars per Altius spec Section 10.3.
 
-extend schema @namespace(name: "openfoundry.core", version: "1.0.0")
+extend schema @namespace(name: "altius.core", version: "1.0.0")
 
 # ─── Custom Scalars ───────────────────────────────────────────────────
 

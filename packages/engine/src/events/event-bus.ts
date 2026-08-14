@@ -3,7 +3,7 @@
  * Concrete implementations (RedPanda, Kafka, in-memory) provided separately.
  */
 
-import type { CloudEvent } from '@openfoundry/spi';
+import type { CloudEvent } from '@altius/spi';
 
 /**
  * Abstract event bus that receives CloudEvents for delivery.

@@ -1,8 +1,8 @@
 {
-  "name": "@openfoundry/security",
+  "name": "@altius/security",
   "version": "0.1.0",
   "private": true,
-  "description": "OIDC authentication and authorization for the Open Foundry platform",
+  "description": "OIDC authentication and authorization for the Altius platform",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -20,8 +20,8 @@
   },
   "dependencies": {
     "@openfga/sdk": "^0.9.1",
-    "@openfoundry/observability": "workspace:*",
-    "@openfoundry/spi": "workspace:*",
+    "@altius/observability": "workspace:*",
+    "@altius/spi": "workspace:*",
     "jose": "^6.0.0"
   },
   "license": "Apache-2.0",

@@ -13,7 +13,7 @@
  *   POST /api/v1/actions/{ActionName}   — execute action
  */
 
-import type { ParsedSchema, ObjectType, ActionType, FieldDefinition } from '@openfoundry/odl';
+import type { ParsedSchema, ObjectType, ActionType, FieldDefinition } from '@altius/odl';
 
 // ─── Helpers ───
 
@@ -431,9 +431,9 @@ export function generateOpenApiSpec(schema: ParsedSchema, version = '1.0.0'): Re
   return {
     openapi: '3.0.3',
     info: {
-      title: 'Open Foundry API',
+      title: 'Altius API',
       version,
-      description: 'Auto-generated REST API for the Open Foundry ontology platform.',
+      description: 'Auto-generated REST API for the Altius ontology platform.',
       license: { name: 'Apache-2.0', url: 'https://www.apache.org/licenses/LICENSE-2.0' },
     },
     servers: [

@@ -6,7 +6,7 @@ This is the companion to the machine-readable profile in
 
 ## What this is (and is not)
 
-Open Foundry does **not** embed the NHS Federated Data Platform Canonical Data
+Altius does **not** embed the NHS Federated Data Platform Canonical Data
 Model (CDM). It ships a **declarative mapping profile** that projects the ODL
 operational ontology into a CDM-shaped, read-only view, preserving provenance
 end-to-end. This converts "another open-source Foundry" into an
@@ -20,7 +20,7 @@ data exercised in tests is synthetic, but the CDM target is not invented.
 
 ## Compatibility matrix
 
-| Open Foundry | Profile version | CDM revision | CDM status |
+| Altius | Profile version | CDM revision | CDM status |
 |---|---|---|---|
 | `nhs-acute` 0.2.0 | 0.2.0 | `fdp-cdm-draft` | DAPB4121 draft-in-progress; revalidate quarterly |
 
@@ -39,7 +39,7 @@ Coverage caveats, recorded in the gap register rather than fabricated:
 
 ## Resource mappings
 
-Records are addressed by Open Foundry **source type** for unambiguous routing
+Records are addressed by Altius **source type** for unambiguous routing
 (Ward and Bed both project to CDM `Location`). Each record's `resourceType`
 field carries the CDM resource name.
 

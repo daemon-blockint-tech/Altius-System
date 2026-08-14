@@ -2,7 +2,7 @@
  * ODL Parser AST types.
  *
  * These types represent the parsed output of an ODL schema file.
- * ODL files are valid GraphQL SDL with Open Foundry directives.
+ * ODL files are valid GraphQL SDL with Altius directives.
  */
 
 // ─── Directive argument value types ───

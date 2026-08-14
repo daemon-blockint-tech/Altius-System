@@ -7,7 +7,7 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 
-import type { ParsedSchema } from '@openfoundry/odl';
+import type { ParsedSchema } from '@altius/odl';
 import type { ActionManifest } from '../../parser/types.js';
 import { ToolRegistry } from '../tool-registry.js';
 import type { AgentContext, PolicyGuard, PolicyGuardResult } from '../types.js';

@@ -1,11 +1,11 @@
 /**
- * Audit trail types for the Open Foundry platform (Section 7.2).
+ * Audit trail types for the Altius platform (Section 7.2).
  *
  * Defines the AuditStore SPI for persisting immutable audit records
  * and the AuditQuery interface for retrieving them.
  */
 
-import type { AuditRecord } from "@openfoundry/spi";
+import type { AuditRecord } from "@altius/spi";
 
 /** Filter criteria for querying audit records. */
 export interface AuditQueryFilter {

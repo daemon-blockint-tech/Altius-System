@@ -51,7 +51,7 @@ packages/sdk-typescript/generated/
 packages/api/spec/
 
 # Docker volumes (local dev)
-deploy/docker-volumes/
+Orion/docker-volumes/
 
 # Lock files from non-pnpm managers
 package-lock.json

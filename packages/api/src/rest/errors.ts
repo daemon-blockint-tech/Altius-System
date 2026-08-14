@@ -6,7 +6,7 @@
  * standard error envelope described in the spec.
  */
 
-import type { ErrorCategory, ErrorCode } from '@openfoundry/spi';
+import type { ErrorCategory, ErrorCode } from '@altius/spi';
 import type { RestResponse } from './types.js';
 
 interface RestErrorOptions {

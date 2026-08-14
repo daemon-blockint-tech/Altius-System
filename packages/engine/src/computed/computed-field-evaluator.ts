@@ -11,13 +11,13 @@
 import type {
   StorageProvider,
   RequestContext,
-} from '@openfoundry/spi';
+} from '@altius/spi';
 import type {
   ParsedSchema,
   FieldDefinition,
   ComputedDirective,
   DirectiveArgValue,
-} from '@openfoundry/odl';
+} from '@altius/odl';
 
 /** Context passed to built-in compute functions. */
 export interface ComputeContext {

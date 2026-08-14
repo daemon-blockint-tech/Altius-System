@@ -6,7 +6,7 @@
  * ensure safe quoting.
  */
 
-import type { FilterExpression, FieldPredicate, LogicalPredicate } from '@openfoundry/spi';
+import type { FilterExpression, FieldPredicate, LogicalPredicate } from '@altius/spi';
 import { fieldCol } from '../schema/type-mapping.js';
 
 /** Result of translating a FilterExpression. */

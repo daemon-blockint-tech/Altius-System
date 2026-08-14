@@ -4,7 +4,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { filterToSql } from '../objects/filter-to-sql.js';
-import type { FilterExpression } from '@openfoundry/spi';
+import type { FilterExpression } from '@altius/spi';
 
 describe('filterToSql', () => {
   // -------------------------------------------------------------------

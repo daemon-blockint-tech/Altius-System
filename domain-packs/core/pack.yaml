@@ -1,8 +1,8 @@
 name: core
 version: 1.0.0
-namespace: openfoundry.core
+namespace: altius.core
 description: >
-  Core domain pack shipped with every Open Foundry installation.
+  Core domain pack shipped with every Altius installation.
   Provides base interfaces, value types, and custom scalars.
 schema:
   - schema/core.odl

@@ -1,5 +1,5 @@
 /**
- * Authorization types for the Open Foundry security layer.
+ * Authorization types for the Altius security layer.
  *
  * Implements ReBAC (Relationship-Based Access Control) via OpenFGA
  * per spec Section 7.1.

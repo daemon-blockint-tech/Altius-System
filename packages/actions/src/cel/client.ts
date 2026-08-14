@@ -1,7 +1,7 @@
 /**
  * gRPC client for the CEL evaluator sidecar.
  *
- * Per Open Foundry Spec v2 Section 5.2.4, CEL runtime evaluation MUST use
+ * Per Altius Spec v2 Section 5.2.4, CEL runtime evaluation MUST use
  * the canonical Go evaluator. This client communicates with that sidecar
  * over gRPC using the proto definition in packages/cel-evaluator/proto/.
  */

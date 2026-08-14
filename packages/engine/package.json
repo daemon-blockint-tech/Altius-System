@@ -1,8 +1,8 @@
 {
-  "name": "@openfoundry/engine",
+  "name": "@altius/engine",
   "version": "0.1.0",
   "private": true,
-  "description": "Open Foundry Ontology Engine - object lifecycle, validation, and event emission",
+  "description": "Altius Ontology Engine - object lifecycle, validation, and event emission",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -21,12 +21,12 @@
   "files": ["dist"],
   "license": "Apache-2.0",
   "dependencies": {
-    "@openfoundry/spi": "workspace:*",
-    "@openfoundry/odl": "workspace:*",
-    "@openfoundry/observability": "workspace:*"
+    "@altius/spi": "workspace:*",
+    "@altius/odl": "workspace:*",
+    "@altius/observability": "workspace:*"
   },
   "devDependencies": {
-    "@openfoundry/storage-memory": "workspace:*",
+    "@altius/storage-memory": "workspace:*",
     "@types/node": "^22.0.0",
     "vitest": "^3.0.0",
     "typescript": "^5.7.0"

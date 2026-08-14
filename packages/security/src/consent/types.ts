@@ -1,5 +1,5 @@
 /**
- * Consent management types for the Open Foundry security layer.
+ * Consent management types for the Altius security layer.
  *
  * Implements consent management per spec Section 7.3.
  * Re-exports SPI interfaces and adds implementation-specific types.
@@ -83,9 +83,9 @@ export class ConsentError extends Error {
  */
 export interface ConsentStore {
   /** Store a consent record. */
-  put(record: import("@openfoundry/spi").ConsentRecord, tenantId?: string): Promise<void>;
+  put(record: import("@altius/spi").ConsentRecord, tenantId?: string): Promise<void>;
   /** Retrieve all consent records for a subject. */
-  getBySubject(subjectId: string, tenantId?: string): Promise<import("@openfoundry/spi").ConsentRecord[]>;
+  getBySubject(subjectId: string, tenantId?: string): Promise<import("@altius/spi").ConsentRecord[]>;
   /** Check if a subject has opted out (national data opt-out). */
   hasOptOut(subjectId: string, tenantId?: string): Promise<boolean>;
   /** Record a national data opt-out for a subject. */

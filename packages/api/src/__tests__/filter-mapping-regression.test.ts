@@ -10,7 +10,7 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 import { generateResolvers } from '../graphql/resolver-generator.js';
-import type { ParsedSchema } from '@openfoundry/odl';
+import type { ParsedSchema } from '@altius/odl';
 import type { ApiDependencies } from '../graphql/types.js';
 
 // Minimal schema for resolver generation

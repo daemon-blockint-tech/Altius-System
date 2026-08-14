@@ -26,10 +26,10 @@ importers:
 
   domain-packs/aml:
     devDependencies:
-      '@openfoundry/actions':
+      '@altius/actions':
         specifier: workspace:*
         version: link:../../packages/actions
-      '@openfoundry/odl':
+      '@altius/odl':
         specifier: workspace:*
         version: link:../../packages/odl
       '@types/node':
@@ -44,7 +44,7 @@ importers:
 
   domain-packs/core:
     devDependencies:
-      '@openfoundry/odl':
+      '@altius/odl':
         specifier: workspace:*
         version: link:../../packages/odl
       '@types/node':
@@ -56,10 +56,10 @@ importers:
 
   domain-packs/nhs-acute:
     devDependencies:
-      '@openfoundry/actions':
+      '@altius/actions':
         specifier: workspace:*
         version: link:../../packages/actions
-      '@openfoundry/odl':
+      '@altius/odl':
         specifier: workspace:*
         version: link:../../packages/odl
       '@types/node':
@@ -74,10 +74,10 @@ importers:
 
   domain-packs/supply-chain:
     devDependencies:
-      '@openfoundry/actions':
+      '@altius/actions':
         specifier: workspace:*
         version: link:../../packages/actions
-      '@openfoundry/odl':
+      '@altius/odl':
         specifier: workspace:*
         version: link:../../packages/odl
       '@types/node':
@@ -92,26 +92,26 @@ importers:
 
   packages/actions:
     dependencies:
+      '@altius/observability':
+        specifier: workspace:*
+        version: link:../observability
+      '@altius/odl':
+        specifier: workspace:*
+        version: link:../odl
+      '@altius/spi':
+        specifier: workspace:*
+        version: link:../spi
       '@grpc/grpc-js':
         specifier: ^1.14.4
         version: 1.14.4
       '@grpc/proto-loader':
         specifier: ^0.7.0
         version: 0.7.15
-      '@openfoundry/observability':
-        specifier: workspace:*
-        version: link:../observability
-      '@openfoundry/odl':
-        specifier: workspace:*
-        version: link:../odl
-      '@openfoundry/spi':
-        specifier: workspace:*
-        version: link:../spi
       yaml:
         specifier: ^2.8.0
         version: 2.8.2
     devDependencies:
-      '@openfoundry/storage-memory':
+      '@altius/storage-memory':
         specifier: workspace:*
         version: link:../storage-memory
       '@types/node':
@@ -126,6 +126,33 @@ importers:
 
   packages/api:
     dependencies:
+      '@altius/actions':
+        specifier: workspace:*
+        version: link:../actions
+      '@altius/engine':
+        specifier: workspace:*
+        version: link:../engine
+      '@altius/observability':
+        specifier: workspace:*
+        version: link:../observability
+      '@altius/odl':
+        specifier: workspace:*
+        version: link:../odl
+      '@altius/security':
+        specifier: workspace:*
+        version: link:../security
+      '@altius/spi':
+        specifier: workspace:*
+        version: link:../spi
+      '@altius/storage-memory':
+        specifier: workspace:*
+        version: link:../storage-memory
+      '@altius/storage-postgres':
+        specifier: workspace:*
+        version: link:../storage-postgres
+      '@altius/sync':
+        specifier: workspace:*
+        version: link:../sync
       '@apollo/server':
         specifier: ^4.11.0
         version: 4.13.0(graphql@16.12.0)
@@ -135,33 +162,6 @@ importers:
       '@openfga/sdk':
         specifier: ^0.9.1
         version: 0.9.1
-      '@openfoundry/actions':
-        specifier: workspace:*
-        version: link:../actions
-      '@openfoundry/engine':
-        specifier: workspace:*
-        version: link:../engine
-      '@openfoundry/observability':
-        specifier: workspace:*
-        version: link:../observability
-      '@openfoundry/odl':
-        specifier: workspace:*
-        version: link:../odl
-      '@openfoundry/security':
-        specifier: workspace:*
-        version: link:../security
-      '@openfoundry/spi':
-        specifier: workspace:*
-        version: link:../spi
-      '@openfoundry/storage-memory':
-        specifier: workspace:*
-        version: link:../storage-memory
-      '@openfoundry/storage-postgres':
-        specifier: workspace:*
-        version: link:../storage-postgres
-      '@openfoundry/sync':
-        specifier: workspace:*
-        version: link:../sync
       cors:
         specifier: ^2.8.5
         version: 2.8.6
@@ -220,17 +220,17 @@ importers:
 
   packages/engine:
     dependencies:
-      '@openfoundry/observability':
+      '@altius/observability':
         specifier: workspace:*
         version: link:../observability
-      '@openfoundry/odl':
+      '@altius/odl':
         specifier: workspace:*
         version: link:../odl
-      '@openfoundry/spi':
+      '@altius/spi':
         specifier: workspace:*
         version: link:../spi
     devDependencies:
-      '@openfoundry/storage-memory':
+      '@altius/storage-memory':
         specifier: workspace:*
         version: link:../storage-memory
       '@types/node':
@@ -283,7 +283,7 @@ importers:
         specifier: ^16.10.0
         version: 16.12.0
     devDependencies:
-      '@openfoundry/spi':
+      '@altius/spi':
         specifier: workspace:*
         version: link:../spi
       '@types/node':
@@ -297,15 +297,15 @@ importers:
 
   packages/security:
     dependencies:
+      '@altius/observability':
+        specifier: workspace:*
+        version: link:../observability
+      '@altius/spi':
+        specifier: workspace:*
+        version: link:../spi
       '@openfga/sdk':
         specifier: ^0.9.1
         version: 0.9.1
-      '@openfoundry/observability':
-        specifier: workspace:*
-        version: link:../observability
-      '@openfoundry/spi':
-        specifier: workspace:*
-        version: link:../spi
       jose:
         specifier: ^6.0.0
         version: 6.1.3
@@ -328,7 +328,7 @@ importers:
 
   packages/storage-memory:
     dependencies:
-      '@openfoundry/spi':
+      '@altius/spi':
         specifier: workspace:*
         version: link:../spi
     devDependencies:
@@ -338,13 +338,13 @@ importers:
 
   packages/storage-postgres:
     dependencies:
-      '@openfoundry/observability':
+      '@altius/observability':
         specifier: workspace:*
         version: link:../observability
-      '@openfoundry/odl':
+      '@altius/odl':
         specifier: workspace:*
         version: link:../odl
-      '@openfoundry/spi':
+      '@altius/spi':
         specifier: workspace:*
         version: link:../spi
       pg:
@@ -363,10 +363,10 @@ importers:
 
   packages/sync:
     dependencies:
-      '@openfoundry/observability':
+      '@altius/observability':
         specifier: workspace:*
         version: link:../observability
-      '@openfoundry/spi':
+      '@altius/spi':
         specifier: workspace:*
         version: link:../spi
       pg:
@@ -406,25 +406,25 @@ importers:
 
   tests/pilot-scenarios:
     dependencies:
-      '@openfoundry/actions':
+      '@altius/actions':
         specifier: workspace:*
         version: link:../../packages/actions
-      '@openfoundry/api':
+      '@altius/api':
         specifier: workspace:*
         version: link:../../packages/api
-      '@openfoundry/odl':
+      '@altius/odl':
         specifier: workspace:*
         version: link:../../packages/odl
-      '@openfoundry/security':
+      '@altius/security':
         specifier: workspace:*
         version: link:../../packages/security
-      '@openfoundry/spi':
+      '@altius/spi':
         specifier: workspace:*
         version: link:../../packages/spi
-      '@openfoundry/storage-memory':
+      '@altius/storage-memory':
         specifier: workspace:*
         version: link:../../packages/storage-memory
-      '@openfoundry/sync':
+      '@altius/sync':
         specifier: workspace:*
         version: link:../../packages/sync
     devDependencies:
@@ -434,11 +434,11 @@ importers:
 
   tests/spi-conformance:
     dependencies:
-      '@openfoundry/spi':
+      '@altius/spi':
         specifier: workspace:*
         version: link:../../packages/spi
     devDependencies:
-      '@openfoundry/storage-memory':
+      '@altius/storage-memory':
         specifier: workspace:*
         version: link:../../packages/storage-memory
       vitest:

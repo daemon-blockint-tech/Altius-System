@@ -15,17 +15,17 @@
  *   fooChanged(id) → PubSub filter
  */
 
-import type { ParsedSchema, ObjectType, ActionType, FieldDefinition, LinkType, LinkDirective } from '@openfoundry/odl';
-import { DataPurpose } from '@openfoundry/spi';
-import type { OntologyObject, OntologyLink, FilterExpression, AggregateQuery, AggregateField, AggregateFunction, SearchQuery, ErrorCategory } from '@openfoundry/spi';
-import type { ActionActor, ActionContext } from '@openfoundry/actions';
-import type { RedactionResult } from '@openfoundry/security';
+import type { ParsedSchema, ObjectType, ActionType, FieldDefinition, LinkType, LinkDirective } from '@altius/odl';
+import { DataPurpose } from '@altius/spi';
+import type { OntologyObject, OntologyLink, FilterExpression, AggregateQuery, AggregateField, AggregateFunction, SearchQuery, ErrorCategory } from '@altius/spi';
+import type { ActionActor, ActionContext } from '@altius/actions';
+import type { RedactionResult } from '@altius/security';
 import { PubSub } from 'graphql-subscriptions';
 import type { ApiDependencies, ResolverContext, PaginationArgs } from './types.js';
 import { DEFAULT_CONSENT_PURPOSE, DEFAULT_CONSENT_SUBJECT_TYPES } from './types.js';
 import { resolvePagination, buildConnection, decodeCursor } from './pagination.js';
 import { paginateWithConsent } from '../consent-pagination.js';
-import { createOpenFoundryError, wrapError } from './errors.js';
+import { createAltiusError, wrapError } from './errors.js';
 import {
   createIdFilteredSubscription,
   createFilteredSubscription,
@@ -487,7 +487,7 @@ function generateQueryResolvers(
         `${fgaType}:${args.id}`,
       );
       if (!allowed) {
-        throw createOpenFoundryError({
+        throw createAltiusError({
           code: 'FORBIDDEN',
           category: 'authorization',
           message: `Access denied to ${typeName} ${args.id}`,
@@ -759,7 +759,7 @@ function generateAggregateResolver(
         ];
         const blocked = allRequestedFields.filter(f => !visibleFields.has(f));
         if (blocked.length > 0) {
-          throw createOpenFoundryError({
+          throw createAltiusError({
             code: 'FORBIDDEN',
             category: 'authorization',
             message: `Cannot aggregate over redacted fields: ${blocked.join(', ')}`,
@@ -820,7 +820,7 @@ function generateSearchResolver(
 
       // Reject empty search queries
       if (!args.query || args.query.trim().length === 0) {
-        throw createOpenFoundryError({
+        throw createAltiusError({
           code: 'INVALID_ARGUMENT',
           category: 'validation',
           message: 'Search query must not be empty',
@@ -1142,7 +1142,7 @@ function generateObjectSetResolvers(
   ) => {
     try {
       if (!deps.objectSetManager) {
-        throw createOpenFoundryError({
+        throw createAltiusError({
           code: 'NOT_CONFIGURED',
           category: 'system',
           message: 'Object set manager is not configured',
@@ -1179,7 +1179,7 @@ function generateObjectSetResolvers(
   ) => {
     try {
       if (!deps.objectSetManager) {
-        throw createOpenFoundryError({
+        throw createAltiusError({
           code: 'NOT_CONFIGURED',
           category: 'system',
           message: 'Object set manager is not configured',
@@ -1209,7 +1209,7 @@ function generateObjectSetResolvers(
   ) => {
     try {
       if (!deps.objectSetManager) {
-        throw createOpenFoundryError({
+        throw createAltiusError({
           code: 'NOT_CONFIGURED',
           category: 'system',
           message: 'Object set manager is not configured',
@@ -1241,7 +1241,7 @@ function generateCdmResolvers(resolvers: ResolverMap, deps: ApiDependencies): vo
       : status === 404 ? 'not_found'
       : status === 400 ? 'validation'
       : 'system';
-    throw createOpenFoundryError({
+    throw createAltiusError({
       code: `CDM_${status}`,
       category,
       message,
@@ -1319,7 +1319,7 @@ function generateRelationshipResolvers(resolvers: ResolverMap, deps: ApiDependen
       requestContext.traceId,
     );
     if (!result.ok) {
-      throw createOpenFoundryError({
+      throw createAltiusError({
         code: result.code ?? 'RELATIONSHIP_ERROR',
         category: (result.category ?? 'system') as ErrorCategory,
         message: result.message ?? 'Relationship change failed',
@@ -1351,7 +1351,7 @@ function generateConsentResolvers(resolvers: ResolverMap, deps: ApiDependencies)
       { id: user.id, roles: user.roles }, requestContext.tenantId, requestContext.traceId,
     );
     if (!result.ok) {
-      throw createOpenFoundryError({
+      throw createAltiusError({
         code: result.code ?? 'CONSENT_ERROR',
         category: (result.category ?? 'system') as ErrorCategory,
         message: result.message ?? 'Consent record failed',

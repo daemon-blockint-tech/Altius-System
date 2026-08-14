@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { generateOpenFGASchema, mergeOpenFGAOverrides, actionPermissionRelation } from '@openfoundry/odl';
+import { generateOpenFGASchema, mergeOpenFGAOverrides, actionPermissionRelation } from '@altius/odl';
 import { fgaDslToJson } from '../server.js';
 import type { FgaTypeDef } from '../server.js';
 import { loadDomainPacks } from '../schema-loader.js';

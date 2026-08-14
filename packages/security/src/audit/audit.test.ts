@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import type { AuditActor, AuditOperation, AuditDetail } from "@openfoundry/spi";
+import type { AuditActor, AuditOperation, AuditDetail } from "@altius/spi";
 
 import { AuditWriter } from "./audit-writer.js";
 import { AuditQuery } from "./audit-query.js";

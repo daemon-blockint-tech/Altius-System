@@ -44,7 +44,7 @@ jobs:
         image: apache/age:release_PG17_1.6.0
         env:
           POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: openfoundry_test
+          POSTGRES_DB: altius_test
         ports:
           - 5432:5432
         options: >-
@@ -62,22 +62,22 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       # `pnpm --filter ... test` runs the package's vitest directly (bypasses
-      # turbo's test->build dependsOn), so workspace deps (e.g. @openfoundry/odl)
+      # turbo's test->build dependsOn), so workspace deps (e.g. @altius/odl)
       # must be built first or vite can't resolve them.
       - name: Build workspace
         run: pnpm run build
       - name: Initialise Apache AGE
         run: |
           sudo apt-get update && sudo apt-get install -y postgresql-client
-          PGPASSWORD=postgres psql -h localhost -U postgres -d openfoundry_test \
+          PGPASSWORD=postgres psql -h localhost -U postgres -d altius_test \
             -c "CREATE EXTENSION IF NOT EXISTS age;" \
             -c "LOAD 'age';" \
             -c "SET search_path = ag_catalog, public;" \
-            -c "SELECT create_graph('openfoundry');"
+            -c "SELECT create_graph('altius');"
       - name: Storage-postgres integration tests
         env:
-          PG_TEST_URL: postgresql://postgres:postgres@localhost:5432/openfoundry_test
-        run: pnpm --filter @openfoundry/storage-postgres test
+          PG_TEST_URL: postgresql://postgres:postgres@localhost:5432/altius_test
+        run: pnpm --filter @altius/storage-postgres test
 
   docker-stack-integration:
     name: Docker-stack integration
@@ -97,19 +97,19 @@ jobs:
           cache: 'pnpm'
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-      # Compose reads deploy/.env (project dir) for the two intentionally-
+      # Compose reads Orion/.env (project dir) for the two intentionally-
       # required vars. Writing the file (not just job env) is essential: the
       # integration tests run via turbo, whose strict env mode strips job env
       # from the task, so the harness's `docker compose` children would
-      # otherwise not see the vars. This mirrors local dev (deploy/.env exists).
-      - name: Create deploy/.env for compose
+      # otherwise not see the vars. This mirrors local dev (Orion/.env exists).
+      - name: Create Orion/.env for compose
         run: |
-          printf 'POSTGRES_PASSWORD=postgres\nKEYCLOAK_ADMIN_PASSWORD=admin\n' > deploy/.env
+          printf 'POSTGRES_PASSWORD=postgres\nKEYCLOAK_ADMIN_PASSWORD=admin\n' > Orion/.env
       - name: Build stack images
         run: >-
           docker compose
-          -f deploy/docker-compose.yaml
-          -f deploy/docker-compose.test.yaml
+          -f Orion/docker-compose.yaml
+          -f Orion/docker-compose.test.yaml
           build
       # Bring the stack up here (not inside the test harness): the harness's
       # dockerComposeUp wraps `up --wait` in a 300s execSync wall-timeout, which
@@ -119,8 +119,8 @@ jobs:
       - name: Start stack
         run: >-
           docker compose
-          -f deploy/docker-compose.yaml
-          -f deploy/docker-compose.test.yaml
+          -f Orion/docker-compose.yaml
+          -f Orion/docker-compose.test.yaml
           up -d --wait --wait-timeout 600
       - name: Integration tests
         run: pnpm run test:integration
@@ -128,8 +128,8 @@ jobs:
         if: always()
         run: >-
           docker compose
-          -f deploy/docker-compose.yaml
-          -f deploy/docker-compose.test.yaml
+          -f Orion/docker-compose.yaml
+          -f Orion/docker-compose.test.yaml
           down -v --remove-orphans
 
   enforcement-e2e:
@@ -155,29 +155,29 @@ jobs:
           cache: 'pnpm'
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-      # Compose reads deploy/.env (project dir) for the two intentionally-required
+      # Compose reads Orion/.env (project dir) for the two intentionally-required
       # vars; the specs spawn `docker compose` children that need the file on disk.
-      - name: Create deploy/.env for compose
+      - name: Create Orion/.env for compose
         run: |
-          printf 'POSTGRES_PASSWORD=postgres\nKEYCLOAK_ADMIN_PASSWORD=admin\n' > deploy/.env
+          printf 'POSTGRES_PASSWORD=postgres\nKEYCLOAK_ADMIN_PASSWORD=admin\n' > Orion/.env
       # vitest runs the package directly (no turbo build step), so workspace deps
       # must be built first for vite to resolve them.
       - name: Build workspace
         run: pnpm run build
       - name: Build stack images
-        run: docker compose -f deploy/docker-compose.yaml build
+        run: docker compose -f Orion/docker-compose.yaml build
       # Each spec self-manages the Docker lifecycle (down -v -> up -> assert ->
       # down -v). Run sequentially; the filename filter + env flag keep exactly
       # one destructive spec active at a time.
       - name: Prod-mode security-enforcement E2E
-        run: SECURITY_E2E=1 pnpm --filter @openfoundry/integration-tests exec vitest run security-enforcement
+        run: SECURITY_E2E=1 pnpm --filter @altius/integration-tests exec vitest run security-enforcement
       - name: Capability-gating negative E2E
-        run: CAPABILITY_E2E=1 pnpm --filter @openfoundry/integration-tests exec vitest run capability-gating
+        run: CAPABILITY_E2E=1 pnpm --filter @altius/integration-tests exec vitest run capability-gating
       - name: Open-consent-vocabulary E2E
-        run: CONSENT_VOCAB_E2E=1 pnpm --filter @openfoundry/integration-tests exec vitest run open-consent-vocab
+        run: CONSENT_VOCAB_E2E=1 pnpm --filter @altius/integration-tests exec vitest run open-consent-vocab
       - name: Tear down stack
         if: always()
-        run: docker compose -f deploy/docker-compose.yaml down -v --remove-orphans
+        run: docker compose -f Orion/docker-compose.yaml down -v --remove-orphans
 
   helm-lint:
     name: Helm lint
@@ -189,7 +189,7 @@ jobs:
           version: v3.16.2
       - name: Lint chart
         run: >-
-          helm lint --strict deploy/helm/openfoundry
+          helm lint --strict Orion/helm/altius
           --set auth.oidc.clientId=ci
           --set authz.openfga.storeId=ci
 
@@ -205,7 +205,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build all images
-        run: docker compose -f deploy/docker-compose.yaml build
+        run: docker compose -f Orion/docker-compose.yaml build
       - name: Install trivy
         run: |
           curl -fsSL "https://github.com/aquasecurity/trivy/releases/download/v0.71.0/trivy_0.71.0_Linux-64bit.tar.gz" \
@@ -214,8 +214,8 @@ jobs:
         run: |
           status=0
           for img in cel-evaluator api-gateway ontology-engine action-executor security-service sync-engine; do
-            echo "::group::trivy deploy-$img"
-            trivy image --scanners vuln --severity HIGH,CRITICAL --exit-code 1 "deploy-$img:latest" || status=1
+            echo "::group::trivy orion-$img"
+            trivy image --scanners vuln --severity HIGH,CRITICAL --exit-code 1 "orion-$img:latest" || status=1
             echo "::endgroup::"
           done
           exit $status

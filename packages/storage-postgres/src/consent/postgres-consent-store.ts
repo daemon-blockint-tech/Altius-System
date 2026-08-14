@@ -10,11 +10,11 @@
  */
 
 import type { Pool } from 'pg';
-import type { ConsentRecord } from '@openfoundry/spi';
+import type { ConsentRecord } from '@altius/spi';
 
 /**
  * ConsentStore interface — structurally compatible with
- * @openfoundry/security ConsentStore without requiring a direct import.
+ * @altius/security ConsentStore without requiring a direct import.
  */
 export interface ConsentStoreInterface {
   put(record: ConsentRecord, tenantId?: string): Promise<void>;

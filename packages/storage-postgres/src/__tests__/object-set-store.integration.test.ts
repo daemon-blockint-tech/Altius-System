@@ -2,7 +2,7 @@
  * PostgresObjectSetStore integration tests.
  *
  * Requires a running PostgreSQL instance. Set PG_TEST_URL, e.g.:
- *   PG_TEST_URL=postgresql://localhost:5432/openfoundry_test pnpm test
+ *   PG_TEST_URL=postgresql://localhost:5432/altius_test pnpm test
  *
  * Skipped when PG_TEST_URL is unset. Mirrors InMemoryObjectSetStore semantics
  * (tenant isolation, public/private visibility, creator-only mutation) and adds
@@ -12,7 +12,7 @@
 
 import { describe, it, expect, beforeEach, afterAll } from 'vitest';
 import { Pool } from 'pg';
-import type { RequestContext, ObjectSetDefinition } from '@openfoundry/spi';
+import type { RequestContext, ObjectSetDefinition } from '@altius/spi';
 import { PostgresObjectSetStore } from '../object-sets/postgres-object-set-store.js';
 
 const PG_TEST_URL = process.env['PG_TEST_URL'];

@@ -18,13 +18,13 @@ import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { resolve, dirname, delimiter } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse as parseYaml } from 'yaml';
-import { parseOdl } from '@openfoundry/odl';
-import type { ParsedSchema, ObjectType, LinkType } from '@openfoundry/odl';
-import { parseActionManifest } from '@openfoundry/actions';
+import { parseOdl } from '@altius/odl';
+import type { ParsedSchema, ObjectType, LinkType } from '@altius/odl';
+import { parseActionManifest } from '@altius/actions';
 import { logger } from './logger.js';
-import type { ActionManifest } from '@openfoundry/actions';
-import type { OntologySchema, ObjectTypeDefinition, LinkTypeDefinition, PropertyDefinition, IndexDefinition } from '@openfoundry/spi';
-import type { FieldPermissionConfig } from '@openfoundry/security';
+import type { ActionManifest } from '@altius/actions';
+import type { OntologySchema, ObjectTypeDefinition, LinkTypeDefinition, PropertyDefinition, IndexDefinition } from '@altius/spi';
+import type { FieldPermissionConfig } from '@altius/security';
 import type { ManifestRegistry } from './graphql/types.js';
 
 // ---------------------------------------------------------------------------

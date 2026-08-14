@@ -11,8 +11,8 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import type { OntologyObject } from '@openfoundry/spi';
-import { mapPatientToFhir, NHS_NUMBER_SYSTEM } from '@openfoundry/api';
+import type { OntologyObject } from '@altius/spi';
+import { mapPatientToFhir, NHS_NUMBER_SYSTEM } from '@altius/api';
 
 // ---------------------------------------------------------------------------
 // 7.5 — FHIR

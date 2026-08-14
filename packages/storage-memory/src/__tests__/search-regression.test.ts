@@ -9,7 +9,7 @@
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { MemoryStorageProvider } from '../memory-storage-provider.js';
-import type { RequestContext, OntologySchema } from '@openfoundry/spi';
+import type { RequestContext, OntologySchema } from '@altius/spi';
 
 const ctx: RequestContext = { tenantId: 't-1', actorId: 'user-1' };
 

@@ -14,7 +14,7 @@
  *   - meta.profile = NHS Digital Encounter profile
  */
 
-import type { OntologyObject } from '@openfoundry/spi';
+import type { OntologyObject } from '@altius/spi';
 import type {
   FhirPatient,
   FhirEncounter,

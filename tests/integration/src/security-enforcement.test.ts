@@ -17,7 +17,7 @@
  *     filter, vs dev allow-all which would return it).
  *
  * Production prerequisites the harness wires up in beforeAll:
- *   1. bring up Keycloak (realm `openfoundry` auto-imported with users
+ *   1. bring up Keycloak (realm `altius` auto-imported with users
  *      dr-test/admin-test) + OpenFGA, on the base compose (dev-mode gateway not
  *      yet started);
  *   2. create an OpenFGA store (the gateway needs OPENFGA_STORE_ID at boot);
@@ -32,7 +32,7 @@
  * After it completes the stack is DOWN; bring the normal dev stack back up
  * before running the rest of the suite. Run with, e.g.:
  *
- *   SECURITY_E2E=1 pnpm --filter @openfoundry/integration-tests exec \
+ *   SECURITY_E2E=1 pnpm --filter @altius/integration-tests exec \
  *     vitest run security-enforcement
  */
 
@@ -47,7 +47,7 @@ import { CONFIG } from './config.js';
 const ENABLED = process.env['SECURITY_E2E'] === '1';
 const describeMaybe = dockerAvailable && ENABLED ? describe : describe.skip;
 
-const DEPLOY_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '../../../deploy');
+const DEPLOY_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '../../../Orion');
 const BASE = `${DEPLOY_DIR}/docker-compose.yaml`;
 const PROD = `${DEPLOY_DIR}/docker-compose.prod-test.yaml`;
 // Seed override (reference wards/beds/consultants under tenant `default`) — the
@@ -56,7 +56,7 @@ const TEST = `${DEPLOY_DIR}/docker-compose.test.yaml`;
 
 const OPENFGA_URL = 'http://localhost:8280';
 const KEYCLOAK_TOKEN_URL =
-  'http://localhost:8180/auth/realms/openfoundry/protocol/openid-connect/token';
+  'http://localhost:8180/auth/realms/altius/protocol/openid-connect/token';
 const HEALTH_URL = `${CONFIG.apiBaseUrl}/.well-known/apollo/server-health`;
 const PATIENTS_URL = `${CONFIG.restBaseUrl}/patients`;
 const WARDS_URL = `${CONFIG.restBaseUrl}/wards`;
@@ -75,7 +75,7 @@ function psqlScalar(files: string[], sql: string): string {
   const fileArgs = files.map((f) => `-f "${f}"`).join(' ');
   const out = execSync(
     `docker compose ${fileArgs} exec -T postgresql ` +
-      `psql -U openfoundry -d openfoundry -tA -c "${sql}"`,
+      `psql -U altius -d altius -tA -c "${sql}"`,
     { env: { ...process.env }, encoding: 'utf-8' },
   );
   return out.trim();
@@ -108,7 +108,7 @@ async function createOpenFgaStore(): Promise<string> {
 async function mintToken(username: string, password = 'test-password'): Promise<string> {
   const form = new URLSearchParams({
     grant_type: 'password',
-    client_id: 'openfoundry',
+    client_id: 'altius',
     username,
     password,
     scope: 'openid',

@@ -4,7 +4,7 @@ import {
   MeterProvider,
   MetricReader,
 } from "@opentelemetry/sdk-metrics";
-import { createFoundryMetrics, MetricNames } from "./metrics.js";
+import { createAltiusMetrics, MetricNames } from "./metrics.js";
 
 /**
  * Minimal MetricReader for testing that allows manual collection.
@@ -38,28 +38,28 @@ describe("metrics", () => {
   describe("MetricNames", () => {
     it("defines all spec Section 4.5.2 metric names", () => {
       expect(MetricNames.ENGINE_OPERATIONS).toBe(
-        "openfoundry.engine.operations",
+        "altius.engine.operations",
       );
-      expect(MetricNames.ENGINE_LATENCY).toBe("openfoundry.engine.latency");
+      expect(MetricNames.ENGINE_LATENCY).toBe("altius.engine.latency");
       expect(MetricNames.ACTION_EXECUTIONS).toBe(
-        "openfoundry.action.executions",
+        "altius.action.executions",
       );
-      expect(MetricNames.ACTION_DURATION).toBe("openfoundry.action.duration");
+      expect(MetricNames.ACTION_DURATION).toBe("altius.action.duration");
       expect(MetricNames.SECURITY_CHECKS).toBe(
-        "openfoundry.security.checks",
+        "altius.security.checks",
       );
       expect(MetricNames.SECURITY_CHECK_LATENCY).toBe(
-        "openfoundry.security.check_latency",
+        "altius.security.check_latency",
       );
       expect(MetricNames.SYNC_RECORDS_PROCESSED).toBe(
-        "openfoundry.sync.records_processed",
+        "altius.sync.records_processed",
       );
       expect(MetricNames.SYNC_LAG_SECONDS).toBe(
-        "openfoundry.sync.lag_seconds",
+        "altius.sync.lag_seconds",
       );
-      expect(MetricNames.SYNC_CONFLICTS).toBe("openfoundry.sync.conflicts");
+      expect(MetricNames.SYNC_CONFLICTS).toBe("altius.sync.conflicts");
       expect(MetricNames.COMPUTED_EVALUATIONS).toBe(
-        "openfoundry.computed.evaluations",
+        "altius.computed.evaluations",
       );
     });
 
@@ -68,41 +68,41 @@ describe("metrics", () => {
       expect(values).toHaveLength(10);
     });
 
-    it("all metric names follow openfoundry.<layer>.<name> convention", () => {
+    it("all metric names follow altius.<layer>.<name> convention", () => {
       for (const name of Object.values(MetricNames)) {
-        expect(name).toMatch(/^openfoundry\.\w+\.\w+$/);
+        expect(name).toMatch(/^altius\.\w+\.\w+$/);
       }
     });
   });
 
-  describe("createFoundryMetrics", () => {
+  describe("createAltiusMetrics", () => {
     it("creates all metric instruments", () => {
-      const foundryMetrics = createFoundryMetrics();
+      const altiusMetrics = createAltiusMetrics();
 
-      expect(foundryMetrics.engineOperations).toBeDefined();
-      expect(foundryMetrics.engineLatency).toBeDefined();
-      expect(foundryMetrics.actionExecutions).toBeDefined();
-      expect(foundryMetrics.actionDuration).toBeDefined();
-      expect(foundryMetrics.securityChecks).toBeDefined();
-      expect(foundryMetrics.securityCheckLatency).toBeDefined();
-      expect(foundryMetrics.syncRecordsProcessed).toBeDefined();
-      expect(foundryMetrics.syncLagSeconds).toBeDefined();
-      expect(foundryMetrics.syncConflicts).toBeDefined();
-      expect(foundryMetrics.computedEvaluations).toBeDefined();
+      expect(altiusMetrics.engineOperations).toBeDefined();
+      expect(altiusMetrics.engineLatency).toBeDefined();
+      expect(altiusMetrics.actionExecutions).toBeDefined();
+      expect(altiusMetrics.actionDuration).toBeDefined();
+      expect(altiusMetrics.securityChecks).toBeDefined();
+      expect(altiusMetrics.securityCheckLatency).toBeDefined();
+      expect(altiusMetrics.syncRecordsProcessed).toBeDefined();
+      expect(altiusMetrics.syncLagSeconds).toBeDefined();
+      expect(altiusMetrics.syncConflicts).toBeDefined();
+      expect(altiusMetrics.computedEvaluations).toBeDefined();
     });
 
     it("accepts a custom meter", () => {
       const customMeter = meterProvider.getMeter("custom-test");
-      const foundryMetrics = createFoundryMetrics(customMeter);
+      const altiusMetrics = createAltiusMetrics(customMeter);
 
-      expect(foundryMetrics.engineOperations).toBeDefined();
+      expect(altiusMetrics.engineOperations).toBeDefined();
     });
 
     it("records counter increments", async () => {
-      const foundryMetrics = createFoundryMetrics();
+      const altiusMetrics = createAltiusMetrics();
 
-      foundryMetrics.engineOperations.add(1, { "object.type": "Patient" });
-      foundryMetrics.engineOperations.add(2, { "object.type": "Ward" });
+      altiusMetrics.engineOperations.add(1, { "object.type": "Patient" });
+      altiusMetrics.engineOperations.add(2, { "object.type": "Ward" });
 
       const { resourceMetrics } = await reader.collect();
       const metricData = resourceMetrics.scopeMetrics
@@ -111,7 +111,7 @@ describe("metrics", () => {
 
       expect(metricData).toBeDefined();
       expect(metricData!.descriptor.name).toBe(
-        "openfoundry.engine.operations",
+        "altius.engine.operations",
       );
       // Assert the recorded VALUES, not just the descriptor: one data point per
       // attribute set, with the summed counter value.
@@ -123,10 +123,10 @@ describe("metrics", () => {
     });
 
     it("records histogram values", async () => {
-      const foundryMetrics = createFoundryMetrics();
+      const altiusMetrics = createAltiusMetrics();
 
-      foundryMetrics.engineLatency.record(42);
-      foundryMetrics.engineLatency.record(100);
+      altiusMetrics.engineLatency.record(42);
+      altiusMetrics.engineLatency.record(100);
 
       const { resourceMetrics } = await reader.collect();
       const metricData = resourceMetrics.scopeMetrics

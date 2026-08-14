@@ -7,7 +7,7 @@
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Pool } from 'pg';
-import type { AuditRecord } from '@openfoundry/spi';
+import type { AuditRecord } from '@altius/spi';
 import { PostgresAuditStore } from '../audit/postgres-audit-store.js';
 import { generateAuditDDL } from '../schema/ddl-audit.js';
 

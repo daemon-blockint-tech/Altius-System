@@ -2,12 +2,12 @@ syntax = "proto3";
 
 package cel;
 
-option go_package = "github.com/openfoundry/cel-evaluator/proto";
+option go_package = "github.com/daemon-blockint-tech/Altius-System/packages/cel-evaluator/proto";
 
 import "google/protobuf/struct.proto";
 
 // CelEvaluator provides CEL expression evaluation as a gRPC service.
-// Per Open Foundry Spec v2 Section 5.2.4, CEL runtime evaluation MUST use
+// Per Altius Spec v2 Section 5.2.4, CEL runtime evaluation MUST use
 // a canonical evaluator. This Go sidecar is the authoritative runtime.
 service CelEvaluator {
   // Evaluate a single CEL expression.

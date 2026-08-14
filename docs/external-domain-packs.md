@@ -1,6 +1,6 @@
 # External Domain Packs
 
-Load domain packs from outside the Open Foundry monorepo — for proprietary schemas,
+Load domain packs from outside the Altius monorepo — for proprietary schemas,
 partner integrations, or tenant-specific ontologies that live in separate repositories.
 
 ## Overview
@@ -43,7 +43,7 @@ namespace: com.example
 description: "Example external domain pack"
 
 dependencies:
-  openfoundry.core: ">=1.0.0"
+  altius.core: ">=1.0.0"
 
 # Optional: platform capabilities this pack opts into. The FHIR facade (/fhir/*)
 # and the FDP/CDM projection (/api/v1/cdm/*) are NHS-shaped and only mounted when
@@ -314,12 +314,12 @@ the gateway fails fast otherwise), `CONSENT_SUBJECT_TYPES` (action
 consent-subject types; default `Patient`; a single type when the exemption is
 enabled), `CONSENT_DIRECT_CARE_EXEMPTION` (default off),
 `CONSENT_EXEMPTION_PURPOSE`, `RELATIONSHIP_GRANTER_ROLES` /
-`CONSENT_RECORDER_ROLES` (default `admin`). See `deploy/.env.example` and
-`deploy/README.md`.
+`CONSENT_RECORDER_ROLES` (default `admin`). See `Orion/.env.example` and
+`Orion/README.md`.
 
 ### Docker Compose
 
-In `deploy/.env`:
+In `Orion/.env`:
 
 ```bash
 # Activate specific packs (omit for all discovered)
@@ -419,7 +419,7 @@ When the api-gateway starts:
 
 10. **OpenFGA Sync** — The base authorization model (generated from ODL) is merged with permission overrides and POSTed to the OpenFGA store.
 
-11. **Registration** — Each loaded pack is recorded in the `_domain_packs` Postgres table and exposed via Prometheus gauge `openfoundry_pack_loaded{name,version,origin}`.
+11. **Registration** — Each loaded pack is recorded in the `_domain_packs` Postgres table and exposed via Prometheus gauge `altius_pack_loaded{name,version,origin}`.
 
 12. **OpenAPI** — An OpenAPI 3.0.3 spec is generated from the merged schema and served at `/api/v1/openapi.json`.
 
@@ -439,7 +439,7 @@ curl http://localhost:4000/admin/packs | jq .
     {
       "name": "core",
       "version": "1.0.0",
-      "namespace": "openfoundry.core",
+      "namespace": "altius.core",
       "description": "Core domain pack ...",
       "external": false,
       "objectTypes": 0,
@@ -495,8 +495,8 @@ openapi-generator-cli generate -i http://localhost:4000/api/v1/openapi.json -g r
 ### Prometheus Metrics
 
 ```
-openfoundry_pack_loaded{name="core", version="1.0.0", origin="primary"} 1
-openfoundry_pack_loaded{name="my-pack", version="0.1.0", origin="external"} 1
+altius_pack_loaded{name="core", version="1.0.0", origin="primary"} 1
+altius_pack_loaded{name="my-pack", version="0.1.0", origin="external"} 1
 ```
 
 ## Dependency Constraints
@@ -505,7 +505,7 @@ Packs can declare dependencies on other packs by namespace:
 
 ```yaml
 dependencies:
-  openfoundry.core: ">=1.0.0"
+  altius.core: ">=1.0.0"
   nhs.acute: ">=0.2.0"
 ```
 

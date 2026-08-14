@@ -18,7 +18,7 @@ import type {
   RequestContext,
   TraversalPath,
   TraversalOptions,
-} from '@openfoundry/spi';
+} from '@altius/spi';
 
 // ── Mock helpers ───────────────────────────────────────────────────
 

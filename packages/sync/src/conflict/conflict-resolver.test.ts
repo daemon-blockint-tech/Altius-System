@@ -255,7 +255,7 @@ describe('ConflictResolver', () => {
   // ── Conflict logging ──────────────────────────────────────────────
 
   describe('conflict event logging', () => {
-    it('logs conflicts as openfoundry.sync.conflict events', async () => {
+    it('logs conflicts as altius.sync.conflict events', async () => {
       const logged: ConflictEventData[] = [];
       resolver.setConflictHandler((event) => { logged.push(event); });
 

@@ -13,7 +13,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { getObjectAtVersion, getObjectAtTime } from '../temporal/temporal-queries.js';
 import type { Pool } from 'pg';
-import type { RequestContext, DateTime } from '@openfoundry/spi';
+import type { RequestContext, DateTime } from '@altius/spi';
 
 // ── Mock helpers ───────────────────────────────────────────────────
 

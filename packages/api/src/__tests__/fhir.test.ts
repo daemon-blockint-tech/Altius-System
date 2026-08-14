@@ -27,7 +27,7 @@ import {
 import type { FhirRequest } from '../fhir/router.js';
 import type { FhirPatient, FhirBundle, FhirEncounter, FhirOperationOutcome } from '../fhir/types.js';
 import type { ApiDependencies, AuthenticatedUserInfo } from '../graphql/types.js';
-import type { OntologyObject } from '@openfoundry/spi';
+import type { OntologyObject } from '@altius/spi';
 
 // ─── Fixtures ───
 

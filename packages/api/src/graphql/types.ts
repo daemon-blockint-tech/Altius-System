@@ -1,14 +1,14 @@
-import type { ObjectManager, LinkManager, ObjectSetManager } from '@openfoundry/engine';
-import type { ActionExecutor, ActionManifest } from '@openfoundry/actions';
+import type { ObjectManager, LinkManager, ObjectSetManager } from '@altius/engine';
+import type { ActionExecutor, ActionManifest } from '@altius/actions';
 import type {
   AuthorizationService,
   OidcAuthenticator,
   ConsentService,
   AuditWriter,
-} from '@openfoundry/security';
-import type { ParsedSchema } from '@openfoundry/odl';
-import type { RequestContext, StorageProvider } from '@openfoundry/spi';
-import { DataPurpose } from '@openfoundry/spi';
+} from '@altius/security';
+import type { ParsedSchema } from '@altius/odl';
+import type { RequestContext, StorageProvider } from '@altius/spi';
+import { DataPurpose } from '@altius/spi';
 
 /**
  * Registry that resolves action names to parsed YAML manifests.

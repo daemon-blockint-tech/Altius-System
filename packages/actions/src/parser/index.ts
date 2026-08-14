@@ -8,7 +8,7 @@
 
 import { parse as parseYaml } from 'yaml';
 
-import type { ParsedSchema } from '@openfoundry/odl';
+import type { ParsedSchema } from '@altius/odl';
 
 import type {
   ActionManifest,

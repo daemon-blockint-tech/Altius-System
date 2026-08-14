@@ -7,7 +7,7 @@
  * Requires a running PostgreSQL instance. Set PG_TEST_URL env var or
  * these tests will be skipped. Example:
  *
- *   PG_TEST_URL=postgresql://localhost:5432/openfoundry_test npm test
+ *   PG_TEST_URL=postgresql://localhost:5432/altius_test npm test
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
@@ -17,7 +17,7 @@ import type {
   FilterExpression,
   TraversalPath,
   DateTime,
-} from '@openfoundry/spi';
+} from '@altius/spi';
 import { PostgresStorageProvider } from '../postgres-storage-provider.js';
 
 const PG_TEST_URL = process.env['PG_TEST_URL'];

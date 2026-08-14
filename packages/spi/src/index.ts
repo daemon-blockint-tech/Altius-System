@@ -1,7 +1,7 @@
 /**
- * @openfoundry/spi - Storage Provider Interface
+ * @altius/spi - Storage Provider Interface
  *
- * Core type definitions for the Open Foundry platform.
+ * Core type definitions for the Altius platform.
  * This package defines the contracts that all storage providers,
  * consent managers, and platform components implement.
  */

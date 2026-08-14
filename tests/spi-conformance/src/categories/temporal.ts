@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import type { StorageProvider, RequestContext } from '@openfoundry/spi';
+import type { StorageProvider, RequestContext } from '@altius/spi';
 import type { ProviderFactory } from '../suite.js';
 import { tenantA, baseSchema } from '../fixtures.js';
 

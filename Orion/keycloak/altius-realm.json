@@ -1,5 +1,5 @@
 {
-  "realm": "openfoundry",
+  "realm": "altius",
   "enabled": true,
   "sslRequired": "none",
   "accessTokenLifespan": 3600,
@@ -15,8 +15,8 @@
   },
   "clients": [
     {
-      "clientId": "openfoundry",
-      "name": "Open Foundry API",
+      "clientId": "altius",
+      "name": "Altius API",
       "enabled": true,
       "publicClient": true,
       "standardFlowEnabled": true,
@@ -29,7 +29,7 @@
           "protocol": "openid-connect",
           "protocolMapper": "oidc-audience-mapper",
           "config": {
-            "included.client.audience": "openfoundry",
+            "included.client.audience": "altius",
             "id.token.claim": "false",
             "access.token.claim": "true"
           }
@@ -68,7 +68,7 @@
     {
       "username": "dr-test",
       "enabled": true,
-      "email": "dr-test@openfoundry.local",
+      "email": "dr-test@altius.local",
       "firstName": "Test",
       "lastName": "Clinician",
       "emailVerified": true,
@@ -79,7 +79,7 @@
     {
       "username": "admin-test",
       "enabled": true,
-      "email": "admin-test@openfoundry.local",
+      "email": "admin-test@altius.local",
       "firstName": "Test",
       "lastName": "Admin",
       "emailVerified": true,

@@ -13,7 +13,7 @@ import type {
   AggregateQuery,
   AggregateResult,
   PlatformError,
-} from '@openfoundry/spi';
+} from '@altius/spi';
 import type { ObjectManager } from '../objects/object-manager.js';
 
 export class ObjectSetManager {

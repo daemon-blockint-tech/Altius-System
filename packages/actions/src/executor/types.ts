@@ -5,7 +5,7 @@
  * security, consent, CEL evaluation, audit, and result types.
  */
 
-import type { AuditRecord, DataPurpose, StorageProvider, RequestContext } from '@openfoundry/spi';
+import type { AuditRecord, DataPurpose, StorageProvider, RequestContext } from '@altius/spi';
 
 // ---------------------------------------------------------------------------
 // Actor identity
@@ -189,7 +189,7 @@ export interface ActionExecutorConfig {
   storage: StorageProvider;
   security: SecurityLayer;
   cel: CelEvaluator;
-  consentManager?: import('@openfoundry/spi').ConsentManager;
+  consentManager?: import('@altius/spi').ConsentManager;
   sideEffectHandler?: SideEffectHandler;
   auditWriter?: AuditWriter;
   eventPublisher?: ActionEventPublisher;

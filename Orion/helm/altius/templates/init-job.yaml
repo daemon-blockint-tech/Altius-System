@@ -2,9 +2,9 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ include "openfoundry.fullname" . }}-init
+  name: {{ include "altius.fullname" . }}-init
   labels:
-    {{- include "openfoundry.labels" . | nindent 4 }}
+    {{- include "altius.labels" . | nindent 4 }}
   annotations:
     helm.sh/hook: post-install,post-upgrade
     helm.sh/hook-weight: "-5"
@@ -54,8 +54,8 @@ spec:
               CREATE EXTENSION IF NOT EXISTS age;
               LOAD 'age';
               SET search_path = ag_catalog, "$user", public;
-              SELECT create_graph('openfoundry') WHERE NOT EXISTS (
-                SELECT 1 FROM ag_catalog.ag_graph WHERE name = 'openfoundry'
+              SELECT create_graph('altius') WHERE NOT EXISTS (
+                SELECT 1 FROM ag_catalog.ag_graph WHERE name = 'altius'
               );
               CREATE TABLE IF NOT EXISTS _domain_packs (
                 name TEXT PRIMARY KEY, version TEXT NOT NULL,

@@ -1,13 +1,13 @@
 {{/*
 HELM-08: NetworkPolicy to restrict service-to-service communication.
-Only allows traffic between known Open Foundry services and denies all else.
+Only allows traffic between known Altius services and denies all else.
 */}}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: {{ include "openfoundry.fullname" . }}-default-deny
+  name: {{ include "altius.fullname" . }}-default-deny
   labels:
-    {{- include "openfoundry.labels" . | nindent 4 }}
+    {{- include "altius.labels" . | nindent 4 }}
 spec:
   podSelector:
     matchLabels:

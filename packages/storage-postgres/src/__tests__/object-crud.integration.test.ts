@@ -4,17 +4,17 @@
  * Requires a running PostgreSQL instance. Set PG_TEST_URL env var or
  * these tests will be skipped. Example:
  *
- *   PG_TEST_URL=postgresql://localhost:5432/openfoundry_test npm test
+ *   PG_TEST_URL=postgresql://localhost:5432/altius_test npm test
  *
  * To run with Docker:
- *   docker run -d --name pg-test -e POSTGRES_DB=openfoundry_test \
+ *   docker run -d --name pg-test -e POSTGRES_DB=altius_test \
  *     -e POSTGRES_PASSWORD=test -p 5432:5432 postgres:17
- *   PG_TEST_URL=postgresql://postgres:test@localhost:5432/openfoundry_test npm test
+ *   PG_TEST_URL=postgresql://postgres:test@localhost:5432/altius_test npm test
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { Pool } from 'pg';
-import type { RequestContext, FilterExpression } from '@openfoundry/spi';
+import type { RequestContext, FilterExpression } from '@altius/spi';
 import {
   createObject,
   getObject,

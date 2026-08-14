@@ -10,10 +10,10 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { MemoryStorageProvider } from '@openfoundry/storage-memory';
-import { ActionExecutor, parseActionManifest } from '@openfoundry/actions';
-import type { ActionManifest } from '@openfoundry/actions';
-import type { RequestContext, AuditRecord } from '@openfoundry/spi';
+import { MemoryStorageProvider } from '@altius/storage-memory';
+import { ActionExecutor, parseActionManifest } from '@altius/actions';
+import type { ActionManifest } from '@altius/actions';
+import type { RequestContext, AuditRecord } from '@altius/spi';
 
 import {
   NHS_SCHEMA,
