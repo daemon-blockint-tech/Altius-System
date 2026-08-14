@@ -87,27 +87,41 @@ export function mapObjectEvent(
  * Convert a CloudEvent with LinkEventData into ChangeEvents
  * for the related object types.  Link events trigger change
  * notifications on both endpoints.
+ *
+ * When the event carries endpoint object types (fromType/toType — emitted
+ * by the engine LinkManager), each endpoint publishes to the same
+ * type-level topic object events use (e.g. "patientChanged"), so both
+ * fooChanged(id) and foosChanged(filter) subscribers receive link-driven
+ * changes with a real _type that per-event FGA checks can authorize.
+ * Events without endpoint types (older emitters) fall back to per-ID
+ * topics, which no generated resolver consumes — effectively dropped.
  */
 export function mapLinkEvent(
   event: CloudEvent<LinkEventData>,
-): { topic: string; objectId: string }[] | null {
+): { topic: string; changeEvent: ChangeEvent }[] | null {
   if (!LINK_EVENT_TYPES.has(event.type) || !event.data) return null;
 
   const data = event.data;
-  // A link event affects both endpoints.  The subject field is "LinkType/linkId"
-  // and the data carries fromId and toId.  We produce generic notifications
-  // for each end.  The consuming subscription resolvers will refetch the
-  // objects to build the full ChangeEvent payloads.
-  //
-  // TODO: Topics are keyed by object ID (e.g. "patient-123") rather than
-  // type-level topics (e.g. "Patient"). Clients subscribing to "all Patient
-  // changes" won't receive link events unless they subscribe to every patient
-  // ID individually. Consider adding type-level topic publishing alongside
-  // the per-ID topics.
-  return [
-    { topic: data.fromId, objectId: data.fromId },
-    { topic: data.toId, objectId: data.toId },
+  const endpoints: Array<{ id: string; type?: string }> = [
+    { id: data.fromId, type: data.fromType },
+    { id: data.toId, type: data.toType },
   ];
+
+  return endpoints.map(({ id, type }) => ({
+    topic: type ? `${lowerFirst(type)}Changed` : id,
+    changeEvent: {
+      changeType: 'UPDATED',
+      object: { id, _type: type ?? 'unknown' },
+      previousValues: null,
+      causedBy: data.causedBy
+        ? {
+            actionType: data.causedBy.actionType ?? null,
+            actionId: data.causedBy.actionId ?? null,
+          }
+        : null,
+      timestamp: event.time,
+    },
+  }));
 }
 
 // ─── Subscribable EventBus adapter ───
@@ -229,22 +243,12 @@ export class SubscriptionManager {
       return;
     }
 
-    // Handle link lifecycle events — emit change events for related objects
+    // Handle link lifecycle events — emit change events for both endpoints
     if (LINK_EVENT_TYPES.has(event.type)) {
       const mappedLinks = mapLinkEvent(event as CloudEvent<LinkEventData>);
       if (mappedLinks) {
         for (const link of mappedLinks) {
-          // Publish a minimal change notification; the subscription resolver
-          // will refetch the full object if needed.
-          const changeEvent: ChangeEvent = {
-            changeType: 'UPDATED',
-            object: { id: link.objectId, _type: 'unknown' },
-            previousValues: null,
-            causedBy: null,
-            timestamp: event.time,
-          };
-          // Use a generic topic based on the objectId
-          this.pubsub.publish(link.topic, { [link.topic]: changeEvent }).catch((err: unknown) => {
+          this.pubsub.publish(link.topic, { [link.topic]: link.changeEvent }).catch((err: unknown) => {
             logger.warn({ topic: link.topic, err: err instanceof Error ? err.message : String(err) }, 'PubSub link event publish failed');
           });
         }

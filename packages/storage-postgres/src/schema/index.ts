@@ -87,6 +87,15 @@ export function generateDDL(
     all: [],
   };
 
+  // pg_trgm backs the trigram GIN indexes emitted for FULLTEXT index
+  // definitions (trusted extension since PG13 — no superuser needed).
+  const hasFulltext = schema.objectTypes.some(
+    ot => ot.indexes?.some(i => i.indexType === 'FULLTEXT'),
+  );
+  if (hasFulltext) {
+    result.objectTables.push(`CREATE EXTENSION IF NOT EXISTS pg_trgm;`);
+  }
+
   // Object tables + history tables
   for (const objectType of schema.objectTypes) {
     result.objectTables.push(...generateObjectTableDDL(objectType, dataSchema));

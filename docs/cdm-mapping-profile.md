@@ -47,7 +47,7 @@ field carries the CDM resource name.
 | CDM field | Source field | Notes |
 |---|---|---|
 | `id` | `_id` | |
-| `nhsNumber` | `nhsNumber` | Provisional-identity flagging is an upstream connector concern |
+| `nhsNumber` | `nhsNumber` | **Validated** — Modulus 11 checksum at projection time (S1.0); provisional-identity flagging is an upstream connector concern |
 | `name` | `name` | Full display name; structured components carried in `family`/`given` |
 | `family` | `family` | Surname (structured-name decomposition, v0.2.0 B2) |
 | `given` | `given` | **Lossy** — one or more forenames, space-separated; consumers split on whitespace |
@@ -140,9 +140,13 @@ what was projected and what was approximated:
   "sourceUpdatedAt": "2026-05-25T10:00:00.000Z",
   "profileVersion": "0.2.0",
   "cdmVersion": "fdp-cdm-draft",
-  "lossyFields": ["given", "status", "triageCategory"]
+  "lossyFields": ["given", "status", "triageCategory"],
+  "terminologyIssues": []
 }
 ```
+
+`terminologyIssues` is populated only when a terminology-annotated field fails
+validation (see below). It is absent or empty for clean records.
 
 ## Gap register
 
@@ -153,7 +157,53 @@ what was projected and what was approximated:
 | Staff | **Resolved (v0.2.0 B4)** — a general `Staff` type (StaffRole) projects to CDM Practitioner alongside Consultant | Practitioner-name decomposition (family/given) remains a later refinement |
 | Patient.name | **Resolved (v0.2.0 B2)** — Patient carries structured `family` + `given` alongside the full `name` | `given` holds space-separated forenames (split for the list form); `prefix`/`suffix` remain out of scope |
 | Patient.identifier | NHS Number optional; local-number-only patients not flagged provisional | Provisional-identity flagging handled upstream (PDS resolution, connector layer) |
-| Terminology | Coded fields are free strings / local enums, not validated against SNOMED CT / dm+d / ODS | Terminology validation added at connector layer (S1.2) and full CDM coverage (S2.2) |
+| Terminology | Coded fields (triage, discharge destination, reason) are free strings / local enums, not validated against SNOMED CT / dm+d / ODS. **NHS Number is now format+checksum-validated (Modulus 11) at projection time (S1.0)**; full terminology membership validation against the NHS Terminology Server is deferred to S1.2 (connector layer) and S2.2 (full CDM coverage) | Terminology validation issues surface non-blocking in `_provenance.terminologyIssues` for IG review; full membership validation deferred to S1.2 |
+
+## Terminology validation (S1.0)
+
+The projector runs deterministic **format + checksum** validation on
+terminology-annotated fields at projection time. This is the S1.0 layer; full
+membership validation against the NHS Terminology Server is the S1.2 extension
+point.
+
+### Systems validated
+
+| System | Field(s) | Rule |
+|---|---|---|
+| `NHS_NUMBER` | `Patient.nhsNumber` | 10 digits, Modulus 11 checksum (NHS Data Dictionary) |
+| `SNOMED_CT` | _(none yet — pluggable)_ | 6–18 digit identifier (IHTSDO) |
+| `ODS` | _(none yet — pluggable)_ | 3–5 uppercase alphanumeric (NHS Digital) |
+| `DMD` | _(none yet — pluggable)_ | 6–18 digits, SNOMED CT-based (NHS BSA) |
+
+Only `nhsNumber` is annotated in the current profile. Other coded-ish fields
+(`triageCategory`, `destination`, `reason`, `specialty`) are local enums or free
+text — they are **not** terminology-coded and annotating them with `SNOMED_CT`
+would be a false claim. The gap register documents that they should be
+terminology-coded in S2.2.
+
+### Non-blocking
+
+Validation is **non-blocking**: an invalid code surfaces in
+`_provenance.terminologyIssues` but the record still projects. The CDM
+projection is read-only and must not fail on source data quality; the issue is
+visible for IG / analyst review.
+
+```json
+{
+  "field": "nhsNumber",
+  "system": "NHS_NUMBER",
+  "value": "9434765918",
+  "issue": "NHS Number Modulus 11 check digit mismatch (expected 9, got 8)."
+}
+```
+
+### Pluggable validator
+
+`projectToCdm` accepts an optional `TerminologyValidator`. The default is
+`FormatChecksumValidator` (deterministic, no I/O). S1.2 injects a
+`RemoteTerminologyServiceValidator` that delegates to the NHS Terminology Server
+(FHIR `$validate`) for membership validation; format + checksum is still run
+first to reject malformed input cheaply.
 
 ## API
 
@@ -190,4 +240,6 @@ Patient and Encounter projections are consent-gated (subject = patient).
 This is a **Stage 1 starter slice**: the profile, projection, provenance, and
 read API are complete and tested for the operational subset. A first-class
 Transfer object (B1) and structured-name decomposition (B2) landed in v0.2.0.
-Full CDM coverage and terminology validation are scoped to later stages (S2.2).
+NHS Number terminology validation (format + Modulus 11 checksum) landed in S1.0.
+Full CDM coverage and terminology membership validation against the NHS
+Terminology Server are scoped to later stages (S1.2, S2.2).

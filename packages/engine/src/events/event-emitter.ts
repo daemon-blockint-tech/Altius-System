@@ -33,6 +33,10 @@ export interface LinkEventData {
   linkId: string;
   fromId: string;
   toId: string;
+  /** ObjectType of the from-endpoint. Enables type-level subscription routing. */
+  fromType?: string;
+  /** ObjectType of the to-endpoint. Enables type-level subscription routing. */
+  toType?: string;
   version: number;
   changes?: ChangeSet;
   causedBy?: EventCause;
@@ -120,12 +124,16 @@ export class EngineEventEmitter {
     toId: string,
     version: number,
     cause?: EventCause,
+    fromType?: string,
+    toType?: string,
   ): Promise<void> {
     await this.emitEvent('altius.link.created', `${linkType}/${linkId}`, ctx, {
       linkType,
       linkId,
       fromId,
       toId,
+      fromType,
+      toType,
       version,
       causedBy: this.buildCause(ctx, cause),
     });
@@ -141,12 +149,16 @@ export class EngineEventEmitter {
     version: number,
     changes: ChangeSet,
     cause?: EventCause,
+    fromType?: string,
+    toType?: string,
   ): Promise<void> {
     await this.emitEvent('altius.link.updated', `${linkType}/${linkId}`, ctx, {
       linkType,
       linkId,
       fromId,
       toId,
+      fromType,
+      toType,
       version,
       changes,
       causedBy: this.buildCause(ctx, cause),
@@ -162,12 +174,16 @@ export class EngineEventEmitter {
     toId: string,
     version: number,
     cause?: EventCause,
+    fromType?: string,
+    toType?: string,
   ): Promise<void> {
     await this.emitEvent('altius.link.deleted', `${linkType}/${linkId}`, ctx, {
       linkType,
       linkId,
       fromId,
       toId,
+      fromType,
+      toType,
       version,
       causedBy: this.buildCause(ctx, cause),
     });

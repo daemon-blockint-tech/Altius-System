@@ -56,5 +56,25 @@ export function generateAuditDDL(): string[] {
     `CREATE INDEX IF NOT EXISTS "idx_audit_records_object" ON "audit"."audit_records" ("op_object_type", "op_object_id");`
   );
 
+  // Append-only enforcement at the database level. The application never
+  // updates or deletes audit records; these triggers turn that convention
+  // into a hard guarantee against application bugs and ad-hoc SQL.
+  // (A table owner can still drop the trigger — this guards against
+  // accident, not a malicious superuser.)
+  statements.push(`CREATE OR REPLACE FUNCTION "audit".reject_mutation() RETURNS trigger AS $$
+BEGIN
+  RAISE EXCEPTION 'audit.audit_records is append-only';
+END;
+$$ LANGUAGE plpgsql;`);
+  statements.push(
+    `CREATE OR REPLACE TRIGGER "audit_records_immutable_row" BEFORE UPDATE OR DELETE ON "audit"."audit_records" FOR EACH ROW EXECUTE FUNCTION "audit".reject_mutation();`
+  );
+  statements.push(
+    `CREATE OR REPLACE TRIGGER "audit_records_immutable_stmt" BEFORE TRUNCATE ON "audit"."audit_records" FOR EACH STATEMENT EXECUTE FUNCTION "audit".reject_mutation();`
+  );
+  statements.push(
+    `REVOKE UPDATE, DELETE, TRUNCATE ON "audit"."audit_records" FROM PUBLIC;`
+  );
+
   return statements;
 }

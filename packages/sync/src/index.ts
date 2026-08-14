@@ -84,6 +84,7 @@ export {
   clearCustomTransforms,
   parseTransformExpression,
   parseMappingConfig,
+  parseMappingObject,
   RecordMapper,
   createRecordMapper,
 } from "./mapping/index.js";
@@ -121,3 +122,7 @@ export type {
 } from "./conflict/index.js";
 
 export { ConflictResolver } from "./conflict/index.js";
+
+// Scheduler — the driver loop for POLLING/CDC/BATCH datasources
+export type { SyncSchedulerConfig, DatasourceStatus } from "./scheduler/index.js";
+export { SyncScheduler, InMemoryCheckpointStore, parseInterval } from "./scheduler/index.js";

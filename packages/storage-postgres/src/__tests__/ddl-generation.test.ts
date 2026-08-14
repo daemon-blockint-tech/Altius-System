@@ -185,6 +185,21 @@ describe('generateObjectTableDDL', () => {
     expect(allDDL).toContain('USING btree ("family_name")');
   });
 
+  it('emits trigram GIN for FULLTEXT indexes (serves runtime ILIKE search)', () => {
+    const searchable: ObjectTypeDefinition = {
+      ...patientType,
+      indexes: [{ field: 'familyName', indexType: 'FULLTEXT' }],
+    };
+    const allDDL = generateObjectTableDDL(searchable).join('\n');
+
+    expect(allDDL).toContain('USING gin ("family_name" gin_trgm_ops)');
+    expect(allDDL).not.toContain('to_tsvector');
+
+    // generateDDL must bootstrap the extension the index depends on
+    const full = generateDDL({ version: 1, objectTypes: [searchable], linkTypes: [] });
+    expect(full.objectTables[0]).toBe('CREATE EXTENSION IF NOT EXISTS pg_trgm;');
+  });
+
   it('supports HASH index type', () => {
     const ddl = generateObjectTableDDL(wardType);
     const allDDL = ddl.join('\n');
@@ -364,6 +379,14 @@ describe('generateAuditDDL', () => {
     expect(allDDL).toContain('"idx_audit_records_actor"');
     expect(allDDL).toContain('"idx_audit_records_trace"');
     expect(allDDL).toContain('"idx_audit_records_object"');
+  });
+
+  it('enforces append-only at the database level', () => {
+    const allDDL = generateAuditDDL().join('\n');
+
+    expect(allDDL).toContain('BEFORE UPDATE OR DELETE ON "audit"."audit_records"');
+    expect(allDDL).toContain('BEFORE TRUNCATE ON "audit"."audit_records"');
+    expect(allDDL).toContain('REVOKE UPDATE, DELETE, TRUNCATE ON "audit"."audit_records" FROM PUBLIC;');
   });
 
   it('audit tables are in separate audit schema', () => {

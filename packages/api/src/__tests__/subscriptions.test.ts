@@ -123,6 +123,8 @@ function createLinkCreatedEvent(
   linkId: string,
   fromId: string,
   toId: string,
+  fromType?: string,
+  toType?: string,
 ): CloudEvent<LinkEventData> {
   return {
     specversion: '1.0',
@@ -137,6 +139,8 @@ function createLinkCreatedEvent(
       linkId,
       fromId,
       toId,
+      fromType,
+      toType,
       version: 1,
       causedBy: { actionType: 'AdmitPatient', actionId: 'act-3' },
     },
@@ -262,14 +266,29 @@ describe('CloudEvent to ChangeEvent mapping', () => {
     expect(result).toBeNull();
   });
 
-  it('maps link.created to change notifications for both endpoints', () => {
+  it('maps link.created to type-level topics when endpoint types are present', () => {
+    const event = createLinkCreatedEvent('PatientInWard', 'link-1', 'p-1', 'w-1', 'Patient', 'Ward');
+    const result = mapLinkEvent(event);
+
+    expect(result).not.toBeNull();
+    expect(result).toHaveLength(2);
+    expect(result![0]!.topic).toBe('patientChanged');
+    expect(result![0]!.changeEvent.object).toEqual({ id: 'p-1', _type: 'Patient' });
+    expect(result![0]!.changeEvent.changeType).toBe('UPDATED');
+    expect(result![0]!.changeEvent.causedBy).toEqual({ actionType: 'AdmitPatient', actionId: 'act-3' });
+    expect(result![1]!.topic).toBe('wardChanged');
+    expect(result![1]!.changeEvent.object).toEqual({ id: 'w-1', _type: 'Ward' });
+  });
+
+  it('falls back to per-ID topics when endpoint types are absent', () => {
     const event = createLinkCreatedEvent('PatientInWard', 'link-1', 'p-1', 'w-1');
     const result = mapLinkEvent(event);
 
     expect(result).not.toBeNull();
     expect(result).toHaveLength(2);
-    expect(result![0]!.objectId).toBe('p-1');
-    expect(result![1]!.objectId).toBe('w-1');
+    expect(result![0]!.topic).toBe('p-1');
+    expect(result![0]!.changeEvent.object).toEqual({ id: 'p-1', _type: 'unknown' });
+    expect(result![1]!.topic).toBe('w-1');
   });
 
   it('returns null for non-link event types', () => {

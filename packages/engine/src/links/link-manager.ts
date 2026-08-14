@@ -106,6 +106,8 @@ export class LinkManager {
         link._toId,
         link._version,
         cause,
+        linkDef.from,
+        linkDef.to,
       );
 
       return link;
@@ -168,6 +170,7 @@ export class LinkManager {
       const changes = this.computeChanges(existing, properties);
 
       // Emit event
+      const linkDef = this.getLinkTypeDefinition(type);
       await this.eventEmitter.emitLinkUpdated(
         ctx,
         type,
@@ -177,6 +180,8 @@ export class LinkManager {
         updated._version,
         changes,
         cause,
+        linkDef.from,
+        linkDef.to,
       );
 
       return updated;
@@ -215,6 +220,7 @@ export class LinkManager {
       await this.storage.deleteLink(ctx, type, linkId);
 
       // Emit event
+      const linkDef = this.getLinkTypeDefinition(type);
       await this.eventEmitter.emitLinkDeleted(
         ctx,
         type,
@@ -223,6 +229,8 @@ export class LinkManager {
         existing._toId,
         existing._version,
         cause,
+        linkDef.from,
+        linkDef.to,
       );
     });
   }

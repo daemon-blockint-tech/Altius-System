@@ -102,7 +102,11 @@ function generateIndex(tableName: string, idx: IndexDefinition, schema: string):
   const uniqueKw = idx.unique ? 'UNIQUE ' : '';
 
   if (idx.indexType === 'FULLTEXT') {
-    return `CREATE INDEX IF NOT EXISTS ${pgIdent(idxName)} ON ${qualifiedTable} USING gin (to_tsvector('english', ${pgIdent(colName)}));`;
+    // Trigram GIN, not tsvector: the runtime search path (objects/search.ts)
+    // issues substring ILIKE queries per the SPI contract, which only a
+    // pg_trgm index can serve. Requires CREATE EXTENSION pg_trgm (emitted
+    // by generateDDL when any FULLTEXT index is present).
+    return `CREATE INDEX IF NOT EXISTS ${pgIdent(idxName)} ON ${qualifiedTable} USING gin (${pgIdent(colName)} gin_trgm_ops);`;
   }
 
   // Unique indexes are tenant-scoped to allow the same value across tenants

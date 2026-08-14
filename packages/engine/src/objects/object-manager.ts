@@ -24,6 +24,7 @@ import {
   validateObjectProperties,
   validationError,
   type ValidationResult,
+  type CelEvaluator,
 } from './validation.js';
 import { EngineEventEmitter, type ChangeSet, type EventCause } from '../events/event-emitter.js';
 import type { ComputedFieldEvaluator } from '../computed/computed-field-evaluator.js';
@@ -41,6 +42,14 @@ export interface ObjectManagerConfig {
   computedFieldEvaluator?: ComputedFieldEvaluator;
   /** Optional lineage recorder for field-level provenance tracking. */
   lineageRecorder?: LineageRecorder;
+  /**
+   * Optional CEL evaluator for @constraint expression evaluation in the
+   * validation pipeline. When omitted, only a small inline subset of CEL
+   * is enforced and complex expressions emit a warning instead of failing.
+   * In production this is the same CelClient instance used by the action
+   * pipeline (see packages/actions/src/cel).
+   */
+  celEvaluator?: CelEvaluator;
 }
 
 /**
@@ -57,6 +66,7 @@ export class ObjectManager {
   private readonly eventEmitter: EngineEventEmitter;
   private readonly computedFieldEvaluator?: ComputedFieldEvaluator;
   private readonly lineageRecorder?: LineageRecorder;
+  private readonly celEvaluator?: CelEvaluator;
 
   constructor(config: ObjectManagerConfig) {
     this.storage = config.storage;
@@ -64,6 +74,7 @@ export class ObjectManager {
     this.eventEmitter = config.eventEmitter;
     this.computedFieldEvaluator = config.computedFieldEvaluator;
     this.lineageRecorder = config.lineageRecorder;
+    this.celEvaluator = config.celEvaluator;
   }
 
   /**
@@ -347,6 +358,7 @@ export class ObjectManager {
       this.storage,
       existingId,
       patchKeys,
+      this.celEvaluator,
     );
   }
 

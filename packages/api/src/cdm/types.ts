@@ -11,6 +11,8 @@
  * record shape (the export view), not the CDM itself.
  */
 
+import type { TerminologySystem, TerminologyIssue } from './terminology.js';
+
 /** Provenance envelope attached to every projected CDM record. */
 export interface CdmProvenance {
   /** Altius object/link type this record was projected from. */
@@ -27,6 +29,12 @@ export interface CdmProvenance {
   cdmVersion: string;
   /** CDM fields whose mapping is lossy (semantics differ; see gap register). */
   lossyFields: string[];
+  /**
+   * Terminology validation issues found during projection (S1.0). Absent when
+   * no annotated field failed validation. Non-blocking: the record still
+   * projects; the issue is surfaced for IG / analyst review.
+   */
+  terminologyIssues?: TerminologyIssue[];
 }
 
 /** A projected CDM record: resource type + mapped fields + provenance. */
@@ -52,6 +60,13 @@ export interface CdmFieldMapping {
   lossy?: boolean;
   /** Human note explaining a transform or a lossy mapping. */
   note?: string;
+  /**
+   * Terminology system to validate this field against at projection time
+   * (S1.0). When set, the projector runs the injected `TerminologyValidator`
+   * (default: `FormatChecksumValidator`) and surfaces failures in
+   * `_provenance.terminologyIssues`. Absent values are not flagged.
+   */
+  terminology?: { system: TerminologySystem };
 }
 
 /** Maps one Altius type to one CDM resource. */

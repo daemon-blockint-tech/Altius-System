@@ -52,6 +52,7 @@ spec:
               echo "[init] PostgreSQL ready. Initializing AGE extension..."
               psql -q <<'SQL'
               CREATE EXTENSION IF NOT EXISTS age;
+              CREATE EXTENSION IF NOT EXISTS pg_trgm;
               LOAD 'age';
               SET search_path = ag_catalog, "$user", public;
               SELECT create_graph('altius') WHERE NOT EXISTS (

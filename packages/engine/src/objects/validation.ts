@@ -38,6 +38,33 @@ export interface ValidationResult {
   failures: ValidationFailure[];
 }
 
+// ---------------------------------------------------------------------------
+// CEL evaluator (injected dependency)
+// ---------------------------------------------------------------------------
+
+/**
+ * Evaluates CEL expressions. Structurally compatible with
+ * `@altius/actions`'s `CelEvaluator` and `CelClient.evaluate` so the same
+ * sidecar instance can be injected here without an engine → actions
+ * dependency.
+ *
+ * When omitted, the validation pipeline falls back to a small inline
+ * evaluator that handles only the most common comparison/size patterns
+ * (see `evaluateCelExpr`). Anything else is recorded as a warning so
+ * callers know the constraint was NOT enforced.
+ */
+export interface CelEvaluator {
+  evaluate(
+    expression: string,
+    variables: Record<string, unknown>,
+  ): Promise<CelEvalResult>;
+}
+
+export interface CelEvalResult {
+  value?: unknown;
+  error?: string;
+}
+
 /**
  * Built-in scalar type names recognized by the engine.
  * Maps ODL type names to JS typeof checks.
@@ -75,6 +102,7 @@ export async function validateObjectProperties(
   storage: StorageProvider,
   existingId?: string,
   patchKeys?: Set<string>,
+  celEvaluator?: CelEvaluator,
 ): Promise<ValidationResult> {
   const failures: ValidationFailure[] = [];
 
@@ -108,13 +136,25 @@ export async function validateObjectProperties(
   // Step 2: Constraint evaluation (field-level).
   // On updates, only evaluate constraints for fields in the patch.
   // On creates, evaluate all field constraints.
-  const constraintFailures = evaluateConstraints(objectType, properties, patchKeys);
+  // When a CelEvaluator is provided, route expressions through it; otherwise
+  // fall back to the inline evaluator (which can only handle a small subset
+  // and emits a warning for anything it cannot evaluate).
+  const constraintFailures = await evaluateConstraints(
+    objectType,
+    properties,
+    patchKeys,
+    celEvaluator,
+  );
   failures.push(...constraintFailures);
 
   // Step 2b: Type-level constraint evaluation (uses merged state, gated on field-level)
   const fieldConstraintErrors = constraintFailures.filter((f) => f.severity !== 'warning');
   if (fieldConstraintErrors.length === 0) {
-    const typeConstraintFailures = evaluateTypeConstraints(objectType, properties);
+    const typeConstraintFailures = await evaluateTypeConstraints(
+      objectType,
+      properties,
+      celEvaluator,
+    );
     failures.push(...typeConstraintFailures);
   }
 
@@ -247,47 +287,75 @@ function validateSchema(
  * Step 2: Constraint evaluation.
  * Evaluates @constraint CEL expressions against proposed state.
  *
- * NOTE: Full CEL evaluation requires the cel-evaluator gRPC sidecar.
- * For now, we support a minimal set of inline expressions:
- * - Comparison: field > N, field < N, field >= N, field <= N
- * - String length: size(field) > N, size(field) <= N
- * - Regex match: field.matches("pattern")
+ * When a `CelEvaluator` is provided (production wiring via the gRPC
+ * sidecar), expressions are routed through it. Field-level constraints
+ * bind the proposed field value as `value` and the full proposed object
+ * as `this`, matching the CEL conventions used by the action pipeline.
  *
- * Complex CEL expressions are passed through (always valid) until
- * the CEL sidecar integration is implemented.
+ * Without a `CelEvaluator` (test/dev mode), a small inline evaluator
+ * handles the most common comparison/size patterns. Anything else is
+ * recorded as a warning so callers know the constraint was NOT enforced
+ * rather than silently passing.
  */
-function evaluateConstraints(
+async function evaluateConstraints(
   objectType: ObjectType,
   properties: Record<string, unknown>,
   patchKeys?: Set<string>,
-): ValidationFailure[] {
+  celEvaluator?: CelEvaluator,
+): Promise<ValidationFailure[]> {
   const failures: ValidationFailure[] = [];
 
   for (const field of objectType.fields) {
     // On updates, only evaluate constraints for fields in the patch
     if (patchKeys && !patchKeys.has(field.name)) continue;
 
+    // Skip constraint evaluation for absent optional fields. A constraint
+    // validates a *provided* value; an unset optional field has nothing to
+    // validate. (Required-field presence is already checked in Step 1.)
+    const fieldValue = properties[field.name];
+    if (fieldValue === undefined || fieldValue === null) continue;
+
     const constraints = field.directives.filter(
       (d): d is { kind: 'constraint'; expr: string } => d.kind === 'constraint',
     );
 
     for (const constraint of constraints) {
-      const result = evaluateCelExpr(constraint.expr, field.name, properties);
-      if (result === false) {
-        failures.push({
-          step: 'constraint',
-          field: field.name,
-          message: `Constraint violated on field '${field.name}': ${constraint.expr}`,
+      if (celEvaluator) {
+        const celResult = await celEvaluator.evaluate(constraint.expr, {
+          this: properties,
+          value: fieldValue,
         });
-      } else if (result === null) {
-        // Expression requires CEL sidecar — record as a warning so callers
-        // know the constraint was NOT evaluated, rather than silently passing.
-        failures.push({
-          step: 'constraint',
-          field: field.name,
-          message: `Constraint on field '${field.name}' could not be evaluated inline (requires CEL sidecar): ${constraint.expr}`,
-          severity: 'warning',
-        });
+        if (celResult.error) {
+          failures.push({
+            step: 'constraint',
+            field: field.name,
+            message: `Constraint on field '${field.name}' failed to evaluate: ${celResult.error}`,
+          });
+        } else if (celResult.value !== true) {
+          failures.push({
+            step: 'constraint',
+            field: field.name,
+            message: `Constraint violated on field '${field.name}': ${constraint.expr}`,
+          });
+        }
+      } else {
+        const result = evaluateCelExpr(constraint.expr, field.name, properties);
+        if (result === false) {
+          failures.push({
+            step: 'constraint',
+            field: field.name,
+            message: `Constraint violated on field '${field.name}': ${constraint.expr}`,
+          });
+        } else if (result === null) {
+          // Expression requires CEL sidecar — record as a warning so callers
+          // know the constraint was NOT evaluated, rather than silently passing.
+          failures.push({
+            step: 'constraint',
+            field: field.name,
+            message: `Constraint on field '${field.name}' could not be evaluated inline (requires CEL sidecar): ${constraint.expr}`,
+            severity: 'warning',
+          });
+        }
       }
     }
   }
@@ -415,12 +483,16 @@ function checkImmutableFields(
  * Step 2b: Type-level constraint evaluation (Section 2.3.2).
  *
  * Evaluates @constraint directives applied to the type itself (not fields).
- * These use `this` to reference the full object state.
+ * These use `this` to reference the full object state. When a `CelEvaluator`
+ * is provided, expressions are routed through it; otherwise the inline
+ * evaluator is used (with the same warning-on-unevaluable semantics as
+ * field-level constraints).
  */
-function evaluateTypeConstraints(
+async function evaluateTypeConstraints(
   objectType: ObjectType,
   properties: Record<string, unknown>,
-): ValidationFailure[] {
+  celEvaluator?: CelEvaluator,
+): Promise<ValidationFailure[]> {
   const failures: ValidationFailure[] = [];
 
   const constraints = objectType.directives.filter(
@@ -428,18 +500,35 @@ function evaluateTypeConstraints(
   );
 
   for (const constraint of constraints) {
-    const result = evaluateCelExpr(constraint.expr, '', properties);
-    if (result === false) {
-      failures.push({
-        step: 'constraint',
-        message: `Type constraint violated on '${objectType.name}': ${constraint.expr}`,
+    if (celEvaluator) {
+      const celResult = await celEvaluator.evaluate(constraint.expr, {
+        this: properties,
       });
-    } else if (result === null) {
-      failures.push({
-        step: 'constraint',
-        message: `Type constraint on '${objectType.name}' could not be evaluated inline (requires CEL sidecar): ${constraint.expr}`,
-        severity: 'warning',
-      });
+      if (celResult.error) {
+        failures.push({
+          step: 'constraint',
+          message: `Type constraint on '${objectType.name}' failed to evaluate: ${celResult.error}`,
+        });
+      } else if (celResult.value !== true) {
+        failures.push({
+          step: 'constraint',
+          message: `Type constraint violated on '${objectType.name}': ${constraint.expr}`,
+        });
+      }
+    } else {
+      const result = evaluateCelExpr(constraint.expr, '', properties);
+      if (result === false) {
+        failures.push({
+          step: 'constraint',
+          message: `Type constraint violated on '${objectType.name}': ${constraint.expr}`,
+        });
+      } else if (result === null) {
+        failures.push({
+          step: 'constraint',
+          message: `Type constraint on '${objectType.name}' could not be evaluated inline (requires CEL sidecar): ${constraint.expr}`,
+          severity: 'warning',
+        });
+      }
     }
   }
 

@@ -12,6 +12,7 @@
  */
 
 import type { CdmMappingProfile } from './types.js';
+import { TerminologySystem } from './terminology.js';
 
 export const NHS_ACUTE_CDM_PROFILE: CdmMappingProfile = {
   // Bumped to 0.2.0 for the Epic B mapping-surface changes (first-class
@@ -32,7 +33,7 @@ export const NHS_ACUTE_CDM_PROFILE: CdmMappingProfile = {
       sourceKind: 'object',
       fields: [
         { cdmField: 'id', sourceField: '_id' },
-        { cdmField: 'nhsNumber', sourceField: 'nhsNumber', note: 'Local-number-only patients should be flagged provisional upstream (connector concern, not enforced here).' },
+        { cdmField: 'nhsNumber', sourceField: 'nhsNumber', terminology: { system: TerminologySystem.NHS_NUMBER }, note: 'NHS Number validated via Modulus 11 at projection time (S1.0). Local-number-only patients should be flagged provisional upstream (connector concern, not enforced here).' },
         { cdmField: 'name', sourceField: 'name', note: 'Full display name; structured components are carried in family/given (v0.2.0 B2).' },
         { cdmField: 'family', sourceField: 'family', note: 'Surname (structured-name decomposition, v0.2.0 B2).' },
         { cdmField: 'given', sourceField: 'given', lossy: true, note: 'One or more forenames, space-separated; CDM/FHIR model given as a list — consumers split on whitespace.' },
@@ -186,8 +187,8 @@ export const NHS_ACUTE_CDM_PROFILE: CdmMappingProfile = {
     },
     {
       area: 'Terminology',
-      issue: 'Coded fields (triage, discharge destination, reason) are free strings or local enums, not validated against SNOMED CT / dm+d / ODS.',
-      fallback: 'Terminology validation is added at the connector layer (S1.2) and the full CDM coverage stage (S2.2).',
+      issue: 'Coded fields (triage, discharge destination, reason) are free strings or local enums, not validated against SNOMED CT / dm+d / ODS. NHS Number is now format+checksum-validated (Modulus 11) at projection time (S1.0); full terminology membership validation against the NHS Terminology Server is added at the connector layer (S1.2) and the full CDM coverage stage (S2.2).',
+      fallback: 'Terminology validation issues surface non-blocking in _provenance.terminologyIssues for IG review; full membership validation deferred to S1.2.',
     },
   ],
 };

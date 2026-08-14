@@ -1,8 +1,14 @@
 /**
  * Full-text search query builder for PostgreSQL.
  *
- * Uses ILIKE for case-insensitive matching across string-type columns.
- * Scores each row by summing matches across searchable fields.
+ * Uses ILIKE for case-insensitive substring matching across string-type
+ * columns (the SPI contract: 'hospital' matches inside 'a@hospital.org').
+ * Scores each row by summing matches across searched fields.
+ *
+ * Columns with a FULLTEXT IndexDefinition carry a pg_trgm GIN index
+ * (ddl-objects.ts) which serves these ILIKE predicates; searches
+ * restricted to indexed fields use it, unindexed columns fall back to
+ * a scan.
  */
 
 import type { Pool } from 'pg';

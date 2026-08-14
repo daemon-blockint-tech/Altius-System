@@ -12,21 +12,40 @@ import type {
   CdmRecord,
   CdmProvenance,
 } from './types.js';
+import type { TerminologyValidator, TerminologyIssue } from './terminology.js';
+import { DEFAULT_TERMINOLOGY_VALIDATOR } from './terminology.js';
 
 /** Prefix marking a constant-valued source field (e.g. `__const_ward`). */
 const CONST_PREFIX = '__const_';
+
+/** Options for {@link projectToCdm}. */
+export interface ProjectToCdmOptions {
+  /**
+   * Terminology validator used for fields annotated with `terminology.system`.
+   * Defaults to {@link DEFAULT_TERMINOLOGY_VALIDATOR} (format + checksum).
+   * S1.2 injects a remote terminology service validator here.
+   */
+  terminologyValidator?: TerminologyValidator;
+}
 
 /**
  * Project a single Altius record into a CDM record using a resource
  * mapping. `source` is an ontology object (or a link flattened to object shape,
  * as the FHIR Encounter path does).
+ *
+ * Fields annotated with `terminology.system` are validated (non-blocking):
+ * failures are collected into `_provenance.terminologyIssues` so an analyst
+ * sees them without the read API failing on bad source data.
  */
 export function projectToCdm(
   source: Record<string, unknown>,
   mapping: CdmResourceMapping,
   profile: CdmMappingProfile,
+  options: ProjectToCdmOptions = {},
 ): CdmRecord {
+  const validator = options.terminologyValidator ?? DEFAULT_TERMINOLOGY_VALIDATOR;
   const lossyFields: string[] = [];
+  const terminologyIssues: TerminologyIssue[] = [];
   const out: Record<string, unknown> = {};
 
   for (const fm of mapping.fields) {
@@ -50,6 +69,20 @@ export function projectToCdm(
 
     out[fm.cdmField] = value;
     if (fm.lossy) lossyFields.push(fm.cdmField);
+
+    // Non-blocking terminology validation (S1.0). Only string-coercible values
+    // are checked; the validator treats absent values as valid.
+    if (fm.terminology) {
+      const result = validator.validate(fm.terminology.system, value);
+      if (!result.valid) {
+        terminologyIssues.push({
+          field: fm.cdmField,
+          system: fm.terminology.system,
+          value: String(value),
+          issue: result.issue ?? `Terminology validation failed for ${fm.terminology.system}.`,
+        });
+      }
+    }
   }
 
   const provenance: CdmProvenance = {
@@ -61,6 +94,9 @@ export function projectToCdm(
     cdmVersion: profile.cdmVersion,
     lossyFields,
   };
+  if (terminologyIssues.length > 0) {
+    provenance.terminologyIssues = terminologyIssues;
+  }
 
   return {
     resourceType: mapping.cdmResource,

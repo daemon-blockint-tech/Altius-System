@@ -148,6 +148,14 @@ export function parseMappingConfig(yaml: string): DatasourceMappingConfig {
   return buildConfig(raw);
 }
 
+/**
+ * Build a DatasourceMappingConfig from already-parsed YAML content
+ * (e.g. a pack ConnectorManifest's raw config object).
+ */
+export function parseMappingObject(raw: unknown): DatasourceMappingConfig {
+  return buildConfig(raw as RawConfig);
+}
+
 function buildConfig(raw: RawConfig): DatasourceMappingConfig {
   validateRequired(raw, ["datasource", "connector", "connection", "mapping", "sync"]);
   validateRequired(raw.connection, ["url", "table"]);

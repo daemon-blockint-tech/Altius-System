@@ -36,7 +36,7 @@ export type {
   ObjectMapping,
   DatasourceMappingConfig,
 } from "./mapping-parser.js";
-export { parseMappingConfig } from "./mapping-parser.js";
+export { parseMappingConfig, parseMappingObject } from "./mapping-parser.js";
 
 // Record mapper
 export type { MappedObject, MappedLink } from "./record-mapper.js";

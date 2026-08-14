@@ -275,7 +275,26 @@ async function main(): Promise<void> {
     }
   }
   const emitter = new EngineEventEmitter(eventBus);
-  const objectManager = new ObjectManager({ storage, schema, eventEmitter: emitter });
+
+  // ── CEL Evaluator ──
+  // Constructed before the ObjectManager so the same instance can be
+  // injected into the validation pipeline (field/type @constraint
+  // evaluation) AND the action executor (preconditions/effect conditions).
+  // Without this wiring, complex @constraint expressions emit a warning
+  // and are NOT enforced (see packages/engine/src/objects/validation.ts).
+  let cel: CelEvaluator;
+  const celAddress = (process.env['CEL_EVALUATOR_URL'] ?? 'localhost:50051')
+    .replace(/^grpc:\/\//, '');
+  if (!isDev || process.env['CEL_EVALUATOR_URL']) {
+    cel = new CelClient({ address: celAddress });
+    logger.info(`CEL evaluator: gRPC @ ${celAddress}`);
+  } else {
+    // Dev stub: always evaluate to true
+    cel = { async evaluate() { return { value: true }; } };
+    logger.warn('CEL evaluator: allow-all stub (development mode)');
+  }
+
+  const objectManager = new ObjectManager({ storage, schema, eventEmitter: emitter, celEvaluator: cel });
   const linkManager = new LinkManager({ storage, schema, eventEmitter: emitter });
 
   // ── Bootstrap Seeds ──
@@ -530,19 +549,6 @@ async function main(): Promise<void> {
       }
     }
     if (minted > 0) logger.info(`Seed: minted ${minted} ReBAC tuple(s) for seeded links`);
-  }
-
-  // ── CEL Evaluator ──
-  let cel: CelEvaluator;
-  const celAddress = (process.env['CEL_EVALUATOR_URL'] ?? 'localhost:50051')
-    .replace(/^grpc:\/\//, '');
-  if (!isDev || process.env['CEL_EVALUATOR_URL']) {
-    cel = new CelClient({ address: celAddress });
-    logger.info(`CEL evaluator: gRPC @ ${celAddress}`);
-  } else {
-    // Dev stub: always evaluate to true
-    cel = { async evaluate() { return { value: true }; } };
-    logger.warn('CEL evaluator: allow-all stub (development mode)');
   }
 
   // ── Security Layer (for action pipeline) ──

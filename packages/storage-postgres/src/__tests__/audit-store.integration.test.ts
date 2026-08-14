@@ -42,16 +42,29 @@ describeWithPg('PostgresAuditStore (integration)', () => {
     }
 
     // Clean any leftover test data
-    await pool.query(`DELETE FROM "audit"."audit_records" WHERE "id" LIKE 'test-%'`);
+    await cleanTestRecords();
   });
 
   afterAll(async () => {
     // Clean up test data
     if (pool) {
-      await pool.query(`DELETE FROM "audit"."audit_records" WHERE "id" LIKE 'test-%'`);
+      await cleanTestRecords();
       await pool.end();
     }
   });
+
+  /**
+   * The audit table is append-only (enforced by trigger), so test cleanup
+   * must explicitly bypass the guard as the table owner.
+   */
+  async function cleanTestRecords(): Promise<void> {
+    await pool.query(`ALTER TABLE "audit"."audit_records" DISABLE TRIGGER "audit_records_immutable_row"`);
+    try {
+      await pool.query(`DELETE FROM "audit"."audit_records" WHERE "id" LIKE 'test-%'`);
+    } finally {
+      await pool.query(`ALTER TABLE "audit"."audit_records" ENABLE TRIGGER "audit_records_immutable_row"`);
+    }
+  }
 
   function makeRecord(overrides: Partial<AuditRecord> = {}): AuditRecord {
     return {
@@ -64,6 +77,21 @@ describeWithPg('PostgresAuditStore (integration)', () => {
       ...overrides,
     };
   }
+
+  it('rejects UPDATE, DELETE, and TRUNCATE at the database level', async () => {
+    const record = makeRecord({ actor: { type: 'user', id: 'audit-immutable-test', roles: [] } });
+    await store.append(record);
+
+    await expect(
+      pool.query(`UPDATE "audit"."audit_records" SET "actor_id" = 'tampered' WHERE "id" = $1`, [record.id]),
+    ).rejects.toThrow(/append-only/);
+    await expect(
+      pool.query(`DELETE FROM "audit"."audit_records" WHERE "id" = $1`, [record.id]),
+    ).rejects.toThrow(/append-only/);
+    await expect(
+      pool.query(`TRUNCATE "audit"."audit_records"`),
+    ).rejects.toThrow(/append-only/);
+  });
 
   it('appends a record and retrieves it by actorId', async () => {
     const record = makeRecord({ actor: { type: 'user', id: 'audit-test-1', roles: ['admin'] } });

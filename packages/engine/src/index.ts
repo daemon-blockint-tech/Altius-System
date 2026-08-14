@@ -6,6 +6,8 @@ export {
   validationError,
   type ValidationFailure,
   type ValidationResult,
+  type CelEvaluator,
+  type CelEvalResult,
 } from './objects/index.js';
 
 // Links
