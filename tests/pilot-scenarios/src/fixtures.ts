@@ -198,6 +198,7 @@ export const NHS_SCHEMA: ParsedSchema = {
       description: 'Transfer a patient between wards',
     },
   ],
+  functionTypes: [],
   enums: [],
   interfaces: [],
   scalars: [],

@@ -101,7 +101,7 @@ export interface LoadedPackInfo {
   /** Whether this pack came from an extra directory (external). */
   external: boolean;
   /** Per-pack type counts from ODL parsing. */
-  typeCounts: { objectTypes: number; linkTypes: number; actionTypes: number; enums: number };
+  typeCounts: { objectTypes: number; linkTypes: number; actionTypes: number; functionTypes: number; enums: number };
 }
 
 export interface LoadedSchema {
@@ -596,6 +596,7 @@ function mergeSchemas(schemas: ParsedSchema[]): ParsedSchema {
     objectTypes: [],
     linkTypes: [],
     actionTypes: [],
+    functionTypes: [],
     enums: [],
     interfaces: [],
     scalars: [],
@@ -622,6 +623,9 @@ function mergeSchemas(schemas: ParsedSchema[]): ParsedSchema {
     }
     for (const action of schema.actionTypes) {
       merged.actionTypes.push(action);
+    }
+    for (const fn of schema.functionTypes) {
+      merged.functionTypes.push(fn);
     }
     for (const e of schema.enums) {
       if (!seenEnums.has(e.name)) {
@@ -818,7 +822,7 @@ export async function loadDomainPacks(
     manifests.push(manifest);
     packDirs.push(packDir);
 
-    let typeCounts = { objectTypes: 0, linkTypes: 0, actionTypes: 0, enums: 0 };
+    let typeCounts = { objectTypes: 0, linkTypes: 0, actionTypes: 0, functionTypes: 0, enums: 0 };
     const odlSource = loadPackOdl(packDir, manifest);
     if (odlSource.trim()) {
       try {
@@ -827,6 +831,7 @@ export async function loadDomainPacks(
           objectTypes: parsed.objectTypes.length,
           linkTypes: parsed.linkTypes.length,
           actionTypes: parsed.actionTypes.length,
+          functionTypes: parsed.functionTypes.length,
           enums: parsed.enums.length,
         };
         parsedSchemas.push(parsed);

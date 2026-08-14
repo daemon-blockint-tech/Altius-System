@@ -4,7 +4,7 @@ import type { ParsedSchema } from '@altius/odl';
 import { recordSchemaVersion } from '../schema-registry-boot.js';
 
 function emptySchema(): ParsedSchema {
-  return { objectTypes: [], linkTypes: [], actionTypes: [], enums: [], interfaces: [], scalars: [] };
+  return { objectTypes: [], linkTypes: [], actionTypes: [], functionTypes: [], enums: [], interfaces: [], scalars: [] };
 }
 
 function objectType(name: string, fields: ParsedSchema['objectTypes'][0]['fields']): ParsedSchema['objectTypes'][0] {

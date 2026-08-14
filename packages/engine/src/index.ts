@@ -50,3 +50,17 @@ export {
   InMemoryObjectSetStore,
   ObjectSetManager,
 } from './object-sets/index.js';
+
+// Functions
+export {
+  FunctionExecutor,
+  type FunctionExecutorConfig,
+  type FunctionRuntime,
+  type FunctionRuntimeContext,
+  type FunctionExecutionResult,
+  type FunctionLogEntry,
+  NodeFunctionRuntime,
+  type NodeRuntimeConfig,
+  type NodeRuntimeHelpers,
+  CelFunctionRuntime,
+} from './functions/index.js';

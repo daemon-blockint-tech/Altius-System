@@ -20,7 +20,7 @@ const describeWithPg = PG_TEST_URL ? describe : describe.skip;
 // ─── Fixtures (match odl registry.test.ts) ───
 
 function emptySchema(): ParsedSchema {
-  return { objectTypes: [], linkTypes: [], actionTypes: [], enums: [], interfaces: [], scalars: [] };
+  return { objectTypes: [], linkTypes: [], actionTypes: [], functionTypes: [], enums: [], interfaces: [], scalars: [] };
 }
 
 function objectType(name: string, fields: ParsedSchema['objectTypes'][0]['fields']): ParsedSchema['objectTypes'][0] {

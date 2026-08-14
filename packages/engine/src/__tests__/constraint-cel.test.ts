@@ -96,6 +96,7 @@ const parsedSchema: ParsedSchema = {
   ],
   linkTypes: [],
   actionTypes: [],
+  functionTypes: [],
   enums: [
     {
       kind: 'enum',

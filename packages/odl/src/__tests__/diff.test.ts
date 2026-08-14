@@ -9,6 +9,7 @@ function emptySchema(): ParsedSchema {
     objectTypes: [],
     linkTypes: [],
     actionTypes: [],
+    functionTypes: [],
     enums: [],
     interfaces: [],
     scalars: [],

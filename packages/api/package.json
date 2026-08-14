@@ -31,6 +31,7 @@
     "@openfga/sdk": "^0.9.1",
     "@altius/actions": "workspace:*",
     "@altius/engine": "workspace:*",
+    "@altius/mcp-server": "workspace:*",
     "@altius/observability": "workspace:*",
     "@altius/odl": "workspace:*",
     "@altius/security": "workspace:*",

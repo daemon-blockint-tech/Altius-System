@@ -12,6 +12,7 @@ import type {
   ObjectType,
   LinkType,
   ActionType,
+  FunctionType,
   EnumDefinition,
   InterfaceDefinition,
   ScalarDefinition,
@@ -23,6 +24,7 @@ import type {
   MigrationClass,
   FieldModification,
   LinkModification,
+  FunctionModification,
 } from './types.js';
 
 // ─── Public API ───
@@ -49,6 +51,9 @@ export function diff(oldSchema: ParsedSchema, newSchema: ParsedSchema): SchemaDi
     oldSchema.actionTypes, newSchema.actionTypes, 'actionType',
     additions, modifications, removals,
   );
+
+  // Diff function types (also checks runtime/entry changes)
+  diffFunctionTypes(oldSchema.functionTypes, newSchema.functionTypes, additions, modifications, removals);
 
   // Diff enums
   diffEnums(oldSchema.enums, newSchema.enums, additions, modifications, removals);
@@ -115,7 +120,7 @@ export function reverseDiff(schemaDiff: SchemaDiff): SchemaDiff {
 
 // ─── Diff helpers ───
 
-type TypeKind = 'objectType' | 'linkType' | 'actionType' | 'enum' | 'interface' | 'scalar';
+type TypeKind = 'objectType' | 'linkType' | 'actionType' | 'functionType' | 'enum' | 'interface' | 'scalar';
 
 interface NamedTypeWithFields {
   name: string;
@@ -224,6 +229,57 @@ function diffLinkTypes(
 
     // Diff fields
     diffFields(name, oldLt.fields, newLt.fields, additions, modifications, removals);
+  }
+}
+
+/**
+ * Diff function types. In addition to field diffs, checks runtime/entry changes.
+ */
+function diffFunctionTypes(
+  oldTypes: FunctionType[],
+  newTypes: FunctionType[],
+  additions: SchemaChange[],
+  modifications: SchemaChange[],
+  removals: SchemaChange[],
+): void {
+  const oldMap = new Map(oldTypes.map(t => [t.name, t]));
+  const newMap = new Map(newTypes.map(t => [t.name, t]));
+
+  // Added
+  for (const [name, type] of newMap) {
+    if (!oldMap.has(name)) {
+      additions.push({ kind: 'type_addition', typeKind: 'functionType', name, type });
+    }
+  }
+
+  // Removed
+  for (const [name, type] of oldMap) {
+    if (!newMap.has(name)) {
+      removals.push({ kind: 'type_removal', typeKind: 'functionType', name, type });
+    }
+  }
+
+  // Modified
+  for (const [name, oldFn] of oldMap) {
+    const newFn = newMap.get(name);
+    if (!newFn) continue;
+
+    // Check runtime/entry changes
+    if (oldFn.runtime !== newFn.runtime || oldFn.entry !== newFn.entry) {
+      const fnMod: FunctionModification = { kind: 'function_modification', functionName: name };
+      if (oldFn.runtime !== newFn.runtime) {
+        fnMod.oldRuntime = oldFn.runtime;
+        fnMod.newRuntime = newFn.runtime;
+      }
+      if (oldFn.entry !== newFn.entry) {
+        fnMod.oldEntry = oldFn.entry;
+        fnMod.newEntry = newFn.entry;
+      }
+      modifications.push(fnMod);
+    }
+
+    // Diff fields
+    diffFields(name, oldFn.fields, newFn.fields, additions, modifications, removals);
   }
 }
 
@@ -394,6 +450,11 @@ function isBreakingModification(change: SchemaChange): boolean {
       // Any from/to/cardinality change is breaking
       return true;
     }
+    case 'function_modification': {
+      // Runtime or entry change is breaking — the function's behaviour
+      // may change in incompatible ways.
+      return true;
+    }
     default:
       return false;
   }
@@ -466,6 +527,14 @@ function reverseModification(change: SchemaChange): SchemaChange {
         oldCardinality: change.newCardinality,
         newCardinality: change.oldCardinality,
       };
+    case 'function_modification':
+      return {
+        ...change,
+        oldRuntime: change.newRuntime,
+        newRuntime: change.oldRuntime,
+        oldEntry: change.newEntry,
+        newEntry: change.oldEntry,
+      };
     default:
       return change;
   }
@@ -485,5 +554,6 @@ export type {
   EnumValueAddition,
   EnumValueRemoval,
   LinkModification,
+  FunctionModification,
   TypeModification,
 } from './types.js';

@@ -325,6 +325,44 @@ describe('GraphQL schema codegen', () => {
     });
   });
 
+  describe('Function types', () => {
+    const functionSchema = `
+      type ScoreRisk @function(runtime: "node", entry: "score/index.js") {
+        patientId: ID! @param
+        age: Int @param
+      }
+    `;
+
+    it('generates FunctionInput type', () => {
+      const sdl = generateGraphQLSchema(parseOdl(functionSchema));
+      expect(sdl).toContain('input ScoreRiskFunctionInput {');
+      const block = extractTypeBlock(sdl, 'input ScoreRiskFunctionInput');
+      expect(block).toContain('patientId: ID!');
+      expect(block).toContain('age: Int');
+    });
+
+    it('generates FunctionResult type', () => {
+      const sdl = generateGraphQLSchema(parseOdl(functionSchema));
+      expect(sdl).toContain('type ScoreRiskFunctionResult {');
+      const block = extractTypeBlock(sdl, 'type ScoreRiskFunctionResult');
+      expect(block).toContain('result: JSON');
+      expect(block).toContain('logs: [LogEntry!]');
+      expect(block).toContain('durationMs: Int!');
+    });
+
+    it('generates a mutation field with the Function suffix', () => {
+      const sdl = generateGraphQLSchema(parseOdl(functionSchema));
+      const mutationBlock = extractTypeBlock(sdl, 'type Mutation');
+      expect(mutationBlock).toContain('scoreRiskFunction(input: ScoreRiskFunctionInput!): ScoreRiskFunctionResult!');
+    });
+
+    it('emits LogEntry and LogLevel shared types', () => {
+      const sdl = generateGraphQLSchema(parseOdl(functionSchema));
+      expect(sdl).toContain('type LogEntry {');
+      expect(sdl).toContain('enum LogLevel {');
+    });
+  });
+
   describe('Subscriptions', () => {
     it('generates subscription for each ObjectType', () => {
       const sdl = getSchema();

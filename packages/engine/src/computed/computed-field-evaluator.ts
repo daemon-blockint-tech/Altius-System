@@ -18,6 +18,7 @@ import type {
   ComputedDirective,
   DirectiveArgValue,
 } from '@altius/odl';
+import type { FunctionExecutor } from '../functions/function-executor.js';
 
 /** Context passed to built-in compute functions. */
 export interface ComputeContext {
@@ -36,6 +37,7 @@ export type ComputeFunction = (
 /** Registry of built-in compute functions. */
 const BUILT_IN_FUNCTIONS: Record<string, ComputeFunction> = {
   countLinks,
+  lookupField,
 };
 
 /**
@@ -76,10 +78,66 @@ async function countLinks(
   return result.totalCount;
 }
 
+/**
+ * lookupField — fetches a scalar field from a related object via a link.
+ *
+ * Args (from @computed directive):
+ *   - linkType: string — the link type to traverse
+ *   - direction: 'INBOUND' | 'OUTBOUND' (defaults to 'OUTBOUND')
+ *   - field: string — the field to read from the related object
+ *
+ * Example ODL:
+ *   wardName: String @computed(fn: "lookupField", args: { linkType: "AdmittedTo", field: "name" })
+ *
+ * Returns the first related object's field value, or null if no related
+ * object exists. Multi-value lookups are intentionally unsupported — use
+ * a FunctionType for richer traversals.
+ */
+async function lookupField(
+  args: DirectiveArgValue | undefined,
+  context: ComputeContext,
+): Promise<unknown> {
+  if (!args || typeof args !== 'object' || Array.isArray(args)) {
+    throw new Error('lookupField requires args with { linkType: string, field: string }');
+  }
+  const argsObj = args as Record<string, DirectiveArgValue>;
+  const linkType = argsObj.linkType;
+  const field = argsObj.field;
+  if (typeof linkType !== 'string' || typeof field !== 'string') {
+    throw new Error('lookupField requires args.linkType and args.field to be strings');
+  }
+  const direction = typeof argsObj.direction === 'string'
+    ? (argsObj.direction.toLowerCase() as 'inbound' | 'outbound')
+    : 'outbound';
+
+  const result = await context.storage.getLinks(
+    context.ctx,
+    context.objectId,
+    linkType,
+    direction,
+  );
+  if (result.items.length === 0) return null;
+
+  const link = result.items[0]!;
+  const targetId = direction === 'outbound' ? link._toId : link._fromId;
+  const target = await context.storage.getObject(context.ctx, link._toType, targetId);
+  if (!target) return null;
+  return target[field] ?? null;
+}
+
 /** Configuration for ComputedFieldEvaluator. */
 export interface ComputedFieldEvaluatorConfig {
   storage: StorageProvider;
   schema: ParsedSchema;
+  /**
+   * Optional FunctionExecutor. When present, @computed fields whose `fn`
+   * matches a declared FunctionType are dispatched through it instead of
+   * the built-in registry. This bridges ODL Functions (Section 6) into
+   * the computed-field read path: a field can be declared as
+   * `@computed(fn: "ScoreRisk")` and resolved by a user-authored function
+   * rather than a platform built-in.
+   */
+  functionExecutor?: FunctionExecutor;
 }
 
 /**
@@ -90,10 +148,12 @@ export interface ComputedFieldEvaluatorConfig {
 export class ComputedFieldEvaluator {
   private readonly storage: StorageProvider;
   private readonly schema: ParsedSchema;
+  private readonly functionExecutor?: FunctionExecutor;
 
   constructor(config: ComputedFieldEvaluatorConfig) {
     this.storage = config.storage;
     this.schema = config.schema;
+    this.functionExecutor = config.functionExecutor;
   }
 
   /**
@@ -120,6 +180,23 @@ export class ComputedFieldEvaluator {
     );
     if (!computedDirective) {
       throw new Error(`Field ${objectType}.${fieldName} is not a computed field`);
+    }
+
+    // Dispatch to FunctionExecutor when the fn name matches a declared
+    // FunctionType. The args object is passed through as the function's
+    // inputs, augmented with the current object's id and type so the
+    // function can reference the triggering object.
+    if (this.functionExecutor) {
+      const fnDef = this.functionExecutor.getFunction(computedDirective.fn);
+      if (fnDef) {
+        const inputs: Record<string, unknown> = {};
+        if (computedDirective.args && typeof computedDirective.args === 'object' && !Array.isArray(computedDirective.args)) {
+          Object.assign(inputs, computedDirective.args as Record<string, unknown>);
+        }
+        inputs['this'] = { _type: objectType, _id: objectId };
+        const result = await this.functionExecutor.execute(computedDirective.fn, inputs);
+        return result.result;
+      }
     }
 
     const fn = BUILT_IN_FUNCTIONS[computedDirective.fn];

@@ -40,6 +40,7 @@ export type {
   EnumValueAddition,
   EnumValueRemoval,
   LinkModification,
+  FunctionModification,
   TypeModification,
 } from './diff/types.js';
 
@@ -49,6 +50,7 @@ export type {
   ObjectType,
   LinkType,
   ActionType,
+  FunctionType,
   EnumDefinition,
   EnumValue,
   InterfaceDefinition,

@@ -1,4 +1,4 @@
-import type { ObjectManager, LinkManager, ObjectSetManager } from '@altius/engine';
+import type { ObjectManager, LinkManager, ObjectSetManager, FunctionExecutor } from '@altius/engine';
 import type { ActionExecutor, ActionManifest } from '@altius/actions';
 import type {
   AuthorizationService,
@@ -33,6 +33,13 @@ export interface ApiDependencies {
   storage: StorageProvider;
   manifestRegistry?: ManifestRegistry;
   objectSetManager?: ObjectSetManager;
+  /**
+   * Function executor for FunctionType invocations (Section 6 — Functions).
+   * When present, the GraphQL schema's `${name}Function` mutation fields
+   * resolve through this executor. Absent → function mutations are not
+   * registered (the SDL still declares them, but resolution errors).
+   */
+  functionExecutor?: FunctionExecutor;
   /**
    * Allowlist of directly-grantable `[user]` relations per object type (snake),
    * derived from the merged FGA model. Powers the relationship grant/revoke

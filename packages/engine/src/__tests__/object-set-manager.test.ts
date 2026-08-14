@@ -61,6 +61,7 @@ const parsedSchema: ParsedSchema = {
   ],
   linkTypes: [],
   actionTypes: [],
+  functionTypes: [],
   enums: [],
   interfaces: [],
   scalars: [],

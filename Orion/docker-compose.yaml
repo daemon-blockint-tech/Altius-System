@@ -20,8 +20,7 @@ services:
       timeout: 3s
       retries: 10
     networks:
-      - foundry
-
+      - altius
   redpanda:
     image: docker.redpanda.com/redpandadata/redpanda:v24.1.1
     command:
@@ -43,8 +42,7 @@ services:
       timeout: 5s
       retries: 10
     networks:
-      - foundry
-
+      - altius
   openfga-migrate:
     image: openfga/openfga:v1.8.2
     command: migrate
@@ -55,8 +53,7 @@ services:
       postgresql:
         condition: service_healthy
     networks:
-      - foundry
-
+      - altius
   openfga:
     image: openfga/openfga:v1.8.2
     command: run
@@ -73,8 +70,7 @@ services:
     # OpenFGA uses a distroless image (no shell/wget/curl), so in-container
     # healthchecks are not possible.  Dependents use service_started.
     networks:
-      - foundry
-
+      - altius
   keycloak:
     image: quay.io/keycloak/keycloak:25.0
     # --import-realm provisions the `altius` realm on first boot with the
@@ -105,8 +101,7 @@ services:
       retries: 15
       start_period: 30s
     networks:
-      - foundry
-
+      - altius
   debezium:
     image: debezium/connect:2.7.3.Final
     ports:
@@ -129,8 +124,7 @@ services:
       retries: 10
       start_period: 30s
     networks:
-      - foundry
-
+      - altius
   redis:
     image: redis:7-alpine
     ports:
@@ -143,8 +137,7 @@ services:
       timeout: 3s
       retries: 10
     networks:
-      - foundry
-
+      - altius
   otel-collector:
     image: otel/opentelemetry-collector-contrib:0.104.0
     ports:
@@ -160,8 +153,7 @@ services:
     # integration harness's isStackHealthy(). The collector is non-critical
     # (telemetry export only) and starts reliably; gate nothing on it.
     networks:
-      - foundry
-
+      - altius
   # ─── Application Services ────────────────────────────────────────
 
   cel-evaluator:
@@ -181,8 +173,7 @@ services:
       retries: 5
       start_period: 5s
     networks:
-      - foundry
-
+      - altius
   api-gateway:
     build:
       context: ..
@@ -256,8 +247,7 @@ services:
       retries: 10
       start_period: 15s
     networks:
-      - foundry
-
+      - altius
   ontology-engine:
     build:
       context: ..
@@ -280,8 +270,7 @@ services:
       retries: 5
       start_period: 10s
     networks:
-      - foundry
-
+      - altius
   action-executor:
     build:
       context: ..
@@ -310,8 +299,7 @@ services:
       retries: 5
       start_period: 10s
     networks:
-      - foundry
-
+      - altius
   sync-engine:
     build:
       context: ..
@@ -340,8 +328,7 @@ services:
       retries: 5
       start_period: 10s
     networks:
-      - foundry
-
+      - altius
   security-service:
     build:
       context: ..
@@ -372,13 +359,12 @@ services:
       retries: 5
       start_period: 10s
     networks:
-      - foundry
-
+      - altius
 volumes:
   pg_data:
   redpanda_data:
   redis_data:
 
 networks:
-  foundry:
+  altius:
     driver: bridge

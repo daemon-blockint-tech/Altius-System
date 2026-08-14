@@ -1,0 +1,36 @@
+{
+  "name": "@altius/mcp-server",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Altius MCP Server — Model Context Protocol adapter over governed actions",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "clean": "rm -rf dist coverage"
+  },
+  "files": ["dist"],
+  "license": "Apache-2.0",
+  "dependencies": {
+    "@altius/actions": "workspace:*",
+    "@altius/odl": "workspace:*",
+    "@altius/security": "workspace:*",
+    "@altius/spi": "workspace:*"
+  },
+  "devDependencies": {
+    "@altius/storage-memory": "workspace:*",
+    "@altius/engine": "workspace:*",
+    "@types/node": "^22.0.0",
+    "vitest": "^3.0.0",
+    "typescript": "^5.7.0"
+  }
+}

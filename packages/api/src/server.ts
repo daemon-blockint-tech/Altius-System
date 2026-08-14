@@ -41,6 +41,8 @@ import {
   EngineEventEmitter,
   InMemoryObjectSetStore,
   ObjectSetManager,
+  FunctionExecutor,
+  ComputedFieldEvaluator,
 } from '@altius/engine';
 import { ActionExecutor, CelClient, SideEffectExecutor } from '@altius/actions';
 import type { SecurityLayer, CelEvaluator, ActionEventPublisher, EventBus as SideEffectEventBus, HttpClient as SideEffectHttpClient, LinkTupleMap } from '@altius/actions';
@@ -179,6 +181,8 @@ async function main(): Promise<void> {
     `Schema: loaded ${packs.length} domain pack(s) — ` +
     `${schema.objectTypes.length} object types, ` +
     `${schema.linkTypes.length} link types, ` +
+    `${schema.actionTypes.length} action types, ` +
+    `${schema.functionTypes.length} function types, ` +
     `${schema.enums.length} enums`,
   );
   if (permissionOverrides.length > 0) {
@@ -294,7 +298,39 @@ async function main(): Promise<void> {
     logger.warn('CEL evaluator: allow-all stub (development mode)');
   }
 
-  const objectManager = new ObjectManager({ storage, schema, eventEmitter: emitter, celEvaluator: cel });
+  // ── Function Executor ──
+  // Constructed before the ObjectManager so the ComputedFieldEvaluator
+  // can bridge @computed fields to user-authored functions (Section 6).
+  // The same CEL evaluator instance is reused for cel-runtime functions
+  // and for @constraint evaluation. Pack-relative module resolution uses
+  // the first loaded pack's directory as a base.
+  const functionExecutor = new FunctionExecutor({
+    schema,
+    celEvaluator: cel,
+    packDir: packInfos[0]?.packDir,
+  });
+  if (schema.functionTypes.length > 0) {
+    logger.info(`Functions: ${schema.functionTypes.length} function type(s) declared`);
+  }
+
+  // ── Computed Field Evaluator ──
+  // Bridges @computed fields to built-ins (countLinks, lookupField) and
+  // to user-authored FunctionTypes when the fn name matches a declared
+  // function. Passed into the ObjectManager so LAZY computed fields
+  // resolve on read.
+  const computedFieldEvaluator = new ComputedFieldEvaluator({
+    storage,
+    schema,
+    functionExecutor,
+  });
+
+  const objectManager = new ObjectManager({
+    storage,
+    schema,
+    eventEmitter: emitter,
+    celEvaluator: cel,
+    computedFieldEvaluator,
+  });
   const linkManager = new LinkManager({ storage, schema, eventEmitter: emitter });
 
   // ── Bootstrap Seeds ──
@@ -493,7 +529,8 @@ async function main(): Promise<void> {
   const packCapabilities = new Set(packs.flatMap(p => p.capabilities ?? []));
   const cdmEnabled = packCapabilities.has('cdm');
   const fhirEnabled = packCapabilities.has('fhir');
-  logger.info(`Capabilities: cdm=${cdmEnabled} fhir=${fhirEnabled} (declared by loaded packs)`);
+  const mcpEnabled = packCapabilities.has('mcp');
+  logger.info(`Capabilities: cdm=${cdmEnabled} fhir=${fhirEnabled} mcp=${mcpEnabled} (declared by loaded packs)`);
 
   // ── OpenFGA Authorization Model Sync ──
   // Push the merged model to OpenFGA so all pack types are authorized.
@@ -697,6 +734,7 @@ async function main(): Promise<void> {
     storage,
     manifestRegistry,
     objectSetManager,
+    functionExecutor,
     auditWriter: securityAuditWriter,
     grantAllowlist,
     granterRoles,
@@ -905,6 +943,7 @@ async function main(): Promise<void> {
         objectTypes: info.typeCounts.objectTypes,
         linkTypes: info.typeCounts.linkTypes,
         actionTypes: info.typeCounts.actionTypes,
+        functionTypes: info.typeCounts.functionTypes,
         connectors: connectorManifests.filter(c => c.packName === info.manifest.name).length,
         permissions: (info.manifest.permissions ?? []).filter(f => f.endsWith('.fga')).length,
       })),
@@ -912,6 +951,7 @@ async function main(): Promise<void> {
         objectTypes: schema.objectTypes.length,
         linkTypes: schema.linkTypes.length,
         actionTypes: schema.actionTypes.length,
+        functionTypes: schema.functionTypes.length,
         connectors: connectorManifests.length,
       },
     });
@@ -1115,6 +1155,52 @@ async function main(): Promise<void> {
     }
   });
   } // end fhir capability gate
+
+  // ── MCP at /mcp — mounted only when a pack declares the `mcp` capability ──
+  // Streamable HTTP transport (JSON-RPC 2.0 over POST). Exposes governed
+  // actions + FGA-scoped read queries as MCP tools for external AI agents.
+  // Auth is OIDC bearer token — an agent is just another OIDC principal
+  // calling the same 8-stage action pipeline. Stateless: no session storage.
+  if (mcpEnabled) {
+    const { createMcpServer } = await import('@altius/mcp-server');
+    const mcpHandler = createMcpServer({
+      deps: {
+        schema,
+        actionExecutor,
+        authorizationService,
+        authenticator,
+        storage,
+        manifestRegistry: manifestRegistry ?? { get: () => undefined },
+        ...(consentSubjectTypes ? { consentSubjectTypes } : {}),
+      },
+      isDev,
+    });
+    app.post('/mcp', async (req, res) => {
+      const out = await mcpHandler({
+        method: req.method,
+        headers: req.headers as Record<string, string | undefined>,
+        body: req.body,
+      });
+      if (out.body === undefined) {
+        res.status(out.status).end();
+      } else {
+        res.status(out.status).json(out.body);
+      }
+    });
+    app.delete('/mcp', async (req, res) => {
+      const out = await mcpHandler({
+        method: req.method,
+        headers: req.headers as Record<string, string | undefined>,
+        body: undefined,
+      });
+      if (out.body === undefined) {
+        res.status(out.status).end();
+      } else {
+        res.status(out.status).json(out.body);
+      }
+    });
+    logger.info('MCP server mounted at /mcp (Streamable HTTP, tools-only)');
+  } // end mcp capability gate
 
   // ── Graceful shutdown ──
   const SHUTDOWN_TIMEOUT_MS = 5_000;

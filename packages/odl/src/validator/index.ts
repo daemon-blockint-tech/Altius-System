@@ -8,6 +8,7 @@ import type {
   ParsedSchema,
   ObjectType,
   LinkType,
+  FunctionType,
   FieldDefinition,
   FieldDirective,
 } from '../parser/types.js';
@@ -46,6 +47,7 @@ export function validateSchema(schema: ParsedSchema): ValidationResult {
   const interfaceNames = new Set(schema.interfaces.map(i => i.name));
   const scalarNames = new Set(schema.scalars.map(s => s.name));
   const actionTypeNames = new Set(schema.actionTypes.map(a => a.name));
+  const functionTypeNames = new Set(schema.functionTypes.map(f => f.name));
 
   // All known type names for field type resolution
   const allTypeNames = new Set([
@@ -56,6 +58,7 @@ export function validateSchema(schema: ParsedSchema): ValidationResult {
     ...interfaceNames,
     ...scalarNames,
     ...actionTypeNames,
+    ...functionTypeNames,
   ]);
 
   // ─── Rule 1: Every ObjectType has exactly one @primary field ───
@@ -109,6 +112,36 @@ export function validateSchema(schema: ParsedSchema): ValidationResult {
   // ─── Rule 8: @param fields only appear on @actionType or @function types ───
   validateParamUsage(schema, errors);
 
+  // ─── Rule 12: FunctionTypes declare a non-empty runtime and entry ───
+  for (const fn of schema.functionTypes) {
+    validateFunctionType(fn, errors);
+  }
+
+  // ─── Rule 13: FunctionType entry path is pack-relative and well-formed ───
+  for (const fn of schema.functionTypes) {
+    validateFunctionEntry(fn, errors);
+  }
+
+  // ─── Rule 14: FunctionType names do not collide with ActionType names ───
+  for (const fn of schema.functionTypes) {
+    if (actionTypeNames.has(fn.name)) {
+      errors.push({
+        severity: 'error',
+        code: 'FUNCTION_NAME_COLLISION',
+        message: `FunctionType "${fn.name}" collides with an ActionType of the same name. Function and action types must be distinct.`,
+        typeName: fn.name,
+      });
+    }
+    if (objectTypeNames.has(fn.name)) {
+      errors.push({
+        severity: 'error',
+        code: 'FUNCTION_NAME_COLLISION',
+        message: `FunctionType "${fn.name}" collides with an ObjectType of the same name. Function and object types must be distinct.`,
+        typeName: fn.name,
+      });
+    }
+  }
+
   // ─── Rule 9: Namespace references (depends) are validated ───
   // Note: The current ParsedSchema doesn't have a "depends" field.
   // This rule validates that if a namespace is declared, it has name and version.
@@ -143,6 +176,11 @@ export function validateSchema(schema: ParsedSchema): ValidationResult {
   for (const at of schema.actionTypes) {
     for (const field of at.fields) {
       validateFieldTypeRef(at.name, field, allTypeNames, errors);
+    }
+  }
+  for (const fn of schema.functionTypes) {
+    for (const field of fn.fields) {
+      validateFieldTypeRef(fn.name, field, allTypeNames, errors);
     }
   }
 
@@ -507,6 +545,69 @@ function validateFieldTypeRef(
       message: `Field "${typeName}.${field.name}" references unknown type "${field.type.name}".`,
       typeName,
       fieldName: field.name,
+    });
+  }
+}
+
+/**
+ * Rule 12: FunctionType declares a non-empty `runtime` and `entry`.
+ * Runtime must be one of the supported adapter names; entry must be a
+ * non-empty string. The runtime set is intentionally permissive — new
+ * runtimes can be registered without changing the validator — but an
+ * empty runtime is always invalid.
+ */
+function validateFunctionType(fn: FunctionType, errors: ValidationIssue[]): void {
+  if (!fn.runtime) {
+    errors.push({
+      severity: 'error',
+      code: 'FUNCTION_MISSING_RUNTIME',
+      message: `FunctionType "${fn.name}" has no @function(runtime: ...). A runtime is required.`,
+      typeName: fn.name,
+    });
+  }
+  if (!fn.entry) {
+    errors.push({
+      severity: 'error',
+      code: 'FUNCTION_MISSING_ENTRY',
+      message: `FunctionType "${fn.name}" has no @function(entry: ...). An entry path is required.`,
+      typeName: fn.name,
+    });
+  }
+}
+
+/**
+ * Rule 13: FunctionType entry path is well-formed.
+ * Accepts pack-relative paths like "compute-score/index.js" or
+ * "shared/utils.ts". Rejects absolute paths, parent traversals, and
+ * extensions other than .js/.ts/.mjs.
+ */
+function validateFunctionEntry(fn: FunctionType, errors: ValidationIssue[]): void {
+  if (!fn.entry) return; // Already flagged by Rule 12
+  if (fn.entry.startsWith('/') || fn.entry.startsWith('\\')) {
+    errors.push({
+      severity: 'error',
+      code: 'FUNCTION_ENTRY_ABSOLUTE',
+      message: `FunctionType "${fn.name}" entry "${fn.entry}" must be a pack-relative path, not an absolute path.`,
+      typeName: fn.name,
+    });
+    return;
+  }
+  if (fn.entry.includes('..')) {
+    errors.push({
+      severity: 'error',
+      code: 'FUNCTION_ENTRY_PARENT_TRAVERSAL',
+      message: `FunctionType "${fn.name}" entry "${fn.entry}" must not contain parent-directory (..) segments.`,
+      typeName: fn.name,
+    });
+    return;
+  }
+  const validExtensions = ['.js', '.ts', '.mjs'];
+  if (!validExtensions.some(ext => fn.entry.endsWith(ext))) {
+    errors.push({
+      severity: 'error',
+      code: 'FUNCTION_ENTRY_EXTENSION',
+      message: `FunctionType "${fn.name}" entry "${fn.entry}" must end in one of: ${validExtensions.join(', ')}.`,
+      typeName: fn.name,
     });
   }
 }

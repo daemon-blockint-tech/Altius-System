@@ -28,6 +28,7 @@ import type {
   ObjectType,
   LinkType,
   ActionType,
+  FunctionType,
   EnumDefinition,
   EnumValue,
   InterfaceDefinition,
@@ -62,6 +63,7 @@ function extractSchema(doc: DocumentNode): ParsedSchema {
     objectTypes: [],
     linkTypes: [],
     actionTypes: [],
+    functionTypes: [],
     enums: [],
     interfaces: [],
     scalars: [],
@@ -102,7 +104,7 @@ function extractNamespace(def: SchemaExtensionNode, schema: ParsedSchema): void 
   }
 }
 
-// ─── Object type processing (routes to objectType, linkType, or actionType) ───
+// ─── Object type processing (routes to objectType, linkType, actionType, or functionType) ───
 
 function processObjectType(def: ObjectTypeDefinitionNode, schema: ParsedSchema): void {
   const directives = def.directives ?? [];
@@ -116,6 +118,15 @@ function processObjectType(def: ObjectTypeDefinitionNode, schema: ParsedSchema):
   const actionTypeDir = directives.find(d => d.name.value === 'actionType');
   if (actionTypeDir) {
     schema.actionTypes.push(extractActionType(def));
+    return;
+  }
+
+  // Pure function (no @actionType): route to functionTypes.
+  // A type with both @actionType @function(...) stays an ActionType
+  // (function-backed action) for back-compat.
+  const functionDir = directives.find(d => d.name.value === 'function');
+  if (functionDir) {
+    schema.functionTypes.push(extractFunctionType(def, functionDir));
     return;
   }
 
@@ -165,6 +176,22 @@ function extractActionType(def: ObjectTypeDefinitionNode): ActionType {
     description: def.description?.value,
     fields: extractFields(def.fields),
     directives: extractTypeDirectives(def.directives),
+  };
+}
+
+// ─── Function Type ───
+
+function extractFunctionType(def: ObjectTypeDefinitionNode, functionDir: DirectiveNode): FunctionType {
+  const runtime = getStringArg(functionDir, 'runtime') ?? '';
+  const entry = getStringArg(functionDir, 'entry') ?? '';
+  return {
+    kind: 'functionType',
+    name: def.name.value,
+    description: def.description?.value,
+    fields: extractFields(def.fields),
+    directives: extractTypeDirectives(def.directives),
+    runtime,
+    entry,
   };
 }
 

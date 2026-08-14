@@ -205,6 +205,29 @@ export interface ActionType {
   directives: TypeDirective[];
 }
 
+// ─── Function Type ───
+
+/**
+ * A FunctionType is a user-authored function invokable directly from the
+ * API (analogous to Palantir Foundry Functions). Distinguished from an
+ * ActionType by being a pure computation: it has no YAML manifest, no
+ * effects, no side-effects, and no transactional mutation. A type with
+ * `@function` but no `@actionType` is routed here; a type with both
+ * `@actionType @function(...)` remains an ActionType (function-backed
+ * action, back-compat).
+ */
+export interface FunctionType {
+  kind: 'functionType';
+  name: string;
+  description?: string;
+  fields: FieldDefinition[];
+  directives: TypeDirective[];
+  /** Runtime adapter name (e.g. "node20", "cel"). */
+  runtime: string;
+  /** Pack-relative entry path (e.g. "compute-score/index.js"). */
+  entry: string;
+}
+
 // ─── Enum ───
 
 export interface EnumValue {
@@ -251,6 +274,7 @@ export interface ParsedSchema {
   objectTypes: ObjectType[];
   linkTypes: LinkType[];
   actionTypes: ActionType[];
+  functionTypes: FunctionType[];
   enums: EnumDefinition[];
   interfaces: InterfaceDefinition[];
   scalars: ScalarDefinition[];

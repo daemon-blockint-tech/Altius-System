@@ -15,7 +15,7 @@
  *   fooChanged(id) → PubSub filter
  */
 
-import type { ParsedSchema, ObjectType, ActionType, FieldDefinition, LinkType, LinkDirective } from '@altius/odl';
+import type { ParsedSchema, ObjectType, ActionType, FunctionType, FieldDefinition, LinkType, LinkDirective } from '@altius/odl';
 import { DataPurpose } from '@altius/spi';
 import type { OntologyObject, OntologyLink, FilterExpression, AggregateQuery, AggregateField, AggregateFunction, SearchQuery, ErrorCategory } from '@altius/spi';
 import type { ActionActor, ActionContext } from '@altius/actions';
@@ -435,6 +435,13 @@ export function generateResolvers(
   // appear as GraphQL/REST mutations automatically.
   for (const action of schema.actionTypes) {
     generateMutationResolver(action, schema, resolvers, deps);
+  }
+
+  // Generate mutation resolvers for each FunctionType (Section 6 — Functions).
+  // Skipped when no functionExecutor is configured — the SDL still declares
+  // the fields, but resolution will throw a configuration error if invoked.
+  for (const fn of schema.functionTypes) {
+    generateFunctionResolver(fn, resolvers, deps);
   }
 
   // availableTools query (Section 5.7)
@@ -1008,6 +1015,58 @@ function generateMutationResolver(
           id: o.id,
           changeType: o.changeType.toUpperCase(),
         })),
+      };
+    } catch (err) {
+      throw wrapError(err, ctx.requestContext.traceId);
+    }
+  };
+}
+
+// ─── Function resolvers (Section 6 — Functions) ───
+
+/**
+ * Generate a mutation resolver for a FunctionType.
+ *
+ * The resolver delegates to `deps.functionExecutor`. Functions are pure
+ * computations: there is no ActionExecutor, no manifest, no consent
+ * subject, and no affected-objects payload. The result shape matches the
+ * `${name}FunctionResult` SDL type.
+ *
+ * Authorization: functions inherit the caller's authenticated context.
+ * Per-function authorization (e.g. restricting who may invoke a scoring
+ * function) is a future concern and will be handled via an
+ * `@authorization` directive on FunctionType; for now any authenticated
+ * user may invoke any declared function.
+ */
+function generateFunctionResolver(
+  fn: FunctionType,
+  resolvers: ResolverMap,
+  deps: ApiDependencies,
+): void {
+  const fieldName = `${lowerFirst(fn.name)}Function`;
+
+  resolvers['Mutation']![fieldName] = async (
+    _parent: unknown,
+    args: { input: Record<string, unknown> },
+    ctx: ResolverContext,
+  ) => {
+    try {
+      if (!deps.functionExecutor) {
+        throw createAltiusError({
+          code: 'FUNCTION_EXECUTOR_NOT_CONFIGURED',
+          category: 'system',
+          message: `Function "${fn.name}" cannot be executed: no function executor is configured`,
+          retryable: false,
+          traceId: ctx.requestContext.traceId,
+        });
+      }
+
+      const result = await deps.functionExecutor.execute(fn.name, args.input);
+
+      return {
+        result: result.result,
+        logs: result.logs.length > 0 ? result.logs : null,
+        durationMs: result.durationMs,
       };
     } catch (err) {
       throw wrapError(err, ctx.requestContext.traceId);

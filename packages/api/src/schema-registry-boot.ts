@@ -28,6 +28,7 @@ function canonicalKey(schema: ParsedSchema): string {
     objectTypes: byName(schema.objectTypes),
     linkTypes: byName(schema.linkTypes),
     actionTypes: byName(schema.actionTypes),
+    functionTypes: byName(schema.functionTypes),
     enums: byName(schema.enums),
     interfaces: byName(schema.interfaces),
     scalars: byName(schema.scalars),

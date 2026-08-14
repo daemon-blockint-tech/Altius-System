@@ -10,6 +10,7 @@ import type {
   ObjectType,
   LinkType,
   ActionType,
+  FunctionType,
   FieldDefinition,
 } from '../parser/types.js';
 
@@ -246,6 +247,30 @@ function generateMutationResultType(action: ActionType): string {
   ].join('\n');
 }
 
+// ─── Function type generation ───
+
+function generateFunctionInputType(fn: FunctionType, objectTypeNames: Set<string>): string {
+  const lines: string[] = [];
+  lines.push(`input ${fn.name}FunctionInput {`);
+  const paramFields = fn.fields.filter(isParamField);
+  for (const field of paramFields) {
+    const typeName = resolveInputType(field, objectTypeNames);
+    lines.push(`  ${field.name}: ${typeName}`);
+  }
+  lines.push('}');
+  return lines.join('\n');
+}
+
+function generateFunctionResultType(fn: FunctionType): string {
+  return [
+    `type ${fn.name}FunctionResult {`,
+    `  result: JSON`,
+    `  logs: [LogEntry!]`,
+    `  durationMs: Int!`,
+    `}`,
+  ].join('\n');
+}
+
 function generateChangeEvent(typeName: string): string {
   return [
     `type ${typeName}ChangeEvent {`,
@@ -315,6 +340,21 @@ function generateSharedTypes(): string {
     '  typeName: String!',
     '  id: ID!',
     '  changeType: ChangeType!',
+    '}',
+    '',
+    '# ─── Function runtime (Section 6 — Functions) ───',
+    '',
+    'type LogEntry {',
+    '  level: LogLevel!',
+    '  message: String!',
+    '  timestamp: DateTime!',
+    '}',
+    '',
+    'enum LogLevel {',
+    '  DEBUG',
+    '  INFO',
+    '  WARN',
+    '  ERROR',
     '}',
     '',
     '# ─── Tool Discovery (Section 5.7) ───',
@@ -475,6 +515,7 @@ function generateCustomScalars(schema: ParsedSchema): string {
   for (const obj of schema.objectTypes) collectFromFields(obj.fields);
   for (const link of schema.linkTypes) collectFromFields(link.fields);
   for (const action of schema.actionTypes) collectFromFields(action.fields);
+  for (const fn of schema.functionTypes) collectFromFields(fn.fields);
 
   // Also include user-defined scalars
   for (const scalar of schema.scalars) {
@@ -609,6 +650,12 @@ export function generateGraphQLSchema(schema: ParsedSchema, options?: GraphQLSch
     sections.push(generateMutationResultType(action));
   }
 
+  // 8b. Function input/result types
+  for (const fn of schema.functionTypes) {
+    sections.push(generateFunctionInputType(fn, objectTypeNames));
+    sections.push(generateFunctionResultType(fn));
+  }
+
   // 9. Search types
   for (const obj of schema.objectTypes) {
     sections.push([
@@ -698,6 +745,13 @@ export function generateGraphQLSchema(schema: ParsedSchema, options?: GraphQLSch
   for (const action of schema.actionTypes) {
     const fieldName = lowerFirst(action.name);
     mutationFields.push(`  ${fieldName}(input: ${action.name}Input!): ${action.name}Result!`);
+  }
+  // Function invocations (Section 6 — Functions). Each FunctionType gets a
+  // mutation field named `${lowerFirst(name)}Function` to avoid collisions
+  // with action mutations of the same camelCase form.
+  for (const fn of schema.functionTypes) {
+    const fieldName = `${lowerFirst(fn.name)}Function`;
+    mutationFields.push(`  ${fieldName}(input: ${fn.name}FunctionInput!): ${fn.name}FunctionResult!`);
   }
   // Object Set mutations
   mutationFields.push('  createObjectSet(input: CreateObjectSetInput!): ObjectSet!');

@@ -12,6 +12,7 @@ import type {
   ObjectType,
   LinkType,
   ActionType,
+  FunctionType,
   EnumDefinition,
   InterfaceDefinition,
   ScalarDefinition,
@@ -48,23 +49,23 @@ export interface FieldModification {
 /** An entire type that was added. */
 export interface TypeAddition {
   kind: 'type_addition';
-  typeKind: 'objectType' | 'linkType' | 'actionType' | 'enum' | 'interface' | 'scalar';
+  typeKind: 'objectType' | 'linkType' | 'actionType' | 'functionType' | 'enum' | 'interface' | 'scalar';
   name: string;
-  type: ObjectType | LinkType | ActionType | EnumDefinition | InterfaceDefinition | ScalarDefinition;
+  type: ObjectType | LinkType | ActionType | FunctionType | EnumDefinition | InterfaceDefinition | ScalarDefinition;
 }
 
 /** An entire type that was removed. */
 export interface TypeRemoval {
   kind: 'type_removal';
-  typeKind: 'objectType' | 'linkType' | 'actionType' | 'enum' | 'interface' | 'scalar';
+  typeKind: 'objectType' | 'linkType' | 'actionType' | 'functionType' | 'enum' | 'interface' | 'scalar';
   name: string;
-  type: ObjectType | LinkType | ActionType | EnumDefinition | InterfaceDefinition | ScalarDefinition;
+  type: ObjectType | LinkType | ActionType | FunctionType | EnumDefinition | InterfaceDefinition | ScalarDefinition;
 }
 
 /** A type-level modification (e.g., linkType cardinality changed, directives changed). */
 export interface TypeModification {
   kind: 'type_modification';
-  typeKind: 'objectType' | 'linkType' | 'actionType' | 'enum' | 'interface' | 'scalar';
+  typeKind: 'objectType' | 'linkType' | 'actionType' | 'functionType' | 'enum' | 'interface' | 'scalar';
   name: string;
   changes: string[];
 }
@@ -95,6 +96,16 @@ export interface LinkModification {
   newCardinality?: Cardinality;
 }
 
+/** A function type whose runtime or entry changed. */
+export interface FunctionModification {
+  kind: 'function_modification';
+  functionName: string;
+  oldRuntime?: string;
+  newRuntime?: string;
+  oldEntry?: string;
+  newEntry?: string;
+}
+
 // ─── Union of all change items ───
 
 export type SchemaChange =
@@ -106,7 +117,8 @@ export type SchemaChange =
   | TypeModification
   | EnumValueAddition
   | EnumValueRemoval
-  | LinkModification;
+  | LinkModification
+  | FunctionModification;
 
 // ─── Schema Diff ───
 

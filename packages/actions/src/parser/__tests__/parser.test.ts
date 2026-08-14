@@ -337,6 +337,7 @@ const NHS_SCHEMA: ParsedSchema = {
       directives: [{ kind: 'actionType' }],
     },
   ],
+  functionTypes: [],
   enums: [],
   interfaces: [],
   scalars: [],
