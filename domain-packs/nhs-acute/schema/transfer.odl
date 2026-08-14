@@ -4,7 +4,7 @@
 # the TransferWard action and projects to the CDM Transfer resource.
 extend schema @namespace(name: "nhs.acute", version: "0.2.0")
 
-type Transfer @objectType {
+type Transfer implements Identifiable @objectType {
   id: ID! @primary
   patient: Patient!
   fromWard: Ward!

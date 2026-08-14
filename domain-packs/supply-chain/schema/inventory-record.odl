@@ -7,7 +7,7 @@
 
 extend schema @namespace(name: "supply.chain", version: "0.1.0")
 
-type InventoryRecord @objectType {
+type InventoryRecord implements Identifiable @objectType {
   id: ID! @primary
   quantity: Int! @constraint(expr: "value >= 0")
   reservedQuantity: Int! @constraint(expr: "value >= 0")

@@ -6,7 +6,7 @@
 
 extend schema @namespace(name: "aml", version: "0.1.0")
 
-type Alert @objectType {
+type Alert implements Identifiable @objectType {
   id: ID! @primary
   alertNumber: String! @unique @indexed @immutable
   severity: AlertSeverity!

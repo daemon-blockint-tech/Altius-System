@@ -12,6 +12,7 @@ import type {
   ActionType,
   FunctionType,
   FieldDefinition,
+  InterfaceDefinition,
 } from '../parser/types.js';
 
 // ─── Scalar type mapping from ODL to GraphQL ───
@@ -118,7 +119,8 @@ function lowerFirst(s: string): string {
 
 function generateObjectType(obj: ObjectType): string {
   const lines: string[] = [];
-  lines.push(`type ${obj.name} {`);
+  const implementsClause = obj.interfaces.length > 0 ? ` implements ${obj.interfaces.join(' & ')}` : '';
+  lines.push(`type ${obj.name}${implementsClause} {`);
 
   for (const field of obj.fields) {
     const gqlType = fieldToGqlType(field);
@@ -129,6 +131,20 @@ function generateObjectType(obj: ObjectType): string {
   lines.push(`  _redactedFields: [String!]`);
   lines.push(`  _consentRestricted: Boolean`);
 
+  lines.push('}');
+  return lines.join('\n');
+}
+
+function generateInterfaceType(iface: InterfaceDefinition): string {
+  const lines: string[] = [];
+  if (iface.description) {
+    lines.push(`"""${iface.description}"""`);
+  }
+  lines.push(`interface ${iface.name} {`);
+  for (const field of iface.fields) {
+    const gqlType = fieldToGqlType(field);
+    lines.push(`  ${field.name}: ${gqlType}`);
+  }
   lines.push('}');
   return lines.join('\n');
 }
@@ -606,6 +622,14 @@ export function generateGraphQLSchema(schema: ParsedSchema, options?: GraphQLSch
   // 2. Enums from the ODL schema
   const enums = generateEnums(schema);
   if (enums) sections.push(enums);
+
+  // 2b. Interface definitions — emit SDL blocks so interface-typed fields
+  // and `implements` clauses resolve against a declared GraphQL interface.
+  // Without this, the generated schema references interfaces that are never
+  // declared, which fails `buildSchema`.
+  for (const iface of schema.interfaces) {
+    sections.push(generateInterfaceType(iface));
+  }
 
   // 3. Shared types
   sections.push(generateSharedTypes());

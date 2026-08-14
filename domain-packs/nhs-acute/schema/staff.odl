@@ -7,7 +7,7 @@
 # projects to the CDM Practitioner resource alongside Consultant.
 extend schema @namespace(name: "nhs.acute", version: "0.2.0")
 
-type Staff @objectType {
+type Staff implements Identifiable @objectType {
   id: ID! @primary
   staffId: String @unique @indexed
   name: String!

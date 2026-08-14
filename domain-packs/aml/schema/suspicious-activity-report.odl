@@ -5,7 +5,7 @@
 
 extend schema @namespace(name: "aml", version: "0.1.0")
 
-type SuspiciousActivityReport @objectType {
+type SuspiciousActivityReport implements Identifiable @objectType {
   id: ID! @primary
   sarNumber: String! @unique @indexed @immutable
   status: SarStatus!

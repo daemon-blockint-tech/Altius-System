@@ -11,6 +11,7 @@ import type {
   FunctionType,
   FieldDefinition,
   FieldDirective,
+  InterfaceDefinition,
 } from '../parser/types.js';
 
 import type { ValidationResult, ValidationIssue } from './types.js';
@@ -167,6 +168,12 @@ export function validateSchema(schema: ParsedSchema): ValidationResult {
     for (const field of ot.fields) {
       validateFieldTypeRef(ot.name, field, allTypeNames, errors);
     }
+  }
+
+  // ─── Rule 15: ObjectType implements clauses reference valid interfaces with field conformance ───
+  const interfaceMap = new Map(schema.interfaces.map(i => [i.name, i]));
+  for (const ot of schema.objectTypes) {
+    validateInterfaceConformance(ot, interfaceMap, errors);
   }
   for (const lt of schema.linkTypes) {
     for (const field of lt.fields) {
@@ -609,6 +616,55 @@ function validateFunctionEntry(fn: FunctionType, errors: ValidationIssue[]): voi
       message: `FunctionType "${fn.name}" entry "${fn.entry}" must end in one of: ${validExtensions.join(', ')}.`,
       typeName: fn.name,
     });
+  }
+}
+
+/**
+ * Rule 15: ObjectType implements clauses reference valid interfaces and
+ * each interface field appears on the implementer with identical type and
+ * nonNull. An object type declaring `implements Foo` must (a) reference a
+ * known interface and (b) carry every field Foo declares with the same
+ * type name and nullability. Extra fields on the implementer are allowed.
+ */
+function validateInterfaceConformance(
+  ot: ObjectType,
+  interfaceMap: Map<string, InterfaceDefinition>,
+  errors: ValidationIssue[],
+): void {
+  for (const ifaceName of ot.interfaces) {
+    const iface = interfaceMap.get(ifaceName);
+    if (!iface) {
+      errors.push({
+        severity: 'error',
+        code: 'UNKNOWN_INTERFACE_REF',
+        message: `ObjectType "${ot.name}" implements unknown interface "${ifaceName}".`,
+        typeName: ot.name,
+      });
+      continue;
+    }
+    const otFieldMap = new Map(ot.fields.map(f => [f.name, f]));
+    for (const ifaceField of iface.fields) {
+      const implField = otFieldMap.get(ifaceField.name);
+      if (!implField) {
+        errors.push({
+          severity: 'error',
+          code: 'INTERFACE_FIELD_MISSING',
+          message: `ObjectType "${ot.name}" implements "${ifaceName}" but is missing field "${ifaceField.name}".`,
+          typeName: ot.name,
+          fieldName: ifaceField.name,
+        });
+        continue;
+      }
+      if (implField.type.name !== ifaceField.type.name || implField.type.nonNull !== ifaceField.type.nonNull) {
+        errors.push({
+          severity: 'error',
+          code: 'INTERFACE_FIELD_TYPE_MISMATCH',
+          message: `ObjectType "${ot.name}.${ifaceField.name}" has type ${implField.type.name}${implField.type.nonNull ? '!' : ''} but interface "${ifaceName}" declares ${ifaceField.type.name}${ifaceField.type.nonNull ? '!' : ''}.`,
+          typeName: ot.name,
+          fieldName: ifaceField.name,
+        });
+      }
+    }
   }
 }
 

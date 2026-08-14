@@ -14,7 +14,8 @@ export type ErrorCategory =
   | 'quota'
   | 'not_found'
   | 'system'
-  | 'timeout';
+  | 'timeout'
+  | 'unsupported';
 
 /**
  * Well-known error codes used across the platform.
@@ -39,6 +40,8 @@ export type ErrorCode =
   | 'INTERNAL_ERROR'
   | 'PROVIDER_ERROR'
   | 'OPERATION_TIMEOUT'
+  | 'READ_ONLY'
+  | 'NOT_SUPPORTED'
   | (string & {}); // Allow extension codes while keeping autocomplete
 
 /** Structured error returned by all platform operations. */

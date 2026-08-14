@@ -6,7 +6,7 @@
 
 extend schema @namespace(name: "aml", version: "0.1.0")
 
-type Transaction @objectType {
+type Transaction implements Identifiable @objectType {
   id: ID! @primary
   referenceId: String! @unique @indexed @immutable
   type: TransactionType!

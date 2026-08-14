@@ -2,7 +2,7 @@
 
 extend schema @namespace(name: "supply.chain", version: "0.1.0")
 
-type Product @objectType {
+type Product implements Identifiable @objectType {
   id: ID! @primary
   sku: String! @unique @indexed
   name: String! @indexed @searchable(weight: 2.0)

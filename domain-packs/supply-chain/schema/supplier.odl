@@ -2,10 +2,13 @@
 
 extend schema @namespace(name: "supply.chain", version: "0.1.0")
 
-type Supplier @objectType {
+type Supplier implements Identifiable & CodeableConcept @objectType {
   id: ID! @primary
   name: String! @indexed @searchable(weight: 2.0)
   code: String! @unique @indexed
+  # CodeableConcept interface fields (altius.core)
+  system: URI!
+  display: String!
   tier: SupplierTier!
   contactName: String
   contactEmail: String @sensitive

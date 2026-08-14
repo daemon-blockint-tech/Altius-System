@@ -6,7 +6,7 @@
 
 extend schema @namespace(name: "aml", version: "0.1.0")
 
-type Account @objectType {
+type Account implements Identifiable @objectType {
   id: ID! @primary
   accountNumber: String! @unique @indexed @immutable @sensitive
   type: AccountType!

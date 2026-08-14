@@ -233,6 +233,13 @@ export interface StorageCapabilities {
   supportsGeoQueries: boolean;
   supportsGraphTraversal: boolean;
   supportsBulkMutations: boolean;
+  /**
+   * Whether the provider accepts write operations (create/update/delete).
+   * Read-only providers (e.g. lake-backed projections) set this to false so
+   * the action executor can fail fast with a typed READ_ONLY error instead
+   * of hitting a provider-specific exception mid-transaction.
+   */
+  supportsWrites: boolean;
   maxTraversalDepth: number;
   replicationSupport: ReplicationCapability;
 }

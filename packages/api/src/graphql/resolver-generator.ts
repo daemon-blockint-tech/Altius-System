@@ -226,6 +226,11 @@ function objectToGraphQL(obj: OntologyObject, objectType: ObjectType): Record<st
     }
   }
 
+  // Stamp the concrete type name so interface `__resolveType` resolvers can
+  // return the implementing ObjectType without a separate lookup. graphql-tools
+  // exposes `__typename` as a default field, so this is also queryable.
+  result.__typename = objectType.name;
+
   // Include system metadata
   result._redactedFields = null;
   result._consentRestricted = false;
@@ -426,6 +431,17 @@ export function generateResolvers(
     generateSubscriptionResolvers(obj, resolvers, pubsub);
     // Type-level resolvers for @link fields (nested relationship traversal).
     generateLinkFieldResolvers(obj, schema, resolvers, deps);
+  }
+
+  // Interface `__resolveType` resolvers. Object types resolve by name — the
+  // concrete type is stamped on the GraphQL object by `objectToGraphQL` as
+  // `__typename`, so resolution is a property read. This lets interface-typed
+  // fields (e.g. a union-like field returning any Auditable) resolve to the
+  // implementing ObjectType without a per-field custom resolver.
+  for (const iface of schema.interfaces) {
+    resolvers[iface.name] = {
+      __resolveType: (parent: Record<string, unknown>) => parent.__typename as string | undefined,
+    };
   }
 
   // Generate mutation resolvers for each ActionType.

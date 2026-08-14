@@ -4,7 +4,7 @@
 
 extend schema @namespace(name: "nhs.acute", version: "0.2.0")
 
-type Patient @objectType {
+type Patient implements Identifiable & Auditable & Temporal @objectType {
   id: ID! @primary
   nhsNumber: String @unique @indexed
   name: String! @sensitive @searchable(weight: 2.0)
@@ -19,6 +19,14 @@ type Patient @objectType {
   status: PatientStatus!
   triageCategory: TriageCategory
   presentingComplaint: String
+  # Auditable interface fields (altius.core)
+  createdAt: DateTime! @readonly
+  createdBy: String! @readonly
+  updatedAt: DateTime! @readonly
+  updatedBy: String! @readonly
+  # Temporal interface fields (altius.core) — episode of care validity window
+  validFrom: DateTime
+  validTo: DateTime
   currentWard: Ward @link(type: "AdmittedTo", direction: OUTBOUND)
   currentBed: Bed @link(type: "OccupiesBed", direction: OUTBOUND)
   admissions: [AdmittedTo!]! @link(type: "AdmittedTo", direction: OUTBOUND, history: true)

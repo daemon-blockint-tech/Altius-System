@@ -6,7 +6,7 @@
 
 extend schema @namespace(name: "aml", version: "0.1.0")
 
-type Case @objectType {
+type Case implements Identifiable @objectType {
   id: ID! @primary
   caseNumber: String! @unique @indexed @immutable
   status: CaseStatus!

@@ -5,7 +5,7 @@
 
 extend schema @namespace(name: "aml", version: "0.1.0")
 
-type Customer @objectType {
+type Customer implements Identifiable @objectType {
   id: ID! @primary
   externalId: String! @unique @indexed @immutable
   name: String! @sensitive @searchable(weight: 2.0)

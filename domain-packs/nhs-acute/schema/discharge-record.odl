@@ -9,7 +9,7 @@
 
 extend schema @namespace(name: "nhs.acute", version: "0.2.0")
 
-type DischargeRecord @objectType {
+type DischargeRecord implements Identifiable @objectType {
   id: ID! @primary
   patient: Patient!
   ward: Ward!

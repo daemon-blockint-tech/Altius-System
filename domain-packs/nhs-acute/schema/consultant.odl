@@ -4,7 +4,7 @@
 
 extend schema @namespace(name: "nhs.acute", version: "0.2.0")
 
-type Consultant @objectType {
+type Consultant implements Identifiable @objectType {
   id: ID! @primary
   gmcNumber: String @unique @indexed
   name: String!

@@ -724,4 +724,99 @@ describe('ODL Validator', () => {
       expect(paramErr[0]!.fieldName).toBe('broken');
     });
   });
+
+  describe('Rule 15: Interface conformance', () => {
+    it('passes when an object type correctly implements an interface', () => {
+      const odl = `
+        interface Named {
+          id: ID!
+          name: String!
+        }
+        type Foo @objectType {
+          id: ID! @primary
+          name: String!
+          extra: Int
+        }
+      `;
+      const schema = parseOdl(odl);
+      const result = validateSchema(schema);
+      const ifaceErrors = result.errors.filter(e =>
+        e.code === 'UNKNOWN_INTERFACE_REF' ||
+        e.code === 'INTERFACE_FIELD_MISSING' ||
+        e.code === 'INTERFACE_FIELD_TYPE_MISMATCH'
+      );
+      expect(ifaceErrors).toHaveLength(0);
+    });
+
+    it('errors when an object type implements an unknown interface', () => {
+      const odl = `
+        type Foo @objectType {
+          id: ID! @primary
+          name: String!
+        }
+      `;
+      const schema = parseOdl(odl);
+      // Manually add an implements clause to test the validator
+      schema.objectTypes[0]!.interfaces = ['Nonexistent'];
+      const result = validateSchema(schema);
+      const errs = result.errors.filter(e => e.code === 'UNKNOWN_INTERFACE_REF');
+      expect(errs).toHaveLength(1);
+      expect(errs[0]!.message).toContain('Nonexistent');
+    });
+
+    it('errors when an implementer is missing a required interface field', () => {
+      const odl = `
+        interface Named {
+          id: ID!
+          name: String!
+        }
+        type Foo @objectType {
+          id: ID! @primary
+        }
+      `;
+      const schema = parseOdl(odl);
+      schema.objectTypes[0]!.interfaces = ['Named'];
+      const result = validateSchema(schema);
+      const errs = result.errors.filter(e => e.code === 'INTERFACE_FIELD_MISSING');
+      expect(errs).toHaveLength(1);
+      expect(errs[0]!.fieldName).toBe('name');
+    });
+
+    it('errors when an implementer field has a different type than the interface', () => {
+      const odl = `
+        interface Named {
+          id: ID!
+          name: String!
+        }
+        type Foo @objectType {
+          id: ID! @primary
+          name: Int!
+        }
+      `;
+      const schema = parseOdl(odl);
+      schema.objectTypes[0]!.interfaces = ['Named'];
+      const result = validateSchema(schema);
+      const errs = result.errors.filter(e => e.code === 'INTERFACE_FIELD_TYPE_MISMATCH');
+      expect(errs).toHaveLength(1);
+      expect(errs[0]!.fieldName).toBe('name');
+    });
+
+    it('errors when an implementer field has different nullability than the interface', () => {
+      const odl = `
+        interface Named {
+          id: ID!
+          name: String!
+        }
+        type Foo @objectType {
+          id: ID! @primary
+          name: String
+        }
+      `;
+      const schema = parseOdl(odl);
+      schema.objectTypes[0]!.interfaces = ['Named'];
+      const result = validateSchema(schema);
+      const errs = result.errors.filter(e => e.code === 'INTERFACE_FIELD_TYPE_MISMATCH');
+      expect(errs).toHaveLength(1);
+    });
+  });
 });

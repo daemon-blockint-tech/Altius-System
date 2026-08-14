@@ -7,7 +7,7 @@
 
 extend schema @namespace(name: "supply.chain", version: "0.1.0")
 
-type PurchaseOrder @objectType {
+type PurchaseOrder implements Identifiable @objectType {
   id: ID! @primary
   orderNumber: String! @unique @indexed @immutable
   status: OrderStatus!

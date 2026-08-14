@@ -505,6 +505,63 @@ type Thing @objectType {
       expect(schema.getType('ThingFilter')).toBeDefined();
     });
   });
+
+  describe('Interface generation', () => {
+    it('emits interface SDL blocks', () => {
+      const odl = `
+        interface Named {
+          id: ID!
+          name: String!
+        }
+        type Foo @objectType {
+          id: ID! @primary
+          name: String!
+        }
+      `;
+      const parsed = parseOdl(odl);
+      const sdl = generateGraphQLSchema(parsed);
+      const schema = buildSchema(sdl);
+      expect(schema.getType('Named')).toBeDefined();
+    });
+
+    it('emits implements clauses on object types', () => {
+      const odl = `
+        interface Named {
+          id: ID!
+          name: String!
+        }
+        type Foo implements Named @objectType {
+          id: ID! @primary
+          name: String!
+        }
+      `;
+      const parsed = parseOdl(odl);
+      const sdl = generateGraphQLSchema(parsed);
+      expect(sdl).toContain('type Foo implements Named {');
+      // SDL must be valid
+      expect(() => buildSchema(sdl)).not.toThrow();
+    });
+
+    it('emits multiple implements clauses joined with &', () => {
+      const odl = `
+        interface Named {
+          id: ID!
+          name: String!
+        }
+        interface Timestamped {
+          createdAt: DateTime!
+        }
+        type Foo implements Named & Timestamped @objectType {
+          id: ID! @primary
+          name: String!
+          createdAt: DateTime!
+        }
+      `;
+      const parsed = parseOdl(odl);
+      const sdl = generateGraphQLSchema(parsed);
+      expect(sdl).toContain('type Foo implements Named & Timestamped {');
+    });
+  });
 });
 
 // ─── Test utility: extract a type/input block from SDL ───
