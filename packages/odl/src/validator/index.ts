@@ -212,7 +212,7 @@ function hasDirective(directives: FieldDirective[], kind: FieldDirective['kind']
 }
 
 /**
- * Rule 1: Every ObjectType must have exactly one @primary field.
+ * Rule 1: Every ObjectType must have exactly one @primary field, named "id".
  */
 function validatePrimaryField(ot: ObjectType, errors: ValidationIssue[]): void {
   const primaryFields = ot.fields.filter(f => hasDirective(f.directives, 'primary'));
@@ -231,6 +231,23 @@ function validatePrimaryField(ot: ObjectType, errors: ValidationIssue[]): void {
       message: `ObjectType "${ot.name}" has ${primaryFields.length} @primary fields (${primaryFields.map(f => f.name).join(', ')}). Only one is allowed.`,
       typeName: ot.name,
     });
+  } else {
+    // The primary value is stored as `_id` and exposed as `id` throughout the
+    // API: schema-loader skips the field when building DDL (no column is
+    // created) and maps it to 'id' for field permissions, while the GraphQL and
+    // REST shapers read `_${field.name}`. That convention only lines up when the
+    // name IS 'id' — any other name parses, validates, gets no column, and reads
+    // back null. Reject it here instead, mirroring Rule 11 for LinkTypes.
+    const primary = primaryFields[0]!;
+    if (primary.name !== 'id') {
+      errors.push({
+        severity: 'error',
+        code: 'INVALID_PRIMARY_NAME',
+        message: `ObjectType "${ot.name}" @primary field must be named "id". Found "${primary.name}". The primary value is stored as _id and exposed as id, so any other name reads back null.`,
+        typeName: ot.name,
+        fieldName: primary.name,
+      });
+    }
   }
 }
 
