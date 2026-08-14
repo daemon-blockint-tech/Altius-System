@@ -110,6 +110,40 @@ describe('SideEffectExecutor', () => {
       expect(httpClient.calls[0]!.url).toBe('https://pas.nhs.uk/webhook/admission');
     });
 
+    it('still fires once when the manifest asks for no retries', async () => {
+      // Regression: `retries: 0` reads naturally as "do not retry", but the
+      // attempt loop treated it as "make no attempts" — the webhook was never
+      // sent and the result carried no error, because nothing had thrown.
+      const httpClient = createMockHttpClient([{ status: 200 }]);
+      const executor = new SideEffectExecutor({ httpClient });
+
+      const results = await executor.executeAll(
+        [{ ...WEBHOOK_SIDE_EFFECT, retries: 0 }],
+        { patientId: 'p1' },
+        'LOG_AND_CONTINUE',
+      );
+
+      expect(httpClient.calls).toHaveLength(1);
+      expect(results[0]!.success).toBe(true);
+      expect(results[0]!.attempts).toBe(1);
+    });
+
+    it('does not retry after a failure when retries is 0', async () => {
+      const httpClient = createFailingHttpClient(5, 200);
+      const executor = new SideEffectExecutor({ httpClient });
+
+      const results = await executor.executeAll(
+        [{ ...WEBHOOK_SIDE_EFFECT, retries: 0 }],
+        {},
+        'LOG_AND_CONTINUE',
+      );
+
+      expect(results[0]!.success).toBe(false);
+      expect(results[0]!.attempts).toBe(1);
+      // The failure now carries a reason; with zero attempts it was undefined.
+      expect(results[0]!.error).toBeDefined();
+    });
+
     it('expands ${VAR} in the URL from the injected env', async () => {
       const httpClient = createMockHttpClient([{ status: 200 }]);
       const executor = new SideEffectExecutor({

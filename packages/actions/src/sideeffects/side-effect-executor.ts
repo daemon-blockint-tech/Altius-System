@@ -194,7 +194,12 @@ export class SideEffectExecutor implements SideEffectHandler {
     if (policy === 'RETRY_INDEFINITELY') {
       return RETRY_INDEFINITELY_MAX;
     }
-    return sideEffect.retries ?? DEFAULT_MAX_RETRIES;
+    // `retries` counts total attempts, not retries-after-the-first. A manifest
+    // writing `retries: 0` means "do not retry", but the attempt loop
+    // (`attempt < maxRetries`) read it as "make no attempts": the side effect
+    // silently never ran, and reported failure with no error text because
+    // nothing had thrown. Always attempt at least once.
+    return Math.max(1, sideEffect.retries ?? DEFAULT_MAX_RETRIES);
   }
 
   private async backoff(attempt: number, policy: RollbackPolicy): Promise<void> {
