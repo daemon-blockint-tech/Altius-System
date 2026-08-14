@@ -166,10 +166,20 @@ async function resolveAllowedIds(
 }
 
 /**
+ * How many records the per-record consent evaluation will scan before it gives
+ * up. Aggregates over a consent-subject type cannot be pushed into storage —
+ * every candidate has to be consent-checked individually — so this bounds the
+ * work, and exceeding it is an error rather than a silent partial answer.
+ */
+const CONSENT_SCAN_LIMIT = 10_000;
+
+/**
  * For consent-subject types, query all matching records, apply consent
  * filtering, and return the consented ID list. Returns the input allowedIds
  * when consent is not applicable. Used by aggregate to constrain the input
  * set to consented records before delegating to storage.
+ *
+ * Throws QUOTA_EXCEEDED when more than CONSENT_SCAN_LIMIT records match.
  */
 async function resolveConsentedIds(
   deps: ApiDependencies,
@@ -184,9 +194,26 @@ async function resolveConsentedIds(
   }
 
   const combinedFilter = buildAuthFilter(allowedIds, userFilter);
+  // Fetch one past the window so a full page is distinguishable from a
+  // truncated one — same trick as collectObjectRecords in cdm/router.ts.
   const scan = await deps.objectManager.query(
-    typeName, combinedFilter, { limit: 10000, offset: 0 }, requestContext,
+    typeName, combinedFilter, { limit: CONSENT_SCAN_LIMIT + 1, offset: 0 }, requestContext,
   );
+
+  if (scan.items.length > CONSENT_SCAN_LIMIT) {
+    // Consent is per subject, so the aggregate can only cover what this scan
+    // returned. Past the window the result would quietly omit rows — a COUNT
+    // or SUM that looks authoritative and is wrong. Refuse instead: a missing
+    // number is recoverable, a plausible wrong one is not.
+    throw Object.assign(
+      new Error(
+        `Cannot aggregate ${typeName}: more than ${CONSENT_SCAN_LIMIT} records match and consent must be ` +
+        `evaluated per record, so the result would be computed over a truncated population. ` +
+        `Narrow the filter.`,
+      ),
+      { code: 'QUOTA_EXCEEDED' },
+    );
+  }
 
   const getPrimaryId = (item: OntologyObject) => String(item._id ?? '');
   const consentResult = await deps.consentService.filterList(

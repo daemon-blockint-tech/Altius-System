@@ -859,3 +859,62 @@ describe('REST API', () => {
     });
   });
 });
+
+describe('aggregate consent scan window', () => {
+  let parsed: ParsedSchema;
+
+  beforeEach(() => {
+    parsed = parseOdl(NHS_ACUTE_ODL);
+  });
+
+  /** deps with consent active for Patient and `count` matching candidate rows. */
+  function depsWithCandidates(count: number) {
+    const deps = createMockDeps(parsed);
+    (deps.authorizationService.listObjects as ReturnType<typeof vi.fn>).mockResolvedValue(['patient:p-1']);
+
+    const items = Array.from({ length: count }, (_, i) => ({ _id: `p-${i}`, _type: 'Patient' }));
+    (deps.objectManager as unknown as Record<string, unknown>).query =
+      vi.fn().mockResolvedValue({ items, totalCount: items.length });
+
+    const aggregateMock = vi.fn().mockResolvedValue({ groups: [{ keys: {}, values: { count } }], totalGroups: 1 });
+    (deps.objectManager as unknown as Record<string, unknown>).aggregate = aggregateMock;
+
+    (deps as unknown as Record<string, unknown>).consentService = {
+      filterList: vi.fn(async (rows: unknown[]) => ({ edges: rows, totalCount: rows.length })),
+    };
+    (deps as unknown as Record<string, unknown>).consentSubjectTypes = ['Patient'];
+
+    return { deps, aggregateMock };
+  }
+
+  async function runAggregate(deps: ApiDependencies) {
+    const route = findRoute(generateRestRoutes(parsed, deps), 'POST', '/api/v1/patients/aggregate')!;
+    return route.handler(
+      createMockRequest({ method: 'POST', body: { fields: [{ field: '*', fn: 'count', alias: 'count' }] } }),
+      createResolverContext(deps),
+    );
+  }
+
+  it('refuses instead of under-counting when the population exceeds the scan window', async () => {
+    // Consent is evaluated per record, so the aggregate can only see what the
+    // scan returned. Past the window it used to return a COUNT computed over
+    // the first 10k rows and present it as the answer.
+    const { deps, aggregateMock } = depsWithCandidates(10_001);
+
+    const res = await runAggregate(deps);
+
+    expect(res.status).not.toBe(200);
+    expect(JSON.stringify(res.body)).toContain('QUOTA_EXCEEDED');
+    // The wrong number was never computed, let alone returned.
+    expect(aggregateMock).not.toHaveBeenCalled();
+  });
+
+  it('still aggregates when the population fits the window', async () => {
+    const { deps, aggregateMock } = depsWithCandidates(10);
+
+    const res = await runAggregate(deps);
+
+    expect(res.status).toBe(200);
+    expect(aggregateMock).toHaveBeenCalledTimes(1);
+  });
+});

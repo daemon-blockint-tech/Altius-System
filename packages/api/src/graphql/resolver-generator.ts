@@ -711,6 +711,13 @@ function generateQueryResolvers(
  * via paginateWithConsent, but aggregate returns groups not records, so we
  * need the ID list up front.
  */
+/**
+ * How many records the per-record consent evaluation will scan before it gives
+ * up. Mirrors CONSENT_SCAN_LIMIT in rest/route-generator.ts — both aggregate
+ * paths must refuse at the same point or they disagree about the same query.
+ */
+const CONSENT_SCAN_LIMIT = 10_000;
+
 async function resolveConsentedIds(
   deps: ApiDependencies,
   typeName: string,
@@ -723,11 +730,26 @@ async function resolveConsentedIds(
     return allowedIds;
   }
 
-  // Query all matching records (auth-filtered, no consent yet)
+  // Query all matching records (auth-filtered, no consent yet). One past the
+  // window, so a full page is distinguishable from a truncated one.
   const combinedFilter = buildAuthFilter(allowedIds, userFilter);
   const scan = await deps.objectManager.query(
-    typeName, combinedFilter, { limit: 10000, offset: 0 }, requestContext,
+    typeName, combinedFilter, { limit: CONSENT_SCAN_LIMIT + 1, offset: 0 }, requestContext,
   );
+
+  if (scan.items.length > CONSENT_SCAN_LIMIT) {
+    // See the REST twin in rest/route-generator.ts: past this window the
+    // aggregate would be computed over a truncated population and returned as
+    // if complete. Refuse rather than answer with a wrong number.
+    throw createAltiusError({
+      code: 'QUOTA_EXCEEDED',
+      category: 'quota',
+      retryable: false,
+      message:
+        `Cannot aggregate ${typeName}: more than ${CONSENT_SCAN_LIMIT} records match and consent must be ` +
+        `evaluated per record, so the result would be computed over a truncated population. Narrow the filter.`,
+    });
+  }
 
   // Apply consent filter to remove non-consented records
   const getPrimaryId = (item: OntologyObject) => String(item._id ?? '');
