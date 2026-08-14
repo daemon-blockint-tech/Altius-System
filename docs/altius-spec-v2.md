@@ -1490,6 +1490,47 @@ type ToolDescriptor {
 enum ToolKind { ACTION FUNCTION }
 ```
 
+**Discovery authorization.** `availableTools` returns every registered action to
+any *authenticated* caller; the list is not filtered per user. This is a
+deliberate decision:
+
+1. **Action permissions are object-scoped.** The runtime authorizes an action by
+   checking an FGA relation on the target object (e.g. `AdmitPatient` checks
+   `can_admit` on `patient:<id>`; the relation name comes from
+   `actionPermissionRelation` in `@altius/odl`, shared by the model generator
+   and the executor). "Can this user use this tool at all" therefore has no
+   type-level answer — a clinician may be able to admit to one ward and not
+   another — so any per-user filter of the tool list is an approximation.
+2. **Filtering adds no confidentiality.** The GraphQL schema exposes every
+   ActionType as a mutation field; introspection reveals the same names and
+   parameter shapes to the same audience. Hiding a descriptor while its mutation
+   remains introspectable would be decorative.
+3. **The candidate approximations were considered and rejected.**
+   - *FGA `listObjects` non-empty* (show a tool iff the caller can reach at
+     least one target object): costs one FGA round-trip per action per discovery
+     call, and conflates "no authorized objects right now" with "not permitted"
+     — an empty ward would hide `AdmitPatient` from a user who is allowed to use
+     it.
+   - *Role-derived preconditions* (mine `actor.roles.contains(...)` from CEL
+     expressions): covers only actions whose preconditions happen to mention
+     roles; everything else silently passes unfiltered.
+
+Enforcement happens where it is well-defined: at execution time, in the action
+pipeline (validate → authorise → consent → execute → audit), against the
+object-scoped relation. `ToolDescriptor.requiredPermissions` is advisory
+metadata for agents — `action:<Name>:execute` plus any `role:<r>` mined from
+manifest preconditions — not the enforcement contract. A client that wants a
+per-user tool list can build one client-side (e.g. `listObjects` against an
+action's target type); that is a UX concern deliberately left outside the
+platform contract.
+
+**Dry-run honesty.** Both API and library surfaces share one descriptor builder
+(`ToolRegistry` in `@altius/actions`). `ToolRegistry.executeForAgent` supports
+`dryRun`, so descriptors obtained from the library report
+`dryRunSupported: true`. The HTTP action routes (GraphQL mutations, REST) do not
+yet accept the §5.7.2 `agentContext.dryRun` flag, so descriptors served from
+`Query.availableTools` override this single field to `false` until they do.
+
 #### 5.7.2 Agent Execution Mode
 
 When an external agent invokes an action, it uses the standard action API with an additional `agentContext` header:

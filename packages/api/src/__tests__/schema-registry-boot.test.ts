@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { InMemorySchemaRegistry } from '@altius/odl';
 import type { ParsedSchema } from '@altius/odl';
-import { recordSchemaVersion } from '../schema-registry-boot.js';
+import { recordSchemaVersion, BreakingSchemaChangeError } from '../schema-registry-boot.js';
+import { parseSchemaBreakingPolicy } from '../config.js';
 
 function emptySchema(): ParsedSchema {
   return { objectTypes: [], linkTypes: [], actionTypes: [], functionTypes: [], enums: [], interfaces: [], scalars: [] };
@@ -55,6 +56,33 @@ describe('recordSchemaVersion (boot wiring)', () => {
     expect(r.breaking).toBe(true);
   });
 
+  it("policy 'block': throws BreakingSchemaChangeError on a breaking change and does not record", async () => {
+    const reg = new InMemorySchemaRegistry();
+    await recordSchemaVersion(reg, v1());
+    await expect(recordSchemaVersion(reg, v2breaking(), 'block')).rejects.toThrow(BreakingSchemaChangeError);
+    expect(await reg.getCurrentVersion()).toBe(1); // version NOT recorded
+  });
+
+  it("policy 'block': still records non-breaking changes", async () => {
+    const reg = new InMemorySchemaRegistry();
+    await recordSchemaVersion(reg, v1());
+    const r = await recordSchemaVersion(reg, v2additive(), 'block');
+    expect(r).toMatchObject({ version: 2, recorded: true, breaking: false });
+  });
+
+  it("policy 'block': records version 1 on an empty registry (no prior schema, nothing to break)", async () => {
+    const reg = new InMemorySchemaRegistry();
+    const r = await recordSchemaVersion(reg, v1(), 'block');
+    expect(r).toMatchObject({ version: 1, recorded: true, breaking: false });
+  });
+
+  it("policy 'warn' (explicit): records a breaking change, same as the default", async () => {
+    const reg = new InMemorySchemaRegistry();
+    await recordSchemaVersion(reg, v1());
+    const r = await recordSchemaVersion(reg, v2breaking(), 'warn');
+    expect(r).toMatchObject({ version: 2, recorded: true, breaking: true });
+  });
+
   it('treats type reordering as unchanged (no spurious version from pack discovery order)', async () => {
     const a = objectType('Alpha', [field('id', 'ID', true)]);
     const b = objectType('Beta', [field('id', 'ID', true)]);
@@ -67,5 +95,22 @@ describe('recordSchemaVersion (boot wiring)', () => {
     const r = await recordSchemaVersion(reg, orderBA);
     expect(r).toMatchObject({ version: 1, recorded: false });
     expect(await reg.getCurrentVersion()).toBe(1);
+  });
+});
+
+describe('parseSchemaBreakingPolicy (SCHEMA_BREAKING_POLICY env parsing)', () => {
+  it("defaults to 'warn' when unset or blank (compose/Helm pass unset knobs as '')", () => {
+    expect(parseSchemaBreakingPolicy(undefined)).toBe('warn');
+    expect(parseSchemaBreakingPolicy('')).toBe('warn');
+    expect(parseSchemaBreakingPolicy('  ')).toBe('warn');
+  });
+
+  it('accepts warn/block case-insensitively with surrounding whitespace', () => {
+    expect(parseSchemaBreakingPolicy('warn')).toBe('warn');
+    expect(parseSchemaBreakingPolicy(' BLOCK ')).toBe('block');
+  });
+
+  it('throws on unrecognized values so a misconfigured policy fails boot loudly', () => {
+    expect(() => parseSchemaBreakingPolicy('strict')).toThrow(/SCHEMA_BREAKING_POLICY/);
   });
 });

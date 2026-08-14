@@ -18,7 +18,8 @@
 import type { ParsedSchema, ObjectType, ActionType, FunctionType, FieldDefinition, LinkType, LinkDirective } from '@altius/odl';
 import { DataPurpose } from '@altius/spi';
 import type { OntologyObject, OntologyLink, FilterExpression, AggregateQuery, AggregateField, AggregateFunction, SearchQuery, ErrorCategory } from '@altius/spi';
-import type { ActionActor, ActionContext } from '@altius/actions';
+import { ToolRegistry } from '@altius/actions';
+import type { ActionActor, ActionContext, ActionManifest } from '@altius/actions';
 import type { RedactionResult } from '@altius/security';
 import { PubSub } from 'graphql-subscriptions';
 import type { ApiDependencies, ResolverContext, PaginationArgs } from './types.js';
@@ -445,7 +446,7 @@ export function generateResolvers(
   }
 
   // availableTools query (Section 5.7)
-  resolvers['Query']!['availableTools'] = generateAvailableToolsResolver(schema);
+  resolvers['Query']!['availableTools'] = generateAvailableToolsResolver(schema, deps);
 
   // Object Set resolvers
   generateObjectSetResolvers(resolvers, deps);
@@ -1093,54 +1094,37 @@ function generateSubscriptionResolvers(
 
 // ─── availableTools resolver (Section 5.7) ───
 
+/**
+ * Discovery authorization (spec §5.7.1): every action is returned to any
+ * authenticated caller — no per-user filtering. Action permissions are
+ * object-scoped FGA relations (can_<verb> on the target object), so "can this
+ * user use this tool" has no type-level answer, and introspection exposes the
+ * same mutations anyway. Enforcement happens at execution time in the action
+ * pipeline; requiredPermissions is advisory metadata.
+ *
+ * Descriptor generation is delegated to ToolRegistry (@altius/actions) — the
+ * single builder shared with library/agent embeddings.
+ */
 function generateAvailableToolsResolver(
   schema: ParsedSchema,
+  deps: ApiDependencies,
 ): (_parent: unknown, args: { filter?: { kind?: string; tags?: string[] } }, _ctx: ResolverContext) => unknown[] {
-  // Pre-build tool descriptors from action types
-  const tools = schema.actionTypes.map((action) => {
-    // Build JSON Schema for parameters from @param fields
-    const paramFields = action.fields.filter(isParamField);
-    const properties: Record<string, unknown> = {};
-    const required: string[] = [];
+  const manifests = new Map<string, ActionManifest>();
+  for (const action of schema.actionTypes) {
+    const manifest = deps.manifestRegistry?.get(action.name);
+    if (manifest) manifests.set(action.name, manifest);
+  }
+  const registry = new ToolRegistry({ schema, manifests });
 
-    for (const field of paramFields) {
-      properties[field.name] = {
-        type: mapOdlTypeToJsonSchema(field.type.name),
-        description: field.description ?? field.name,
-      };
-      if (field.type.nonNull) {
-        required.push(field.name);
-      }
-    }
-
-    const parameters = {
-      type: 'object',
-      properties,
-      required: required.length > 0 ? required : undefined,
-    };
-
-    const returnType = {
-      type: 'object',
-      properties: {
-        success: { type: 'boolean' },
-        actionId: { type: 'string' },
-        errors: { type: 'array', items: { type: 'object' } },
-        affectedObjects: { type: 'array', items: { type: 'object' } },
-      },
-    };
-
-    return {
-      name: action.name,
-      kind: 'ACTION',
-      description: action.description ?? `Execute ${action.name} action`,
-      parameters,
-      returnType,
-      requiredPermissions: [`action:${action.name}`],
-      dryRunSupported: false,
-      reversible: false,
-      tags: [] as string[],
-    };
-  });
+  const tools = registry.availableTools().map((d) => ({
+    ...d,
+    // The HTTP surface accepts no dryRun flag (REST/GraphQL action routes), so
+    // descriptors served here must not advertise it. ToolRegistry reports true
+    // for library embeddings, where executeForAgent does support dry-run.
+    dryRunSupported: false,
+    // SDL requires tags; descriptors don't carry pack tags yet.
+    tags: [] as string[],
+  }));
 
   return (_parent, args) => {
     let filtered = tools;
@@ -1450,20 +1434,4 @@ function objectSetToGraphQL(def: {
     createdAt: def.createdAt,
     updatedAt: def.updatedAt,
   };
-}
-
-function mapOdlTypeToJsonSchema(typeName: string): string {
-  const mapping: Record<string, string> = {
-    ID: 'string',
-    String: 'string',
-    Int: 'integer',
-    Float: 'number',
-    Boolean: 'boolean',
-    Date: 'string',
-    DateTime: 'string',
-    Duration: 'string',
-    JSON: 'object',
-    URI: 'string',
-  };
-  return mapping[typeName] ?? 'string';
 }

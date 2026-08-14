@@ -10,6 +10,7 @@
  *   DOMAIN_PACKS_DIR     — Path to domain-packs directory (auto-detected if omitted)
  *   DOMAIN_PACKS         — Comma-separated or JSON array of pack names to load
  *   SEED_TENANT          — Tenant for domain-pack boot seeds (default: 'system', isolated from request tenants)
+ *   SCHEMA_BREAKING_POLICY — 'warn' (default) records BREAKING schema changes and continues; 'block' fails boot without recording
  *   OIDC_ISSUER          — OIDC provider issuer URL (matches Helm configmap)
  *   OIDC_CLIENT_ID       — OIDC client ID
  *   OIDC_JWKS_URI        — JWKS endpoint override for non-Keycloak issuers
@@ -67,13 +68,14 @@ import {
   createFgaClient,
   createSecurityLayer,
   extractUser,
+  parseSchemaBreakingPolicy,
   REQUIRED_PROD_VARS,
 } from './config.js';
 import type { ActionAuthzMapping } from './config.js';
 import { loadDomainPacks } from './schema-loader.js';
 import { generateOpenFGASchema, mergeOpenFGAOverrides, actionPermissionRelation, InMemorySchemaRegistry } from '@altius/odl';
 import type { SchemaRegistry } from '@altius/odl';
-import { recordSchemaVersion } from './schema-registry-boot.js';
+import { recordSchemaVersion, BreakingSchemaChangeError } from './schema-registry-boot.js';
 import { SlidingWindowRateLimiter, RedisRateLimiter } from './governance/index.js';
 import type { RateLimiter, RateLimitIdentity } from './governance/index.js';
 import { toSnakeCase } from './utils.js';
@@ -221,23 +223,29 @@ async function main(): Promise<void> {
   // ── Schema registry (versioned ODL schema history) ──
   // Records the merged ParsedSchema as a new version when it differs from the
   // latest stored one. PostgreSQL-backed when available (durable, shared across
-  // pods); in-memory otherwise. Recording is non-blocking and auto-approves the
-  // migration plan: a breaking pack change is *recorded* (with a warning) rather
-  // than blocking startup — enforcement of breaking changes is a governance-time
-  // concern (a future schema-management API), not a boot gate.
+  // pods); in-memory otherwise. Under SCHEMA_BREAKING_POLICY=warn (default) a
+  // breaking pack change is *recorded* under an auto-approved migration plan
+  // (with a warning) rather than blocking startup; under 'block' a BREAKING
+  // change fails boot and no version is recorded. Other recording failures
+  // (e.g. registry backend unavailable) stay non-fatal under either policy.
+  const schemaBreakingPolicy = parseSchemaBreakingPolicy();
   const schemaRegistry: SchemaRegistry = storage instanceof PostgresStorageProvider
     ? new PostgresSchemaRegistry(storage.pool)
     : new InMemorySchemaRegistry();
   try {
-    const result = await recordSchemaVersion(schemaRegistry, schema);
+    const result = await recordSchemaVersion(schemaRegistry, schema, schemaBreakingPolicy);
     if (result.breaking) {
-      logger.warn('Schema registry: BREAKING schema change detected at boot — recorded under an auto-approved migration plan. Review schema history before promoting.');
+      logger.warn('Schema registry: BREAKING schema change detected at boot — recorded under an auto-approved migration plan. Review schema history before promoting, or set SCHEMA_BREAKING_POLICY=block to fail boot instead.');
     }
     if (result.recorded) {
       const backend = storage instanceof PostgresStorageProvider ? 'PostgreSQL' : 'in-memory';
       logger.info(`Schema registry: recorded schema version ${result.version} (${backend})`);
     }
   } catch (err) {
+    if (err instanceof BreakingSchemaChangeError) {
+      // SCHEMA_BREAKING_POLICY=block: a BREAKING schema change must fail boot.
+      throw err;
+    }
     // Non-fatal: schema-history recording must not block startup.
     logger.warn({ err: err instanceof Error ? err.message : 'unknown' }, 'Schema registry: failed to record schema version');
   }
