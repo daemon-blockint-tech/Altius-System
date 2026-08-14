@@ -41,6 +41,20 @@ export interface CreateObjectEffect {
 }
 
 /**
+ * Delete an object via the governed action pipeline. `target` is a context
+ * expression resolving to the object to delete (same resolution as
+ * updateObject). `mode` defaults to 'soft' (set _deleted_at, preserve history);
+ * 'hard' removes the row. Soft delete is the default because it preserves the
+ * audit trail and allows rollback via compensation.
+ */
+export interface DeleteObjectEffect {
+  type: 'deleteObject';
+  target: string;
+  mode?: 'soft' | 'hard';
+  condition?: string;
+}
+
+/**
  * Record a consent decision for a subject (governed, audited). `subject` is an
  * expression resolving to the consent subject id (e.g. "patient"). `purpose`
  * defaults to DIRECT_CARE, `decision` to GRANT. `condition` (CEL) gates whether
@@ -62,6 +76,7 @@ export type ActionEffect =
   | CreateLinkEffect
   | DeleteLinkEffect
   | CreateObjectEffect
+  | DeleteObjectEffect
   | RecordConsentEffect;
 
 // ─── Precondition ───

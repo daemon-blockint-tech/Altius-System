@@ -87,6 +87,15 @@ export interface PostgresStorageConfig {
   defaultIsolationLevel?: 'READ COMMITTED' | 'REPEATABLE READ' | 'SERIALIZABLE';
 }
 
+/**
+ * Whether a link type declares an `id` property, i.e. whether its table has an
+ * `id` column to populate. ODL link types carry `id: ID! @primary`; an SPI
+ * schema is free to declare none, and inventing the column breaks the insert.
+ */
+function declaresIdProperty(def: LinkTypeDefinition | undefined): boolean {
+  return def?.properties?.some(p => p.name === 'id') ?? false;
+}
+
 // ---------------------------------------------------------------------------
 // PgSpiTransaction — adapts PgTransaction to SPI Transaction interface
 // ---------------------------------------------------------------------------
@@ -133,6 +142,7 @@ class PgSpiTransaction implements Transaction {
       cardinality,
       this._schema,
       this._tx,
+      declaresIdProperty(def),
     );
   }
 
@@ -466,6 +476,8 @@ export class PostgresStorageProvider implements StorageProvider {
       properties,
       cardinality,
       this._dataSchema,
+      undefined,
+      declaresIdProperty(def),
     );
   }
 
@@ -620,7 +632,9 @@ export class PostgresStorageProvider implements StorageProvider {
           poolTotal: this._pool.totalCount,
           poolIdle: this._pool.idleCount,
           poolWaiting: this._pool.waitingCount,
-          ...(hasGraphFeatures && !ageLoaded ? { degraded: 'AGE extension required for link traversal' } : {}),
+          ...(hasGraphFeatures && !ageLoaded
+            ? { note: 'AGE extension absent — graph mirroring is skipped. Reads and link traversal are unaffected (SQL JOINs).' }
+            : {}),
         },
       };
     } catch (err) {

@@ -2029,4 +2029,83 @@ effects:
       expect(result.errors[0]!.code).toBe('NOT_SUPPORTED');
     });
   });
+
+  // -------------------------------------------------------------------------
+  // deleteObject effect
+  // -------------------------------------------------------------------------
+
+  describe('deleteObject effect', () => {
+    it('soft-deletes the target object and records it as affected', async () => {
+      const yaml = `
+action: DischargePatient
+version: 1
+params:
+  - name: patient
+    type: Patient
+    required: true
+effects:
+  - type: deleteObject
+    target: "patient"
+    mode: "soft"
+`;
+      const { manifest } = parseActionManifest(yaml);
+      expect(manifest).toBeDefined();
+
+      const result = await executor.execute(
+        manifest!,
+        { patient: patient._id },
+        ACTOR,
+        ACTION_CTX,
+        NHS_SCHEMA,
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.affectedObjects).toContainEqual({
+        type: 'Patient',
+        id: patient._id,
+        changeType: 'deleted',
+      });
+
+      // Object should be soft-deleted: the public getObject contract returns
+      // null for soft-deleted rows (callers use includeDeleted or history to
+      // see them). Verify via the internal API that the row still exists with
+      // _deletedAt set, confirming this is a soft (not hard) delete.
+      const after = await storage.getObject(REQ_CTX, 'Patient', patient._id);
+      expect(after).toBeNull();
+      const internal = (storage as unknown as { _getObjectInternal: (ctx: unknown, t: string, id: string) => unknown })._getObjectInternal(REQ_CTX, 'Patient', patient._id) as { _deletedAt?: string } | null;
+      expect(internal).not.toBeNull();
+      expect(internal!._deletedAt).toBeDefined();
+    });
+
+    it('rejects an invalid mode at parse time', () => {
+      const yaml = `
+action: BadDelete
+version: 1
+params:
+  - name: patient
+    type: Patient
+    required: true
+effects:
+  - type: deleteObject
+    target: "patient"
+    mode: "purge"
+`;
+      const { manifest, errors } = parseActionManifest(yaml);
+      expect(manifest).toBeUndefined();
+      expect(errors.some(e => e.code === 'INVALID_VALUE')).toBe(true);
+    });
+
+    it('rejects deleteObject without target', () => {
+      const yaml = `
+action: NoTarget
+version: 1
+effects:
+  - type: deleteObject
+    mode: "soft"
+`;
+      const { manifest, errors } = parseActionManifest(yaml);
+      expect(manifest).toBeUndefined();
+      expect(errors.some(e => e.code === 'MISSING_FIELD')).toBe(true);
+    });
+  });
 });

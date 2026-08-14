@@ -109,10 +109,15 @@ async function ageQuery(q: Queryable, cypher: string): Promise<void> {
       `SELECT * FROM cypher('${GRAPH_NAME}', $$${cypher}$$) AS (v agtype)`,
     );
   } catch (err) {
-    // AGE might not be available (e.g., in tests without AGE extension).
-    // Log but don't fail — graceful degradation for graph operations.
-    if (process.env.NODE_ENV !== 'test') {
-      logger.warn({ err: err instanceof Error ? err.message : String(err) }, 'AGE graph operation failed');
+    const msg = err instanceof Error ? err.message : String(err);
+    if (process.env.NODE_ENV === 'test') {
+      logger.debug({ err: msg }, 'AGE graph operation skipped (test env)');
+    } else {
+      logger.error(
+        { err: msg, cypher: cypher.slice(0, 120) },
+        'AGE graph write failed — the SQL op succeeded but the graph mirror is now stale. ' +
+          'Install the AGE extension or remove graph writes from the deployment.',
+      );
     }
   }
 }
@@ -250,6 +255,13 @@ export async function createLink(
   cardinality: LinkTypeDefinition['cardinality'] = 'MANY_TO_MANY',
   schema = 'public',
   tx?: PgTransaction,
+  /**
+   * Whether the link type declares an `id` property, i.e. whether the table
+   * actually has that column. ODL link types carry `id: ID! @primary` (NOT
+   * NULL) so it must be populated; an SPI schema that declares no such
+   * property has no column, and writing one fails the insert.
+   */
+  declaresIdProperty = false,
 ): Promise<OntologyLink> {
   const q = resolveQueryable(pool, tx);
   // Honour engine-provided ID (UUIDv7) per SPI contract, fall back to genId
@@ -273,9 +285,10 @@ export async function createLink(
   ];
 
   // Strip _engineLinkId from user-facing properties before persisting.
-  // Auto-populate 'id' property (ODL @primary on link types) if not provided.
+  // Populate the declared 'id' property (ODL @primary on link types) when the
+  // column exists and the caller did not supply it.
   const { _engineLinkId: _, ...userProps } = properties ?? {};
-  if (!('id' in userProps)) {
+  if (declaresIdProperty && !('id' in userProps)) {
     userProps['id'] = id;
   }
   const propEntries = Object.entries(userProps);

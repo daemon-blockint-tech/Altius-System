@@ -32,6 +32,7 @@ export type {
   CreateLinkEffect,
   DeleteLinkEffect,
   CreateObjectEffect,
+  DeleteObjectEffect,
   Precondition,
   SideEffect,
   RollbackConfig,

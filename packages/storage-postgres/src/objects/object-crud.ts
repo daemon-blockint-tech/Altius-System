@@ -441,10 +441,21 @@ async function ageQuery(q: Pool | import('pg').PoolClient, cypher: string): Prom
       `SELECT * FROM cypher('${GRAPH_NAME}', $$${cypher}$$) AS (v agtype)`,
     );
   } catch (err) {
-    // AGE might not be available (e.g., in tests without AGE extension).
-    // Log but don't fail — graceful degradation for graph operations.
-    if (process.env.NODE_ENV !== 'test') {
-      logger.warn({ err: err instanceof Error ? err.message : String(err) }, 'AGE graph operation failed');
+    // AGE is a write-only mirror of the SQL tables today (traversal runs
+    // via JOINs in links/traversal.ts, not Cypher). The writes are best-effort:
+    // a failure must not corrupt the source-of-truth SQL op, but it MUST be
+    // visible to operators so they can decide whether to install AGE or
+    // remove the dependency. Silent swallowing hid deployment drift.
+    const msg = err instanceof Error ? err.message : String(err);
+    if (process.env.NODE_ENV === 'test') {
+      // Tests run without AGE; log at debug to avoid noise.
+      logger.debug({ err: msg }, 'AGE graph operation skipped (test env)');
+    } else {
+      logger.error(
+        { err: msg, cypher: cypher.slice(0, 120) },
+        'AGE graph write failed — the SQL op succeeded but the graph mirror is now stale. ' +
+          'Install the AGE extension or remove graph writes from the deployment.',
+      );
     }
   }
 }

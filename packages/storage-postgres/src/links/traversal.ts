@@ -21,6 +21,7 @@ import type {
   DateTime,
 } from '@altius/spi';
 import { snakeCase, pgIdent } from '../schema/type-mapping.js';
+import { filterToSql } from '../objects/filter-to-sql.js';
 import { PgTransaction, resolveQueryable } from '../transactions/index.js';
 
 // ---------------------------------------------------------------------------
@@ -170,8 +171,6 @@ export async function traverse(
     const linkResult = await q.query(linkSql, params);
 
     const linkRows = linkResult.rows as Record<string, unknown>[];
-    const edges = linkRows.map((row) => rowToLink(row));
-    allEdges.push(...edges);
 
     // Collect target IDs and types for next hop
     const targetEntries = new Map<string, string>(); // id -> type
@@ -200,6 +199,14 @@ export async function traverse(
       if (!includeDeleted) {
         objWhere += ` AND "_deleted_at" IS NULL`;
       }
+      // The step filter constrains the TARGET object (matching the memory
+      // provider): a target that fails it is dropped, and so is the edge
+      // leading to it.
+      if (step.filter) {
+        const fragment = filterToSql(step.filter, objParams.length + 1);
+        objWhere += ` AND (${fragment.text})`;
+        objParams.push(...fragment.params);
+      }
 
       const objSql = `SELECT * FROM ${objTable} WHERE ${objWhere}`;
       const objResult = await q.query(objSql, objParams);
@@ -210,6 +217,17 @@ export async function traverse(
       stepNodes.push(...objects);
       totalNodesSeen += objects.length;
       nextIds.push(...objects.map((o) => o._id));
+    }
+
+    // Edges are collected only for targets that survived (existence, soft
+    // delete and the step filter) — an edge to a dropped target is not part of
+    // the traversal.
+    const survivingIds = new Set(nextIds);
+    for (const row of linkRows) {
+      const targetId = row[targetCol.replace(/"/g, '')] as string;
+      if (survivingIds.has(targetId)) {
+        allEdges.push(rowToLink(row));
+      }
     }
 
     currentIds = nextIds;

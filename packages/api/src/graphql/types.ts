@@ -167,6 +167,22 @@ export const DEFAULT_CONSENT_PURPOSE: DataPurpose =
 export const DEFAULT_CONSENT_SUBJECT_TYPES: readonly string[] = ['Patient'];
 
 /**
+ * Whether reads of `typeName` are subject to a consent decision.
+ *
+ * Consent is a property of a data *subject*, so only the configured subject
+ * types carry it. Applying it to every ObjectType empties the read paths for
+ * everything else: checkConsent default-denies when no record exists, so a
+ * Ward, Bed or Supplier — which can never have a consent record — would be
+ * filtered out entirely.
+ */
+export function isConsentSubjectType(
+  typeName: string,
+  configured?: readonly string[],
+): boolean {
+  return (configured ?? DEFAULT_CONSENT_SUBJECT_TYPES).includes(typeName);
+}
+
+/**
  * Default page size when first/last not specified.
  */
 export const DEFAULT_PAGE_SIZE = 20;

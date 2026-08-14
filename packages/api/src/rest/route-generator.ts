@@ -17,11 +17,11 @@
 
 import type { ParsedSchema, ObjectType, ActionType, FieldDefinition } from '@altius/odl';
 import { DataPurpose } from '@altius/spi';
-import type { OntologyObject, FilterExpression, AggregateQuery, AggregateField, AggregateFunction, SearchQuery, ObjectSetDefinition } from '@altius/spi';
+import type { OntologyObject, FilterExpression, AggregateQuery, AggregateField, AggregateFunction, SearchQuery, ObjectSetDefinition, RequestContext } from '@altius/spi';
 import type { ActionActor, ActionContext } from '@altius/actions';
 import type { RedactionResult } from '@altius/security';
 import type { ApiDependencies, ResolverContext } from '../graphql/types.js';
-import { DEFAULT_CONSENT_PURPOSE, DEFAULT_CONSENT_SUBJECT_TYPES, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from '../graphql/types.js';
+import { DEFAULT_CONSENT_PURPOSE, DEFAULT_CONSENT_SUBJECT_TYPES, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, isConsentSubjectType } from '../graphql/types.js';
 import type { RestRequest, RestResponse, RestRoute } from './types.js';
 import { createRestErrorResponse, wrapErrorToRest } from './errors.js';
 import { lowerFirst, toSnakeCase } from '../utils.js';
@@ -161,6 +161,40 @@ async function resolveAllowedIds(
     const parts = o.split(':');
     return parts[parts.length - 1];
   }).filter((id): id is string => id !== undefined && id !== '');
+}
+
+/**
+ * For consent-subject types, query all matching records, apply consent
+ * filtering, and return the consented ID list. Returns the input allowedIds
+ * when consent is not applicable. Used by aggregate to constrain the input
+ * set to consented records before delegating to storage.
+ */
+async function resolveConsentedIds(
+  deps: ApiDependencies,
+  typeName: string,
+  obj: ObjectType,
+  allowedIds: string[],
+  userFilter: FilterExpression | undefined,
+  userId: string,
+  requestContext: RequestContext,
+): Promise<string[]> {
+  if (!deps.consentService || !isConsentSubjectType(typeName, deps.consentSubjectTypes)) {
+    return allowedIds;
+  }
+
+  const combinedFilter = buildAuthFilter(allowedIds, userFilter);
+  const scan = await deps.objectManager.query(
+    typeName, combinedFilter, { limit: 10000, offset: 0 }, requestContext,
+  );
+
+  const primaryField = obj.fields.find(f => isPrimaryField(f));
+  const getPrimaryId = (item: OntologyObject) => String(item[primaryField?.name ?? 'id'] ?? '');
+  const consentResult = await deps.consentService.filterList(
+    scan.items, getPrimaryId, DEFAULT_CONSENT_PURPOSE as DataPurpose,
+    userId, requestContext.tenantId,
+  );
+
+  return consentResult.edges.map(o => o._id);
 }
 
 /**
@@ -321,7 +355,7 @@ function generateListRoute(
         let totalCount: number;
         let hasNextPage: boolean;
 
-        if (deps.consentService) {
+        if (deps.consentService && isConsentSubjectType(typeName, deps.consentSubjectTypes)) {
           // Consent removes records, so it must be applied BEFORE slicing the
           // page (see consent-pagination.ts) — DB-level pagination then consent
           // drops drift totalCount/hasNextPage and can hide later pages.
@@ -559,8 +593,8 @@ function generateGetByIdRoute(
         restObj = redacted.data as Record<string, unknown>;
         restObj._redactedFields = redacted._redactedFields.length > 0 ? redacted._redactedFields : null;
 
-        // Consent filtering
-        if (deps.consentService) {
+        // Consent filtering — only for types that have a data subject.
+        if (deps.consentService && isConsentSubjectType(typeName, deps.consentSubjectTypes)) {
           const consentResult = await deps.consentService.checkSingleObject(
             restObj,
             id,
@@ -741,8 +775,8 @@ function generateHistoryRoute(
           return data;
         });
 
-        // Consent filtering
-        if (deps.consentService) {
+        // Consent filtering — only for types that have a data subject.
+        if (deps.consentService && isConsentSubjectType(typeName, deps.consentSubjectTypes)) {
           const getPrimaryId = (item: Record<string, unknown>) => {
             const primaryField = obj.fields.find(f => isPrimaryField(f));
             return String(item[primaryField?.name ?? 'id'] ?? '');
@@ -828,7 +862,16 @@ function generateAggregateRoute(
           fn: f.fn.toLowerCase() as AggregateFunction,
           alias: f.alias,
         }));
-        const combinedFilter = buildAuthFilter(allowedIds, userFilter);
+
+        // Consent gate: for consent-subject types, constrain the aggregate to
+        // consented records only (parity with the GraphQL aggregate resolver).
+        const consentedIds = await resolveConsentedIds(
+          deps, typeName, obj, allowedIds, userFilter, user.id, requestContext,
+        );
+        if (consentedIds.length === 0) {
+          return { status: 200, body: { data: { groups: [], totalGroups: 0 } } };
+        }
+        const combinedFilter = buildAuthFilter(consentedIds, userFilter);
 
         const query: AggregateQuery = {
           fields,
@@ -945,7 +988,7 @@ function generateSearchRoute(
         let totalCount: number;
         let hasNextPage: boolean;
 
-        if (deps.consentService) {
+        if (deps.consentService && isConsentSubjectType(typeName, deps.consentSubjectTypes)) {
           const getPrimaryId = (hit: ShapedHit) => {
             const primaryField = obj.fields.find(f => isPrimaryField(f));
             return String(hit.node[primaryField?.name ?? 'id'] ?? '');
@@ -1296,6 +1339,30 @@ function generateObjectSetRoutes(schema: ParsedSchema, deps: ApiDependencies): R
             };
           }
 
+          // Field-level authorization (SEC-14): a saved set may filter or sort
+          // on a field the caller cannot see. Executing it would leak the
+          // hidden values through which rows come back and in what order — the
+          // list and object-set aggregate routes both reject this, so does this.
+          const visibleFields = deps.authorizationService.getVisibleFields(
+            user.id, user.roles, def.objectType,
+          );
+          if (visibleFields) {
+            const requestedFields = [
+              ...collectFilterFields(def.filter),
+              ...(def.orderBy ?? []).map(o => o.field),
+            ];
+            const blocked = requestedFields.filter(f => !f.startsWith('_') && !visibleFields.has(f));
+            if (blocked.length > 0) {
+              return createRestErrorResponse({
+                code: 'FORBIDDEN',
+                category: 'authorization',
+                message: `Cannot execute an object set filtered or ordered by redacted fields: ${blocked.join(', ')}`,
+                retryable: false,
+                traceId: ctx.requestContext.traceId,
+              });
+            }
+          }
+
           const { offset, limit } = parsePagination(req.query);
 
           // Inject auth filter into the object set's saved filter
@@ -1317,7 +1384,7 @@ function generateObjectSetRoutes(schema: ParsedSchema, deps: ApiDependencies): R
           let totalCount: number;
           let hasNextPage: boolean;
 
-          if (deps.consentService) {
+          if (deps.consentService && isConsentSubjectType(def.objectType, deps.consentSubjectTypes)) {
             const getPrimaryId = (item: Record<string, unknown>) => {
               const primaryField = obj.fields.find(f => isPrimaryField(f));
               return String(item[primaryField?.name ?? 'id'] ?? '');

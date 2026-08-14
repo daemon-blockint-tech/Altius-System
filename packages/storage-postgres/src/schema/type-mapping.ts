@@ -19,6 +19,11 @@ const ODL_TO_PG: Record<string, string> = {
   // JSON / untyped
   JSON: 'JSONB',
 
+  // Structured scalar — stored as JSONB to preserve the {lat, lng} shape
+  // the memory provider exposes as a JS object. TEXT would round-trip a
+  // string, diverging from memory on every read.
+  GeoPoint: 'JSONB',
+
   // NHS-specific scalars mapped to TEXT (stored as validated strings)
   NHSNumber: 'TEXT',
   ODS: 'TEXT',

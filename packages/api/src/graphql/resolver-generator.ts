@@ -17,13 +17,13 @@
 
 import type { ParsedSchema, ObjectType, ActionType, FunctionType, FieldDefinition, LinkType, LinkDirective } from '@altius/odl';
 import { DataPurpose } from '@altius/spi';
-import type { OntologyObject, OntologyLink, FilterExpression, AggregateQuery, AggregateField, AggregateFunction, SearchQuery, ErrorCategory } from '@altius/spi';
+import type { OntologyObject, OntologyLink, FilterExpression, AggregateQuery, AggregateField, AggregateFunction, SearchQuery, ErrorCategory, RequestContext } from '@altius/spi';
 import { ToolRegistry } from '@altius/actions';
 import type { ActionActor, ActionContext, ActionManifest } from '@altius/actions';
 import type { RedactionResult } from '@altius/security';
 import { PubSub } from 'graphql-subscriptions';
 import type { ApiDependencies, ResolverContext, PaginationArgs } from './types.js';
-import { DEFAULT_CONSENT_PURPOSE, DEFAULT_CONSENT_SUBJECT_TYPES } from './types.js';
+import { DEFAULT_CONSENT_PURPOSE, DEFAULT_CONSENT_SUBJECT_TYPES, isConsentSubjectType } from './types.js';
 import { resolvePagination, buildConnection, decodeCursor } from './pagination.js';
 import { paginateWithConsent } from '../consent-pagination.js';
 import { createAltiusError, wrapError } from './errors.js';
@@ -219,7 +219,8 @@ function objectToGraphQL(obj: OntologyObject, objectType: ObjectType): Record<st
 
   for (const field of objectType.fields) {
     if (isPrimaryField(field)) {
-      // Primary field (usually 'id') maps to _id
+      // Primary field maps to _id. ODL validator Rule 1 pins the name to 'id',
+      // which is what makes `_${field.name}` line up with the stored `_id`.
       result[field.name] = obj[`_${field.name}`] ?? obj[field.name];
     } else {
       result[field.name] = obj[field.name];
@@ -368,7 +369,7 @@ function generateLinkFieldResolvers(
           gqlObj = redacted.data as Record<string, unknown>;
           gqlObj._redactedFields = redacted._redactedFields.length > 0 ? redacted._redactedFields : null;
 
-          if (deps.consentService) {
+          if (deps.consentService && isConsentSubjectType(targetTypeName, deps.consentSubjectTypes)) {
             const consentResult = await deps.consentService.checkSingleObject(
               gqlObj,
               targetId,
@@ -539,7 +540,7 @@ function generateQueryResolvers(
       gqlObj._redactedFields = redacted._redactedFields.length > 0 ? redacted._redactedFields : null;
 
       // e. Consent filtering (single object)
-      if (deps.consentService) {
+      if (deps.consentService && isConsentSubjectType(typeName, deps.consentSubjectTypes)) {
         const consentResult = await deps.consentService.checkSingleObject(
           gqlObj,
           args.id,
@@ -649,7 +650,7 @@ function generateQueryResolvers(
       let items: Record<string, unknown>[];
       let totalCount: number;
 
-      if (deps.consentService) {
+      if (deps.consentService && isConsentSubjectType(typeName, deps.consentSubjectTypes)) {
         // Consent removes records, so filter BEFORE slicing the page (see
         // consent-pagination.ts) — DB-pagination then consent drops drifts
         // totalCount/hasNextPage and can hide later pages.
@@ -702,6 +703,46 @@ function generateQueryResolvers(
  * Resolve authorized object IDs for a user+type via FGA listObjects.
  * Returns ['*'] when the dev stub signals all objects are authorized.
  */
+/**
+ * For consent-subject types, query all matching records, apply consent
+ * filtering, and return the consented ID list. Returns ['*'] when consent is
+ * not applicable (non-subject type or no consent service wired).
+ *
+ * This is used by aggregate to constrain the input set to consented records
+ * before delegating to the storage aggregate — the list path does the same
+ * via paginateWithConsent, but aggregate returns groups not records, so we
+ * need the ID list up front.
+ */
+async function resolveConsentedIds(
+  deps: ApiDependencies,
+  typeName: string,
+  obj: ObjectType,
+  allowedIds: string[],
+  userFilter: FilterExpression | undefined,
+  userId: string,
+  requestContext: RequestContext,
+): Promise<string[]> {
+  if (!deps.consentService || !isConsentSubjectType(typeName, deps.consentSubjectTypes)) {
+    return allowedIds;
+  }
+
+  // Query all matching records (auth-filtered, no consent yet)
+  const combinedFilter = buildAuthFilter(allowedIds, userFilter);
+  const scan = await deps.objectManager.query(
+    typeName, combinedFilter, { limit: 10000, offset: 0 }, requestContext,
+  );
+
+  // Apply consent filter to remove non-consented records
+  const primaryField = obj.fields.find(f => isPrimaryField(f));
+  const getPrimaryId = (item: OntologyObject) => String(item[primaryField?.name ?? 'id'] ?? '');
+  const consentResult = await deps.consentService.filterList(
+    scan.items, getPrimaryId, DEFAULT_CONSENT_PURPOSE as DataPurpose,
+    userId, requestContext.tenantId,
+  );
+
+  return consentResult.edges.map(o => o._id);
+}
+
 async function resolveAllowedIds(
   deps: ApiDependencies,
   userId: string,
@@ -795,7 +836,20 @@ function generateAggregateResolver(
 
       // Convert GraphQL filter to SPI filter and combine with auth filter
       const userFilter = convertFilter(args.filter);
-      const combinedFilter = buildAuthFilter(allowedIds, userFilter);
+
+      // Consent gate: for consent-subject types, constrain the aggregate to
+      // consented records only. Without this, a user could aggregate over
+      // records they have no consent for (e.g. population stats over patients
+      // who opted out). The list path applies consent via paginateWithConsent;
+      // aggregate returns groups, so we resolve the consented ID set up front
+      // and pass it as a filter to the storage aggregate.
+      const consentedIds = await resolveConsentedIds(
+        deps, typeName, obj, allowedIds, userFilter, user.id, requestContext,
+      );
+      if (consentedIds.length === 0 || (consentedIds.length === 1 && consentedIds[0] === '*' && allowedIds.length === 0)) {
+        return { groups: [], totalGroups: 0 };
+      }
+      const combinedFilter = buildAuthFilter(consentedIds, userFilter);
 
       // Convert GraphQL aggregate fields to SPI AggregateField[]
       const fields: AggregateField[] = args.fields.map((f) => ({
@@ -919,7 +973,7 @@ function generateSearchResolver(
       let totalCount: number;
       let hasNextPage: boolean;
 
-      if (deps.consentService) {
+      if (deps.consentService && isConsentSubjectType(typeName, deps.consentSubjectTypes)) {
         const getPrimaryId = (hit: ShapedHit) => {
           const primaryField = obj.fields.find(f => isPrimaryField(f));
           return String(hit.node[primaryField?.name ?? 'id'] ?? '');

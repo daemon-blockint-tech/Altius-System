@@ -28,6 +28,7 @@ import type {
   CreateLinkEffect,
   DeleteLinkEffect,
   CreateObjectEffect,
+  DeleteObjectEffect,
   RecordConsentEffect,
 } from '../parser/types.js';
 import type {
@@ -340,8 +341,10 @@ export class ActionExecutor {
                       const userProps = stripSystemFields(before);
                       await compensatingTxn.updateObject(affected.type, affected.id, userProps);
                     }
-                    // 'deleted' object rollbacks are best-effort; recreating deleted objects
-                    // requires the full prior state which may not always be available
+                    // 'deleted' object rollbacks are best-effort; restoring a
+                    // soft-deleted row needs a dedicated SPI restore op (the
+                    // update path filters _deleted_at IS NULL). The before-state
+                    // is captured so a future restore op can use it.
                   }
                 }
                 await compensatingTxn.commit();
@@ -634,6 +637,9 @@ export class ActionExecutor {
       case 'createObject':
         await this.executeCreateObject(effect, context, txn, affectedObjects, afterStates);
         break;
+      case 'deleteObject':
+        await this.executeDeleteObject(effect, context, txn, reqCtx, affectedObjects, beforeStates, schema);
+        break;
       case 'recordConsent':
         await this.executeRecordConsent(effect, context, reqCtx);
         break;
@@ -840,6 +846,45 @@ export class ActionExecutor {
       type: effect.objectType,
       id: created._id,
       changeType: 'created',
+    });
+  }
+
+  /**
+   * Delete an object via the governed action pipeline. Resolves `target` the
+   * same way updateObject does (supports dotted paths), captures before-state
+   * for compensation, and delegates to `txn.deleteObject`. Default mode is
+   * 'soft' (preserve audit trail + history); 'hard' is explicit-only.
+   */
+  private async executeDeleteObject(
+    effect: DeleteObjectEffect,
+    context: Record<string, unknown>,
+    txn: Transaction,
+    reqCtx: RequestContext,
+    affectedObjects: AffectedObject[],
+    beforeStates: Map<string, Record<string, unknown>>,
+    schema?: ParsedSchema,
+  ): Promise<void> {
+    if (effect.condition) {
+      const condResult = await this.config.cel.evaluate(effect.condition, context);
+      if (condResult.value !== true) return;
+    }
+
+    const target = await this.resolveTarget(effect.target, context, schema, reqCtx);
+    if (!target) {
+      throw new Error(`Target "${effect.target}" not found in context`);
+    }
+
+    const beforeKey = `${target._type}:${target._id}`;
+    if (!beforeStates.has(beforeKey)) {
+      beforeStates.set(beforeKey, { ...target });
+    }
+
+    await txn.deleteObject(target._type, target._id, effect.mode ?? 'soft');
+
+    affectedObjects.push({
+      type: target._type,
+      id: target._id,
+      changeType: 'deleted',
     });
   }
 

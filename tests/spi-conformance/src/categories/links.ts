@@ -336,5 +336,62 @@ export function registerLinkTests(name: string, factory: ProviderFactory): void 
         expect(page.hasNextPage).toBe(true);
       });
     });
+
+    // ─── Traversal ───
+    // Traversal is where the two providers most easily drift: the step filter
+    // and target-existence rules are applied in provider-specific code, and
+    // nothing above the SPI re-checks them.
+
+    describe('traverse', () => {
+      beforeEach(async () => {
+        await provider.createLink(tenantA, 'AssignedTo', patientId1, teamId1);
+        await provider.createLink(tenantA, 'AssignedTo', patientId1, teamId2);
+      });
+
+      it('returns every linked target when no step filter is given', async () => {
+        const result = await provider.traverse(tenantA, patientId1, {
+          steps: [{ linkType: 'AssignedTo', direction: 'outbound' }],
+        });
+
+        expect(result.nodes.map(n => n._id).sort()).toEqual([teamId1, teamId2].sort());
+      });
+
+      it('applies a step filter to the target objects', async () => {
+        const result = await provider.traverse(tenantA, patientId1, {
+          steps: [{
+            linkType: 'AssignedTo',
+            direction: 'outbound',
+            filter: { field: 'name', operator: 'eq', value: 'Team1' },
+          }],
+        });
+
+        expect(result.nodes.map(n => n._id)).toEqual([teamId1]);
+      });
+
+      it('drops the edge leading to a filtered-out target', async () => {
+        const result = await provider.traverse(tenantA, patientId1, {
+          steps: [{
+            linkType: 'AssignedTo',
+            direction: 'outbound',
+            filter: { field: 'name', operator: 'eq', value: 'Team1' },
+          }],
+        });
+
+        // An edge whose target is not in the result is not part of the traversal.
+        expect(result.edges).toHaveLength(1);
+        expect(result.edges[0]!._toId).toBe(teamId1);
+      });
+
+      it('excludes a soft-deleted target and its edge', async () => {
+        await provider.deleteObject(tenantA, 'CareTeam', teamId2, 'soft');
+
+        const result = await provider.traverse(tenantA, patientId1, {
+          steps: [{ linkType: 'AssignedTo', direction: 'outbound' }],
+        });
+
+        expect(result.nodes.map(n => n._id)).toEqual([teamId1]);
+        expect(result.edges.map(e => e._toId)).toEqual([teamId1]);
+      });
+    });
   });
 }

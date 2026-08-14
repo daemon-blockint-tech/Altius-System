@@ -17,6 +17,7 @@ import type {
   CreateLinkEffect,
   DeleteLinkEffect,
   CreateObjectEffect,
+  DeleteObjectEffect,
   RecordConsentEffect,
   Precondition,
   SideEffect,
@@ -241,7 +242,7 @@ function parsePreconditions(
 
 // ─── Effects ───
 
-const VALID_EFFECT_TYPES = new Set(['updateObject', 'createLink', 'deleteLink', 'createObject', 'recordConsent']);
+const VALID_EFFECT_TYPES = new Set(['updateObject', 'createLink', 'deleteLink', 'createObject', 'deleteObject', 'recordConsent']);
 
 function parseEffects(
   raw: unknown,
@@ -302,6 +303,11 @@ function parseEffects(
       }
       case 'createObject': {
         const effect = parseCreateObject(item, path, errors);
+        if (effect) result.push(effect);
+        break;
+      }
+      case 'deleteObject': {
+        const effect = parseDeleteObject(item, path, errors);
         if (effect) result.push(effect);
         break;
       }
@@ -527,6 +533,42 @@ function parseCreateObject(
     type: 'createObject',
     objectType: item['objectType'] as string,
     properties: toStringRecord(item['properties'] as Record<string, unknown>),
+  };
+}
+
+function parseDeleteObject(
+  item: Record<string, unknown>,
+  path: string,
+  errors: ManifestIssue[],
+): DeleteObjectEffect | undefined {
+  if (typeof item['target'] !== 'string' || !item['target']) {
+    errors.push({
+      severity: 'error',
+      code: 'MISSING_FIELD',
+      message: `${path}.target is required for deleteObject effect.`,
+      path: `${path}.target`,
+    });
+    return undefined;
+  }
+
+  const rawMode = typeof item['mode'] === 'string' ? item['mode'] : 'soft';
+  if (rawMode !== 'soft' && rawMode !== 'hard') {
+    errors.push({
+      severity: 'error',
+      code: 'INVALID_VALUE',
+      message: `${path}.mode must be "soft" or "hard". Got "${rawMode}".`,
+      path: `${path}.mode`,
+    });
+    return undefined;
+  }
+
+  const condition = typeof item['condition'] === 'string' ? item['condition'] : undefined;
+
+  return {
+    type: 'deleteObject',
+    target: item['target'] as string,
+    mode: rawMode,
+    condition,
   };
 }
 
@@ -939,6 +981,7 @@ export type {
   CreateLinkEffect,
   DeleteLinkEffect,
   CreateObjectEffect,
+  DeleteObjectEffect,
   RecordConsentEffect,
   Precondition,
   SideEffect,
