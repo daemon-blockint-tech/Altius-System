@@ -56,4 +56,22 @@ spec:
           annotations:
             summary: "Storage backend unhealthy"
             description: "PostgreSQL storage health check failing for 2 minutes."
+        - alert: SyncRecordsFailing
+          expr: |
+            altius_sync_consecutive_failures >= 3
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Sync datasource failing repeatedly"
+            description: "{{ "{{ $labels.datasource }}" }} has failed {{ "{{ $value }}" }} consecutive poll ticks."
+        - alert: SyncStale
+          expr: |
+            time() - altius_sync_last_processed_timestamp_seconds > 300
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Sync datasource has not processed a record recently"
+            description: "{{ "{{ $labels.datasource }}" }} last processed a record over 5 minutes ago."
 {{- end }}

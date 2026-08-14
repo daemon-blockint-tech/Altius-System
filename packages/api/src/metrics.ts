@@ -16,6 +16,7 @@
 import { Counter, Histogram, Gauge, register, collectDefaultMetrics } from 'prom-client';
 import type { Request, Response, NextFunction } from 'express';
 import type { StorageProvider } from '@altius/spi';
+import type { SyncScheduler } from '@altius/sync';
 
 // Collect Node.js default metrics (GC, event loop, memory, etc.)
 collectDefaultMetrics();
@@ -44,6 +45,33 @@ export const packLoaded = new Gauge({
   name: 'altius_pack_loaded',
   help: 'Domain pack loaded: 1 = loaded',
   labelNames: ['name', 'version', 'origin'] as const,
+});
+
+// Sync scheduler gauges — mirror SyncScheduler.stats() (cumulative source
+// values), so these are Gauges rather than Counters even for monotonic
+// fields; rate()/increase() still work correctly on a monotonic Gauge.
+export const syncRecordsProcessed = new Gauge({
+  name: 'altius_sync_records_processed',
+  help: 'Cumulative sync records processed per datasource',
+  labelNames: ['datasource'] as const,
+});
+
+export const syncRecordsFailed = new Gauge({
+  name: 'altius_sync_records_failed',
+  help: 'Cumulative sync records failed per datasource',
+  labelNames: ['datasource'] as const,
+});
+
+export const syncLastProcessedTimestamp = new Gauge({
+  name: 'altius_sync_last_processed_timestamp_seconds',
+  help: 'Unix timestamp of the last record processed per datasource',
+  labelNames: ['datasource'] as const,
+});
+
+export const syncConsecutiveFailures = new Gauge({
+  name: 'altius_sync_consecutive_failures',
+  help: 'Consecutive failed poll ticks per datasource (resets to 0 on success)',
+  labelNames: ['datasource'] as const,
 });
 
 // ─── Middleware ───
@@ -157,6 +185,32 @@ export function startStorageHealthGauge(
   }, intervalMs);
 
   // Don't prevent process exit
+  timer.unref();
+
+  return () => clearInterval(timer);
+}
+
+/**
+ * Start a periodic reader that mirrors SyncScheduler.stats() onto the
+ * sync gauges above. Returns a cleanup function to stop the interval.
+ */
+export function startSyncMetricsGauge(
+  scheduler: SyncScheduler,
+  intervalMs = 15_000,
+): () => void {
+  const tick = () => {
+    for (const s of scheduler.stats()) {
+      syncRecordsProcessed.set({ datasource: s.datasource }, s.cdc.recordsProcessed);
+      syncRecordsFailed.set({ datasource: s.datasource }, s.cdc.recordsFailed);
+      syncConsecutiveFailures.set({ datasource: s.datasource }, s.consecutiveFailures);
+      if (s.cdc.lastProcessedAt) {
+        syncLastProcessedTimestamp.set({ datasource: s.datasource }, Date.parse(s.cdc.lastProcessedAt) / 1000);
+      }
+    }
+  };
+
+  tick();
+  const timer = setInterval(tick, intervalMs);
   timer.unref();
 
   return () => clearInterval(timer);

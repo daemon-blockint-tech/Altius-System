@@ -4,9 +4,8 @@ import {
   FunctionExecutor,
   NodeFunctionRuntime,
   CelFunctionRuntime,
-  type CelEvaluator,
 } from '../functions/index.js';
-import type { CelEvaluator as EngineCelEvaluator } from '../objects/validation.js';
+import type { CelEvaluator } from '../objects/validation.js';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -113,7 +112,7 @@ describe('FunctionExecutor', () => {
   describe('cel runtime', () => {
     it('delegates to the CEL evaluator', async () => {
       const cel: CelEvaluator = {
-        async evaluate(expression, variables) {
+        async evaluate(expression: string, variables: Record<string, unknown>) {
           expect(expression).toBe('score * 2');
           expect(variables['score']).toBe(21);
           return { value: 42 };
@@ -149,12 +148,6 @@ describe('FunctionExecutor', () => {
   describe('registerRuntime', () => {
     it('overrides a built-in runtime', async () => {
       const executor = new FunctionExecutor({ schema });
-      const custom: EngineCelEvaluator & { name: string } = Object.assign(
-        { name: 'cel' },
-        {
-          async execute() { return 'custom-result'; },
-        } as never,
-      );
       // Use the public registerRuntime path with a proper FunctionRuntime
       executor.registerRuntime({
         name: 'cel',

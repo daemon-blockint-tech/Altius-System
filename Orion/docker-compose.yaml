@@ -311,6 +311,10 @@ services:
       PORT: "4003"
       POSTGRES_URL: "postgresql://${POSTGRES_USER:-altius}:${POSTGRES_PASSWORD}@postgresql:5432/${POSTGRES_DB:-altius}"
       REDPANDA_BROKERS: "redpanda:9092"
+      # DEBEZIUM_URL: not read by any production code yet — no CDC-source
+      # consumer exists in packages/sync (SyncScheduler polls JDBC only).
+      # Wired for the planned KafkaCdcSource (consumes Debezium topics off
+      # REDPANDA_BROKERS); Debezium's REST API itself is unused by Altius.
       DEBEZIUM_URL: "http://debezium:8083"
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4317"
       OTEL_SERVICE_NAME: sync-engine

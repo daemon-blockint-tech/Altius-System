@@ -11,6 +11,8 @@
  *   DOMAIN_PACKS         — Comma-separated or JSON array of pack names to load
  *   SEED_TENANT          — Tenant for domain-pack boot seeds (default: 'system', isolated from request tenants)
  *   SCHEMA_BREAKING_POLICY — 'warn' (default) records BREAKING schema changes and continues; 'block' fails boot without recording
+ *   SYNC_SCHEDULER_ENABLED — 'true' starts the sync poll loop for POLLING/CDC/BATCH pack connectors (default: off)
+ *   SYNC_TENANT          — Tenant for sync-ingested objects (default: SEED_TENANT, then 'system')
  *   OIDC_ISSUER          — OIDC provider issuer URL (matches Helm configmap)
  *   OIDC_CLIENT_ID       — OIDC client ID
  *   OIDC_JWKS_URI        — JWKS endpoint override for non-Keycloak issuers
@@ -79,7 +81,7 @@ import { recordSchemaVersion, BreakingSchemaChangeError } from './schema-registr
 import { SlidingWindowRateLimiter, RedisRateLimiter } from './governance/index.js';
 import type { RateLimiter, RateLimitIdentity } from './governance/index.js';
 import { toSnakeCase } from './utils.js';
-import { metricsMiddleware, metricsEndpoint, startStorageHealthGauge, packLoaded, podDirectOnly } from './metrics.js';
+import { metricsMiddleware, metricsEndpoint, startStorageHealthGauge, startSyncMetricsGauge, packLoaded, podDirectOnly } from './metrics.js';
 import { logger } from './logger.js';
 
 const PORT = parseInt(process.env['PORT'] ?? '4000', 10);
@@ -730,6 +732,22 @@ async function main(): Promise<void> {
     }
   }
 
+  // ── Sync Scheduler ──
+  // Opt-in driver loop for POLLING/CDC/BATCH datasources (OVERLAY stays a
+  // read-through cache). Writes bypass the action pipeline by design
+  // (Spec Section 6) under the sync tenant/actor.
+  let syncBoot: import('./sync-boot.js').SyncBootResult = { scheduler: null, scheduled: [], stop: async () => {} };
+  if (process.env.SYNC_SCHEDULER_ENABLED === 'true') {
+    const { startSyncScheduler } = await import('./sync-boot.js');
+    syncBoot = await startSyncScheduler({
+      connectorManifests: connectorManifests.filter(cm => connectorRegistry.has(cm.connector)),
+      registry: connectorRegistry,
+      objectManager,
+      tenantId: process.env.SYNC_TENANT || process.env.SEED_TENANT || 'system',
+    });
+  }
+  const stopSyncMetricsGauge = syncBoot.scheduler ? startSyncMetricsGauge(syncBoot.scheduler) : (() => {});
+
   // ── API Dependencies ──
   const deps: ApiDependencies = {
     schema,
@@ -1216,6 +1234,16 @@ async function main(): Promise<void> {
   async function shutdown() {
     logger.info('Shutting down...');
     stopHealthGauge();
+    stopSyncMetricsGauge();
+    // Stop sync polling before storage/bus teardown (in-flight ticks drain)
+    try {
+      await Promise.race([
+        syncBoot.stop(),
+        new Promise<void>((_, reject) => setTimeout(() => reject(new Error('timeout')), SHUTDOWN_TIMEOUT_MS)),
+      ]);
+    } catch (err) {
+      logger.warn({ err: err instanceof Error ? err.message : 'unknown' }, 'Sync scheduler stop error');
+    }
     subscriptionManager.stop();
     await apolloServer.stop();
     if (cel instanceof CelClient) {
