@@ -236,6 +236,21 @@ export class ActionExecutor {
     const beforeStates: Map<string, Record<string, unknown>> = new Map();
     const afterStates: Map<string, Record<string, unknown>> = new Map();
 
+    // Pre-flight: verify the storage provider supports transactions before
+    // calling beginTransaction. A read-only or non-transactional provider
+    // would otherwise throw a provider-specific exception mid-pipeline.
+    // Failing fast with a typed error lets the caller surface a clean
+    // READ_ONLY / NOT_SUPPORTED message instead of a stack trace.
+    const caps = this.config.storage.capabilities();
+    if (!caps.supportsTransactions) {
+      return failResult(actionId, [
+        {
+          code: caps.supportsWrites ? 'NOT_SUPPORTED' : 'READ_ONLY',
+          message: `Storage provider does not support transactions; action "${manifest.action}" cannot execute.`,
+        },
+      ]);
+    }
+
     const txn = await this.config.storage.beginTransaction(reqCtx);
 
     try {

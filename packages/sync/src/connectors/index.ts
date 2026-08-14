@@ -27,6 +27,7 @@ export { ConnectorRegistry } from "./connector-registry.js";
 // Implementations
 export { JdbcConnector, jdbcPlugin } from "./jdbc-connector.js";
 export { RestConnector, restPlugin } from "./rest-connector.js";
+export { kafkaCdcPlugin } from "./kafka-cdc-connector.js";
 
 // Default registry
 export { createDefaultRegistry } from "./default-registry.js";

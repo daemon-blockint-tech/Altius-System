@@ -10,3 +10,6 @@ export type {
 } from './cdc-consumer.js';
 
 export { CdcConsumer } from './cdc-consumer.js';
+
+export type { KafkaCdcSourceConfig } from './kafka-cdc-source.js';
+export { KafkaCdcSource } from './kafka-cdc-source.js';

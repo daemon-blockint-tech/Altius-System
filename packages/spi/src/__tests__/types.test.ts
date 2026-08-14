@@ -196,10 +196,12 @@ describe('@altius/spi type exports', () => {
       supportsGeoQueries: false,
       supportsGraphTraversal: true,
       supportsBulkMutations: true,
+      supportsWrites: true,
       maxTraversalDepth: 10,
       replicationSupport: 'BOTH',
     };
     expect(caps.supportsTransactions).toBe(true);
+    expect(caps.supportsWrites).toBe(true);
     expect(caps.replicationSupport).toBe('BOTH');
   });
 

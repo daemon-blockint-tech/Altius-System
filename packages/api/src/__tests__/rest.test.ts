@@ -730,4 +730,132 @@ describe('REST API', () => {
       expect(body.data._redactedFields).toEqual(['dateOfBirth', 'nhsNumber']);
     });
   });
+
+  // ─────────────────────────────────────────────────────────────────────
+  // T4: General export endpoint
+  // ─────────────────────────────────────────────────────────────────────
+
+  describe('GET /api/v1/patients/export (general export)', () => {
+    it('generates an export route for each object type', () => {
+      const deps = createMockDeps(parsed);
+      const routes = generateRestRoutes(parsed, deps);
+      expect(findRoute(routes, 'GET', '/api/v1/patients/export')).toBeDefined();
+      expect(findRoute(routes, 'GET', '/api/v1/wards/export')).toBeDefined();
+    });
+
+    it('returns NDJSON by default', async () => {
+      const deps = createMockDeps(parsed);
+      const listMock = deps.authorizationService.listObjects as ReturnType<typeof vi.fn>;
+      listMock.mockResolvedValue(['*']);
+      const queryMock = deps.objectManager.query as ReturnType<typeof vi.fn>;
+      queryMock.mockResolvedValue({
+        items: [createPatientObject('p-1'), createPatientObject('p-2')],
+        totalCount: 2,
+        hasNextPage: false,
+      });
+
+      const routes = generateRestRoutes(parsed, deps);
+      const route = findRoute(routes, 'GET', '/api/v1/patients/export')!;
+      const req = createMockRequest({ query: {} });
+      const ctx = createResolverContext(deps);
+      const res = await route.handler(req, ctx);
+
+      expect(res.status).toBe(200);
+      expect(res.headers?.['Content-Type']).toContain('application/x-ndjson');
+      expect(typeof res.body).toBe('string');
+      const lines = (res.body as string).split('\n');
+      expect(lines).toHaveLength(2);
+      const first = JSON.parse(lines[0]!);
+      expect(first._id).toBe('p-1');
+    });
+
+    it('returns CSV when format=csv', async () => {
+      const deps = createMockDeps(parsed);
+      const listMock = deps.authorizationService.listObjects as ReturnType<typeof vi.fn>;
+      listMock.mockResolvedValue(['*']);
+      const queryMock = deps.objectManager.query as ReturnType<typeof vi.fn>;
+      queryMock.mockResolvedValue({
+        items: [createPatientObject('p-1')],
+        totalCount: 1,
+        hasNextPage: false,
+      });
+
+      const routes = generateRestRoutes(parsed, deps);
+      const route = findRoute(routes, 'GET', '/api/v1/patients/export')!;
+      const req = createMockRequest({ query: { format: 'csv' } });
+      const ctx = createResolverContext(deps);
+      const res = await route.handler(req, ctx);
+
+      expect(res.status).toBe(200);
+      expect(res.headers?.['Content-Type']).toContain('text/csv');
+      expect(typeof res.body).toBe('string');
+      const lines = (res.body as string).split('\n');
+      expect(lines.length).toBeGreaterThanOrEqual(2); // header + at least 1 row
+      expect(lines[0]).toContain('id');
+      expect(lines[0]).toContain('nhsNumber');
+    });
+
+    it('rejects unsupported formats', async () => {
+      const deps = createMockDeps(parsed);
+      const listMock = deps.authorizationService.listObjects as ReturnType<typeof vi.fn>;
+      listMock.mockResolvedValue(['*']);
+
+      const routes = generateRestRoutes(parsed, deps);
+      const route = findRoute(routes, 'GET', '/api/v1/patients/export')!;
+      const req = createMockRequest({ query: { format: 'xml' } });
+      const ctx = createResolverContext(deps);
+      const res = await route.handler(req, ctx);
+
+      expect(res.status).toBe(400);
+    });
+
+    it('respects ?limit= cap and signals truncation', async () => {
+      const deps = createMockDeps(parsed);
+      const listMock = deps.authorizationService.listObjects as ReturnType<typeof vi.fn>;
+      listMock.mockResolvedValue(['*']);
+      const queryMock = deps.objectManager.query as ReturnType<typeof vi.fn>;
+      // Return limit+1 items to trigger the cap signal
+      queryMock.mockResolvedValue({
+        items: Array.from({ length: 6 }, (_, i) => createPatientObject(`p-${i}`)),
+        totalCount: 100,
+        hasNextPage: true,
+      });
+
+      const routes = generateRestRoutes(parsed, deps);
+      const route = findRoute(routes, 'GET', '/api/v1/patients/export')!;
+      const req = createMockRequest({ query: { limit: '5' } });
+      const ctx = createResolverContext(deps);
+      const res = await route.handler(req, ctx);
+
+      expect(res.status).toBe(200);
+      expect(res.headers?.['X-Export-Truncated']).toBe('true');
+      expect(res.headers?.['X-Export-Limit']).toBe('5');
+      const lines = (res.body as string).split('\n');
+      expect(lines).toHaveLength(5);
+    });
+
+    it('scopes to authorized objects only', async () => {
+      const deps = createMockDeps(parsed);
+      const listMock = deps.authorizationService.listObjects as ReturnType<typeof vi.fn>;
+      listMock.mockResolvedValue(['patient:p-1']);
+      const queryMock = deps.objectManager.query as ReturnType<typeof vi.fn>;
+      queryMock.mockResolvedValue({
+        items: [createPatientObject('p-1')],
+        totalCount: 1,
+        hasNextPage: false,
+      });
+
+      const routes = generateRestRoutes(parsed, deps);
+      const route = findRoute(routes, 'GET', '/api/v1/patients/export')!;
+      const req = createMockRequest({ query: {} });
+      const ctx = createResolverContext(deps);
+      const res = await route.handler(req, ctx);
+
+      expect(res.status).toBe(200);
+      // Verify the query was called with an ID filter (not the '*' pass-through)
+      const filterArg = queryMock.mock.calls[0]?.[1];
+      expect(filterArg).toBeDefined();
+      expect('field' in filterArg && filterArg.field).toBe('_id');
+    });
+  });
 });

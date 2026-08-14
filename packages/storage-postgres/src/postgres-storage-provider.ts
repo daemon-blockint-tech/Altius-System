@@ -613,6 +613,7 @@ export class PostgresStorageProvider implements StorageProvider {
       supportsGeoQueries: false,
       supportsGraphTraversal: true,
       supportsBulkMutations: true,
+      supportsWrites: true,
       maxTraversalDepth: 10,
       replicationSupport: 'NONE',
     };

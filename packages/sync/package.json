@@ -21,6 +21,7 @@
   "dependencies": {
     "@altius/observability": "workspace:*",
     "@altius/spi": "workspace:*",
+    "kafkajs": "^2.2.4",
     "pg": "^8.13.0",
     "yaml": "^2.8.2"
   },

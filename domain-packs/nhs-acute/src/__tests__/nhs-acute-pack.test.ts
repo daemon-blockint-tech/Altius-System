@@ -19,11 +19,16 @@ import type { ParsedSchema, FieldDirective } from '@altius/odl';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PACK_ROOT = resolve(__dirname, '..', '..');
+const DOMAIN_PACKS_ROOT = resolve(PACK_ROOT, '..');
 
 // ─── Helpers ───
 
 function readOdl(filename: string): string {
   return readFileSync(resolve(PACK_ROOT, 'schema', filename), 'utf-8');
+}
+
+function readCoreOdl(filename: string): string {
+  return readFileSync(resolve(DOMAIN_PACKS_ROOT, 'core', 'schema', filename), 'utf-8');
 }
 
 function readAction(filename: string): string {
@@ -40,28 +45,39 @@ function findDirective<K extends FieldDirective['kind']>(
 // ─── Load all ODL files as combined source ───
 // The ODL parser works on a single source string. We concatenate all schema
 // files but keep only one namespace directive (the first one).
+// Core interfaces (Identifiable, Auditable, etc.) are included so that
+// `implements` clauses on NHS object types resolve during validation.
 
 const ODL_FILES = [
-  'enums.odl',
-  'patient.odl',
-  'ward.odl',
-  'bed.odl',
-  'consultant.odl',
-  'staff.odl',
-  'discharge-record.odl',
-  'transfer.odl',
-  'links.odl',
-  'actions.odl',
+  // Core interfaces must come first so implements clauses resolve.
+  { kind: 'core' as const, file: 'core.odl' },
+  { kind: 'pack' as const, file: 'enums.odl' },
+  { kind: 'pack' as const, file: 'patient.odl' },
+  { kind: 'pack' as const, file: 'ward.odl' },
+  { kind: 'pack' as const, file: 'bed.odl' },
+  { kind: 'pack' as const, file: 'consultant.odl' },
+  { kind: 'pack' as const, file: 'staff.odl' },
+  { kind: 'pack' as const, file: 'discharge-record.odl' },
+  { kind: 'pack' as const, file: 'transfer.odl' },
+  { kind: 'pack' as const, file: 'links.odl' },
+  { kind: 'pack' as const, file: 'actions.odl' },
 ];
 
+/** NHS pack-only ODL file names (for pack.yaml manifest checks). */
+const PACK_ODL_FILES = ODL_FILES.filter(f => f.kind === 'pack').map(f => f.file);
+
 function buildCombinedSource(): string {
-  const sources = ODL_FILES.map(f => readOdl(f));
-  // Only keep the first namespace directive; strip from subsequent files
-  const first = sources[0]!;
-  const rest = sources.slice(1).map(s =>
+  const sources = ODL_FILES.map(f => f.kind === 'core' ? readCoreOdl(f.file) : readOdl(f.file));
+  // Strip ALL namespace directives — the test checks namespace from the parsed
+  // schema, and we want the NHS namespace to win. Since core.odl is first and
+  // would set altius.core, we strip every namespace directive and the parser
+  // will use whichever appears last (nhs.acute from enums.odl).
+  const stripped = sources.map(s =>
     s.replace(/^extend schema @namespace\([^)]+\)\s*/m, ''),
   );
-  return [first, ...rest].join('\n\n');
+  // Re-inject the NHS namespace at the top so it's the parsed namespace.
+  const nhsNamespace = 'extend schema @namespace(name: "nhs.acute", version: "0.2.0")\n\n';
+  return nhsNamespace + stripped.join('\n\n');
 }
 
 const combinedSource = buildCombinedSource();
@@ -360,9 +376,10 @@ describe('NHS Acute Domain Pack — ODL Validation', () => {
 });
 
 describe('NHS Acute Domain Pack — Individual ODL Files', () => {
-  for (const file of ODL_FILES) {
-    it(`${file} parses without GraphQL syntax errors`, () => {
-      const source = readOdl(file);
+  for (const entry of ODL_FILES) {
+    if (entry.kind === 'core') continue; // core is tested via the combined schema
+    it(`${entry.file} parses without GraphQL syntax errors`, () => {
+      const source = readOdl(entry.file);
       // Should not throw — valid GraphQL SDL
       const schema = parseOdl(source);
       expect(schema).toBeDefined();
@@ -558,7 +575,7 @@ describe('NHS Acute Domain Pack — pack.yaml manifest', () => {
 
     const schemaFiles = pack['schema'] as string[];
     expect(schemaFiles).toHaveLength(10);
-    for (const odlFile of ODL_FILES) {
+    for (const odlFile of PACK_ODL_FILES) {
       expect(schemaFiles).toContain(`schema/${odlFile}`);
     }
   });

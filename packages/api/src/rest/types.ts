@@ -25,7 +25,10 @@ export interface RestRequest {
  */
 export interface RestResponse {
   status: number;
-  body: Record<string, unknown>;
+  /** JSON body (default) or string body for export endpoints (NDJSON/CSV). */
+  body: Record<string, unknown> | string;
+  /** Optional response headers (e.g. Content-Type for export endpoints). */
+  headers?: Record<string, string>;
 }
 
 /**

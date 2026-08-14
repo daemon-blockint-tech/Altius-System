@@ -227,6 +227,10 @@ services:
       # Non-NHS deployments leave it false for pure explicit-consent semantics.
       CONSENT_DIRECT_CARE_EXEMPTION: ${CONSENT_DIRECT_CARE_EXEMPTION:-true}
       CONSENT_EXEMPTION_PURPOSE: ${CONSENT_EXEMPTION_PURPOSE:-}
+      # Webhook ingest (T6): POST /api/v1/ingest/:datasource authenticates
+      # with X-Ingest-Secret. Unset → ingest endpoint disabled.
+      # Set to a strong shared secret to enable push-based CDC ingestion.
+      INGEST_SECRET: ${INGEST_SECRET:-}
     volumes:
       - ${DOMAIN_PACKS_HOST_DIR:-./empty-packs}:/external-packs:ro
     depends_on:
@@ -311,10 +315,12 @@ services:
       PORT: "4003"
       POSTGRES_URL: "postgresql://${POSTGRES_USER:-altius}:${POSTGRES_PASSWORD}@postgresql:5432/${POSTGRES_DB:-altius}"
       REDPANDA_BROKERS: "redpanda:9092"
-      # DEBEZIUM_URL: not read by any production code yet — no CDC-source
-      # consumer exists in packages/sync (SyncScheduler polls JDBC only).
-      # Wired for the planned KafkaCdcSource (consumes Debezium topics off
-      # REDPANDA_BROKERS); Debezium's REST API itself is unused by Altius.
+      # DEBEZIUM_URL: Debezium Connect REST endpoint. Used to register
+      # connectors (POST /connectors) that stream change events into
+      # Redpanda topics consumed by KafkaCdcSource (packages/sync/src/cdc).
+      # Register a connector with:
+      #   curl -X POST http://debezium:8083/connectors -H 'Content-Type: application/json' \
+      #     -d '{"name":"pg-patients","config":{"connector.class":"io.debezium.connector.postgresql.PostgresConnector","database.hostname":"postgresql","database.port":"5432","database.dbname":"altius","topic.prefix":"dbserver","table.include.list":"public.patients"}}'
       DEBEZIUM_URL: "http://debezium:8083"
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4317"
       OTEL_SERVICE_NAME: sync-engine

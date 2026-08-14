@@ -104,9 +104,10 @@ export type {
   CheckpointStore,
   CdcStats,
   CdcConsumerConfig,
+  KafkaCdcSourceConfig,
 } from "./cdc/index.js";
 
-export { CdcConsumer } from "./cdc/index.js";
+export { CdcConsumer, KafkaCdcSource } from "./cdc/index.js";
 
 // Conflict resolution (Section 6.6)
 export type {

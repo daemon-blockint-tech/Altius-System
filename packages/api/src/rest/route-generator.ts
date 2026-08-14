@@ -26,6 +26,7 @@ import type { RestRequest, RestResponse, RestRoute } from './types.js';
 import { createRestErrorResponse, wrapErrorToRest } from './errors.js';
 import { lowerFirst, toSnakeCase } from '../utils.js';
 import { paginateWithConsent } from '../consent-pagination.js';
+import { collectRawRecords } from '../cdm/router.js';
 
 // ─── Helpers ───
 
@@ -221,6 +222,7 @@ function generateObjectRoutes(
   // parameterized segments (e.g., /search before /:id) to avoid shadowing.
   return [
     generateListRoute(obj, plural, fgaType, deps),
+    generateExportRoute(obj, plural, deps),
     generateAggregateRoute(obj, plural, fgaType, deps),
     generateSearchRoute(obj, plural, fgaType, deps),
     generateGetByIdRoute(obj, plural, fgaType, deps),
@@ -378,6 +380,125 @@ function generateListRoute(
       }
     },
   };
+}
+
+/**
+ * Row cap for the general export endpoint. Matches the CDM export limit.
+ * Callers can request fewer rows via ?limit= but never more.
+ */
+const REST_EXPORT_LIMIT = 10_000;
+const REST_EXPORT_FORMATS = ['ndjson', 'csv'] as const;
+type RestExportFormat = (typeof REST_EXPORT_FORMATS)[number];
+
+/**
+ * GET /api/v1/{plural}/export?format=ndjson|csv&limit= — general per-ObjectType
+ * dataset export. Reuses the same FGA scoping, field-level redaction, and
+ * consent filtering as the list route (via `collectRawRecords`), but returns
+ * NDJSON or CSV instead of JSON. No CDM projection — raw object fields only.
+ *
+ * Parity with Foundry `readTable` for non-CDM consumers. Arrow IPC is
+ * deliberately deferred (would require `apache-arrow`).
+ */
+function generateExportRoute(
+  obj: ObjectType,
+  plural: string,
+  deps: ApiDependencies,
+): RestRoute {
+  return {
+    method: 'GET',
+    pattern: `/api/v1/${plural}/export`,
+    handler: async (req: RestRequest, ctx: ResolverContext): Promise<RestResponse> => {
+      try {
+        const { user } = ctx;
+        const typeName = obj.name;
+
+        const formatParam = (typeof req.query['format'] === 'string' ? req.query['format'] : 'ndjson').toLowerCase();
+        if (!REST_EXPORT_FORMATS.includes(formatParam as RestExportFormat)) {
+          return createRestErrorResponse({
+            code: 'VALIDATION_ERROR',
+            category: 'validation',
+            message: `Unsupported export format '${formatParam}'. Use one of: ${REST_EXPORT_FORMATS.join(', ')}.`,
+            retryable: false,
+            traceId: ctx.requestContext.traceId,
+          });
+        }
+        const format = formatParam as RestExportFormat;
+
+        const limitParam = typeof req.query['limit'] === 'string' ? parseInt(req.query['limit'], 10) : undefined;
+        const limit = Math.max(1, Math.min(limitParam && !isNaN(limitParam) ? limitParam : REST_EXPORT_LIMIT, REST_EXPORT_LIMIT));
+
+        // Reuse the CDM router's raw collection pipeline (FGA scoping +
+        // redaction + consent filtering) with no CDM projection.
+        const { records, capped } = await collectRawRecords(
+          deps,
+          user,
+          typeName,
+          limit,
+        );
+
+        const filenameBase = `${plural}-export`;
+        const truncationHeaders: Record<string, string> = {
+          'X-Export-Truncated': String(capped),
+          'X-Export-Limit': String(limit),
+        };
+
+        if (format === 'csv') {
+          // Derive columns from the object type's scalar fields + system fields.
+          const scalarFields = obj.fields.filter(f => !f.directives.some(d => d.kind === 'link') && !f.directives.some(d => d.kind === 'computed'));
+          const columns = [
+            ...scalarFields.map(f => f.name),
+            '_id', '_version', '_createdAt', '_updatedAt',
+          ];
+          return {
+            status: 200,
+            headers: {
+              'Content-Type': 'text/csv; charset=utf-8',
+              'Content-Disposition': `attachment; filename="${filenameBase}.csv"`,
+              ...truncationHeaders,
+            },
+            body: recordsToCsv(columns, records),
+          };
+        }
+
+        // NDJSON: one JSON object per line
+        return {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/x-ndjson; charset=utf-8',
+            'Content-Disposition': `attachment; filename="${filenameBase}.ndjson"`,
+            ...truncationHeaders,
+          },
+          body: records.map(r => JSON.stringify(r)).join('\n'),
+        };
+      } catch (err) {
+        return wrapErrorToRest(err, ctx.requestContext.traceId);
+      }
+    },
+  };
+}
+
+/**
+ * Serialise records to CSV. Columns are the provided field list; nested values
+ * are JSON-encoded. Mirrors the CDM export's CSV helper.
+ */
+function recordsToCsv(columns: string[], records: Record<string, unknown>[]): string {
+  const escape = (value: unknown): string => {
+    if (value === undefined || value === null) return '';
+    let str: string;
+    if (value instanceof Date) {
+      str = value.toISOString();
+    } else if (typeof value === 'object') {
+      str = JSON.stringify(value);
+    } else {
+      str = String(value);
+    }
+    return /[",\n\r]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
+  };
+  const header = columns.join(',');
+  const lines = records.map(rec =>
+    columns.map(col => escape(rec[col])).join(','),
+  );
+  return [header, ...lines].join('\n');
 }
 
 /**
@@ -1228,6 +1349,22 @@ function generateObjectSetRoutes(schema: ParsedSchema, deps: ApiDependencies): R
             items = mapAndRedact(page.items);
             totalCount = page.totalCount;
             hasNextPage = offset + items.length < totalCount;
+          }
+
+          // ?format=ndjson — return the saved object set as a downloadable
+          // NDJSON dataset (parity with Foundry readTable on saved queries).
+          // The handler already returned governed, redacted, consent-filtered
+          // rows above; this just reformats the output.
+          const formatParam = typeof req.query['format'] === 'string' ? req.query['format'] : undefined;
+          if (formatParam === 'ndjson') {
+            return {
+              status: 200,
+              headers: {
+                'Content-Type': 'application/x-ndjson; charset=utf-8',
+                'Content-Disposition': `attachment; filename="object-set-${id}.ndjson"`,
+              },
+              body: items.map(r => JSON.stringify(r)).join('\n'),
+            };
           }
 
           return {

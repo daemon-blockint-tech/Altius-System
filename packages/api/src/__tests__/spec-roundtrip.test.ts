@@ -114,7 +114,9 @@ describe('GraphQL SDL validity', () => {
 
   it('has a type definition for each object type', () => {
     for (const obj of schema.objectTypes) {
-      expect(sdl).toContain(`type ${obj.name} {`);
+      // Object types may have `implements` clauses (T1); match the type
+      // declaration prefix, not the full line.
+      expect(sdl).toContain(`type ${obj.name}`);
     }
   });
 

@@ -47,15 +47,18 @@ local now = tonumber(ARGV[1])
 local window = tonumber(ARGV[2])
 local maxReqs = tonumber(ARGV[3])
 local member = ARGV[4]
+local cost = tonumber(ARGV[5])
 redis.call('ZREMRANGEBYSCORE', key, 0, now - window)
 local count = redis.call('ZCARD', key)
-if count >= maxReqs then
+if count + cost > maxReqs then
   redis.call('PEXPIRE', key, window)
   return {count, 0}
 end
-redis.call('ZADD', key, now, member)
+for i = 1, cost do
+  redis.call('ZADD', key, now, member .. ':' .. i)
+end
 redis.call('PEXPIRE', key, window)
-return {count + 1, 1}
+return {count + cost, 1}
 `;
 
 /** Per-process unique prefix for Redis sorted-set members to avoid cross-pod collisions. */
@@ -73,7 +76,12 @@ export class RedisRateLimiter implements RateLimiter {
     this.config = { ...DEFAULT_CONFIG, ...opts?.config };
   }
 
-  async check(identity: RateLimitIdentity): Promise<RateLimitResult> {
+  /**
+   * Check if a request is allowed and record it if so.
+   * @param cost  Weight of this request (default 1). A cost of N consumes
+   *              N units of budget in every configured dimension.
+   */
+  async check(identity: RateLimitIdentity, cost = 1): Promise<RateLimitResult> {
     const now = Date.now();
     const member = `${INSTANCE_ID}:${now}:${++requestCounter}`;
 
@@ -119,6 +127,7 @@ export class RedisRateLimiter implements RateLimiter {
           String(win.windowMs),
           String(win.maxRequests),
           member,
+          String(cost),
         ) as [number, number];
 
         const [count, added] = result;

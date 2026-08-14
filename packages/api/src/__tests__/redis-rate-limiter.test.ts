@@ -194,11 +194,35 @@ describe('RedisRateLimiter', () => {
 
     await limiter.check({ tenantId: 't', principalId: 'u' });
 
-    // eval args: script, numkeys, key, now, windowMs, maxRequests, member
+    // eval args: script, numkeys, key, now, windowMs, maxRequests, member, cost
     const firstCall = (redis.eval as ReturnType<typeof vi.fn>).mock.calls[0]!;
     // ARGV[3] = maxRequests is the 6th positional arg (index 5)
     expect(firstCall[5]).toBe('5'); // tenant maxRequests
     const secondCall = (redis.eval as ReturnType<typeof vi.fn>).mock.calls[1]!;
     expect(secondCall[5]).toBe('3'); // principal maxRequests
+  });
+
+  // ─────────────────────────────────────────────────────────────────────
+  // T5: Cost-weighted rate limiting
+  // ─────────────────────────────────────────────────────────────────────
+
+  it('passes cost to Lua script as ARGV[5]', async () => {
+    redis._evalResults = [[1, 1], [1, 1]];
+
+    await limiter.check({ tenantId: 't', principalId: 'u' }, 7);
+
+    const firstCall = (redis.eval as ReturnType<typeof vi.fn>).mock.calls[0]!;
+    // ARGV[5] = cost is the 8th positional arg (index 7)
+    expect(firstCall[7]).toBe('7');
+  });
+
+  it('denies when cost would exceed remaining budget', async () => {
+    // count=3, cost=5 → 3+5 > 5 → denied
+    redis._evalResults = [[3, 0]];
+
+    const result = await limiter.check({ tenantId: 't', principalId: 'u' }, 5);
+
+    expect(result.allowed).toBe(false);
+    expect(result.exceededBy).toBe('tenant');
   });
 });

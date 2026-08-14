@@ -202,6 +202,14 @@ main() {
   log "  OpenFGA Playground: http://localhost:8280/playground"
   log "  Debezium:           http://localhost:8083/"
   log "  OTEL Collector:     http://localhost:4317 (gRPC)"
+  log ""
+  log "CDC (T6):"
+  log "  Debezium connectors are registered via the REST API:"
+  log "    curl -X POST http://localhost:8083/connectors -H 'Content-Type: application/json' \\"
+  log "      -d '{\"name\":\"pg-conn\",\"config\":{\"connector.class\":\"io.debezium.connector.postgresql.PostgresConnector\",\"database.hostname\":\"postgresql\",\"database.port\":\"5432\",\"database.dbname\":\"${POSTGRES_DB}\",\"topic.prefix\":\"dbserver\",\"table.include.list\":\"public.patients\"}}'"
+  log "  List registered connectors: curl http://localhost:8083/connectors"
+  log "  KafkaCdcSource consumes topics from REDPANDA_BROKERS (redpanda:9092)."
+  log "  Webhook ingest: POST /api/v1/ingest/:datasource with X-Ingest-Secret header."
 }
 
 main "$@"

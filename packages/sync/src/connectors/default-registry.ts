@@ -5,14 +5,16 @@
 import { ConnectorRegistry } from "./connector-registry.js";
 import { jdbcPlugin } from "./jdbc-connector.js";
 import { restPlugin } from "./rest-connector.js";
+import { kafkaCdcPlugin } from "./kafka-cdc-connector.js";
 
 /**
  * Create a ConnectorRegistry with all built-in connector plugins
- * already registered (jdbc, rest).
+ * already registered (jdbc, rest, kafka-cdc).
  */
 export function createDefaultRegistry(): ConnectorRegistry {
   const registry = new ConnectorRegistry();
   registry.register(jdbcPlugin);
   registry.register(restPlugin);
+  registry.register(kafkaCdcPlugin);
   return registry;
 }

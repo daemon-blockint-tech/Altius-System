@@ -395,4 +395,49 @@ export class ToolRegistry {
 
     return true;
   }
+
+  // ---------------------------------------------------------------------------
+  // Provider-format tool mappings (T5)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Export tools in the Anthropic Messages API tool format.
+   * Each tool becomes `{ name, description, input_schema }` where
+   * `input_schema` is the ToolDescriptor's JSON Schema parameters.
+   *
+   * @param filter Optional filter (same as availableTools)
+   * @returns Array of Anthropic-format tool definitions
+   */
+  toAnthropicTools(filter?: ToolFilter): Array<{
+    name: string;
+    description: string;
+    input_schema: JsonSchema;
+  }> {
+    return this.availableTools(filter).map(d => ({
+      name: d.name,
+      description: d.description,
+      input_schema: d.parameters,
+    }));
+  }
+
+  /**
+   * Export tools in the OpenAI function-calling tool format.
+   * Each tool becomes `{ type: 'function', function: { name, description, parameters } }`.
+   *
+   * @param filter Optional filter (same as availableTools)
+   * @returns Array of OpenAI-format tool definitions
+   */
+  toOpenAiTools(filter?: ToolFilter): Array<{
+    type: 'function';
+    function: { name: string; description: string; parameters: JsonSchema };
+  }> {
+    return this.availableTools(filter).map(d => ({
+      type: 'function' as const,
+      function: {
+        name: d.name,
+        description: d.description,
+        parameters: d.parameters,
+      },
+    }));
+  }
 }

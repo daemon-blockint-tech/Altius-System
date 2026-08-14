@@ -29,7 +29,16 @@ data:
   {{/* HELM-06: OPENFGA_STORE_ID is infrastructure config, not a secret */}}
   OPENFGA_STORE_ID: {{ .Values.authz.openfga.storeId | quote }}
   CEL_EVALUATOR_URL: {{ .Values.celEvaluator.url | quote }}
+  # T6: Debezium Connect REST endpoint. Used to register connectors that
+  # stream change events into Redpanda topics consumed by KafkaCdcSource.
+  # Register via: curl -X POST http://debezium:8083/connectors ...
   DEBEZIUM_URL: {{ .Values.sync.debezium.url | quote }}
+  {{/* T6: Webhook ingest secret. Unset → ingest endpoint disabled.
+       For production, prefer setting this via an external secret and
+       envFrom.secretRef rather than a plaintext configmap value. */}}
+  {{- if .Values.ingest.secret }}
+  INGEST_SECRET: {{ .Values.ingest.secret | quote }}
+  {{- end }}
   OTEL_EXPORTER_OTLP_ENDPOINT: {{ .Values.observability.otlp.endpoint | quote }}
   DOMAIN_PACKS: {{ .Values.domainPacks | toJson | quote }}
   {{- if .Values.domainPacksExtra.sources }}

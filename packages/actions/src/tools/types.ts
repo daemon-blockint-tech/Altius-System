@@ -77,6 +77,23 @@ export interface AgentContext {
   model?: string;
 }
 
+/**
+ * Audit convention for `llm.call` operations (T5.3):
+ *
+ * When an agent invokes an LLM (e.g. via a Functions runtime `llm.call`),
+ * the call should be audited as a single AuditRecord with:
+ *   - `operation.type` = `'llm.call'`
+ *   - `AuditDetail` entries for token counts:
+ *       `{ key: 'promptTokens', value: <number> }`
+ *       `{ key: 'completionTokens', value: <number> }`
+ *       `{ key: 'totalTokens', value: <number> }`
+ *   - `AuditDetail` for the model: `{ key: 'model', value: <string> }`
+ *
+ * This makes LLM usage tracking a simple query over the existing AuditStore
+ * (filter by `operation.type = 'llm.call'`, sum token details) without
+ * requiring a separate telemetry pipeline.
+ */
+
 export interface PolicyGuardResult {
   /** Whether execution is allowed. */
   allowed: boolean;

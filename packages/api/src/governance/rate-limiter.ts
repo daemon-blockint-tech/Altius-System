@@ -60,7 +60,15 @@ const DEFAULT_CONFIG: RateLimitConfig = {
  * RedisRateLimiter (distributed, shared across pods).
  */
 export interface RateLimiter {
-  check(identity: RateLimitIdentity): RateLimitResult | Promise<RateLimitResult>;
+  /**
+   * Check if a request is allowed and record it if so.
+   * @param identity  The caller identity for rate-limit dimension lookup.
+   * @param cost      Optional weight (default 1). A request with `cost: 5`
+   *                  consumes 5 units of budget in every dimension. Use this
+   *                  for token-budgeted LLM calls where a single request
+   *                  may consume a variable share of the quota.
+   */
+  check(identity: RateLimitIdentity, cost?: number): RateLimitResult | Promise<RateLimitResult>;
 }
 
 /**
@@ -82,8 +90,10 @@ export class SlidingWindowRateLimiter implements RateLimiter {
 
   /**
    * Check if a request is allowed and record it if so.
+   * @param cost  Weight of this request (default 1). A cost of N consumes
+   *              N units of budget in every configured dimension.
    */
-  check(identity: RateLimitIdentity): RateLimitResult {
+  check(identity: RateLimitIdentity, cost = 1): RateLimitResult {
     const now = Date.now();
 
     // PERF-04: Periodic cleanup of expired buckets to prevent unbounded memory growth
@@ -138,7 +148,8 @@ export class SlidingWindowRateLimiter implements RateLimiter {
         earliestReset = resetAt;
       }
 
-      if (count >= win.maxRequests) {
+      // Deny if the cost would exceed the remaining budget
+      if (count + cost > win.maxRequests) {
         exceededDimension = dimension;
         break;
       }
@@ -153,15 +164,18 @@ export class SlidingWindowRateLimiter implements RateLimiter {
       };
     }
 
-    // Record the request in all dimensions
+    // Record the request in all dimensions — push `cost` timestamps so the
+    // sliding-window count reflects the weighted budget consumption.
     for (const { key } of dimensions) {
       const bucket = this.getOrCreateBucket(key);
-      bucket.timestamps.push(now);
+      for (let i = 0; i < cost; i++) {
+        bucket.timestamps.push(now);
+      }
     }
 
     return {
       allowed: true,
-      remaining: minRemaining === Infinity ? 0 : minRemaining - 1,
+      remaining: minRemaining === Infinity ? 0 : Math.max(0, minRemaining - cost),
       resetAt: earliestReset,
     };
   }

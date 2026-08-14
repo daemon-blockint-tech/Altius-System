@@ -94,6 +94,11 @@ sync:
   debezium:
     url: http://debezium:8083
 
+# T6: Webhook ingest (POST /api/v1/ingest/:datasource)
+# Unset → ingest endpoint disabled. For production, prefer an external secret.
+ingest:
+  secret: ""
+
 # -- CEL evaluator (Go sidecar)
 # HELM-20: Include grpc:// protocol prefix
 celEvaluator:

@@ -442,4 +442,59 @@ describe('ToolRegistry', () => {
       expect(result.dryRun).toBe(true);
     });
   });
+
+  // ─────────────────────────────────────────────────────────────────────
+  // T5: Provider-format tool mappings
+  // ─────────────────────────────────────────────────────────────────────
+
+  describe('toAnthropicTools', () => {
+    it('maps every available tool to Anthropic format', () => {
+      const tools = registry.toAnthropicTools();
+      expect(tools).toHaveLength(3);
+
+      for (const t of tools) {
+        expect(t.name).toBeTruthy();
+        expect(typeof t.description).toBe('string');
+        expect(t.input_schema).toBeDefined();
+        expect(t.input_schema.type).toBe('object');
+        expect(t.input_schema.properties).toBeDefined();
+      }
+    });
+
+    it('respects the filter', () => {
+      const tools = registry.toAnthropicTools({ namePattern: 'Admit' });
+      expect(tools).toHaveLength(1);
+      expect(tools[0]!.name).toBe('AdmitPatient');
+    });
+
+    it('does not include internal-only fields (returnType, permissions)', () => {
+      const tools = registry.toAnthropicTools();
+      const t = tools[0]!;
+      expect(t).not.toHaveProperty('returnType');
+      expect(t).not.toHaveProperty('requiredPermissions');
+      expect(t).not.toHaveProperty('dryRunSupported');
+      expect(t).not.toHaveProperty('reversible');
+    });
+  });
+
+  describe('toOpenAiTools', () => {
+    it('maps every available tool to OpenAI function-calling format', () => {
+      const tools = registry.toOpenAiTools();
+      expect(tools).toHaveLength(3);
+
+      for (const t of tools) {
+        expect(t.type).toBe('function');
+        expect(t.function.name).toBeTruthy();
+        expect(typeof t.function.description).toBe('string');
+        expect(t.function.parameters).toBeDefined();
+        expect(t.function.parameters.type).toBe('object');
+      }
+    });
+
+    it('respects the filter', () => {
+      const tools = registry.toOpenAiTools({ namePattern: 'Discharge' });
+      expect(tools).toHaveLength(1);
+      expect(tools[0]!.function.name).toBe('DischargePatient');
+    });
+  });
 });

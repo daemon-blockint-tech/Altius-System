@@ -19,11 +19,16 @@ import type { ParsedSchema, FieldDirective } from '@altius/odl';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PACK_ROOT = resolve(__dirname, '..', '..');
+const DOMAIN_PACKS_ROOT = resolve(PACK_ROOT, '..');
 
 // ─── Helpers ───
 
 function readOdl(filename: string): string {
   return readFileSync(resolve(PACK_ROOT, 'schema', filename), 'utf-8');
+}
+
+function readCoreOdl(filename: string): string {
+  return readFileSync(resolve(DOMAIN_PACKS_ROOT, 'core', 'schema', filename), 'utf-8');
 }
 
 function readAction(filename: string): string {
@@ -40,24 +45,31 @@ function findDirective<K extends FieldDirective['kind']>(
 // ─── Load all ODL files as combined source ───
 
 const ODL_FILES = [
-  'enums.odl',
-  'supplier.odl',
-  'facility.odl',
-  'product.odl',
-  'purchase-order.odl',
-  'shipment.odl',
-  'inventory-record.odl',
-  'links.odl',
-  'actions.odl',
+  // Core interfaces must come first so implements clauses resolve.
+  { kind: 'core' as const, file: 'core.odl' },
+  { kind: 'pack' as const, file: 'enums.odl' },
+  { kind: 'pack' as const, file: 'supplier.odl' },
+  { kind: 'pack' as const, file: 'facility.odl' },
+  { kind: 'pack' as const, file: 'product.odl' },
+  { kind: 'pack' as const, file: 'purchase-order.odl' },
+  { kind: 'pack' as const, file: 'shipment.odl' },
+  { kind: 'pack' as const, file: 'inventory-record.odl' },
+  { kind: 'pack' as const, file: 'links.odl' },
+  { kind: 'pack' as const, file: 'actions.odl' },
 ];
 
+/** Pack-only ODL file names (for pack.yaml manifest checks). */
+const PACK_ODL_FILES = ODL_FILES.filter(f => f.kind === 'pack').map(f => f.file);
+
 function buildCombinedSource(): string {
-  const sources = ODL_FILES.map(f => readOdl(f));
-  const first = sources[0]!;
-  const rest = sources.slice(1).map(s =>
+  const sources = ODL_FILES.map(f => f.kind === 'core' ? readCoreOdl(f.file) : readOdl(f.file));
+  // Strip ALL namespace directives and re-inject the supply-chain namespace
+  // so the parsed schema reports supply.chain (not altius.core from core.odl).
+  const stripped = sources.map(s =>
     s.replace(/^extend schema @namespace\([^)]+\)\s*/m, ''),
   );
-  return [first, ...rest].join('\n\n');
+  const namespace = 'extend schema @namespace(name: "supply.chain", version: "0.1.0")\n\n';
+  return namespace + stripped.join('\n\n');
 }
 
 const combinedSource = buildCombinedSource();
@@ -419,9 +431,10 @@ describe('Supply Chain Domain Pack — ODL Validation', () => {
 });
 
 describe('Supply Chain Domain Pack — Individual ODL Files', () => {
-  for (const file of ODL_FILES) {
-    it(`${file} parses without GraphQL syntax errors`, () => {
-      const source = readOdl(file);
+  for (const entry of ODL_FILES) {
+    if (entry.kind === 'core') continue;
+    it(`${entry.file} parses without GraphQL syntax errors`, () => {
+      const source = readOdl(entry.file);
       const schema = parseOdl(source);
       expect(schema).toBeDefined();
     });
@@ -584,7 +597,7 @@ describe('Supply Chain Domain Pack — pack.yaml manifest', () => {
 
     const schemaFiles = pack['schema'] as string[];
     expect(schemaFiles).toHaveLength(9);
-    for (const odlFile of ODL_FILES) {
+    for (const odlFile of PACK_ODL_FILES) {
       expect(schemaFiles).toContain(`schema/${odlFile}`);
     }
   });

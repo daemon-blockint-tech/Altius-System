@@ -1052,7 +1052,16 @@ async function main(): Promise<void> {
         };
         const ctx: ResolverContext = buildResolverContext(user, deps);
         const result = await route.handler(restReq, ctx);
-        res.status(result.status).json(result.body);
+        // Apply optional response headers (e.g. Content-Type for export endpoints)
+        if (result.headers) {
+          for (const [key, value] of Object.entries(result.headers)) res.setHeader(key, value);
+        }
+        // String bodies (NDJSON/CSV exports) are sent as-is; JSON bodies via .json()
+        if (typeof result.body === 'string') {
+          res.status(result.status).send(result.body);
+        } else {
+          res.status(result.status).json(result.body);
+        }
       } catch (err) {
         if (err && typeof err === 'object' && 'status' in err && (err as { status: number }).status === 401) {
           res.status(401).json({ error: { code: 'UNAUTHENTICATED', message: 'Authentication required' } });
@@ -1227,6 +1236,39 @@ async function main(): Promise<void> {
     });
     logger.info('MCP server mounted at /mcp (Streamable HTTP, tools-only)');
   } // end mcp capability gate
+
+  // ── Webhook ingest at /api/v1/ingest/:datasource (T6) ──
+  // Push-based single-record or batch upsert path. Authenticated via
+  // X-Ingest-Secret (sourced from INGEST_SECRET env var). Reuses the same
+  // parseMappingObject → RecordMapper → createEngineChangeApplier pipeline
+  // as the sync scheduler.
+  const ingestSecret = process.env.INGEST_SECRET;
+  if (ingestSecret) {
+    const { createIngestHandler } = await import('./ingest-handler.js');
+    // Build datasource name → raw mapping config from connector manifests
+    const datasourceMappings = new Map<string, Record<string, unknown>>();
+    for (const cm of connectorManifests) {
+      const ds = cm.config['datasource'] as string | undefined;
+      if (ds) datasourceMappings.set(ds, cm.config);
+    }
+    const ingestHandler = createIngestHandler({
+      objectManager,
+      datasourceMappings,
+      ingestSecret,
+      tenantId: process.env.SYNC_TENANT || process.env.SEED_TENANT || 'system',
+    });
+    app.post('/api/v1/ingest/:datasource', express.json({ limit: '1mb' }), async (req, res) => {
+      const result = await ingestHandler({
+        datasource: req.params['datasource']!,
+        body: req.body,
+        secret: req.headers['x-ingest-secret'] as string | undefined,
+      });
+      res.status(result.status).json(result.body);
+    });
+    logger.info(`Ingest webhook mounted at /api/v1/ingest/:datasource (${datasourceMappings.size} datasource(s))`);
+  } else {
+    logger.info('Ingest webhook disabled (set INGEST_SECRET to enable)');
+  }
 
   // ── Graceful shutdown ──
   const SHUTDOWN_TIMEOUT_MS = 5_000;

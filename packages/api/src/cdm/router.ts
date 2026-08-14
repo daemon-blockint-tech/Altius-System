@@ -216,8 +216,30 @@ async function collectObjectRecords(
   sourceType: string,
   limit: number,
 ): Promise<CollectedRecords> {
-  const ctx = ctxFor(user);
+  const raw = await collectRawRecords(deps, user, sourceType, limit);
   const mapping = findMappingBySourceType(NHS_ACUTE_CDM_PROFILE, sourceType)!;
+  return {
+    records: raw.records.map(r => projectToCdm(r, mapping, NHS_ACUTE_CDM_PROFILE)),
+    capped: raw.capped,
+  };
+}
+
+/**
+ * Fetch authorised, redacted, consent-filtered raw records for an object type.
+ * This is the shared auth/redaction/consent pipeline without any CDM projection
+ * — used by the general REST export endpoint (`GET /api/v1/{plural}/export`)
+ * and by {@link collectObjectRecords} which applies the CDM projection on top.
+ *
+ * Exported so the REST route generator can reuse the exact same governance
+ * pipeline for the general per-ObjectType export as the CDM export uses.
+ */
+export async function collectRawRecords(
+  deps: ApiDependencies,
+  user: AuthenticatedUserInfo,
+  sourceType: string,
+  limit: number,
+): Promise<{ records: Record<string, unknown>[]; capped: boolean }> {
+  const ctx = ctxFor(user);
   const fgaType = toSnakeCase(sourceType);
   const allowedObjects = await deps.authorizationService.listObjects(`user:${user.id}`, 'viewer', fgaType);
 
@@ -265,7 +287,7 @@ async function collectObjectRecords(
     rows = consentResult.edges as Record<string, unknown>[];
   }
 
-  return { records: rows.map(r => projectToCdm(r, mapping, NHS_ACUTE_CDM_PROFILE)), capped };
+  return { records: rows, capped };
 }
 
 export async function handleObjectList(

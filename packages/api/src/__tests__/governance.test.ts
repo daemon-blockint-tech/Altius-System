@@ -476,3 +476,53 @@ describe('createResponseTooLargeError', () => {
     expect(details['maxBytes']).toBe(5_000_000);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────
+// T5: Cost-weighted rate limiting (SlidingWindowRateLimiter)
+// ─────────────────────────────────────────────────────────────────────
+
+describe('SlidingWindowRateLimiter cost weighting', () => {
+  it('consumes multiple units per request when cost > 1', () => {
+    const limiter = new SlidingWindowRateLimiter({
+      principal: { windowMs: 60_000, maxRequests: 10 },
+    });
+
+    // cost=4 → 4 units consumed
+    const r1 = limiter.check({ tenantId: 't', principalId: 'u' }, 4);
+    expect(r1.allowed).toBe(true);
+    expect(r1.remaining).toBe(6);
+
+    // Another cost=4 → 8 total, 2 remaining
+    const r2 = limiter.check({ tenantId: 't', principalId: 'u' }, 4);
+    expect(r2.allowed).toBe(true);
+    expect(r2.remaining).toBe(2);
+  });
+
+  it('denies when cost would exceed remaining budget', () => {
+    const limiter = new SlidingWindowRateLimiter({
+      principal: { windowMs: 60_000, maxRequests: 10 },
+    });
+
+    // Consume 8
+    const r1 = limiter.check({ tenantId: 't', principalId: 'u' }, 8);
+    expect(r1.allowed).toBe(true);
+
+    // cost=5 → 8+5=13 > 10 → denied
+    const r2 = limiter.check({ tenantId: 't', principalId: 'u' }, 5);
+    expect(r2.allowed).toBe(false);
+    expect(r2.exceededBy).toBe('principal');
+  });
+
+  it('default cost is 1 (backward compatible)', () => {
+    const limiter = new SlidingWindowRateLimiter({
+      principal: { windowMs: 60_000, maxRequests: 3 },
+    });
+
+    for (let i = 0; i < 3; i++) {
+      const r = limiter.check({ tenantId: 't', principalId: 'u' });
+      expect(r.allowed).toBe(true);
+    }
+    const r4 = limiter.check({ tenantId: 't', principalId: 'u' });
+    expect(r4.allowed).toBe(false);
+  });
+});

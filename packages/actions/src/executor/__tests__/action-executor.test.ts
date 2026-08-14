@@ -1819,4 +1819,65 @@ effects:
       });
     });
   });
+
+  // -------------------------------------------------------------------------
+  // T2: pre-flight capabilities check
+  // -------------------------------------------------------------------------
+
+  describe('storage capabilities pre-flight', () => {
+    it('fails with READ_ONLY when provider does not support writes', async () => {
+      // Wrap the real memory provider but report supportsTransactions: false
+      // and supportsWrites: false — simulating a read-only lake projection.
+      const readOnlyProvider = Object.create(storage) as MemoryStorageProvider;
+      readOnlyProvider.capabilities = () => ({
+        ...storage.capabilities(),
+        supportsTransactions: false,
+        supportsWrites: false,
+      });
+
+      const roExecutor = new ActionExecutor({
+        storage: readOnlyProvider,
+        security: createAllowAllSecurity(),
+        cel: createMockCelEvaluator(),
+        auditWriter,
+      });
+
+      const { manifest } = parseActionManifest(ADMIT_PATIENT_YAML);
+      const result = await roExecutor.execute(
+        manifest!,
+        { patient: patient._id, ward: ward._id, consultant: consultant._id, bed: bed._id, reason: 'test' },
+        ACTOR, ACTION_CTX, NHS_SCHEMA,
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.errors[0]!.code).toBe('READ_ONLY');
+      expect(result.affectedObjects).toHaveLength(0);
+    });
+
+    it('fails with NOT_SUPPORTED when provider supports writes but not transactions', async () => {
+      const noTxnProvider = Object.create(storage) as MemoryStorageProvider;
+      noTxnProvider.capabilities = () => ({
+        ...storage.capabilities(),
+        supportsTransactions: false,
+        supportsWrites: true,
+      });
+
+      const noTxnExecutor = new ActionExecutor({
+        storage: noTxnProvider,
+        security: createAllowAllSecurity(),
+        cel: createMockCelEvaluator(),
+        auditWriter,
+      });
+
+      const { manifest } = parseActionManifest(ADMIT_PATIENT_YAML);
+      const result = await noTxnExecutor.execute(
+        manifest!,
+        { patient: patient._id, ward: ward._id, consultant: consultant._id, bed: bed._id, reason: 'test' },
+        ACTOR, ACTION_CTX, NHS_SCHEMA,
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.errors[0]!.code).toBe('NOT_SUPPORTED');
+    });
+  });
 });
