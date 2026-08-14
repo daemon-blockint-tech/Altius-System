@@ -664,8 +664,11 @@ describe('GraphQL API', () => {
       expect(discharge.parameters.properties.notes).toBeDefined();
       expect(discharge.parameters.required).toContain('patient');
       expect(discharge.parameters.required).toContain('destination');
+      // dryRunSupported is false on the HTTP surface (no dryRun flag on the
+      // action routes) even though ToolRegistry reports true for library use.
       expect(discharge.dryRunSupported).toBe(false);
-      expect(discharge.requiredPermissions).toEqual(['action:DischargePatient']);
+      // Delegated to ToolRegistry — same permission format as library consumers.
+      expect(discharge.requiredPermissions).toEqual(['action:DischargePatient:execute']);
     });
 
     it('filters by kind', () => {
