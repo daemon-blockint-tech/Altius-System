@@ -850,6 +850,106 @@ describe('ActionExecutor', () => {
   // DischargePatient
   // -------------------------------------------------------------------------
 
+  describe('optimistic concurrency', () => {
+    it('fails with VERSION_CONFLICT when the object changed between read and write', async () => {
+      const { manifest: admitManifest } = parseActionManifest(ADMIT_PATIENT_YAML);
+      await executor.execute(
+        admitManifest!,
+        { patient: patient._id, ward: ward._id, consultant: consultant._id, bed: bed._id, reason: 'Emergency' },
+        ACTOR, ACTION_CTX, NHS_SCHEMA,
+      );
+
+      // Simulate a competing action committing in the window between this
+      // action loading its context and opening its transaction. The write keeps
+      // the same status, so only the version moves — the guard must key on the
+      // version, not on the values.
+      let raced = false;
+      const racingStorage = new Proxy(storage, {
+        get(target, prop) {
+          if (prop === 'beginTransaction') {
+            return async (ctx: RequestContext) => {
+              if (!raced) {
+                raced = true;
+                await target.updateObject(REQ_CTX, 'Patient', patient._id, { status: 'ACTIVE' });
+              }
+              return target.beginTransaction(ctx);
+            };
+          }
+          const value = Reflect.get(target, prop, target);
+          return typeof value === 'function' ? value.bind(target) : value;
+        },
+      });
+
+      const racingExecutor = new ActionExecutor({
+        storage: racingStorage,
+        security: createAllowAllSecurity(),
+        cel: createMockCelEvaluator(),
+        auditWriter, sideEffectHandler, eventPublisher,
+      });
+
+      const { manifest } = parseActionManifest(DISCHARGE_PATIENT_YAML);
+      let thrown: unknown;
+      let result: unknown;
+      try {
+        result = await racingExecutor.execute(
+          manifest!,
+          { patient: patient._id, destination: 'HOME', notes: 'x', ward: 'Ward A' },
+          ACTOR, ACTION_CTX, NHS_SCHEMA,
+        );
+      } catch (err) {
+        thrown = err;
+      }
+
+      expect(raced).toBe(true);
+      const detail = thrown
+        ? `${(thrown as Error).message} ${(thrown as { code?: string }).code ?? ''}`
+        : JSON.stringify(result);
+      expect(detail).toMatch(/version|VERSION_CONFLICT/i);
+
+      // The losing write must not have landed.
+      const after = await storage.getObject(REQ_CTX, 'Patient', patient._id);
+      expect(after!['status']).not.toBe('DISCHARGED');
+    });
+
+    it('does not raise a false conflict when two effects update the same object', async () => {
+      const TWO_UPDATES_YAML = DISCHARGE_PATIENT_YAML.replace(
+        `  - type: updateObject
+    target: "patient"
+    set:
+      status: "DISCHARGED"`,
+        `  - type: updateObject
+    target: "patient"
+    set:
+      status: "DISCHARGED"
+
+  - type: updateObject
+    target: "patient"
+    set:
+      presentingComplaint: "'discharged twice'"`,
+      );
+
+      const { manifest: admitManifest } = parseActionManifest(ADMIT_PATIENT_YAML);
+      await executor.execute(
+        admitManifest!,
+        { patient: patient._id, ward: ward._id, consultant: consultant._id, bed: bed._id, reason: 'Emergency' },
+        ACTOR, ACTION_CTX, NHS_SCHEMA,
+      );
+
+      const { manifest } = parseActionManifest(TWO_UPDATES_YAML);
+      const result = await executor.execute(
+        manifest!,
+        { patient: patient._id, destination: 'HOME', notes: 'x', ward: 'Ward A' },
+        ACTOR, ACTION_CTX, NHS_SCHEMA,
+      );
+
+      // The second effect must expect the version the first one produced.
+      expect(result.success).toBe(true);
+      const after = await storage.getObject(REQ_CTX, 'Patient', patient._id);
+      expect(after!['status']).toBe('DISCHARGED');
+      expect(after!['presentingComplaint']).toBe('discharged twice');
+    });
+  });
+
   describe('DischargePatient', () => {
     it('discharges an admitted patient', async () => {
       // First admit the patient

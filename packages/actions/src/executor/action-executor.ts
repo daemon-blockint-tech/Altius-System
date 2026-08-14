@@ -706,7 +706,21 @@ export class ActionExecutor {
       beforeStates.set(beforeKey, { ...target });
     }
 
-    const updated = await txn.updateObject(target._type, target._id, properties);
+    // Optimistic concurrency: guard the read-modify-write window with the version
+    // the target carried when it was read into the action context (resolveTarget
+    // walks the context, which is loaded before the transaction opens). Without
+    // this, two concurrent actions on one object both read v1, both write, and
+    // the loser's changes vanish with no error. Storage raises VERSION_CONFLICT,
+    // which rest/errors.ts and graphql/errors.ts already map to `conflict`.
+    //
+    // A second effect touching the same object must expect the version the first
+    // one produced, not the stale context version.
+    const priorVersion = afterStates.get(beforeKey)?.['_version'];
+    const expectedVersion = typeof priorVersion === 'number'
+      ? priorVersion
+      : typeof target._version === 'number' ? target._version : undefined;
+
+    const updated = await txn.updateObject(target._type, target._id, properties, expectedVersion);
 
     afterStates.set(beforeKey, { ...updated });
     affectedObjects.push({
