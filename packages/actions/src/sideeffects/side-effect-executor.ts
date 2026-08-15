@@ -125,8 +125,21 @@ export class SideEffectExecutor implements SideEffectHandler {
         };
       } catch (err) {
         lastError = err instanceof Error ? err.message : String(err);
+        // Log each failed attempt at warn so the operator can see retries
+        // happening in real time, not just the final outcome.
+        this.config.logger?.warn(
+          `Side-effect "${sideEffect.name}" attempt ${attempts} failed: ${lastError}`,
+          { name: sideEffect.name, type: sideEffect.type, attempt: attempts, error: lastError },
+        );
       }
     }
+
+    // Log the final failure at error level — before this, a webhook that
+    // 500'd five times returned success:true with zero trace.
+    this.config.logger?.error(
+      `Side-effect "${sideEffect.name}" failed after ${attempts} attempt(s): ${lastError}`,
+      { name: sideEffect.name, type: sideEffect.type, attempts, error: lastError },
+    );
 
     return {
       name: sideEffect.name,
@@ -144,6 +157,9 @@ export class SideEffectExecutor implements SideEffectHandler {
     config: WebhookConfig,
     context: Record<string, unknown>,
   ): Promise<void> {
+    if (!config.url || typeof config.url !== 'string' || config.url.trim() === '') {
+      throw new Error(`Webhook config is missing required "url" field`);
+    }
     const body = config.body !== undefined
       ? this.resolveBody(config.body, context)
       : context;

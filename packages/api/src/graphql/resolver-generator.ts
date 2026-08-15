@@ -461,7 +461,7 @@ function generateHistoryFieldResolver(
 
   typeResolvers['history'] = async (
     parent: Record<string, unknown>,
-    _args: unknown,
+    args: { asOf?: string } | undefined,
     ctx: ResolverContext,
   ) => {
     try {
@@ -479,6 +479,43 @@ function generateHistoryFieldResolver(
         user.tenantId,
       );
       if (!allowed) return [];
+
+      // ?asOf — the single version that was live at that instant.
+      // Mirrors the REST ?asOf query parameter on the history route.
+      if (args?.asOf) {
+        const atTime = await deps.storage.getObjectAtTime(
+          requestContext,
+          obj.name,
+          id,
+          args.asOf,
+        );
+        if (!atTime) return [];
+        const versions = [atTime];
+        const redacted = deps.authorizationService.redactFieldsBatch(
+          user.id,
+          user.roles,
+          obj.name,
+          versions.map((v) => objectToGraphQL(v, obj)),
+        );
+        let items = redacted.map((r: RedactionResult<Record<string, unknown>>) => {
+          const data = r.data as Record<string, unknown>;
+          data._redactedFields = r._redactedFields.length > 0 ? r._redactedFields : null;
+          data._consentRestricted = false;
+          return data;
+        });
+        if (deps.consentService && isConsentSubjectType(obj.name, deps.consentSubjectTypes)) {
+          const getPrimaryId = (item: Record<string, unknown>) => String(item._id ?? '');
+          const consentResult = await deps.consentService.filterList(
+            items,
+            getPrimaryId,
+            DEFAULT_CONSENT_PURPOSE as DataPurpose,
+            user.id,
+            requestContext.tenantId,
+          );
+          items = consentResult.edges;
+        }
+        return items;
+      }
 
       const versions = await deps.storage.getObjectHistory(
         requestContext,
@@ -555,6 +592,10 @@ export function generateResolvers(
     generateSearchResolver(obj, resolvers, deps);
     generateTraverseResolver(obj, resolvers, deps);
     generateSubscriptionResolvers(obj, resolvers, pubsub);
+    // ChangeEvent.object field resolver — hydrates the full object from
+    // storage so subscribers selecting `object { name }` get real data
+    // instead of the {id, _type} stub the bus carries.
+    generateChangeEventObjectResolver(obj, resolvers, deps);
     // Type-level resolvers for @link fields (nested relationship traversal).
     generateLinkFieldResolvers(obj, schema, resolvers, deps);
     // `history` field resolver — batch version fetch with redaction + consent.
@@ -1019,6 +1060,20 @@ function generateUpdateMutationResolver(
         user.tenantId,
       );
       if (!allowed) {
+        // Audit the denied attempt — a DPO needs to see denied writes, not
+        // just successful ones. Best-effort: a failed audit write is logged
+        // but never surfaces to the caller.
+        if (deps.auditWriter) {
+          try {
+            await deps.auditWriter.write({
+              tenantId: requestContext.tenantId,
+              actor: { type: 'user', id: user.id, roles: user.roles },
+              operation: { type: 'update', objectType: typeName, objectId: id },
+              detail: { result: 'denied' },
+              traceId: requestContext.traceId,
+            });
+          } catch { /* best-effort */ }
+        }
         throw createAltiusError({
           code: 'FORBIDDEN',
           category: 'authorization',
@@ -1036,6 +1091,19 @@ function generateUpdateMutationResolver(
         undefined,
         args.expectedVersion,
       );
+
+      // Audit the successful update — best-effort.
+      if (deps.auditWriter) {
+        try {
+          await deps.auditWriter.write({
+            tenantId: requestContext.tenantId,
+            actor: { type: 'user', id: user.id, roles: user.roles },
+            operation: { type: 'update', objectType: typeName, objectId: id },
+            detail: { result: 'success', after: args.input },
+            traceId: requestContext.traceId,
+          });
+        } catch { /* best-effort */ }
+      }
 
       let shaped = objectToGraphQL(updated, obj);
 
@@ -1087,6 +1155,18 @@ function generateDeleteMutationResolver(
         user.tenantId,
       );
       if (!allowed) {
+        // Audit the denied attempt — best-effort.
+        if (deps.auditWriter) {
+          try {
+            await deps.auditWriter.write({
+              tenantId: requestContext.tenantId,
+              actor: { type: 'user', id: user.id, roles: user.roles },
+              operation: { type: 'delete', objectType: typeName, objectId: id },
+              detail: { result: 'denied' },
+              traceId: requestContext.traceId,
+            });
+          } catch { /* best-effort */ }
+        }
         throw createAltiusError({
           code: 'FORBIDDEN',
           category: 'authorization',
@@ -1120,6 +1200,20 @@ function generateDeleteMutationResolver(
       }
 
       await deps.objectManager.delete(typeName, id, 'soft', requestContext);
+
+      // Audit the successful delete — best-effort.
+      if (deps.auditWriter) {
+        try {
+          await deps.auditWriter.write({
+            tenantId: requestContext.tenantId,
+            actor: { type: 'user', id: user.id, roles: user.roles },
+            operation: { type: 'delete', objectType: typeName, objectId: id },
+            detail: { result: 'success' },
+            traceId: requestContext.traceId,
+          });
+        } catch { /* best-effort */ }
+      }
+
       return true;
     } catch (err) {
       throw wrapError(err, ctx.requestContext.traceId);
@@ -1512,6 +1606,66 @@ function generateSubscriptionResolvers(
 
   // foosChanged(filter: FooFilter) — subscribe to all changes on a type
   resolvers['Subscription']![`${lower}sChanged`] = createFilteredSubscription(pubsub, topic);
+}
+
+/**
+ * Generate the `object` field resolver for `${typeName}ChangeEvent`.
+ *
+ * The subscription bus carries only `{id, _type}` as the object reference —
+ * the minimal payload needed for routing and authorization. But the SDL
+ * promises `object: Patient` (the full type), so a subscriber selecting
+ * `object { name }` would get `undefined` and non-null propagation would
+ * error the delivery. This resolver hydrates the full object from storage
+ * on demand, applies field redaction, and returns null for deleted objects.
+ */
+function generateChangeEventObjectResolver(
+  obj: ObjectType,
+  resolvers: ResolverMap,
+  deps: ApiDependencies,
+): void {
+  const changeEventTypeName = `${obj.name}ChangeEvent`;
+  const typeResolvers = resolvers[changeEventTypeName] ?? {};
+
+  typeResolvers['object'] = async (
+    parent: { object?: { id: string; _type: string }; changeType?: string },
+    _args: unknown,
+    ctx: ResolverContext,
+  ) => {
+    const stub = parent?.object;
+    if (!stub) return null;
+
+    // For DELETED events, the object may no longer exist in storage.
+    // Return the stub as-is (id + _type only) so the subscriber still
+    // knows WHICH object was deleted.
+    if (parent.changeType === 'DELETED') {
+      return { ...stub, _redactedFields: null, _consentRestricted: false };
+    }
+
+    try {
+      const stored = await deps.storage.getObject(
+        ctx.requestContext,
+        stub._type,
+        stub.id,
+      );
+      if (!stored) return null;
+
+      const redacted = deps.authorizationService.redactFields(
+        ctx.user.id,
+        ctx.user.roles,
+        stub._type,
+        objectToGraphQL(stored, obj),
+      );
+      const data = redacted.data as Record<string, unknown>;
+      data._redactedFields = redacted._redactedFields.length > 0 ? redacted._redactedFields : null;
+      data._consentRestricted = false;
+      return data;
+    } catch {
+      // If storage fails, return the stub rather than erroring the delivery.
+      return { ...stub, _redactedFields: null, _consentRestricted: false };
+    }
+  };
+
+  resolvers[changeEventTypeName] = typeResolvers;
 }
 
 // ─── availableTools resolver (Section 5.7) ───
@@ -1999,9 +2153,6 @@ function generateAuditResolvers(resolvers: ResolverMap, deps: ApiDependencies): 
         if (typeof f.to === 'string') filter.to = f.to;
       }
 
-      const records = await deps.auditStore.query(filter);
-      const totalCount = records.length;
-
       let limit = DEFAULT_AUDIT_LIMIT_GQL;
       let offset = 0;
       if (typeof args.limit === 'number' && args.limit > 0) {
@@ -2011,12 +2162,20 @@ function generateAuditResolvers(resolvers: ResolverMap, deps: ApiDependencies): 
         offset = args.offset;
       }
 
-      const paginated = records.slice(offset, offset + limit);
+      // Push pagination into the store, not the resolver. The store is the
+      // only layer that knows the true size of the matching set; a resolver
+      // that fetches-then-slices reports a total bounded by whatever the
+      // store happened to return, and on Postgres the store's own LIMIT
+      // silently truncates at 1000 while REST paginates past it.
+      const [records, totalCount] = await Promise.all([
+        deps.auditStore.query(filter, { limit, offset }),
+        deps.auditStore.count(filter),
+      ]);
 
       return {
-        records: paginated,
+        records,
         totalCount,
-        hasMore: offset + limit < totalCount,
+        hasMore: offset + records.length < totalCount,
       };
     } catch (err) {
       throw wrapError(err, ctx.requestContext.traceId);

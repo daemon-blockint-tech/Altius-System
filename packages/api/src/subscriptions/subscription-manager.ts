@@ -320,6 +320,17 @@ export function createIdFilteredSubscription(
           tenantId,
         );
         if (!allowed) return false;
+
+        // Redact previousValues for fields the subscriber cannot see.
+        // Without this, a @sensitive field leaks on the subscription surface
+        // to a caller who would see it null on every read path.
+        const redacted = redactPreviousValues(
+          event,
+          authzService as { getVisibleFields?(userId: string, roles: string[], objectType: string): Set<string> | undefined } | undefined,
+          userId,
+          ctx?.user?.roles ?? [],
+        );
+        (p as Record<string, unknown>)[topic] = redacted;
         return true;
       });
     },
@@ -381,10 +392,54 @@ export function createFilteredSubscription(
           tenantId,
         );
         if (!allowed) return false;
+
+        // Redact previousValues for fields the subscriber cannot see.
+        const redacted = redactPreviousValues(
+          event,
+          authzService as { getVisibleFields?(userId: string, roles: string[], objectType: string): Set<string> | undefined } | undefined,
+          userId,
+          ctx?.user?.roles ?? [],
+        );
+        (p as Record<string, unknown>)[topic] = redacted;
         return true;
       });
     },
   };
+}
+
+/**
+ * Redact previousValues entries for fields the subscriber cannot see.
+ *
+ * Subscription payloads carry raw {old, new} values for changed fields —
+ * the same values that redactFields masks on every read path. Without this,
+ * a @sensitive field (e.g. Patient.name) leaks on the subscription surface
+ * to a caller who would see it null on REST/GraphQL reads.
+ *
+ * Uses getVisibleFields (the same source redactFields uses) to determine
+ * which fields to keep. Returns undefined when no field policy exists
+ * (getVisibleFields returns undefined), meaning no redaction is needed.
+ */
+function redactPreviousValues(
+  event: ChangeEvent,
+  authzService: { getVisibleFields?(userId: string, roles: string[], objectType: string): Set<string> | undefined } | undefined,
+  userId: string,
+  roles: string[],
+): ChangeEvent {
+  if (!event.previousValues) return event;
+  if (!authzService?.getVisibleFields) return event;
+
+  const visible = authzService.getVisibleFields(userId, roles, event.object._type);
+  // No field policy → no redaction (same as redactFields)
+  if (!visible) return event;
+
+  const redacted: Record<string, { old: unknown; new: unknown }> = {};
+  for (const [field, values] of Object.entries(event.previousValues)) {
+    // System fields (starting with _) are never redacted
+    if (field.startsWith('_') || visible.has(field)) {
+      redacted[field] = values;
+    }
+  }
+  return { ...event, previousValues: redacted };
 }
 
 /**

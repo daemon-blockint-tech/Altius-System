@@ -341,4 +341,69 @@ describe('SideEffectExecutor', () => {
       vi.useRealTimers();
     });
   });
+
+  describe('failure logging', () => {
+    it('logs when a webhook delivery fails after all retries', async () => {
+      const httpClient = createFailingHttpClient(10); // always fails
+      const logCalls: { level: string; msg: string; data?: unknown }[] = [];
+      const logger = {
+        error: vi.fn((msg: string, data?: unknown) => logCalls.push({ level: 'error', msg, data })),
+        warn: vi.fn(),
+        info: vi.fn(),
+      };
+      const executor = new SideEffectExecutor({ httpClient, logger });
+
+      const results = await executor.executeAll(
+        [WEBHOOK_SIDE_EFFECT],
+        { patientId: 'p1' },
+        'LOG_AND_CONTINUE',
+      );
+
+      expect(results[0]!.success).toBe(false);
+      // The failure must be logged — before this, a webhook that 500'd five
+      // times returned success:true with zero trace.
+      expect(logCalls.some(l => l.level === 'error' && l.msg.includes('notifyPAS'))).toBe(true);
+    });
+
+    it('logs each retry attempt at warn level', async () => {
+      const httpClient = createFailingHttpClient(2, 200); // 2 failures then success
+      const warnCalls: string[] = [];
+      const logger = {
+        error: vi.fn(),
+        warn: vi.fn((msg: string) => warnCalls.push(msg)),
+        info: vi.fn(),
+      };
+      const executor = new SideEffectExecutor({ httpClient, logger });
+
+      await executor.executeAll(
+        [WEBHOOK_SIDE_EFFECT],
+        { patientId: 'p1' },
+        'LOG_AND_CONTINUE',
+      );
+
+      // 2 retry warnings (attempts 1 and 2 failed)
+      expect(warnCalls.length).toBeGreaterThanOrEqual(2);
+    });
+  });
+
+  describe('url validation', () => {
+    it('throws at execution time when webhook config has no url', async () => {
+      const httpClient = createMockHttpClient();
+      const executor = new SideEffectExecutor({ httpClient });
+
+      const results = await executor.executeAll(
+        [{
+          name: 'badWebhook',
+          type: 'webhook',
+          config: { /* no url */ },
+          retries: 1,
+        }],
+        {},
+        'LOG_AND_CONTINUE',
+      );
+
+      expect(results[0]!.success).toBe(false);
+      expect(results[0]!.error).toContain('url');
+    });
+  });
 });

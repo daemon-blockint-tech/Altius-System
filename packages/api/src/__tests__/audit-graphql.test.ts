@@ -166,6 +166,73 @@ describe('GraphQL auditRecords query', () => {
     expect(page.hasMore).toBe(true);
   });
 
+  it('passes limit and offset to the store, not slicing client-side', async () => {
+    // A store that records what options it was called with.
+    const store = new MemoryAuditStore();
+    for (let i = 0; i < 10; i++) {
+      await store.append(createAuditRecord({ id: `a${i}` }));
+    }
+
+    // Wrap the store to spy on query calls.
+    const queryCalls: { limit?: number; offset?: number }[] = [];
+    const wrappedStore = {
+      append: (r: AuditRecord) => store.append(r),
+      query: async (filter: unknown, options?: { limit?: number; offset?: number }) => {
+        queryCalls.push(options ?? {});
+        return store.query(filter as never, options);
+      },
+      count: (filter: unknown) => store.count(filter as never),
+      all: () => store.all(),
+      size: store.size,
+    } as unknown as MemoryAuditStore;
+
+    const deps = createMockDeps(schema, wrappedStore);
+    const { resolvers } = generateResolvers(schema, deps);
+    const queryResolvers = resolvers['Query'] as Record<string, unknown>;
+    const auditResolver = queryResolvers['auditRecords'] as (
+      parent: unknown,
+      args: unknown,
+      ctx: ResolverContext,
+    ) => Promise<unknown>;
+
+    await auditResolver(undefined, { limit: 3, offset: 5 }, createCtx(deps));
+
+    // The store must have received limit=3, offset=5 — not the full set.
+    expect(queryCalls).toHaveLength(1);
+    expect(queryCalls[0]!.limit).toBe(3);
+    expect(queryCalls[0]!.offset).toBe(5);
+  });
+
+  it('does not truncate totalCount at the store default when the page is small', async () => {
+    // The old resolver fetched all records then sliced, so totalCount was
+    // always the full count. The new resolver calls count() separately,
+    // so totalCount stays honest even when the store applies its own
+    // internal limit on query().
+    const store = new MemoryAuditStore();
+    for (let i = 0; i < 50; i++) {
+      await store.append(createAuditRecord({ id: `a${i}` }));
+    }
+
+    const deps = createMockDeps(schema, store);
+    const { resolvers } = generateResolvers(schema, deps);
+    const queryResolvers = resolvers['Query'] as Record<string, unknown>;
+    const auditResolver = queryResolvers['auditRecords'] as (
+      parent: unknown,
+      args: unknown,
+      ctx: ResolverContext,
+    ) => Promise<unknown>;
+
+    const result = await auditResolver(
+      undefined,
+      { limit: 10, offset: 0 },
+      createCtx(deps),
+    );
+    const page = result as { records: AuditRecord[]; totalCount: number; hasMore: boolean };
+    expect(page.records).toHaveLength(10);
+    expect(page.totalCount).toBe(50);
+    expect(page.hasMore).toBe(true);
+  });
+
   it('denies a caller without an audit-reader role', async () => {
     const store = new MemoryAuditStore();
     await store.append(createAuditRecord({ id: 'a1' }));

@@ -484,8 +484,22 @@ function hasBalancedParens(expr: string): boolean {
   return depth === 0;
 }
 
-/** Built-in compute functions available at runtime. */
-const BUILTIN_COMPUTE_FNS = new Set(['countLinks']);
+/** Built-in compute functions available at runtime.
+ *
+ * Must match the registry in packages/engine/src/computed/computed-field-evaluator.ts.
+ * The validator and the runtime previously disagreed: the runtime grew
+ * lookupField and the four aggregate builtins, while the validator still
+ * whitelisted only countLinks — so `odl validate` and `odl apply` rejected
+ * every schema that used a function the runtime itself added.
+ */
+const BUILTIN_COMPUTE_FNS = new Set([
+  'countLinks',
+  'lookupField',
+  'sumLinks',
+  'avgLinks',
+  'minLinks',
+  'maxLinks',
+]);
 
 /**
  * Rule 7: @computed fields reference valid functions and args.

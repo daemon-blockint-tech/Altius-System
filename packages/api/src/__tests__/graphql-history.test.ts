@@ -107,7 +107,7 @@ describe('GraphQL Patient.history field', () => {
 
   it('emits the history field in the SDL', () => {
     const sdl = generateGraphQLSchema(schema);
-    expect(sdl).toContain('history: [Patient!]');
+    expect(sdl).toContain('history(asOf: String): [Patient!]');
   });
 
   it('returns all versions ordered by version ascending', async () => {

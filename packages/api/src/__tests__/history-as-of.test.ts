@@ -16,7 +16,7 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
-import { parseOdl } from '@altius/odl';
+import { parseOdl, generateGraphQLSchema } from '@altius/odl';
 import type { ParsedSchema } from '@altius/odl';
 import type { OntologyObject } from '@altius/spi';
 import { generateRestRoutes } from '../rest/route-generator.js';
@@ -186,5 +186,79 @@ describe('GET /history?asOf', () => {
     expect(atTime).not.toHaveBeenCalled();
     expect(d.storage.getObjectHistory).toHaveBeenCalled();
     expect((res.body as { data: unknown[] }).data).toHaveLength(2);
+  });
+});
+
+describe('GraphQL history(asOf:) field', () => {
+  it('returns the version that was live at the given instant', async () => {
+    const { generateResolvers } = await import('../graphql/resolver-generator.js');
+    const schema = parseOdl(ODL);
+    const sdl = generateGraphQLSchema(schema);
+    expect(sdl).toContain('history(asOf: String)');
+
+    const atTime = vi.fn().mockResolvedValue(AT_V2);
+    const d = deps(schema, atTime);
+    const { resolvers } = generateResolvers(schema, d);
+    const patientResolvers = resolvers['Patient'] as Record<string, unknown>;
+    const historyResolver = patientResolvers['history'] as (
+      parent: Record<string, unknown>,
+      args: { asOf?: string },
+      ctx: ResolverContext,
+    ) => Promise<unknown>;
+
+    const result = await historyResolver(
+      { id: 'p-1' },
+      { asOf: '2026-01-04T00:00:00Z' },
+      ctx(d),
+    );
+
+    expect(atTime).toHaveBeenCalledTimes(1);
+    expect(atTime.mock.calls[0]![1]).toBe('Patient');
+    expect(atTime.mock.calls[0]![2]).toBe('p-1');
+    expect(atTime.mock.calls[0]![3]).toBe('2026-01-04T00:00:00Z');
+
+    const items = result as Record<string, unknown>[];
+    expect(items).toHaveLength(1);
+    expect(items[0]!.name).toBe('Alice Smithson');
+    expect(items[0]!._version).toBe(2);
+  });
+
+  it('returns empty when the record did not exist at that instant', async () => {
+    const { generateResolvers } = await import('../graphql/resolver-generator.js');
+    const schema = parseOdl(ODL);
+    const d = deps(schema, vi.fn().mockResolvedValue(null));
+    const { resolvers } = generateResolvers(schema, d);
+    const patientResolvers = resolvers['Patient'] as Record<string, unknown>;
+    const historyResolver = patientResolvers['history'] as (
+      parent: Record<string, unknown>,
+      args: { asOf?: string },
+      ctx: ResolverContext,
+    ) => Promise<unknown>;
+
+    const result = await historyResolver(
+      { id: 'p-1' },
+      { asOf: '2020-01-01T00:00:00Z' },
+      ctx(d),
+    );
+    expect(result).toEqual([]);
+  });
+
+  it('still lists every version when asOf is absent', async () => {
+    const { generateResolvers } = await import('../graphql/resolver-generator.js');
+    const schema = parseOdl(ODL);
+    const atTime = vi.fn();
+    const d = deps(schema, atTime);
+    const { resolvers } = generateResolvers(schema, d);
+    const patientResolvers = resolvers['Patient'] as Record<string, unknown>;
+    const historyResolver = patientResolvers['history'] as (
+      parent: Record<string, unknown>,
+      args: { asOf?: string },
+      ctx: ResolverContext,
+    ) => Promise<unknown>;
+
+    const result = await historyResolver({ id: 'p-1' }, {}, ctx(d));
+    expect(atTime).not.toHaveBeenCalled();
+    expect(d.storage.getObjectHistory).toHaveBeenCalled();
+    expect(result).toHaveLength(2);
   });
 });

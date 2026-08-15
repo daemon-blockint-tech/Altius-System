@@ -379,7 +379,8 @@ describe('GraphQL schema codegen', () => {
       expect(sdl).toContain('type PatientChangeEvent {');
       const eventBlock = extractTypeBlock(sdl, 'type PatientChangeEvent');
       expect(eventBlock).toContain('changeType: ChangeType!');
-      expect(eventBlock).toContain('object: Patient!');
+      // object is nullable: a DELETED event's object no longer exists
+      expect(eventBlock).toContain('object: Patient');
       // previousValues is a diff map (JSON), causedBy is structured — matches
       // the runtime subscription payload + AsyncAPI event schema.
       expect(eventBlock).toContain('previousValues: JSON');

@@ -474,4 +474,72 @@ describe('Client-facing optimistic concurrency (#5)', () => {
       ).rejects.toThrow();
     });
   });
+
+  describe('GraphQL update/delete audit records', () => {
+    function M(resolvers: Record<string, Record<string, unknown>>, name: string): (...args: unknown[]) => unknown {
+      return resolvers['Mutation']![name] as (...args: unknown[]) => unknown;
+    }
+
+    it('writes an audit record on successful update', async () => {
+      const deps = createMockDeps(parsed);
+      const auditWrite = vi.fn().mockResolvedValue(undefined);
+      deps.auditWriter = { write: auditWrite } as unknown as ApiDependencies['auditWriter'];
+      (deps.objectManager.update as ReturnType<typeof vi.fn>)
+        .mockResolvedValue(createItemObject('item-1', 2, { name: 'Updated' }));
+
+      const { resolvers } = generateResolvers(parsed, deps);
+      const ctx = createResolverContext(deps);
+
+      await M(resolvers, 'updateItem')(null, {
+        id: 'item-1',
+        input: { name: 'Updated' },
+      }, ctx);
+
+      expect(auditWrite).toHaveBeenCalledTimes(1);
+      const auditCall = auditWrite.mock.calls[0]![0] as Record<string, unknown>;
+      const operation = auditCall.operation as Record<string, unknown>;
+      expect(operation.type).toBe('update');
+      expect(operation.objectType).toBe('Item');
+      expect(operation.objectId).toBe('item-1');
+    });
+
+    it('writes an audit record on successful delete', async () => {
+      const deps = createMockDeps(parsed);
+      const auditWrite = vi.fn().mockResolvedValue(undefined);
+      deps.auditWriter = { write: auditWrite } as unknown as ApiDependencies['auditWriter'];
+      (deps.objectManager.delete as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
+
+      const { resolvers } = generateResolvers(parsed, deps);
+      const ctx = createResolverContext(deps);
+
+      await M(resolvers, 'deleteItem')(null, { id: 'item-1' }, ctx);
+
+      expect(auditWrite).toHaveBeenCalledTimes(1);
+      const auditCall = auditWrite.mock.calls[0]![0] as Record<string, unknown>;
+      const operation = auditCall.operation as Record<string, unknown>;
+      expect(operation.type).toBe('delete');
+      expect(operation.objectType).toBe('Item');
+      expect(operation.objectId).toBe('item-1');
+    });
+
+    it('writes an audit record on denied update (FORBIDDEN)', async () => {
+      const deps = createMockDeps(parsed);
+      const auditWrite = vi.fn().mockResolvedValue(undefined);
+      deps.auditWriter = { write: auditWrite } as unknown as ApiDependencies['auditWriter'];
+      (deps.authorizationService.check as ReturnType<typeof vi.fn>).mockResolvedValue(false);
+
+      const { resolvers } = generateResolvers(parsed, deps);
+      const ctx = createResolverContext(deps);
+
+      await expect(
+        M(resolvers, 'updateItem')(null, { id: 'item-1', input: {} }, ctx),
+      ).rejects.toThrow();
+
+      // Even a denied update must be audited — a DPO needs to see denied writes
+      expect(auditWrite).toHaveBeenCalledTimes(1);
+      const auditCall = auditWrite.mock.calls[0]![0] as Record<string, unknown>;
+      const detail = auditCall.detail as Record<string, unknown>;
+      expect(detail.result).toBe('denied');
+    });
+  });
 });

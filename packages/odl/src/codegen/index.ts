@@ -156,8 +156,11 @@ function generateObjectType(obj: ObjectType): string {
 
   // Edit history — returns all stored versions of this object, oldest first.
   // Each entry is the same type, so callers can render a diff timeline.
+  // The optional asOf argument narrows the list to the single version that
+  // was live at the given instant — the same question REST answers with
+  // ?asOf on the history route.
   lines.push(`  """All stored versions of this object, oldest first."""`);
-  lines.push(`  history: [${obj.name}!]`);
+  lines.push(`  history(asOf: String): [${obj.name}!]`);
 
   lines.push('}');
   return lines.join('\n');
@@ -330,7 +333,12 @@ function generateChangeEvent(typeName: string): string {
   return [
     `type ${typeName}ChangeEvent {`,
     `  changeType: ChangeType!`,
-    `  object: ${typeName}!`,
+    // Nullable: a DELETED event's object no longer exists in storage, so the
+    // field resolver returns null rather than erroring the whole delivery.
+    // The stub payload carries {id, _type}; the field resolver hydrates the
+    // full object from storage for CREATED/UPDATED, and returns the stub
+    // (with null fields) for DELETED.
+    `  object: ${typeName}`,
     // previousValues is a field-level diff map ({ field: { old, new } }), not a
     // full object; causedBy is structured. Both match the runtime subscription
     // payload and the AsyncAPI event schema.

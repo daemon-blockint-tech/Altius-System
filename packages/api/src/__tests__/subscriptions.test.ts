@@ -167,6 +167,7 @@ function createMockDeps(schema: ParsedSchema): ApiDependencies {
     authorizationService: {
       check: vi.fn().mockResolvedValue(true),
       listObjects: vi.fn().mockResolvedValue([]),
+      getVisibleFields: vi.fn().mockReturnValue(undefined),
       redactFields: vi.fn().mockImplementation(
         (_userId: string, _roles: string[], _type: string, obj: Record<string, unknown>) => ({
           data: obj,
@@ -182,7 +183,9 @@ function createMockDeps(schema: ParsedSchema): ApiDependencies {
     authenticator: {} as unknown as ApiDependencies['authenticator'],
     consentService: undefined,
     auditWriter: undefined,
-    storage: {} as unknown as ApiDependencies['storage'],
+    storage: {
+      getObject: vi.fn().mockResolvedValue(null),
+    } as unknown as ApiDependencies['storage'],
   };
 }
 
@@ -1041,5 +1044,214 @@ describe('End-to-end: SubscriptionManager + subscription resolvers', () => {
     expect(payload['patientChanged']!.object.id).toBe('p-1');
 
     manager.stop();
+  });
+});
+
+describe('Subscription payload redaction', () => {
+  it('redacts previousValues for fields the subscriber cannot see (ID-filtered)', async () => {
+    const parsed = parseOdl(NHS_ACUTE_ODL);
+    const deps = createMockDeps(parsed);
+    // Simulate a field policy: clinician can see 'status' but NOT 'name' (sensitive)
+    (deps.authorizationService.getVisibleFields as ReturnType<typeof vi.fn>)
+      .mockReturnValue(new Set(['id', 'status', 'dateOfBirth']));
+    const ctx = createMockContext(deps);
+
+    const pubsub = new PubSub();
+    const sub = createIdFilteredSubscription(pubsub, 'patientChanged');
+    const iterator = sub.subscribe(null, { id: 'p-1' }, ctx);
+    const resultPromise = iterator.next();
+
+    // Event carries changes to both 'status' (visible) and 'name' (not visible)
+    await pubsub.publish('patientChanged', {
+      patientChanged: {
+        changeType: 'UPDATED',
+        tenantId: 'tenant-1',
+        object: { id: 'p-1', _type: 'Patient' },
+        previousValues: {
+          status: { old: 'ACTIVE', new: 'DISCHARGED' },
+          name: { old: 'Jane Doe', new: 'Jane Smith' },
+        },
+        causedBy: null,
+        timestamp: '2025-01-15T10:30:00Z',
+      } satisfies ChangeEvent,
+    });
+
+    const result = await resultPromise;
+    const payload = result.value as Record<string, ChangeEvent>;
+    const event = payload['patientChanged']!;
+
+    // 'status' is visible — its previousValues entry survives
+    expect(event.previousValues).toHaveProperty('status');
+    expect(event.previousValues!.status).toEqual({ old: 'ACTIVE', new: 'DISCHARGED' });
+
+    // 'name' is sensitive and not visible — its previousValues entry MUST be redacted
+    expect(event.previousValues).not.toHaveProperty('name');
+  });
+
+  it('redacts previousValues for fields the subscriber cannot see (filtered subscription)', async () => {
+    const parsed = parseOdl(NHS_ACUTE_ODL);
+    const deps = createMockDeps(parsed);
+    (deps.authorizationService.getVisibleFields as ReturnType<typeof vi.fn>)
+      .mockReturnValue(new Set(['id', 'status']));
+    const ctx = createMockContext(deps);
+
+    const pubsub = new PubSub();
+    const sub = createFilteredSubscription(pubsub, 'patientChanged');
+    const iterator = sub.subscribe(null, {}, ctx);
+    const resultPromise = iterator.next();
+
+    await pubsub.publish('patientChanged', {
+      patientChanged: {
+        changeType: 'UPDATED',
+        tenantId: 'tenant-1',
+        object: { id: 'p-1', _type: 'Patient' },
+        previousValues: {
+          status: { old: 'ACTIVE', new: 'DISCHARGED' },
+          nhsNumber: { old: '123', new: '456' },
+        },
+        causedBy: null,
+        timestamp: '2025-01-15T10:30:00Z',
+      } satisfies ChangeEvent,
+    });
+
+    const result = await resultPromise;
+    const payload = result.value as Record<string, ChangeEvent>;
+    const event = payload['patientChanged']!;
+
+    expect(event.previousValues).toHaveProperty('status');
+    expect(event.previousValues).not.toHaveProperty('nhsNumber');
+  });
+
+  it('passes previousValues through unchanged when no field policy exists', async () => {
+    const parsed = parseOdl(NHS_ACUTE_ODL);
+    const deps = createMockDeps(parsed);
+    // getVisibleFields returns undefined → no field policy → no redaction
+    (deps.authorizationService.getVisibleFields as ReturnType<typeof vi.fn>)
+      .mockReturnValue(undefined);
+    const ctx = createMockContext(deps);
+
+    const pubsub = new PubSub();
+    const sub = createIdFilteredSubscription(pubsub, 'patientChanged');
+    const iterator = sub.subscribe(null, { id: 'p-1' }, ctx);
+    const resultPromise = iterator.next();
+
+    await pubsub.publish('patientChanged', {
+      patientChanged: {
+        changeType: 'UPDATED',
+        tenantId: 'tenant-1',
+        object: { id: 'p-1', _type: 'Patient' },
+        previousValues: {
+          status: { old: 'ACTIVE', new: 'DISCHARGED' },
+          name: { old: 'Jane Doe', new: 'Jane Smith' },
+        },
+        causedBy: null,
+        timestamp: '2025-01-15T10:30:00Z',
+      } satisfies ChangeEvent,
+    });
+
+    const result = await resultPromise;
+    const payload = result.value as Record<string, ChangeEvent>;
+    const event = payload['patientChanged']!;
+
+    // No field policy → all fields pass through
+    expect(event.previousValues).toHaveProperty('status');
+    expect(event.previousValues).toHaveProperty('name');
+  });
+});
+
+describe('ChangeEvent.object field resolver', () => {
+  it('hydrates the full object from storage for UPDATED events', async () => {
+    const parsed = parseOdl(NHS_ACUTE_ODL);
+    const deps = createMockDeps(parsed);
+    // Mock storage.getObject to return a full patient
+    (deps.storage.getObject as ReturnType<typeof vi.fn>)
+      .mockResolvedValue({
+        _tenantId: 'tenant-1',
+        _type: 'Patient',
+        _id: 'p-1',
+        _version: 2,
+        _createdAt: '2025-01-01T00:00:00Z',
+        _updatedAt: '2025-01-15T10:30:00Z',
+        _actorId: 'user-1',
+        name: 'Jane Smith',
+        nhsNumber: '1234567890',
+        dateOfBirth: '1990-01-01',
+        status: 'DISCHARGED',
+      });
+    const ctx = createMockContext(deps);
+
+    const { generateResolvers } = await import('../graphql/resolver-generator.js');
+    const { resolvers } = generateResolvers(parsed, deps);
+    const changeEventResolvers = resolvers['PatientChangeEvent'] as Record<string, unknown>;
+    const objectResolver = changeEventResolvers['object'] as (
+      parent: { object: { id: string; _type: string }; changeType: string },
+      args: unknown,
+      ctx: ResolverContext,
+    ) => Promise<unknown>;
+
+    const result = await objectResolver(
+      { object: { id: 'p-1', _type: 'Patient' }, changeType: 'UPDATED' },
+      {},
+      ctx,
+    );
+
+    expect(deps.storage.getObject).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: 'tenant-1' }),
+      'Patient',
+      'p-1',
+    );
+    const obj = result as Record<string, unknown>;
+    expect(obj.name).toBe('Jane Smith');
+    expect(obj.status).toBe('DISCHARGED');
+  });
+
+  it('returns the stub for DELETED events without hitting storage', async () => {
+    const parsed = parseOdl(NHS_ACUTE_ODL);
+    const deps = createMockDeps(parsed);
+    const ctx = createMockContext(deps);
+
+    const { generateResolvers } = await import('../graphql/resolver-generator.js');
+    const { resolvers } = generateResolvers(parsed, deps);
+    const changeEventResolvers = resolvers['PatientChangeEvent'] as Record<string, unknown>;
+    const objectResolver = changeEventResolvers['object'] as (
+      parent: { object: { id: string; _type: string }; changeType: string },
+      args: unknown,
+      ctx: ResolverContext,
+    ) => Promise<unknown>;
+
+    const result = await objectResolver(
+      { object: { id: 'p-1', _type: 'Patient' }, changeType: 'DELETED' },
+      {},
+      ctx,
+    );
+
+    // Storage should not be called for deleted objects
+    expect(deps.storage.getObject).not.toHaveBeenCalled();
+    const obj = result as Record<string, unknown>;
+    expect(obj.id).toBe('p-1');
+    expect(obj._type).toBe('Patient');
+  });
+
+  it('returns null when the object no longer exists', async () => {
+    const parsed = parseOdl(NHS_ACUTE_ODL);
+    const deps = createMockDeps(parsed);
+    (deps.storage.getObject as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+    const ctx = createMockContext(deps);
+
+    const { generateResolvers } = await import('../graphql/resolver-generator.js');
+    const { resolvers } = generateResolvers(parsed, deps);
+    const changeEventResolvers = resolvers['PatientChangeEvent'] as Record<string, unknown>;
+    const objectResolver = changeEventResolvers['object'] as (
+      parent: { object: { id: string; _type: string }; changeType: string },
+      args: unknown,
+      ctx: ResolverContext,
+    ) => Promise<unknown>;
+
+    const result = await objectResolver(
+      { object: { id: 'p-1', _type: 'Patient' }, changeType: 'UPDATED' },
+      {},
+      ctx,
+    );
+    expect(result).toBeNull();
   });
 });

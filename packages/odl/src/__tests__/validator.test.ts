@@ -463,6 +463,48 @@ describe('ODL Validator', () => {
       const errs = findErrors(result, 'COMPUTED_MISSING_FN');
       expect(errs).toHaveLength(1);
     });
+
+    it('accepts lookupField as a builtin compute function', () => {
+      const odl = `
+        type Foo @objectType {
+          id: ID! @primary
+          wardName: String @computed(fn: "lookupField", args: { linkType: "HasBar", field: "name" })
+        }
+      `;
+      const schema = parseOdl(odl);
+      const result = validateSchema(schema);
+      const errs = findErrors(result, 'COMPUTED_UNKNOWN_FN');
+      expect(errs).toHaveLength(0);
+    });
+
+    it('accepts sumLinks/avgLinks/minLinks/maxLinks as builtin compute functions', () => {
+      const fns = ['sumLinks', 'avgLinks', 'minLinks', 'maxLinks'];
+      for (const fn of fns) {
+        const odl = `
+          type Foo @objectType {
+            id: ID! @primary
+            total: Float @computed(fn: "${fn}", args: { linkType: "HasBar", field: "value" })
+          }
+        `;
+        const schema = parseOdl(odl);
+        const result = validateSchema(schema);
+        const errs = findErrors(result, 'COMPUTED_UNKNOWN_FN');
+        expect(errs).toHaveLength(0);
+      }
+    });
+
+    it('still rejects a genuinely unknown compute function', () => {
+      const odl = `
+        type Foo @objectType {
+          id: ID! @primary
+          derived: Int @computed(fn: "doesNotExist")
+        }
+      `;
+      const schema = parseOdl(odl);
+      const result = validateSchema(schema);
+      const errs = findErrors(result, 'COMPUTED_UNKNOWN_FN');
+      expect(errs).toHaveLength(1);
+    });
   });
 
   describe('Rule 8: @param only on actionType or function', () => {

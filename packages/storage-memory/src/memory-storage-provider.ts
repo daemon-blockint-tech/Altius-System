@@ -200,6 +200,12 @@ class MemoryTransaction implements Transaction {
   private _changedObjectKeys = new Set<string>();
   private _changedLinkKeys = new Set<string>();
   private _hardDeletedObjectKeys = new Set<string>();
+  // Base version of each changed object captured at first modification time.
+  // At commit, if the committed version no longer matches, a concurrent
+  // transaction committed first — this is the lost-update check Postgres
+  // performs in the UPDATE WHERE clause but the memory provider's snapshot
+  // cannot see, because the snapshot was taken at begin and never refreshed.
+  private _objectBaseVersions = new Map<string, number>();
 
   constructor(private _provider: MemoryStorageProvider, private _ctx: RequestContext) {
     this._maps = {
@@ -229,14 +235,26 @@ class MemoryTransaction implements Transaction {
   async createObject(type: string, properties: Record<string, unknown>): Promise<OntologyObject> {
     this.assertOpen();
     const obj = this._provider._doCreateObject(this._ctx, type, properties, this._maps);
-    this._changedObjectKeys.add(`${type}:${obj._id}`);
+    const key = `${type}:${obj._id}`;
+    this._changedObjectKeys.add(key);
+    // New object — base version is 0 (does not exist in committed state).
+    this._objectBaseVersions.set(key, 0);
     return clone(obj);
   }
 
   async updateObject(type: string, id: string, properties: Record<string, unknown>, expectedVersion?: number): Promise<OntologyObject> {
     this.assertOpen();
+    const key = `${type}:${id}`;
+    // Capture the base version the snapshot sees at first modification. Later
+    // modifications within the same transaction see the already-updated
+    // snapshot, so only the first capture matters — it records the version
+    // the transaction's optimistic-concurrency check was made against.
+    if (!this._objectBaseVersions.has(key)) {
+      const snapshotObj = this._maps.objects.get(key);
+      this._objectBaseVersions.set(key, snapshotObj?._version ?? 0);
+    }
     const updated = this._provider._doUpdateObject(this._ctx, type, id, properties, expectedVersion, this._maps);
-    this._changedObjectKeys.add(`${type}:${id}`);
+    this._changedObjectKeys.add(key);
     return clone(updated);
   }
 
@@ -274,6 +292,26 @@ class MemoryTransaction implements Transaction {
 
   async commit(): Promise<void> {
     this.assertOpen();
+    // Lost-update check: for each object this transaction modified, verify
+    // the committed version still matches the base version the snapshot saw
+    // when the transaction first touched it. If another transaction committed
+    // in between, the committed version advanced and this transaction's
+    // write would silently overwrite it — the exact defect Postgres prevents
+    // with `WHERE _version = $expected` in the UPDATE, and the memory
+    // provider's snapshot isolation hides from the update call itself.
+    for (const [key, baseVersion] of this._objectBaseVersions) {
+      const committed = this._provider._objects.get(key);
+      const committedVersion = committed?._version ?? 0;
+      if (committedVersion !== baseVersion) {
+        this._provider._activeTransactions.delete(this._ctx);
+        this._rolledBack = true;
+        const err = new Error(
+          `VERSION_CONFLICT: Object ${key} was modified by a concurrent transaction (expected version ${baseVersion}, committed is ${committedVersion})`,
+        ) as Error & { code: string };
+        err.code = 'VERSION_CONFLICT';
+        throw err;
+      }
+    }
     // Flush only the keys this transaction changed. Other keys in the snapshot
     // are unchanged references that already exist in the committed Maps, so
     // flushing them would be a no-op — and would clobber changes another

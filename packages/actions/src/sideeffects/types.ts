@@ -106,4 +106,17 @@ export interface SideEffectExecutorConfig {
    * env-agnostic and testable. Unset → placeholders cannot be expanded.
    */
   env?: Record<string, string | undefined>;
+  /**
+   * Logger for delivery failures and retry attempts. Without this, a webhook
+   * that 500'd five times returned success:true with zero trace — the audit
+   * record carried only before/after states, and no metric existed.
+   */
+  logger?: SideEffectLogger;
+}
+
+/** Minimal logger surface the executor needs. */
+export interface SideEffectLogger {
+  error(msg: string, data?: unknown): void;
+  warn(msg: string, data?: unknown): void;
+  info(msg: string, data?: unknown): void;
 }
