@@ -186,7 +186,11 @@ describe('getObjectAtTime', () => {
 
     const queryFn = pool.query as ReturnType<typeof vi.fn>;
     const [sql, params] = queryFn.mock.calls[0]!;
-    expect(sql).toContain('_history_created_at');
+    // Must filter on the object's own timestamp. _history_created_at is when the
+    // history row was written — always after the object timestamps it records —
+    // so filtering on it made a query at an object's exact _createdAt return
+    // null. See the conformance suite's point-in-time cases.
+    expect(sql).toContain('_updated_at');
     expect(sql).toContain('ORDER BY "_version" DESC LIMIT 1');
     expect(params).toEqual(['tenant-xyz', 'patient-1', timestamp]);
   });

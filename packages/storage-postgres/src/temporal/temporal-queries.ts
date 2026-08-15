@@ -94,9 +94,8 @@ export async function getObjectAtVersion(
 /**
  * Get the state of an object at a specific point in time.
  *
- * Queries the history table for the most recent version that was created
- * at or before the given timestamp. Uses _history_created_at to find the
- * correct snapshot.
+ * Queries the history table for the most recent version whose object timestamp
+ * (_updated_at) is at or before the given timestamp.
  *
  * Returns null if no history entry exists at or before the given time.
  */
@@ -112,12 +111,21 @@ export async function getObjectAtTime(
   const q = resolveQueryable(pool, tx);
   const table = historyTableName(type, schema);
 
-  // NOTE: _history_created_at is set at history insertion time, which may be
-  // slightly after the _createdAt/_updatedAt timestamps on the object itself.
-  // For exact-timestamp queries using object timestamps, there may be a
-  // sub-millisecond mismatch. In practice this is safe because callers
-  // typically query with "a moment after" semantics (>= object timestamp).
-  const sql = `SELECT * FROM ${table} WHERE "_tenant_id" = $1 AND "_id" = $2 AND "_history_created_at" <= $3 ORDER BY "_version" DESC LIMIT 1`;
+  // Compare against the object's own _updated_at, not _history_created_at.
+  //
+  // _history_created_at is when the history ROW was inserted, always slightly
+  // after the object timestamps it records. Querying at exactly an object's
+  // _createdAt therefore matched nothing and returned null, and the caller got
+  // "this object did not exist yet" for the moment it was created. It passed
+  // only when both timestamps happened to land in the same clock resolution,
+  // which is why the conformance suite failed intermittently rather than every
+  // run. The memory provider has always compared object timestamps, so the two
+  // providers disagreed.
+  //
+  // The old comment justified this as safe because callers "typically query
+  // with a moment after semantics" — an assumption nothing verified, and
+  // getObjectAtTime has no production caller to have exercised it.
+  const sql = `SELECT * FROM ${table} WHERE "_tenant_id" = $1 AND "_id" = $2 AND "_updated_at" <= $3 ORDER BY "_version" DESC LIMIT 1`;
   const result = await q.query(sql, [ctx.tenantId, id, timestamp]);
 
   if (result.rows.length === 0) return null;
