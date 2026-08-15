@@ -1,0 +1,37 @@
+# actions/send-message.yaml
+action: SendMessage
+version: 1
+reversible: false
+
+preconditions:
+  - expr: "conversation.status == 'ACTIVE'"
+    error: "Conversation is not active"
+  - expr: "actor.hasRole('admin') || actor.hasRole('clinician') || actor.hasRole('user')"
+    error: "Insufficient role to send a message"
+
+effects:
+  - type: createObject
+    objectType: "ChatMessage"
+    properties:
+      role: "'user'"
+      content: "params.content"
+      model: "params.model"
+
+  - type: createLink
+    linkType: "HasMessage"
+    from: "conversation"
+    to: "chatMessage"
+    properties:
+      sentAt: "now"
+
+sideEffects:
+  - name: emitMessageSentEvent
+    type: event
+    config:
+      type: "altius.aip.message.sent"
+      data:
+        conversationId: "conversation.id"
+        content: "params.content"
+
+rollback:
+  onSideEffectFailure: LOG_AND_CONTINUE

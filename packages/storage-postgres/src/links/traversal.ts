@@ -113,6 +113,17 @@ export async function traverse(
   schema = 'public',
   tx?: PgTransaction,
 ): Promise<TraversalResult> {
+  // maxDepth is declared in the SPI but implemented by neither provider: every
+  // step is exactly one hop. Silently ignoring it would answer a 2-hop request
+  // with 1 hop and no way for the caller to notice.
+  const depthStep = path.steps.find(s => s.maxDepth !== undefined);
+  if (depthStep) {
+    throw new Error(
+      `TraversalStep.maxDepth is not implemented (step "${depthStep.linkType}"). ` +
+      `Each step traverses exactly one hop; repeat the step to go deeper.`,
+    );
+  }
+
   const q = resolveQueryable(pool, tx);
   const includeDeleted = options?.includeDeleted ?? false;
 

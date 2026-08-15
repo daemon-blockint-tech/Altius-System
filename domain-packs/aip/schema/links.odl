@@ -1,0 +1,10 @@
+# AIP Domain Pack — LinkTypes
+#
+# Defines the relationship between conversations and messages.
+
+extend schema @namespace(name: "altius.aip", version: "0.1.0")
+
+type HasMessage @linkType(from: "Conversation", to: "ChatMessage", cardinality: ONE_TO_MANY) {
+  id: ID! @primary
+  sentAt: DateTime!
+}

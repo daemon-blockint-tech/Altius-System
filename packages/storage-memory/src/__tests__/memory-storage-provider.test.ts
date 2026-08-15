@@ -649,6 +649,99 @@ describe('MemoryStorageProvider', () => {
       await tx.rollback();
       await expect(tx.createObject('Patient', { name: 'Bad' })).rejects.toThrow('rolled back');
     });
+
+    // ─── Snapshot isolation ───
+
+    it('uncommitted writes are invisible to a different context (no dirty read)', async () => {
+      const existing = await provider.createObject(tenantA, 'Patient', { name: 'Existing', age: 30 });
+      const txCtx: RequestContext = { tenantId: 'tenant-a', actorId: 'actor-1' };
+      const tx = await provider.beginTransaction(txCtx);
+      await tx.updateObject('Patient', existing._id, { age: 99 });
+      await tx.createObject('Patient', { name: 'Uncommitted' });
+
+      // A different context (no active transaction) must see committed state only.
+      const fetched = await provider.getObject(tenantA, 'Patient', existing._id);
+      expect(fetched!.age).toBe(30); // not 99
+      const page = await provider.queryObjects(tenantA, 'Patient', { field: 'name', operator: 'eq', value: 'Uncommitted' });
+      expect(page.totalCount).toBe(0);
+
+      await tx.rollback();
+    });
+
+    it('read-your-writes: same context sees pending writes inside the transaction', async () => {
+      const existing = await provider.createObject(tenantA, 'Patient', { name: 'Before', age: 10 });
+      const txCtx: RequestContext = { tenantId: 'tenant-a', actorId: 'actor-1' };
+      const tx = await provider.beginTransaction(txCtx);
+      await tx.updateObject('Patient', existing._id, { age: 42 });
+      const created = await tx.createObject('Patient', { name: 'NewInTx' });
+
+      // Reads with the same context must see the transaction's own writes.
+      const updated = await provider.getObject(txCtx, 'Patient', existing._id);
+      expect(updated!.age).toBe(42);
+      const created2 = await provider.getObject(txCtx, 'Patient', created._id);
+      expect(created2).not.toBeNull();
+      expect(created2!.name).toBe('NewInTx');
+
+      await tx.rollback();
+    });
+
+    it('snapshot: changes committed by another context after begin are not visible', async () => {
+      const existing = await provider.createObject(tenantA, 'Patient', { name: 'Snap', age: 1 });
+      const txCtx: RequestContext = { tenantId: 'tenant-a', actorId: 'actor-1' };
+      const tx = await provider.beginTransaction(txCtx);
+
+      // Another context commits a change while the transaction is open.
+      await provider.updateObject(tenantA, 'Patient', existing._id, { age: 100 });
+
+      // The transaction still sees the snapshot from begin-time.
+      const fetched = await provider.getObject(txCtx, 'Patient', existing._id);
+      expect(fetched!.age).toBe(1);
+
+      await tx.rollback();
+    });
+
+    it('rollback leaves committed Maps untouched (no compensation needed)', async () => {
+      const existing = await provider.createObject(tenantA, 'Patient', { name: 'Persist', age: 5 });
+      const txCtx: RequestContext = { tenantId: 'tenant-a', actorId: 'actor-1' };
+      const tx = await provider.beginTransaction(txCtx);
+      await tx.updateObject('Patient', existing._id, { age: 999 });
+      await tx.createObject('Patient', { name: 'WillRollback' });
+      await tx.rollback();
+
+      // Committed state is unchanged — the transaction never touched it.
+      const fetched = await provider.getObject(tenantA, 'Patient', existing._id);
+      expect(fetched!.age).toBe(5);
+      expect(fetched!._version).toBe(1);
+      const page = await provider.queryObjects(tenantA, 'Patient', { field: 'name', operator: 'eq', value: 'WillRollback' });
+      expect(page.totalCount).toBe(0);
+    });
+
+    it('commit flushes only changed keys, preserving concurrent commits', async () => {
+      const objA = await provider.createObject(tenantA, 'Patient', { name: 'A', age: 1 });
+      const objB = await provider.createObject(tenantA, 'Patient', { name: 'B', age: 2 });
+
+      const txCtx: RequestContext = { tenantId: 'tenant-a', actorId: 'actor-1' };
+      const tx = await provider.beginTransaction(txCtx);
+      await tx.updateObject('Patient', objA._id, { age: 10 });
+
+      // Another context commits a change to objB while the transaction is open.
+      await provider.updateObject(tenantA, 'Patient', objB._id, { age: 20 });
+
+      await tx.commit();
+
+      // Both changes are visible: the transaction's change to A and the
+      // concurrent change to B.
+      const fetchedA = await provider.getObject(tenantA, 'Patient', objA._id);
+      expect(fetchedA!.age).toBe(10);
+      const fetchedB = await provider.getObject(tenantA, 'Patient', objB._id);
+      expect(fetchedB!.age).toBe(20);
+    });
+
+    it('capabilities reports supportsTransactionIsolation: true', () => {
+      const caps = provider.capabilities();
+      expect(caps.supportsTransactions).toBe(true);
+      expect(caps.supportsTransactionIsolation).toBe(true);
+    });
   });
 
   // ─── Versioning ───

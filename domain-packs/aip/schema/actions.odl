@@ -1,0 +1,18 @@
+# AIP Domain Pack — Action Types
+#
+# Defines the GraphQL/REST input schema for AIP actions.
+# Operational behavior (preconditions, effects) is in actions/*.yaml.
+
+extend schema @namespace(name: "altius.aip", version: "0.1.0")
+
+type StartConversation @actionType {
+  title: String! @param
+  model: String @param
+  systemPrompt: String @param
+}
+
+type SendMessage @actionType {
+  conversation: Conversation! @param
+  content: String! @param
+  model: String @param
+}

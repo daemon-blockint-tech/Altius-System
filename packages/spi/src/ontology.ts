@@ -76,6 +76,17 @@ export interface TraversalStep {
   linkType: string;
   direction: 'inbound' | 'outbound';
   filter?: FilterExpression;
+  /**
+   * NOT IMPLEMENTED — neither provider honours this, and both reject a step
+   * that sets it.
+   *
+   * The intent is "repeat this link type up to N hops", which is how a
+   * self-referential link expresses a hierarchy (a reply chain, an org tree).
+   * Every step is currently exactly one hop. It stays in the contract as the
+   * named shape that feature will take, but a silently ignored depth limit is
+   * a wrong answer — a caller asking for 2 hops and getting 1 has no way to
+   * tell — so setting it is an error until it works.
+   */
   maxDepth?: number;
 }
 
@@ -228,6 +239,17 @@ export type ReplicationCapability =
 
 export interface StorageCapabilities {
   supportsTransactions: boolean;
+  /**
+   * Whether a transaction also provides ISOLATION, not just atomicity.
+   *
+   * `supportsTransactions: true` reasonably reads as ACID, and for one provider
+   * it is not: the in-memory provider applies each write immediately and undoes
+   * it from a journal on rollback, so all-or-nothing holds but a concurrent
+   * reader observes uncommitted state. A test suite that passes against memory
+   * can therefore be relying on a dirty read that Postgres would never serve —
+   * which is why this is declared rather than left for callers to discover.
+   */
+  supportsTransactionIsolation: boolean;
   supportsTemporalQueries: boolean;
   supportsFullTextSearch: boolean;
   supportsGeoQueries: boolean;

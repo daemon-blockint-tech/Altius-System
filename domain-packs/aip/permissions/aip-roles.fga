@@ -1,0 +1,9 @@
+# AIP role model — users can manage their own conversations
+
+type conversation
+  relation user: user
+  relation admin: user
+
+type chatmessage
+  relation user: user
+  relation admin: user

@@ -1,0 +1,33 @@
+# pack.yaml
+name: aip
+version: 0.1.0
+description: "AI Platform domain pack — conversations and chat messages"
+namespace: altius.aip
+
+dependencies:
+  altius.core: ">=1.0.0"
+
+capabilities:
+  - aip
+
+provides:
+  objectTypes: 2
+  linkTypes: 1
+  actionTypes: 2
+  functions: 0
+  connectors: 0
+  widgets: 0
+  qualityRules: 0
+
+schema:
+  - schema/conversation.odl
+  - schema/chat-message.odl
+  - schema/links.odl
+  - schema/actions.odl
+
+actions:
+  - actions/start-conversation.yaml
+  - actions/send-message.yaml
+
+permissions:
+  - permissions/aip-roles.fga

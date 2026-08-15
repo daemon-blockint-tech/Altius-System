@@ -1,0 +1,21 @@
+# AIP Domain Pack — ChatMessage ObjectType
+#
+# Individual message within a conversation (user, assistant, or system).
+
+extend schema @namespace(name: "altius.aip", version: "0.1.0")
+
+type ChatMessage implements Identifiable & Auditable @objectType {
+  id: ID! @primary
+  role: String! @indexed
+  content: String! @sensitive @searchable
+  model: String
+  promptTokens: Int
+  completionTokens: Int
+  # Auditable interface fields (altius.core)
+  createdAt: DateTime! @readonly
+  createdBy: String! @readonly
+  updatedAt: DateTime! @readonly
+  updatedBy: String! @readonly
+  # The conversation this message belongs to
+  conversation: Conversation @link(type: "HasMessage", direction: INBOUND)
+}

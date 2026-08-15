@@ -144,24 +144,81 @@ function evaluateLogicalPredicate(obj: Record<string, unknown>, pred: LogicalPre
 }
 
 // ---------------------------------------------------------------------------
-// MemoryTransaction
+// Transaction-local Maps
 // ---------------------------------------------------------------------------
 
+/**
+ * The three Maps a transaction operates on: a snapshot of the committed state
+ * taken at begin time, plus any writes the transaction applies. Passed to the
+ * provider's `_do*` and constraint-check methods so they run against the
+ * transaction's view instead of the committed Maps.
+ */
+interface MemMaps {
+  objects: Map<string, OntologyObject>;
+  links: Map<string, OntologyLink>;
+  versionHistory: Map<string, OntologyObject[]>;
+}
+
+// ---------------------------------------------------------------------------
+// MemoryTransaction — snapshot isolation
+// ---------------------------------------------------------------------------
+
+/**
+ * Snapshot-on-begin transaction.
+ *
+ * On construction the transaction shallow-copies the provider's committed
+ * `_objects` / `_links` Maps and deep-copies the `_versionHistory` arrays.
+ * Object references are safe to share because the provider never mutates an
+ * `OntologyObject` in place — every update creates a new spread-copied object —
+ * so the snapshot's entries remain the versions that were committed when the
+ * transaction opened. Version history arrays ARE mutated in place (push), so
+ * those are copied element-by-element.
+ *
+ * All writes go to the transaction-local Maps. The provider's read methods
+ * check `_activeTransactions` (a `WeakMap` keyed by `RequestContext`) and, when
+ * a transaction is active for the calling context, read from the transaction's
+ * Maps instead of the committed Maps. This gives:
+ *
+ * - **Isolation**: another reader (different `RequestContext`) sees committed
+ *   state only, never this transaction's uncommitted writes.
+ * - **Read-your-writes**: reads issued with the same `RequestContext` inside
+ *   the transaction see the transaction's own pending writes.
+ * - **Snapshot consistency**: reads see the state as of begin-time plus this
+ *   transaction's writes; changes committed by another transaction after this
+ *   one opened are not visible.
+ *
+ * On commit, only the keys this transaction actually changed are flushed to
+ * the committed Maps — flushing the entire snapshot would clobber changes
+ * another transaction committed in the meantime. On rollback the snapshot is
+ * simply discarded; the committed Maps were never touched.
+ */
 class MemoryTransaction implements Transaction {
   private _committed = false;
   private _rolledBack = false;
-  private _journal: Array<
-    | { op: 'createObject'; key: string; value: OntologyObject }
-    | { op: 'updateObject'; key: string; prev: OntologyObject; value: OntologyObject }
-    | { op: 'deleteObjectSoft'; key: string; prev: OntologyObject; value: OntologyObject }
-    | { op: 'deleteObjectHard'; key: string; prev: OntologyObject }
-    | { op: 'createLink'; key: string; value: OntologyLink }
-    | { op: 'updateLink'; key: string; prev: OntologyLink; value: OntologyLink }
-    | { op: 'deleteLink'; key: string; prev: OntologyLink }
-    | { op: 'version'; objectKey: string; snapshot: OntologyObject }
-  > = [];
+  private _maps: MemMaps;
+  private _changedObjectKeys = new Set<string>();
+  private _changedLinkKeys = new Set<string>();
+  private _hardDeletedObjectKeys = new Set<string>();
 
-  constructor(private _provider: MemoryStorageProvider, private _ctx: RequestContext) {}
+  constructor(private _provider: MemoryStorageProvider, private _ctx: RequestContext) {
+    this._maps = {
+      objects: new Map(_provider._objects),
+      links: new Map(_provider._links),
+      versionHistory: new Map(
+        Array.from(_provider._versionHistory).map(([k, v]) => [k, [...v]]),
+      ),
+    };
+  }
+
+  /** @internal Expose Maps for the provider's read-path delegation. */
+  _getMaps(): MemMaps {
+    return this._maps;
+  }
+
+  /** @internal Whether the transaction has been committed or rolled back. */
+  _isClosed(): boolean {
+    return this._committed || this._rolledBack;
+  }
 
   private assertOpen(): void {
     if (this._committed) throw new Error('Transaction already committed');
@@ -170,96 +227,86 @@ class MemoryTransaction implements Transaction {
 
   async createObject(type: string, properties: Record<string, unknown>): Promise<OntologyObject> {
     this.assertOpen();
-    const obj = this._provider._doCreateObject(this._ctx, type, properties);
-    this._journal.push({ op: 'createObject', key: `${type}:${obj._id}`, value: obj });
+    const obj = this._provider._doCreateObject(this._ctx, type, properties, this._maps);
+    this._changedObjectKeys.add(`${type}:${obj._id}`);
     return clone(obj);
   }
 
   async updateObject(type: string, id: string, properties: Record<string, unknown>, expectedVersion?: number): Promise<OntologyObject> {
     this.assertOpen();
-    const prev = this._provider._getObjectInternal(this._ctx, type, id);
-    if (!prev) throw new Error(`Object ${type}:${id} not found`);
-    const updated = this._provider._doUpdateObject(this._ctx, type, id, properties, expectedVersion);
-    this._journal.push({ op: 'updateObject', key: `${type}:${id}`, prev: clone(prev), value: updated });
+    const updated = this._provider._doUpdateObject(this._ctx, type, id, properties, expectedVersion, this._maps);
+    this._changedObjectKeys.add(`${type}:${id}`);
     return clone(updated);
   }
 
   async deleteObject(type: string, id: string, mode: 'soft' | 'hard'): Promise<void> {
     this.assertOpen();
-    const prev = this._provider._getObjectInternal(this._ctx, type, id);
-    if (!prev) throw new Error(`Object ${type}:${id} not found`);
+    const key = `${type}:${id}`;
     if (mode === 'soft') {
-      const updated = this._provider._doSoftDeleteObject(this._ctx, type, id);
-      this._journal.push({ op: 'deleteObjectSoft', key: `${type}:${id}`, prev: clone(prev), value: updated });
+      this._provider._doSoftDeleteObject(this._ctx, type, id, this._maps);
+      this._changedObjectKeys.add(key);
     } else {
-      this._provider._doHardDeleteObject(this._ctx, type, id);
-      this._journal.push({ op: 'deleteObjectHard', key: `${type}:${id}`, prev: clone(prev) });
+      this._provider._doHardDeleteObject(this._ctx, type, id, this._maps);
+      this._hardDeletedObjectKeys.add(key);
     }
   }
 
   async createLink(type: string, fromId: string, toId: string, properties?: Record<string, unknown>): Promise<OntologyLink> {
     this.assertOpen();
-    const link = this._provider._doCreateLink(this._ctx, type, fromId, toId, properties);
-    this._journal.push({ op: 'createLink', key: `${type}:${link._id}`, value: link });
+    const link = this._provider._doCreateLink(this._ctx, type, fromId, toId, properties, this._maps);
+    this._changedLinkKeys.add(`${type}:${link._id}`);
     return clone(link);
   }
 
   async updateLink(type: string, linkId: string, properties: Record<string, unknown>, expectedVersion?: number): Promise<OntologyLink> {
     this.assertOpen();
-    const prev = this._provider._getLinkInternal(this._ctx, type, linkId);
-    if (!prev) throw new Error(`Link ${type}:${linkId} not found`);
-    const updated = this._provider._doUpdateLink(this._ctx, type, linkId, properties, expectedVersion);
-    this._journal.push({ op: 'updateLink', key: `${type}:${linkId}`, prev: clone(prev), value: updated });
+    const updated = this._provider._doUpdateLink(this._ctx, type, linkId, properties, expectedVersion, this._maps);
+    this._changedLinkKeys.add(`${type}:${linkId}`);
     return clone(updated);
   }
 
   async deleteLink(type: string, linkId: string): Promise<void> {
     this.assertOpen();
-    const prev = this._provider._getLinkInternal(this._ctx, type, linkId);
-    if (!prev) throw new Error(`Link ${type}:${linkId} not found`);
-    this._provider._doDeleteLink(this._ctx, type, linkId);
-    this._journal.push({ op: 'deleteLink', key: `${type}:${linkId}`, prev: clone(prev) });
+    this._provider._doDeleteLink(this._ctx, type, linkId, this._maps);
+    this._changedLinkKeys.add(`${type}:${linkId}`);
   }
 
   async commit(): Promise<void> {
     this.assertOpen();
+    // Flush only the keys this transaction changed. Other keys in the snapshot
+    // are unchanged references that already exist in the committed Maps, so
+    // flushing them would be a no-op — and would clobber changes another
+    // transaction committed in the meantime (lost-update).
+    for (const key of this._changedObjectKeys) {
+      const obj = this._maps.objects.get(key);
+      if (obj) {
+        this._provider._objects.set(key, obj);
+        const hist = this._maps.versionHistory.get(key);
+        if (hist) {
+          this._provider._versionHistory.set(key, hist);
+        }
+      }
+    }
+    for (const key of this._hardDeletedObjectKeys) {
+      this._provider._objects.delete(key);
+      this._provider._versionHistory.delete(key);
+    }
+    for (const key of this._changedLinkKeys) {
+      const link = this._maps.links.get(key);
+      if (link) {
+        this._provider._links.set(key, link);
+      }
+    }
+    this._provider._activeTransactions.delete(this._ctx);
     this._committed = true;
-    // Data already applied eagerly; commit is a no-op (journal kept for rollback).
   }
 
   async rollback(): Promise<void> {
     this.assertOpen();
+    // Nothing to undo — the committed Maps were never touched. Discard the
+    // transaction-local snapshot and unregister from the provider.
+    this._provider._activeTransactions.delete(this._ctx);
     this._rolledBack = true;
-    // Undo in reverse order
-    for (let i = this._journal.length - 1; i >= 0; i--) {
-      const entry = this._journal[i]!;
-      switch (entry.op) {
-        case 'createObject':
-          this._provider._removeObject(entry.key);
-          break;
-        case 'updateObject':
-        case 'deleteObjectSoft':
-          this._provider._putObject(entry.key, entry.prev);
-          // Also revert version history
-          this._provider._popVersionHistory(entry.key);
-          break;
-        case 'deleteObjectHard':
-          this._provider._putObject(entry.key, entry.prev);
-          break;
-        case 'createLink':
-          this._provider._removeLink(entry.key);
-          break;
-        case 'updateLink':
-          this._provider._putLink(entry.key, entry.prev);
-          break;
-        case 'deleteLink':
-          this._provider._putLink(entry.key, entry.prev);
-          break;
-        case 'version':
-          // Handled by updateObject rollback above
-          break;
-      }
-    }
   }
 }
 
@@ -269,11 +316,11 @@ class MemoryTransaction implements Transaction {
 
 export class MemoryStorageProvider implements StorageProvider {
   /** type:id -> OntologyObject */
-  private _objects = new Map<string, OntologyObject>();
+  /** @internal */ _objects = new Map<string, OntologyObject>();
   /** type:id -> OntologyLink */
-  private _links = new Map<string, OntologyLink>();
+  /** @internal */ _links = new Map<string, OntologyLink>();
   /** type:id -> OntologyObject[] (version history, chronological) */
-  private _versionHistory = new Map<string, OntologyObject[]>();
+  /** @internal */ _versionHistory = new Map<string, OntologyObject[]>();
   /** version -> OntologySchema */
   private _schemas = new Map<number, OntologySchema>();
   private _currentSchemaVersion = 0;
@@ -282,47 +329,47 @@ export class MemoryStorageProvider implements StorageProvider {
   /** objectType -> IndexDefinition[] (schema-declared plus ensureIndex) */
   private _indexes = new Map<string, IndexDefinition[]>();
 
-  // ─── Internal helpers (exposed for Transaction rollback) ───
+  /**
+   * Active transactions keyed by RequestContext identity. When a read arrives
+   * with a context that has an open transaction, reads are served from the
+   * transaction's snapshot+overlay Maps instead of the committed Maps — this is
+   * what provides isolation (other contexts see committed state only) and
+   * read-your-writes (the transaction's own context sees its pending writes).
+   */
+  /** @internal */ _activeTransactions = new WeakMap<RequestContext, MemoryTransaction>();
 
-  /** @internal */ _putObject(key: string, obj: OntologyObject): void {
-    this._objects.set(key, obj);
-  }
-  /** @internal */ _removeObject(key: string): void {
-    this._objects.delete(key);
-    this._versionHistory.delete(key);
-  }
-  /** @internal */ _putLink(key: string, link: OntologyLink): void {
-    this._links.set(key, link);
-  }
-  /** @internal */ _removeLink(key: string): void {
-    this._links.delete(key);
-  }
-  /** @internal */ _popVersionHistory(key: string): void {
-    const history = this._versionHistory.get(key);
-    if (history && history.length > 0) {
-      history.pop();
-    }
+  /**
+   * Return the Maps a read with `ctx` should consult: the active
+   * transaction's snapshot+overlay if one is open for this context, otherwise
+   * the committed Maps.
+   */
+  private _getEffectiveMaps(ctx: RequestContext): MemMaps {
+    const txn = this._activeTransactions.get(ctx);
+    if (txn && !txn._isClosed()) return txn._getMaps();
+    return { objects: this._objects, links: this._links, versionHistory: this._versionHistory };
   }
 
-  /** @internal */ _getObjectInternal(_ctx: RequestContext, type: string, id: string): OntologyObject | null {
+  // ─── Internal helpers (exposed for Transaction) ───
+
+  /** @internal */ _getObjectInternal(_ctx: RequestContext, type: string, id: string, objectsMap: Map<string, OntologyObject> = this._objects): OntologyObject | null {
     const key = `${type}:${id}`;
-    const obj = this._objects.get(key);
+    const obj = objectsMap.get(key);
     if (!obj || obj._tenantId !== _ctx.tenantId) return null;
     return obj;
   }
 
-  /** @internal */ _getLinkInternal(_ctx: RequestContext, type: string, linkId: string): OntologyLink | null {
+  /** @internal */ _getLinkInternal(_ctx: RequestContext, type: string, linkId: string, linksMap: Map<string, OntologyLink> = this._links): OntologyLink | null {
     const key = `${type}:${linkId}`;
-    const link = this._links.get(key);
+    const link = linksMap.get(key);
     if (!link || link._tenantId !== _ctx.tenantId) return null;
     return link;
   }
 
-  private _pushVersionHistory(key: string, snapshot: OntologyObject): void {
-    let history = this._versionHistory.get(key);
+  private _pushVersionHistory(key: string, snapshot: OntologyObject, historyMap: Map<string, OntologyObject[]> = this._versionHistory): void {
+    let history = historyMap.get(key);
     if (!history) {
       history = [];
-      this._versionHistory.set(key, history);
+      historyMap.set(key, history);
     }
     history.push(clone(snapshot));
   }
@@ -358,6 +405,7 @@ export class MemoryStorageProvider implements StorageProvider {
     type: string,
     candidate: Record<string, unknown>,
     selfId?: string,
+    objectsMap: Map<string, OntologyObject> = this._objects,
   ): void {
     const def = this._getObjectTypeDef(type);
     if (!def) return; // No schema applied — no constraint to enforce
@@ -376,7 +424,7 @@ export class MemoryStorageProvider implements StorageProvider {
       if (!index.unique) continue;
       const value = candidate[index.field];
       if (value === undefined || value === null) continue; // NULLs never collide in a unique index
-      for (const other of this._objects.values()) {
+      for (const other of objectsMap.values()) {
         if (other._type !== type || other._tenantId !== ctx.tenantId) continue;
         if (other._id === selfId) continue;
         // Soft-deleted rows still occupy the index in Postgres.
@@ -388,8 +436,8 @@ export class MemoryStorageProvider implements StorageProvider {
   }
 
   /** Postgres refuses a link whose endpoint is missing or soft-deleted. */
-  private _assertEndpointLive(ctx: RequestContext, objectType: string, id: string, role: 'source' | 'target'): void {
-    const obj = this._getObjectInternal(ctx, objectType, id);
+  private _assertEndpointLive(ctx: RequestContext, objectType: string, id: string, role: 'source' | 'target', objectsMap: Map<string, OntologyObject> = this._objects): void {
+    const obj = this._getObjectInternal(ctx, objectType, id, objectsMap);
     if (!obj) {
       throw new Error(`Referential integrity: ${role} object ${objectType}:${id} does not exist`);
     }
@@ -398,12 +446,12 @@ export class MemoryStorageProvider implements StorageProvider {
     }
   }
 
-  private _enforceCardinality(ctx: RequestContext, linkType: string, fromId: string, toId: string): void {
+  private _enforceCardinality(ctx: RequestContext, linkType: string, fromId: string, toId: string, linksMap: Map<string, OntologyLink> = this._links): void {
     const def = this._getLinkTypeDef(linkType);
     if (!def) return; // No schema constraint
 
     // Count active (non-deleted) links of this type
-    const activeLinks = Array.from(this._links.values()).filter(
+    const activeLinks = Array.from(linksMap.values()).filter(
       (l) => l._type === linkType && l._tenantId === ctx.tenantId && !l._deletedAt,
     );
 
@@ -434,8 +482,9 @@ export class MemoryStorageProvider implements StorageProvider {
 
   // ─── Internal mutation methods (used by provider + transaction) ───
 
-  /** @internal */ _doCreateObject(ctx: RequestContext, type: string, properties: Record<string, unknown>): OntologyObject {
-    this._enforceObjectConstraints(ctx, type, properties);
+  /** @internal */ _doCreateObject(ctx: RequestContext, type: string, properties: Record<string, unknown>, maps?: MemMaps): OntologyObject {
+    const m = maps ?? { objects: this._objects, links: this._links, versionHistory: this._versionHistory };
+    this._enforceObjectConstraints(ctx, type, properties, undefined, m.objects);
     const id = genId();
     const timestamp = now();
     const obj: OntologyObject = {
@@ -448,14 +497,15 @@ export class MemoryStorageProvider implements StorageProvider {
       ...properties,
     };
     const key = `${type}:${id}`;
-    this._objects.set(key, obj);
-    this._pushVersionHistory(key, obj);
+    m.objects.set(key, obj);
+    this._pushVersionHistory(key, obj, m.versionHistory);
     return obj;
   }
 
-  /** @internal */ _doUpdateObject(ctx: RequestContext, type: string, id: string, properties: Record<string, unknown>, expectedVersion?: number): OntologyObject {
+  /** @internal */ _doUpdateObject(ctx: RequestContext, type: string, id: string, properties: Record<string, unknown>, expectedVersion?: number, maps?: MemMaps): OntologyObject {
+    const m = maps ?? { objects: this._objects, links: this._links, versionHistory: this._versionHistory };
     const key = `${type}:${id}`;
-    const existing = this._objects.get(key);
+    const existing = m.objects.get(key);
     if (!existing || existing._tenantId !== ctx.tenantId) {
       throw new Error(`Object ${type}:${id} not found`);
     }
@@ -467,7 +517,7 @@ export class MemoryStorageProvider implements StorageProvider {
       err.code = 'VERSION_CONFLICT';
       throw err;
     }
-    this._enforceObjectConstraints(ctx, type, { ...existing, ...properties }, id);
+    this._enforceObjectConstraints(ctx, type, { ...existing, ...properties }, id, m.objects);
     const updated: OntologyObject = {
       ...existing,
       ...properties,
@@ -478,14 +528,15 @@ export class MemoryStorageProvider implements StorageProvider {
       _createdAt: existing._createdAt,
       _updatedAt: now(),
     };
-    this._objects.set(key, updated);
-    this._pushVersionHistory(key, updated);
+    m.objects.set(key, updated);
+    this._pushVersionHistory(key, updated, m.versionHistory);
     return updated;
   }
 
-  /** @internal */ _doSoftDeleteObject(ctx: RequestContext, type: string, id: string): OntologyObject {
+  /** @internal */ _doSoftDeleteObject(ctx: RequestContext, type: string, id: string, maps?: MemMaps): OntologyObject {
+    const m = maps ?? { objects: this._objects, links: this._links, versionHistory: this._versionHistory };
     const key = `${type}:${id}`;
-    const existing = this._objects.get(key);
+    const existing = m.objects.get(key);
     if (!existing || existing._tenantId !== ctx.tenantId) {
       throw new Error(`Object ${type}:${id} not found`);
     }
@@ -495,22 +546,23 @@ export class MemoryStorageProvider implements StorageProvider {
       _version: existing._version + 1,
       _updatedAt: now(),
     };
-    this._objects.set(key, updated);
-    this._pushVersionHistory(key, updated);
+    m.objects.set(key, updated);
+    this._pushVersionHistory(key, updated, m.versionHistory);
     return updated;
   }
 
-  /** @internal */ _doHardDeleteObject(ctx: RequestContext, type: string, id: string): void {
+  /** @internal */ _doHardDeleteObject(ctx: RequestContext, type: string, id: string, maps?: MemMaps): void {
+    const m = maps ?? { objects: this._objects, links: this._links, versionHistory: this._versionHistory };
     const key = `${type}:${id}`;
-    const existing = this._objects.get(key);
+    const existing = m.objects.get(key);
     // Tenant isolation: deny access if object belongs to a different tenant
     if (existing && existing._tenantId !== ctx.tenantId) {
       throw new Error(`Object ${type}:${id} not found`);
     }
     // Idempotent: no-op if object doesn't exist
     if (!existing) return;
-    this._objects.delete(key);
-    this._versionHistory.delete(key);
+    m.objects.delete(key);
+    m.versionHistory.delete(key);
   }
 
   /** @internal */ _doCreateLink(
@@ -519,15 +571,17 @@ export class MemoryStorageProvider implements StorageProvider {
     fromId: string,
     toId: string,
     properties?: Record<string, unknown>,
+    maps?: MemMaps,
   ): OntologyLink {
+    const m = maps ?? { objects: this._objects, links: this._links, versionHistory: this._versionHistory };
     // Resolve fromType/toType from link type definition or default to 'unknown'
     const def = this._getLinkTypeDef(type);
     // Referential integrity before cardinality, matching the Postgres order.
     if (def) {
-      this._assertEndpointLive(ctx, def.fromType, fromId, 'source');
-      this._assertEndpointLive(ctx, def.toType, toId, 'target');
+      this._assertEndpointLive(ctx, def.fromType, fromId, 'source', m.objects);
+      this._assertEndpointLive(ctx, def.toType, toId, 'target', m.objects);
     }
-    this._enforceCardinality(ctx, type, fromId, toId);
+    this._enforceCardinality(ctx, type, fromId, toId, m.links);
     // Honour engine-provided ID (UUIDv7) per SPI contract, fall back to genId
     const engineId = properties?._engineLinkId;
     const id = typeof engineId === 'string' ? engineId : genId();
@@ -547,13 +601,14 @@ export class MemoryStorageProvider implements StorageProvider {
       _updatedAt: timestamp,
       ...userProps,
     };
-    this._links.set(`${type}:${id}`, link);
+    m.links.set(`${type}:${id}`, link);
     return link;
   }
 
-  /** @internal */ _doUpdateLink(ctx: RequestContext, type: string, linkId: string, properties: Record<string, unknown>, expectedVersion?: number): OntologyLink {
+  /** @internal */ _doUpdateLink(ctx: RequestContext, type: string, linkId: string, properties: Record<string, unknown>, expectedVersion?: number, maps?: MemMaps): OntologyLink {
+    const m = maps ?? { objects: this._objects, links: this._links, versionHistory: this._versionHistory };
     const key = `${type}:${linkId}`;
-    const existing = this._links.get(key);
+    const existing = m.links.get(key);
     if (!existing || existing._tenantId !== ctx.tenantId || existing._deletedAt) {
       throw new Error(`Link ${type}:${linkId} not found or is deleted`);
     }
@@ -576,7 +631,7 @@ export class MemoryStorageProvider implements StorageProvider {
       _createdAt: existing._createdAt,
       _updatedAt: now(),
     };
-    this._links.set(key, updated);
+    m.links.set(key, updated);
     return updated;
   }
 
@@ -584,14 +639,15 @@ export class MemoryStorageProvider implements StorageProvider {
    * Soft delete, as in Postgres: the record stays with _deletedAt set so
    * getLinks/traverse with includeDeleted still see it.
    */
-  /** @internal */ _doDeleteLink(ctx: RequestContext, type: string, linkId: string): void {
+  /** @internal */ _doDeleteLink(ctx: RequestContext, type: string, linkId: string, maps?: MemMaps): void {
+    const m = maps ?? { objects: this._objects, links: this._links, versionHistory: this._versionHistory };
     const key = `${type}:${linkId}`;
-    const existing = this._links.get(key);
+    const existing = m.links.get(key);
     if (!existing || existing._tenantId !== ctx.tenantId || existing._deletedAt) {
       throw new Error(`Link ${type}:${linkId} not found or already deleted`);
     }
     const timestamp = now();
-    this._links.set(key, {
+    m.links.set(key, {
       ...existing,
       _deletedAt: timestamp,
       _updatedAt: timestamp,
@@ -636,7 +692,8 @@ export class MemoryStorageProvider implements StorageProvider {
   }
 
   async getObject(ctx: RequestContext, type: string, id: string): Promise<OntologyObject | null> {
-    const obj = this._getObjectInternal(ctx, type, id);
+    const maps = this._getEffectiveMaps(ctx);
+    const obj = this._getObjectInternal(ctx, type, id, maps.objects);
     if (!obj) return null;
     if (obj._deletedAt) return null;
     return clone(obj);
@@ -655,7 +712,8 @@ export class MemoryStorageProvider implements StorageProvider {
   }
 
   async queryObjects(ctx: RequestContext, type: string, filter: FilterExpression, options?: QueryOptions): Promise<ObjectPage> {
-    let items = Array.from(this._objects.values()).filter((obj) => {
+    const maps = this._getEffectiveMaps(ctx);
+    let items = Array.from(maps.objects.values()).filter((obj) => {
       if (obj._tenantId !== ctx.tenantId) return false;
       if (obj._type !== type) return false;
       if (!options?.includeDeleted && obj._deletedAt) return false;
@@ -705,7 +763,8 @@ export class MemoryStorageProvider implements StorageProvider {
       }
     }
     // 1. Collect matching objects (tenant-scoped, non-deleted)
-    let items = Array.from(this._objects.values()).filter((obj) => {
+    const maps = this._getEffectiveMaps(ctx);
+    let items = Array.from(maps.objects.values()).filter((obj) => {
       if (obj._tenantId !== ctx.tenantId) return false;
       if (obj._type !== type) return false;
       if (obj._deletedAt) return false;
@@ -850,7 +909,8 @@ export class MemoryStorageProvider implements StorageProvider {
     const terms = queryLower.split(/\s+/).filter((t) => t.length > 0);
 
     // Collect candidate objects (tenant-scoped, type-matched, non-deleted)
-    const candidates = Array.from(this._objects.values()).filter((obj) => {
+    const maps = this._getEffectiveMaps(ctx);
+    const candidates = Array.from(maps.objects.values()).filter((obj) => {
       if (obj._tenantId !== ctx.tenantId) return false;
       if (obj._type !== type) return false;
       if (obj._deletedAt) return false;
@@ -977,7 +1037,8 @@ export class MemoryStorageProvider implements StorageProvider {
   }
 
   async getLink(ctx: RequestContext, type: string, linkId: string): Promise<OntologyLink | null> {
-    const link = this._getLinkInternal(ctx, type, linkId);
+    const maps = this._getEffectiveMaps(ctx);
+    const link = this._getLinkInternal(ctx, type, linkId, maps.links);
     if (!link) return null;
     if (link._deletedAt) return null;
     return clone(link);
@@ -998,7 +1059,8 @@ export class MemoryStorageProvider implements StorageProvider {
     direction: 'inbound' | 'outbound',
     options?: QueryOptions,
   ): Promise<LinkPage> {
-    let items = Array.from(this._links.values()).filter((link) => {
+    const maps = this._getEffectiveMaps(ctx);
+    let items = Array.from(maps.links.values()).filter((link) => {
       if (link._tenantId !== ctx.tenantId) return false;
       if (link._type !== linkType) return false;
       if (!options?.includeDeleted && link._deletedAt) return false;
@@ -1024,6 +1086,17 @@ export class MemoryStorageProvider implements StorageProvider {
     path: TraversalPath,
     options?: TraversalOptions,
   ): Promise<TraversalResult> {
+    const maps = this._getEffectiveMaps(ctx);
+    // maxDepth is declared in the SPI but implemented by neither provider:
+    // every step is exactly one hop. Silently ignoring it would answer a
+    // 2-hop request with 1 hop and no way for the caller to notice.
+    const depthStep = path.steps.find(s => s.maxDepth !== undefined);
+    if (depthStep) {
+      throw new Error(
+        `TraversalStep.maxDepth is not implemented (step "${depthStep.linkType}"). ` +
+        `Each step traverses exactly one hop; repeat the step to go deeper.`,
+      );
+    }
     // Match Postgres traversal safety limits (PERF-03)
     const MAX_TRAVERSAL_DEPTH = 10;
     const MAX_TRAVERSAL_NODES = 10_000;
@@ -1050,7 +1123,7 @@ export class MemoryStorageProvider implements StorageProvider {
       for (const objectId of currentIds) {
         if (totalNodesSeen >= MAX_TRAVERSAL_NODES) break;
 
-        const links = Array.from(this._links.values()).filter((link) => {
+        const links = Array.from(maps.links.values()).filter((link) => {
           if (link._tenantId !== ctx.tenantId) return false;
           if (link._type !== step.linkType) return false;
           if (!includeDeleted && link._deletedAt) return false;
@@ -1065,7 +1138,7 @@ export class MemoryStorageProvider implements StorageProvider {
           const targetType = step.direction === 'outbound' ? link._toType : link._fromType;
 
           // Find the target object
-          const targetObj = this._objects.get(`${targetType}:${targetId}`);
+          const targetObj = maps.objects.get(`${targetType}:${targetId}`);
           if (!targetObj || targetObj._tenantId !== ctx.tenantId) continue;
           if (!includeDeleted && targetObj._deletedAt) continue;
 
@@ -1106,22 +1179,26 @@ export class MemoryStorageProvider implements StorageProvider {
   // ─── Transactions ───
 
   async beginTransaction(ctx: RequestContext): Promise<Transaction> {
-    return new MemoryTransaction(this, ctx);
+    const txn = new MemoryTransaction(this, ctx);
+    this._activeTransactions.set(ctx, txn);
+    return txn;
   }
 
   // ─── Versioning ───
 
   async getObjectAtVersion(ctx: RequestContext, type: string, id: string, version: number): Promise<OntologyObject | null> {
+    const maps = this._getEffectiveMaps(ctx);
     const key = `${type}:${id}`;
-    const history = this._versionHistory.get(key);
+    const history = maps.versionHistory.get(key);
     if (!history) return null;
     const snapshot = history.find((h) => h._version === version && h._tenantId === ctx.tenantId);
     return snapshot ? clone(snapshot) : null;
   }
 
   async getObjectHistory(ctx: RequestContext, type: string, id: string): Promise<OntologyObject[]> {
+    const maps = this._getEffectiveMaps(ctx);
     const key = `${type}:${id}`;
-    const history = this._versionHistory.get(key);
+    const history = maps.versionHistory.get(key);
     if (!history) return [];
     return history
       .filter((h) => h._tenantId === ctx.tenantId)
@@ -1130,8 +1207,9 @@ export class MemoryStorageProvider implements StorageProvider {
   }
 
   async getObjectAtTime(ctx: RequestContext, type: string, id: string, timestamp: DateTime): Promise<OntologyObject | null> {
+    const maps = this._getEffectiveMaps(ctx);
     const key = `${type}:${id}`;
-    const history = this._versionHistory.get(key);
+    const history = maps.versionHistory.get(key);
     if (!history) return null;
 
     const ts = new Date(timestamp).getTime();
@@ -1191,6 +1269,11 @@ export class MemoryStorageProvider implements StorageProvider {
   capabilities(): StorageCapabilities {
     return {
       supportsTransactions: true,
+      // Snapshot-on-begin: each transaction shallow-copies the committed Maps
+      // at open time and writes to its own copy. Reads with the transaction's
+      // RequestContext see the snapshot+overlay; all other readers see
+      // committed state only. Commit flushes only changed keys.
+      supportsTransactionIsolation: true,
       supportsTemporalQueries: true,
       supportsFullTextSearch: true,
       supportsGeoQueries: false,

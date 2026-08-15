@@ -1,0 +1,20 @@
+# AIP Domain Pack — Conversation ObjectType
+#
+# Represents a chat conversation between a user and the AI platform.
+
+extend schema @namespace(name: "altius.aip", version: "0.1.0")
+
+type Conversation implements Identifiable & Auditable @objectType {
+  id: ID! @primary
+  title: String! @searchable
+  status: String! @indexed
+  model: String
+  systemPrompt: String @sensitive
+  # Auditable interface fields (altius.core)
+  createdAt: DateTime! @readonly
+  createdBy: String! @readonly
+  updatedAt: DateTime! @readonly
+  updatedBy: String! @readonly
+  # Messages in this conversation
+  messages: [ChatMessage!]! @link(type: "HasMessage", direction: OUTBOUND, history: true)
+}

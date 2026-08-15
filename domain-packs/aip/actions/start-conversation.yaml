@@ -1,0 +1,28 @@
+# actions/start-conversation.yaml
+action: StartConversation
+version: 1
+reversible: false
+
+preconditions:
+  - expr: "actor.hasRole('admin') || actor.hasRole('clinician') || actor.hasRole('user')"
+    error: "Insufficient role to start a conversation"
+
+effects:
+  - type: createObject
+    objectType: "Conversation"
+    properties:
+      title: "params.title"
+      status: "'ACTIVE'"
+      model: "params.model"
+      systemPrompt: "params.systemPrompt"
+
+sideEffects:
+  - name: emitConversationStartedEvent
+    type: event
+    config:
+      type: "altius.aip.conversation.started"
+      data:
+        title: "params.title"
+
+rollback:
+  onSideEffectFailure: LOG_AND_CONTINUE

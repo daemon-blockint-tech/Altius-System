@@ -201,5 +201,35 @@ export function registerTransactionTests(name: string, factory: ProviderFactory)
         expect(updated!.status).toBe('linked');
       });
     });
+
+    // ─── Isolation ───
+    // These tests verify that uncommitted transaction writes are not visible
+    // to external readers. Both the in-memory (snapshot-on-begin) and Postgres
+    // (real BEGIN/COMMIT) providers must satisfy this. Provider-specific
+    // read-your-writes and snapshot-consistency tests live in each provider's
+    // own test file, as the Postgres provider routes reads through the pool
+    // rather than the transaction handle.
+
+    describe('isolation', () => {
+      it('uncommitted writes are invisible to external readers (no dirty read)', async () => {
+        const existing = await provider.createObject(tenantA, 'Patient', { name: 'Existing', age: 30 });
+        const tx = await provider.beginTransaction(tenantA);
+        await tx.updateObject('Patient', existing._id, { age: 99 });
+        await tx.createObject('Patient', { name: 'Uncommitted' });
+
+        // External reader — a distinct RequestContext with the same tenantId,
+        // so the memory provider (which keys active transactions by context
+        // identity) does not route this read through the transaction.
+        const readerCtx: typeof tenantA = { ...tenantA };
+        const fetched = await provider.getObject(readerCtx, 'Patient', existing._id);
+        expect(fetched!.age).toBe(30);
+        const page = await provider.queryObjects(readerCtx, 'Patient', {
+          field: 'name', operator: 'eq', value: 'Uncommitted',
+        });
+        expect(page.totalCount).toBe(0);
+
+        await tx.rollback();
+      });
+    });
   });
 }

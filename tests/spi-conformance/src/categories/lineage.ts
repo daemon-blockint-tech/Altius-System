@@ -133,6 +133,19 @@ export function registerLineageTests(name: string, factory: ProviderFactory): vo
         expect(result.nodes[0]!.name).toBe('End');
       });
 
+      it('rejects a step that sets maxDepth, on either provider', async () => {
+        // Declared in the SPI, implemented by neither: every step is one hop.
+        // Both providers must refuse rather than answer a 2-hop request with
+        // 1 hop — a silently shallow traversal is a wrong answer the caller
+        // cannot detect. Pinned here so the two cannot drift apart, and so
+        // implementing it forces this expectation to be updated deliberately.
+        await expect(
+          provider.traverse(tenantA, 'any-id', {
+            steps: [{ linkType: 'AssignedTo', direction: 'outbound', maxDepth: 2 }],
+          }),
+        ).rejects.toThrow(/maxDepth is not implemented/);
+      });
+
       it('traversal with filters narrows results', async () => {
         const p = await provider.createObject(tenantA, 'Patient', { name: 'FilterStart' });
         const c1 = await provider.createObject(tenantA, 'CareTeam', { name: 'Alpha' });

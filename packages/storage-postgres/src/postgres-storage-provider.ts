@@ -658,6 +658,8 @@ export class PostgresStorageProvider implements StorageProvider {
   capabilities(): StorageCapabilities {
     return {
       supportsTransactions: true,
+      // Real BEGIN/COMMIT: uncommitted writes are invisible to other sessions.
+      supportsTransactionIsolation: true,
       supportsTemporalQueries: true,
       supportsFullTextSearch: true,
       supportsGeoQueries: false,

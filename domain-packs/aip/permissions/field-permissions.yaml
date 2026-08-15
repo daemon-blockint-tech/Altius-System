@@ -1,0 +1,31 @@
+# Field-level permission configuration for AIP domain pack.
+#
+# Maps object types to role-based field visibility rules per spec Section 7.1.3.
+# Fields not listed in any relation are never visible unless in alwaysVisible.
+
+- objectType: Conversation
+  alwaysVisible:
+    - id
+    - title
+    - status
+    - model
+  fieldsByRelation:
+    admin:
+      - systemPrompt
+    clinician:
+      - systemPrompt
+    user:
+      - systemPrompt
+
+- objectType: ChatMessage
+  alwaysVisible:
+    - id
+    - role
+    - model
+  fieldsByRelation:
+    admin:
+      - content
+    clinician:
+      - content
+    user:
+      - content
