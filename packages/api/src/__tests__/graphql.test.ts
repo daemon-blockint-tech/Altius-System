@@ -347,6 +347,7 @@ describe('GraphQL API', () => {
         'user:user-1',
         'viewer',
         'patient:p-1',
+        'tenant-1',
       );
     });
   });
@@ -1244,7 +1245,7 @@ describe('GraphQL relationship resolvers', () => {
     );
     expect(res.ok).toBe(true);
     expect(res.object).toBe('patient:p-1');
-    expect(writeRelationship).toHaveBeenCalledWith('user:alice', 'clinician', 'patient:p-1');
+    expect(writeRelationship).toHaveBeenCalledWith('user:alice', 'clinician', 'patient:p-1', 'tenant-1');
   });
 
   it('throws (authorization) for a non-granter caller', async () => {

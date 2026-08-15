@@ -79,7 +79,7 @@ describe('relationship grant/revoke routes', () => {
   it('grants a directly-assignable relation for an authorized caller', async () => {
     const res = await grantRoute(routes).handler({ body } as never, ctxFor(['admin']));
     expect(res.status).toBe(200);
-    expect(d.writeRelationship).toHaveBeenCalledWith('user:alice', 'clinician', 'patient:p-1');
+    expect(d.writeRelationship).toHaveBeenCalledWith('user:alice', 'clinician', 'patient:p-1', 'default');
     expect(d.auditWrite).toHaveBeenCalledWith(expect.objectContaining({
       operation: expect.objectContaining({ type: 'link', objectType: 'patient', objectId: 'p-1' }),
       detail: expect.objectContaining({ result: 'success' }),
@@ -88,7 +88,7 @@ describe('relationship grant/revoke routes', () => {
 
   it('normalises an already-qualified user string', async () => {
     await grantRoute(routes).handler({ body: { ...body, user: 'user:bob' } } as never, ctxFor(['admin']));
-    expect(d.writeRelationship).toHaveBeenCalledWith('user:bob', 'clinician', 'patient:p-1');
+    expect(d.writeRelationship).toHaveBeenCalledWith('user:bob', 'clinician', 'patient:p-1', 'default');
   });
 
   it('denies a caller without a granter role (403) and audits the denial', async () => {
@@ -113,7 +113,7 @@ describe('relationship grant/revoke routes', () => {
     const configuredRoutes = generateRelationshipRoutes(configured.deps, ALLOW);
     const res = await grantRoute(configuredRoutes).handler({ body } as never, ctxFor(['nurse_in_charge']));
     expect(res.status).toBe(200);
-    expect(configured.writeRelationship).toHaveBeenCalledWith('user:alice', 'clinician', 'patient:p-1');
+    expect(configured.writeRelationship).toHaveBeenCalledWith('user:alice', 'clinician', 'patient:p-1', 'default');
   });
 
   it('rejects a non-grantable relation (400) without writing', async () => {
@@ -141,7 +141,7 @@ describe('relationship grant/revoke routes', () => {
   it('revokes via deleteRelationship + unlink audit', async () => {
     const res = await revokeRoute(routes).handler({ body } as never, ctxFor(['admin']));
     expect(res.status).toBe(200);
-    expect(d.deleteRelationship).toHaveBeenCalledWith('user:alice', 'clinician', 'patient:p-1');
+    expect(d.deleteRelationship).toHaveBeenCalledWith('user:alice', 'clinician', 'patient:p-1', 'default');
     expect(d.auditWrite).toHaveBeenCalledWith(expect.objectContaining({
       operation: expect.objectContaining({ type: 'unlink' }),
     }));
