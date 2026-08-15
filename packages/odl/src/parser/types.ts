@@ -133,6 +133,16 @@ export interface FunctionDirective {
   kind: 'function';
   runtime: string;
   entry: string;
+  /**
+   * Comma-separated platform roles allowed to invoke this function.
+   *
+   * Roles rather than an OpenFGA relation (which is what @actionType's
+   * `permission` names): a function takes scalar inputs and has no object to
+   * check a relation against, so there is nothing for ReBAC to resolve.
+   *
+   * Absent means nobody may invoke it — see FunctionType.requiredRoles.
+   */
+  requiredRoles?: string;
 }
 
 /** Type-level @constraint directive (Section 2.3.2). Uses `this` to reference the object. */
@@ -226,6 +236,14 @@ export interface FunctionType {
   runtime: string;
   /** Pack-relative entry path (e.g. "compute-score/index.js"). */
   entry: string;
+  /**
+   * Platform roles allowed to invoke this function.
+   *
+   * Empty means nobody: invocation is denied. Fail-closed is deliberate — a
+   * function runs pack-authored code, and defaulting an undeclared function to
+   * "any authenticated caller" is how it behaved before this field existed.
+   */
+  requiredRoles: string[];
 }
 
 // ─── Enum ───

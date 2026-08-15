@@ -1338,6 +1338,30 @@ function generateFunctionResolver(
         });
       }
 
+      // Authorize before executing. A function runs pack-authored code inside
+      // the platform; until this check existed, any authenticated caller could
+      // invoke any declared function, which made every other control on the
+      // action pipeline (ReBAC, consent, preconditions) bypassable by shipping
+      // the same logic as a function instead.
+      //
+      // Roles, not a ReBAC relation: the inputs are scalars, so there is no
+      // object for OpenFGA to resolve a relation against.
+      //
+      // A function declaring no roles is denied rather than allowed — the
+      // permissive reading is exactly the behaviour being fixed.
+      const allowed = fn.requiredRoles.some(role => ctx.user.roles.includes(role));
+      if (!allowed) {
+        throw createAltiusError({
+          code: 'FORBIDDEN',
+          category: 'authorization',
+          message: fn.requiredRoles.length === 0
+            ? `Function "${fn.name}" declares no requiredRoles, so it cannot be invoked. Add requiredRoles to its @function directive.`
+            : `Function "${fn.name}" requires one of: ${fn.requiredRoles.join(', ')}`,
+          retryable: false,
+          traceId: ctx.requestContext.traceId,
+        });
+      }
+
       const result = await deps.functionExecutor.execute(fn.name, args.input);
 
       return {

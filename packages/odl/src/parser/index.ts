@@ -184,6 +184,12 @@ function extractActionType(def: ObjectTypeDefinitionNode): ActionType {
 function extractFunctionType(def: ObjectTypeDefinitionNode, functionDir: DirectiveNode): FunctionType {
   const runtime = getStringArg(functionDir, 'runtime') ?? '';
   const entry = getStringArg(functionDir, 'entry') ?? '';
+  // Comma-separated so the directive stays a plain string argument, matching
+  // every other @-argument in the grammar. Empty list = nobody may invoke.
+  const requiredRoles = (getStringArg(functionDir, 'requiredRoles') ?? '')
+    .split(',')
+    .map(r => r.trim())
+    .filter(r => r.length > 0);
   return {
     kind: 'functionType',
     name: def.name.value,
@@ -192,6 +198,7 @@ function extractFunctionType(def: ObjectTypeDefinitionNode, functionDir: Directi
     directives: extractTypeDirectives(def.directives),
     runtime,
     entry,
+    requiredRoles,
   };
 }
 
@@ -378,13 +385,16 @@ function extractTypeDirectives(directives: readonly DirectiveNode[] | undefined)
         result.push(permission ? { kind: 'actionType', permission } : { kind: 'actionType' });
         break;
       }
-      case 'function':
+      case 'function': {
+        const requiredRoles = getStringArg(d, 'requiredRoles');
         result.push({
           kind: 'function',
           runtime: getStringArg(d, 'runtime') ?? '',
           entry: getStringArg(d, 'entry') ?? '',
+          ...(requiredRoles !== undefined ? { requiredRoles } : {}),
         });
         break;
+      }
       case 'deprecated':
         result.push({
           kind: 'deprecated',
