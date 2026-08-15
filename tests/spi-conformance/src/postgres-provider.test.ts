@@ -18,9 +18,49 @@ const PG_TEST_URL = process.env['PG_TEST_URL'];
 if (PG_TEST_URL) {
   const url = new URL(PG_TEST_URL);
   let schemaCounter = 0;
-  const created: { dataSchema: string; provider: PostgresStorageProvider }[] = [];
+
+  type Live = { dataSchema: string; provider: PostgresStorageProvider };
+  let live: Live | null = null;
+
+  /**
+   * Drop the schema and close the pool, in that order — the DROP needs the pool.
+   *
+   * Both halves matter and each was leaking:
+   *
+   * - The schema name embeds process.pid and nothing removed it, so schemas
+   *   accumulated for ever. Once a pid is recycled the name collides and the
+   *   provider's `CREATE TABLE IF NOT EXISTS` silently adopts the earlier run's
+   *   tables, columns and all — results then depend on debris, and a column
+   *   created before a type-mapping fix reports a divergence that no longer
+   *   exists.
+   *
+   * - Every provider opens its own pool of up to 10 connections
+   *   (postgres-storage-provider.ts: `max: config.maxPoolSize ?? 10`) and the
+   *   suite asks for a fresh provider in every beforeEach. Nothing closed them,
+   *   so roughly ten providers exhausted a default max_connections=100 and the
+   *   remainder of the run failed with "sorry, too many clients already" —
+   *   which looks like provider divergence and is not.
+   *
+   * Drops by exact recorded name, never a wildcard.
+   */
+  async function retire(previous: Live | null): Promise<void> {
+    if (!previous) return;
+    try {
+      await previous.provider.pool.query(`DROP SCHEMA IF EXISTS "${previous.dataSchema}" CASCADE`);
+    } finally {
+      await previous.provider.pool.end().catch(() => {});
+    }
+  }
 
   runConformanceSuite('PostgresStorageProvider', async () => {
+    // Retiring the previous provider here, rather than collecting them all for
+    // afterAll, is what bounds live connections to one pool. Safe because tests
+    // within a file run sequentially: nothing in this suite is marked
+    // `concurrent` and the vitest config sets no in-file parallelism, so by the
+    // time a new provider is requested the previous one is finished with.
+    await retire(live);
+    live = null;
+
     // Each provider instance gets its own Postgres schema so suites that apply
     // different ontologies cannot collide.
     schemaCounter += 1;
@@ -34,27 +74,14 @@ if (PG_TEST_URL) {
       dataSchema,
     });
     await provider.pool.query(`CREATE SCHEMA IF NOT EXISTS "${dataSchema}"`);
-    created.push({ dataSchema, provider });
+    live = { dataSchema, provider };
     return provider;
   });
 
-  // Drop what this run created, by exact name — never a wildcard.
-  //
-  // The schema name embeds process.pid, and nothing removed it, so schemas
-  // accumulated indefinitely. Once a pid is recycled the name collides and the
-  // provider's `CREATE TABLE IF NOT EXISTS` silently adopts the earlier run's
-  // tables, columns and all. That makes results depend on debris: a column
-  // created before a type-mapping fix stays the old type, and the suite reports
-  // a provider divergence that no longer exists.
+  // The last provider has no successor to retire it.
   afterAll(async () => {
-    for (const { dataSchema, provider } of created) {
-      try {
-        await provider.pool.query(`DROP SCHEMA IF EXISTS "${dataSchema}" CASCADE`);
-      } finally {
-        // Nothing else closes these pools, so the run also leaked connections.
-        await provider.pool.end().catch(() => {});
-      }
-    }
+    await retire(live);
+    live = null;
   });
 } else {
   describe.skip('[PostgresStorageProvider] SPI Conformance (set PG_TEST_URL)', () => {});
