@@ -284,6 +284,9 @@ export function createIdFilteredSubscription(
       const baseIterator = pubsub.asyncIterator(topic);
       const authzService = ctx?.deps?.authorizationService;
       const userId = ctx?.user?.id;
+      // Authorization is per-tenant (one OpenFGA store per tenant), so a
+      // subscription with no tenant has no store to check against.
+      const tenantId = ctx?.user?.tenantId;
 
       return filterAsyncIteratorAsync(baseIterator, async (payload: unknown) => {
         const p = payload as Record<string, unknown>;
@@ -292,7 +295,7 @@ export function createIdFilteredSubscription(
         if (event.object.id !== args.id) return false;
 
         // Fail closed: deny events when authorization context is unavailable
-        if (!authzService || !userId) return false;
+        if (!authzService || !userId || !tenantId) return false;
 
         // Authorize: check viewer access on the specific object
         const fgaType = toSnakeCase(event.object._type);
@@ -300,6 +303,7 @@ export function createIdFilteredSubscription(
           `user:${userId}`,
           'viewer',
           `${fgaType}:${event.object.id}`,
+          tenantId,
         );
         if (!allowed) return false;
         return true;
@@ -331,6 +335,9 @@ export function createFilteredSubscription(
       const baseIterator = pubsub.asyncIterator(topic);
       const authzService = ctx?.deps?.authorizationService;
       const userId = ctx?.user?.id;
+      // Authorization is per-tenant (one OpenFGA store per tenant), so a
+      // subscription with no tenant has no store to check against.
+      const tenantId = ctx?.user?.tenantId;
 
       return filterAsyncIteratorAsync(baseIterator, async (payload: unknown) => {
         const p = payload as Record<string, unknown>;
@@ -343,7 +350,7 @@ export function createFilteredSubscription(
         }
 
         // Fail closed: deny events when authorization context is unavailable
-        if (!authzService || !userId) return false;
+        if (!authzService || !userId || !tenantId) return false;
 
         // Authorize: check viewer access on the specific object
         const fgaType = toSnakeCase(event.object._type);
@@ -351,6 +358,7 @@ export function createFilteredSubscription(
           `user:${userId}`,
           'viewer',
           `${fgaType}:${event.object.id}`,
+          tenantId,
         );
         if (!allowed) return false;
         return true;

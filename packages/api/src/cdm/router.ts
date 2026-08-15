@@ -160,7 +160,7 @@ export async function handleObjectRead(
     // FGA type names are snake_case (matches ODL→OpenFGA codegen + nhs-roles.fga,
     // e.g. DischargeRecord → discharge_record).
     const fgaType = toSnakeCase(sourceType);
-    const allowed = await deps.authorizationService.check(`user:${user.id}`, 'viewer', `${fgaType}:${id}`);
+    const allowed = await deps.authorizationService.check(`user:${user.id}`, 'viewer', `${fgaType}:${id}`, user.tenantId);
     if (!allowed) return error(403, `Access denied to ${sourceType} ${id}`);
 
     const ctx = ctxFor(user);
@@ -238,7 +238,7 @@ export async function collectRawRecords(
 ): Promise<{ records: Record<string, unknown>[]; capped: boolean }> {
   const ctx = ctxFor(user);
   const fgaType = toSnakeCase(sourceType);
-  const allowedObjects = await deps.authorizationService.listObjects(`user:${user.id}`, 'viewer', fgaType);
+  const allowedObjects = await deps.authorizationService.listObjects(`user:${user.id}`, 'viewer', fgaType, user.tenantId);
 
   // '*' sentinel (dev stub / unrestricted) → no id filter; otherwise restrict.
   const unrestricted = allowedObjects.includes('*');
@@ -409,7 +409,7 @@ export async function handleEncounterSearch(
     const patientId = patientParam.replace(/^Patient\//, '');
     if (!patientId) return error(400, 'Invalid patient reference.');
 
-    const allowed = await deps.authorizationService.check(`user:${user.id}`, 'viewer', `patient:${patientId}`);
+    const allowed = await deps.authorizationService.check(`user:${user.id}`, 'viewer', `patient:${patientId}`, user.tenantId);
     if (!allowed) return error(403, `Access denied to Patient ${patientId}`);
 
     const ctx = ctxFor(user);

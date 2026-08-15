@@ -233,8 +233,11 @@ export async function traverse(
     currentIds = nextIds;
   }
 
-  // Apply pagination
-  const limit = options?.limit ?? 100;
+  // Apply pagination. When no limit is specified, return all collected
+  // nodes — matching the memory provider (memory-storage-provider.ts).
+  // MAX_TRAVERSAL_NODES (10_000) already caps total collection, so an
+  // arbitrary lower default would only cause silent provider divergence.
+  const limit = options?.limit ?? stepNodes.length;
   const offset = options?.offset ?? 0;
   const paginatedNodes = stepNodes.slice(offset, offset + limit);
 

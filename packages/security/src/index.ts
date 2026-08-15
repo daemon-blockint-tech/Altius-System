@@ -25,6 +25,7 @@ export type {
   RedactionResult,
   FieldCacheKey,
   OpenFgaClientInterface,
+  FgaClientResolver,
 } from "./authz/index.js";
 export { AuthorizationError, AuthorizationService } from "./authz/index.js";
 

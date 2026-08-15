@@ -260,7 +260,7 @@ describe('traverse()', () => {
       expect(result.totalCount).toBe(3);
     });
 
-    it('defaults to limit=100, offset=0', async () => {
+    it('defaults to returning all collected nodes, offset=0', async () => {
       const pool = createMockPool((sql) => {
         if (sql.includes('admitted_to')) {
           return { rows: [makeLinkRow()] };
@@ -276,6 +276,42 @@ describe('traverse()', () => {
 
       // Should return all nodes (only 1)
       expect(result.nodes).toHaveLength(1);
+    });
+
+    it('returns all nodes when no limit is specified (matches memory provider)', async () => {
+      // The memory provider defaults limit to nodes.length (all collected
+      // nodes). The Postgres provider previously defaulted to 100, so a
+      // traversal collecting >100 nodes silently dropped the rest. Both
+      // providers already cap total nodes at MAX_TRAVERSAL_NODES (10_000),
+      // so the 100 default was an arbitrary lower cap that caused divergence.
+      const linkRows: Record<string, unknown>[] = [];
+      const objRows: Record<string, unknown>[] = [];
+      for (let i = 0; i < 150; i++) {
+        const wardId = `ward-${i}`;
+        linkRows.push(makeLinkRow({
+          _id: `link-${i}`,
+          _to_id: wardId,
+        }));
+        objRows.push(makeObjectRow('Ward', wardId, { name: `Ward ${i}` }));
+      }
+
+      const pool = createMockPool((sql) => {
+        if (sql.includes('admitted_to')) {
+          return { rows: linkRows };
+        }
+        return { rows: objRows };
+      });
+
+      const path: TraversalPath = {
+        steps: [{ linkType: 'AdmittedTo', direction: 'outbound' }],
+      };
+
+      const result = await traverse(pool, createCtx(), 'patient-1', path);
+
+      // All 150 nodes should be returned — no arbitrary cap when limit is
+      // unspecified, matching the memory provider's behaviour.
+      expect(result.nodes).toHaveLength(150);
+      expect(result.totalCount).toBe(150);
     });
   });
 

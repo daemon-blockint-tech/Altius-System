@@ -286,6 +286,7 @@ async function invokeSearchTool(
     `user:${user.id}`,
     'viewer',
     fgaType,
+    user.tenantId,
   );
 
   const allAuthorized = allowedObjects.length === 1 && allowedObjects[0] === '*';

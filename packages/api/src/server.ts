@@ -18,7 +18,10 @@
  *   OIDC_JWKS_URI        — JWKS endpoint override for non-Keycloak issuers
  *   OIDC_DEFAULT_TENANT  — Opt-in fallback tenant for tokens without a tenant_id claim (unset = fail-closed)
  *   OPENFGA_URL          — OpenFGA API URL (matches Helm configmap / docker-compose)
- *   OPENFGA_STORE_ID     — OpenFGA store ID
+ *   OPENFGA_STORE_IDS    — Per-tenant OpenFGA stores: 'tenantA=storeId,tenantB=storeId'. One store
+ *                          per tenant; a tenant not listed here is denied all access (fail closed)
+ *   OPENFGA_STORE_ID     — Single-tenant OpenFGA store ID; requires OIDC_DEFAULT_TENANT to name the
+ *                          one tenant it serves. Use OPENFGA_STORE_IDS for multi-tenant deployments
  *   POSTGRES_URL         — PostgreSQL connection string (with ?sslmode= for TLS)
  *   CEL_EVALUATOR_URL    — CEL gRPC sidecar address (default: localhost:50051)
  *   CORS_ALLOWED_ORIGINS — Comma-separated allowed origins (empty = deny all in prod)
@@ -52,7 +55,7 @@ import {
 import { ActionExecutor, CelClient, SideEffectExecutor } from '@altius/actions';
 import type { SecurityLayer, CelEvaluator, EventBus as SideEffectEventBus, HttpClient as SideEffectHttpClient, LinkTupleMap } from '@altius/actions';
 import { AuthorizationService, OidcAuthenticator, AuditWriter, MemoryAuditStore, ConsentService, MemoryConsentStore } from '@altius/security';
-import type { OpenFgaClientInterface } from '@altius/security';
+import type { OpenFgaClientInterface, FgaClientResolver } from '@altius/security';
 import type { StorageProvider, RequestContext } from '@altius/spi';
 import { createGraphQLServer, buildResolverContext } from './graphql/index.js';
 import { generateRestRoutes, generateOpenApiSpec } from './rest/index.js';
@@ -69,7 +72,8 @@ import { DEFAULT_CONSENT_PURPOSE } from './graphql/types.js';
 import type { RestRequest } from './rest/types.js';
 import {
   parsePostgresUrl,
-  createFgaClient,
+  createFgaClientRegistry,
+  parseFgaStoreMap,
   createSecurityLayer,
   assertActionAuthzCoverage,
   extractUser,
@@ -482,13 +486,20 @@ async function main(): Promise<void> {
   });
 
   // ── Authorization (OpenFGA) ──
-  let fgaClient: OpenFgaClientInterface;
-  if (!isDev && process.env['OPENFGA_URL'] && process.env['OPENFGA_STORE_ID']) {
-    fgaClient = await createFgaClient(
-      process.env['OPENFGA_URL'],
-      process.env['OPENFGA_STORE_ID'],
+  // One store per tenant: tuples carry no tenant qualifier and object ids are
+  // unique only per tenant (storage PK is (_tenant_id, _id)), so a single shared
+  // store would let a grant in one tenant authorize the same object id in
+  // another. Store ids come from explicit config (parseFgaStoreMap); tenants
+  // with no store resolve to undefined and are denied — never a default store.
+  let fgaClient: OpenFgaClientInterface | FgaClientResolver;
+  let fgaStores: ReadonlyMap<string, string> = new Map();
+  if (!isDev && process.env['OPENFGA_URL']) {
+    fgaStores = parseFgaStoreMap();
+    fgaClient = createFgaClientRegistry(process.env['OPENFGA_URL'], fgaStores);
+    logger.info(
+      `Authorization: OpenFGA @ ${process.env['OPENFGA_URL']} — ` +
+      `${fgaStores.size} tenant store(s): ${[...fgaStores.keys()].join(', ')}`,
     );
-    logger.info(`Authorization: OpenFGA @ ${process.env['OPENFGA_URL']}`);
   } else if (isDev) {
     // Dev stub: allow everything.
     // listObjects returns ['*'] sentinel — resolvers interpret this as
@@ -502,11 +513,11 @@ async function main(): Promise<void> {
     logger.warn('Authorization: allow-all stub (development mode)');
   } else {
     // Unreachable in normal operation: the REQUIRED_PROD_VARS guard above exits
-    // the process if OPENFGA_URL/OPENFGA_STORE_ID are missing in production.
-    // Defence in depth — fail closed rather than silently installing an
-    // allow-all authorizer if that guard is ever weakened or bypassed.
+    // the process if OPENFGA_URL is missing in production (the store mapping is
+    // validated by parseFgaStoreMap). Defence in depth — fail closed rather than
+    // silently installing an allow-all authorizer if that guard is ever bypassed.
     throw new Error(
-      'FATAL: production authorization requires OPENFGA_URL and OPENFGA_STORE_ID',
+      'FATAL: production authorization requires OPENFGA_URL and OPENFGA_STORE_IDS (or OPENFGA_STORE_ID)',
     );
   }
   // Merged OpenFGA model (schema + pack permission overrides). Pure/cheap, so
@@ -572,7 +583,7 @@ async function main(): Promise<void> {
   // ── OpenFGA Authorization Model Sync ──
   // Push the merged model to OpenFGA so all pack types are authorized.
   let linkTupleMap: LinkTupleMap | undefined;
-  if (!isDev && process.env['OPENFGA_URL'] && process.env['OPENFGA_STORE_ID']) {
+  if (!isDev && process.env['OPENFGA_URL'] && fgaStores.size > 0) {
     try {
       const modelJson = fgaModelJson;
       // Derive which ontology links map to ReBAC tuples, so the action pipeline
@@ -582,21 +593,25 @@ async function main(): Promise<void> {
       if (linkTupleMap.size > 0) {
         logger.info(`Authorization: ${linkTupleMap.size} link type(s) sync ReBAC tuples (${[...linkTupleMap.keys()].join(', ')})`);
       }
-      const storeId = process.env['OPENFGA_STORE_ID'];
       const fgaUrl = process.env['OPENFGA_URL'];
-      const resp = await fetch(
-        `${fgaUrl}/stores/${storeId}/authorization-models`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(modelJson),
-        },
-      );
-      if (resp.ok) {
-        logger.info(`Authorization: OpenFGA model synced (${modelJson.type_definitions.length} types)`);
-      } else {
-        const body = await resp.text();
-        logger.warn(`Authorization: OpenFGA model sync failed (${resp.status}): ${body}`);
+      // Every tenant has its own store, so the model must be pushed to each one
+      // — a store without the model answers every check with a 400 and the
+      // tenant is (safely, but unusably) denied everything.
+      for (const [tenant, storeId] of fgaStores) {
+        const resp = await fetch(
+          `${fgaUrl}/stores/${storeId}/authorization-models`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(modelJson),
+          },
+        );
+        if (resp.ok) {
+          logger.info(`Authorization: OpenFGA model synced to tenant '${tenant}' (${modelJson.type_definitions.length} types)`);
+        } else {
+          const body = await resp.text();
+          logger.warn(`Authorization: OpenFGA model sync failed for tenant '${tenant}' (${resp.status}): ${body}`);
+        }
       }
     } catch (err) {
       logger.warn({ err: err instanceof Error ? err.message : 'unknown' }, 'Authorization: OpenFGA model sync failed');
@@ -616,7 +631,11 @@ async function main(): Promise<void> {
       const m = linkTupleMap.get(l.type);
       if (!m || !l.fromId || !l.toId) continue;
       try {
-        await authorizationService.writeRelationship(`${m.toType}:${l.toId}`, m.relation, `${m.fromType}:${l.fromId}`);
+        // Seeded objects live in seedCtx.tenantId, so their tuples belong in
+        // that tenant's store. If SEED_TENANT has no store configured this
+        // throws and is caught below as a per-tuple warning — the same
+        // fail-closed posture as a request-time grant for an unmapped tenant.
+        await authorizationService.writeRelationship(`${m.toType}:${l.toId}`, m.relation, `${m.fromType}:${l.fromId}`, seedCtx.tenantId);
         minted++;
       } catch (err) {
         logger.warn({ err: err instanceof Error ? err.message : 'unknown', linkType: l.type }, 'Seed: failed to mint ReBAC tuple');

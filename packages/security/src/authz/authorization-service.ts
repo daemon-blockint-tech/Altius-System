@@ -33,6 +33,20 @@ function isUndefinedRelationError(error: unknown): boolean {
 
 /** Warn once per relation+type so a model gap is visible without flooding logs. */
 const reportedUndefinedRelations = new Set<string>();
+
+/** Warn once per tenant so a store-mapping gap is visible without flooding logs. */
+const reportedUnknownTenants = new Set<string>();
+function logUnknownTenant(tenantId: string): void {
+  if (reportedUnknownTenants.has(tenantId)) return;
+  reportedUnknownTenants.add(tenantId);
+  authzLogger.error(
+    { tenantId },
+    `Tenant '${tenantId}' has no OpenFGA store configured — denying all authorization. ` +
+      `Add it to OPENFGA_STORE_IDS (tenant=storeId,...). There is deliberately no ` +
+      `fallback store: serving an unmapped tenant from another tenant's store would ` +
+      `let a tuple granted there authorize the same object id here.`,
+  );
+}
 function logUndefinedRelation(relation: string, target: string, error: unknown): void {
   const key = `${relation}@${target.split(":")[0]}`;
   if (reportedUndefinedRelations.has(key)) return;
@@ -81,18 +95,41 @@ export interface OpenFgaClientInterface {
 }
 
 /**
+ * Resolves the OpenFGA client (i.e. the store) serving a tenant.
+ *
+ * Tenant isolation is by STORE: one OpenFGA store per tenant, so no two tenants
+ * share a tuple namespace. This matters because object ids are unique PER
+ * TENANT, not globally — the storage primary key is (_tenant_id, _id). In a
+ * single shared store a tuple minted for `patient:123` by a granter in tenant A
+ * also authorizes the unrelated `patient:123` in tenant B, and the storage layer
+ * then faithfully serves tenant B's row.
+ *
+ * Returns undefined when the tenant has no configured store. Callers MUST treat
+ * that as deny — never as "use some other store".
+ */
+export type FgaClientResolver = (
+  tenantId: string,
+) => Promise<OpenFgaClientInterface | undefined>;
+
+/**
  * Authorization service implementing ReBAC via OpenFGA.
  *
  * Usage:
  * ```ts
  * const authz = new AuthorizationService(fgaClient, [patientFieldConfig]);
- * const allowed = await authz.check("user:alice", "viewer", "patient:123");
- * const patients = await authz.listObjects("user:alice", "viewer", "patient");
+ * const allowed = await authz.check("user:alice", "viewer", "patient:123", "tenant-a");
+ * const patients = await authz.listObjects("user:alice", "viewer", "patient", "tenant-a");
  * const result = authz.redactFields("user:alice", ["nurse"], "patient", patientObj);
  * ```
+ *
+ * `tenantId` is the LAST parameter of every tuple-touching method, and required.
+ * Last rather than first on purpose: these methods take otherwise-interchangeable
+ * strings, so a tenant-first signature would let an un-migrated 3-argument call
+ * still compile with the arguments silently shifted. Appending it makes every
+ * missed call site an arity error at build time instead.
  */
 export class AuthorizationService {
-  private readonly client: OpenFgaClientInterface;
+  private readonly resolveClient: FgaClientResolver;
   private readonly fieldConfigs: Map<string, FieldPermissionConfig>;
 
   /**
@@ -102,18 +139,41 @@ export class AuthorizationService {
    *
    * Cleared at the start of each GraphQL request via the Apollo context
    * factory in server.ts. REST and FHIR routes should do the same.
+   *
+   * Deliberately NOT keyed by tenant: the value is a pure function of the
+   * deployment-wide field permission config and the (roles, objectType) pair,
+   * both of which are already in the key — roles come from the caller's own
+   * verified token, so two same-named users in different tenants with different
+   * roles land on different keys anyway. Adding tenant would only lower the hit
+   * rate. Revisit if field permission configs ever become per-tenant.
    */
   private fieldCache = new Map<string, Set<string>>();
 
   constructor(
-    client: OpenFgaClientInterface,
+    client: OpenFgaClientInterface | FgaClientResolver,
     fieldPermissions: FieldPermissionConfig[] = [],
   ) {
-    this.client = client;
+    // A bare client is a single-store deployment: every tenant resolves to it.
+    // Multi-tenant deployments pass a resolver returning that tenant's own store
+    // (or undefined, which denies) — see createFgaClientRegistry in the API package.
+    this.resolveClient =
+      typeof client === "function" ? client : async () => client;
     this.fieldConfigs = new Map();
     for (const config of fieldPermissions) {
       this.fieldConfigs.set(config.objectType, config);
     }
+  }
+
+  /**
+   * Resolve the tenant's store client, logging (once) when a tenant has none.
+   *
+   * Every caller must treat undefined as DENY. Falling back to a default store
+   * would silently restore the cross-tenant hole that per-tenant stores close.
+   */
+  private async clientFor(tenantId: string): Promise<OpenFgaClientInterface | undefined> {
+    const client = tenantId ? await this.resolveClient(tenantId) : undefined;
+    if (!client) logUnknownTenant(tenantId || "(empty)");
+    return client;
   }
 
   /**
@@ -125,12 +185,15 @@ export class AuthorizationService {
    * @param user - OpenFGA user string, e.g. "user:alice"
    * @param relation - Relation to check, e.g. "viewer"
    * @param resource - OpenFGA object string, e.g. "patient:123"
+   * @param tenantId - Tenant whose store answers the check
    * @returns true if the relationship holds
    */
-  async check(user: string, relation: string, resource: string): Promise<boolean> {
+  async check(user: string, relation: string, resource: string, tenantId: string): Promise<boolean> {
     return withSpan(tracer, "authz.check", {}, async () => {
+      const client = await this.clientFor(tenantId);
+      if (!client) return false; // unmapped tenant → no store → deny
       try {
-        const result = await this.client.check({
+        const result = await client.check({
           user,
           relation,
           object: resource,
@@ -159,12 +222,15 @@ export class AuthorizationService {
    * @param user - OpenFGA user string, e.g. "user:alice"
    * @param relation - Relation to query, e.g. "viewer"
    * @param type - Object type, e.g. "patient"
+   * @param tenantId - Tenant whose store answers the query
    * @returns Array of full object identifiers
    */
-  async listObjects(user: string, relation: string, type: string): Promise<string[]> {
+  async listObjects(user: string, relation: string, type: string, tenantId: string): Promise<string[]> {
     return withSpan(tracer, "authz.listObjects", {}, async () => {
+      const client = await this.clientFor(tenantId);
+      if (!client) return []; // unmapped tenant → no store → nothing authorized
       try {
-        const result = await this.client.listObjects({
+        const result = await client.listObjects({
           user,
           relation,
           type,
@@ -188,11 +254,16 @@ export class AuthorizationService {
    * @param user - OpenFGA user string, e.g. "user:alice"
    * @param relation - Relation to write, e.g. "assigned"
    * @param resource - OpenFGA object string, e.g. "ward:cardiology"
+   * @param tenantId - Tenant whose store receives the tuple
    */
-  async writeRelationship(user: string, relation: string, resource: string): Promise<void> {
+  async writeRelationship(user: string, relation: string, resource: string, tenantId: string): Promise<void> {
     return withSpan(tracer, "authz.writeRelationship", {}, async () => {
+      const client = await this.clientFor(tenantId);
+      // Throw rather than no-op: a grant the caller believes succeeded but that
+      // landed nowhere is worse than a visible failure.
+      if (!client) throw new AuthorizationError("UNKNOWN_TENANT", `No OpenFGA store configured for tenant '${tenantId}'`);
       try {
-        await this.client.writeTuples([{
+        await client.writeTuples([{
           user,
           relation,
           object: resource,
@@ -209,11 +280,16 @@ export class AuthorizationService {
    * @param user - OpenFGA user string, e.g. "user:alice"
    * @param relation - Relation to remove, e.g. "assigned"
    * @param resource - OpenFGA object string, e.g. "ward:cardiology"
+   * @param tenantId - Tenant whose store loses the tuple
    */
-  async deleteRelationship(user: string, relation: string, resource: string): Promise<void> {
+  async deleteRelationship(user: string, relation: string, resource: string, tenantId: string): Promise<void> {
     return withSpan(tracer, "authz.deleteRelationship", {}, async () => {
+      const client = await this.clientFor(tenantId);
+      // Same as writeRelationship: a revoke that silently did nothing would leave
+      // access in place while reporting success.
+      if (!client) throw new AuthorizationError("UNKNOWN_TENANT", `No OpenFGA store configured for tenant '${tenantId}'`);
       try {
-        await this.client.deleteTuples([{
+        await client.deleteTuples([{
           user,
           relation,
           object: resource,

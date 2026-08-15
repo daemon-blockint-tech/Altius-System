@@ -11,5 +11,5 @@ export type {
 } from "./types.js";
 export { AuthorizationError } from "./types.js";
 
-export type { OpenFgaClientInterface } from "./authorization-service.js";
+export type { OpenFgaClientInterface, FgaClientResolver } from "./authorization-service.js";
 export { AuthorizationService } from "./authorization-service.js";

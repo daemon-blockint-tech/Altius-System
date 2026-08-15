@@ -116,6 +116,7 @@ async function handlePatientRead(
       `user:${req.user.id}`,
       'viewer',
       `patient:${id}`,
+      req.user.tenantId,
     );
     if (!allowed) {
       return operationOutcome(403, 'forbidden', `Access denied to Patient ${id}`);
@@ -201,6 +202,7 @@ async function handlePatientSearch(
       `user:${req.user.id}`,
       'viewer',
       'patient',
+      req.user.tenantId,
     );
 
     const allowedIds = allowedObjects.map((o: string) => {
@@ -307,6 +309,7 @@ async function handleEncounterSearch(
       `user:${req.user.id}`,
       'viewer',
       `patient:${patientId}`,
+      req.user.tenantId,
     );
     if (!allowed) {
       return operationOutcome(403, 'forbidden', `Access denied to Patient ${patientId}`);

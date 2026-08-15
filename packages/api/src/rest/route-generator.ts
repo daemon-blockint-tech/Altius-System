@@ -155,11 +155,13 @@ async function resolveAllowedIds(
   deps: ApiDependencies,
   userId: string,
   fgaType: string,
+  tenantId: string,
 ): Promise<string[]> {
   const allowedObjects = await deps.authorizationService.listObjects(
     `user:${userId}`,
     'viewer',
     fgaType,
+    tenantId,
   );
   if (allowedObjects.length === 1 && allowedObjects[0] === '*') {
     return ['*'];
@@ -326,6 +328,7 @@ function generateListRoute(
           `user:${user.id}`,
           'viewer',
           fgaType,
+          user.tenantId,
         );
 
         const allAuthorized = allowedObjects.length === 1 && allowedObjects[0] === '*';
@@ -593,6 +596,7 @@ function generateGetByIdRoute(
           `user:${user.id}`,
           'viewer',
           `${fgaType}:${id}`,
+          user.tenantId,
         );
         if (!allowed) {
           return createRestErrorResponse({
@@ -711,6 +715,7 @@ function generateUpdateRoute(
           `user:${user.id}`,
           'editor',
           `${fgaType}:${id}`,
+          user.tenantId,
         );
         if (!allowed) {
           return createRestErrorResponse({
@@ -797,6 +802,7 @@ function generateDeleteRoute(
           `user:${user.id}`,
           'editor',
           `${fgaType}:${id}`,
+          user.tenantId,
         );
         if (!allowed) {
           return createRestErrorResponse({
@@ -867,6 +873,7 @@ function generateLinksRoute(
           `user:${user.id}`,
           'viewer',
           `${fgaType}:${id}`,
+          user.tenantId,
         );
         if (!allowed) {
           return createRestErrorResponse({
@@ -941,6 +948,7 @@ function generateHistoryRoute(
           `user:${user.id}`,
           'viewer',
           `${fgaType}:${id}`,
+          user.tenantId,
         );
         if (!allowed) {
           return createRestErrorResponse({
@@ -1041,7 +1049,7 @@ function generateAggregateRoute(
         const typeName = obj.name;
 
         // Authorization: restrict aggregation to authorized objects
-        const allowedIds = await resolveAllowedIds(deps, user.id, fgaType);
+        const allowedIds = await resolveAllowedIds(deps, user.id, fgaType, user.tenantId);
         if (allowedIds.length === 0) {
           return { status: 200, body: { data: { groups: [], totalGroups: 0 } } };
         }
@@ -1143,7 +1151,7 @@ function generateSearchRoute(
         }
 
         // Authorization: restrict search to authorized objects
-        const allowedIds = await resolveAllowedIds(deps, user.id, fgaType);
+        const allowedIds = await resolveAllowedIds(deps, user.id, fgaType, user.tenantId);
         if (allowedIds.length === 0) {
           const { offset, limit } = parsePagination(req.query);
           return {
@@ -1577,7 +1585,7 @@ function generateObjectSetRoutes(schema: ParsedSchema, deps: ApiDependencies): R
 
           // Authorization: restrict results to authorized objects
           const fgaType = toSnakeCase(def.objectType);
-          const allowedIds = await resolveAllowedIds(deps, user.id, fgaType);
+          const allowedIds = await resolveAllowedIds(deps, user.id, fgaType, user.tenantId);
           if (allowedIds.length === 0) {
             const { offset, limit } = parsePagination(req.query);
             return {
@@ -1754,7 +1762,7 @@ function generateObjectSetRoutes(schema: ParsedSchema, deps: ApiDependencies): R
 
           // Authorization: restrict aggregation to authorized objects
           const fgaType = toSnakeCase(def.objectType);
-          const allowedIds = await resolveAllowedIds(deps, user.id, fgaType);
+          const allowedIds = await resolveAllowedIds(deps, user.id, fgaType, user.tenantId);
           if (allowedIds.length === 0) {
             return { status: 200, body: { data: { groups: [], totalGroups: 0 } } };
           }

@@ -6,7 +6,7 @@
  */
 
 import type { PostgresStorageConfig } from '@altius/storage-postgres';
-import type { OpenFgaClientInterface, OidcAuthenticator } from '@altius/security';
+import type { OpenFgaClientInterface, FgaClientResolver, OidcAuthenticator } from '@altius/security';
 import { AuthenticationError, AuthorizationService } from '@altius/security';
 import type { SecurityLayer } from '@altius/actions';
 import type { Request } from 'express';
@@ -56,6 +56,127 @@ export async function createFgaClient(apiUrl: string, storeId: string): Promise<
 }
 
 // ---------------------------------------------------------------------------
+// Per-tenant OpenFGA store mapping
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve the tenant → OpenFGA store id mapping from the environment.
+ *
+ * One store per tenant. Tuples are written as bare `user:<id>` / `<type>:<id>`
+ * with no tenant qualifier, and object ids are unique only per tenant (the
+ * storage primary key is (_tenant_id, _id)). So with a single shared store, a
+ * granter in tenant A minting `clinician` on `patient:123` also authorizes the
+ * unrelated `patient:123` in tenant B. Separate stores mean the two tenants
+ * share no namespace at all.
+ *
+ * Two shapes:
+ *   OPENFGA_STORE_IDS='a=01H...,b=01J...'  — the general, multi-tenant form.
+ *   OPENFGA_STORE_ID='01H...'              — single-tenant back-compat, legal
+ *     ONLY when the deployment has named its one tenant via OIDC_DEFAULT_TENANT.
+ *
+ * That last condition is the guard that stops a MULTI-tenant deployment from
+ * reaching the single-store path. server.ts already documents the convention:
+ * single-tenant deployments set OIDC_DEFAULT_TENANT, multi-tenant deployments
+ * leave it unset and map real tenants from the token's tenant_id claim. So an
+ * unset OIDC_DEFAULT_TENANT plus a lone OPENFGA_STORE_ID is exactly the shared-
+ * store configuration this split exists to remove — it fails boot rather than
+ * booting into a cross-tenant read. Where OIDC_DEFAULT_TENANT is set but other
+ * tenants do turn up, they map to no store and are denied: closed, not shared.
+ *
+ * Store ids must be distinct: pointing two tenants at one store re-creates the
+ * shared namespace through the back door, so it is rejected here.
+ *
+ * Stores are NOT created on demand. The mapping is explicit configuration, which
+ * keeps store-creation privilege out of the API process and avoids pods racing
+ * to create the same tenant's store.
+ */
+export function parseFgaStoreMap(
+  storeIds: string | undefined = process.env['OPENFGA_STORE_IDS'],
+  storeId: string | undefined = process.env['OPENFGA_STORE_ID'],
+  defaultTenant: string | undefined = process.env['OIDC_DEFAULT_TENANT'],
+): Map<string, string> {
+  // Blank counts as unset (compose/Helm pass unset knobs through as '').
+  const multi = storeIds?.trim();
+  if (multi) {
+    const stores = new Map<string, string>();
+    const tenantByStore = new Map<string, string>();
+    for (const entry of multi.split(',')) {
+      const pair = entry.trim();
+      if (!pair) continue;
+      const eq = pair.indexOf('=');
+      const tenant = eq > 0 ? pair.slice(0, eq).trim() : '';
+      const store = eq > 0 ? pair.slice(eq + 1).trim() : '';
+      if (!tenant || !store) {
+        throw new Error(`OPENFGA_STORE_IDS: expected 'tenant=storeId' pairs, got '${pair}'`);
+      }
+      if (stores.has(tenant)) {
+        throw new Error(`OPENFGA_STORE_IDS: tenant '${tenant}' is listed more than once`);
+      }
+      const shared = tenantByStore.get(store);
+      if (shared) {
+        throw new Error(
+          `OPENFGA_STORE_IDS: tenants '${shared}' and '${tenant}' both map to store '${store}'. ` +
+          `A shared store shares a tuple namespace, so a grant in one tenant would authorize ` +
+          `the same object id in the other. Give each tenant its own store.`,
+        );
+      }
+      tenantByStore.set(store, tenant);
+      stores.set(tenant, store);
+    }
+    if (stores.size === 0) {
+      throw new Error(`OPENFGA_STORE_IDS: no 'tenant=storeId' pairs found in '${storeIds}'`);
+    }
+    return stores;
+  }
+
+  const single = storeId?.trim();
+  if (!single) {
+    throw new Error('Authorization requires OPENFGA_STORE_IDS (tenant=storeId,...) or OPENFGA_STORE_ID');
+  }
+  const tenant = defaultTenant?.trim();
+  if (!tenant) {
+    throw new Error(
+      `OPENFGA_STORE_ID alone is single-tenant configuration, but this deployment has not ` +
+      `named its single tenant (OIDC_DEFAULT_TENANT is unset, which means tenants come from ` +
+      `the token's tenant_id claim). Set OIDC_DEFAULT_TENANT to the one tenant this store ` +
+      `serves, or set OPENFGA_STORE_IDS='tenantA=store1,tenantB=store2' to give each tenant ` +
+      `its own store. One store shared across tenants lets a grant in one authorize the same ` +
+      `object id in another.`,
+    );
+  }
+  return new Map([[tenant, single]]);
+}
+
+/**
+ * Build a tenant → FGA client resolver over an explicit store mapping.
+ *
+ * One client per tenant, created lazily and cached; unknown tenants resolve to
+ * undefined so AuthorizationService fails closed. The pending promise (not the
+ * settled client) is cached so concurrent first requests for a tenant share one
+ * client rather than racing to build several; a failed creation is evicted so it
+ * can be retried.
+ */
+export function createFgaClientRegistry(
+  apiUrl: string,
+  stores: ReadonlyMap<string, string>,
+): FgaClientResolver {
+  const clients = new Map<string, Promise<OpenFgaClientInterface>>();
+  return async (tenantId: string) => {
+    const storeId = stores.get(tenantId);
+    if (!storeId) return undefined; // no store for this tenant → deny (never a default)
+    let pending = clients.get(tenantId);
+    if (!pending) {
+      pending = createFgaClient(apiUrl, storeId).catch((err: unknown) => {
+        clients.delete(tenantId);
+        throw err;
+      });
+      clients.set(tenantId, pending);
+    }
+    return pending;
+  };
+}
+
+// ---------------------------------------------------------------------------
 // SecurityLayer bridge (authz -> action pipeline)
 // ---------------------------------------------------------------------------
 
@@ -80,7 +201,7 @@ export function createSecurityLayer(
   actionMappings?: Map<string, ActionAuthzMapping>,
 ): SecurityLayer {
   return {
-    async checkPermission(actor, actionType, params, _ctx) {
+    async checkPermission(actor, actionType, params, ctx) {
       const mapping = actionMappings?.get(actionType);
       if (mapping) {
         // Use domain-specific FGA check: relation on target object
@@ -93,6 +214,7 @@ export function createSecurityLayer(
           `user:${actor.id}`,
           mapping.relation,
           `${mapping.objectType}:${objectId}`,
+          ctx.tenantId,
         );
         return { allowed };
       }
@@ -231,10 +353,12 @@ export function parseSchemaBreakingPolicy(
 // Required env vars for production
 // ---------------------------------------------------------------------------
 
+// The OpenFGA store configuration is deliberately NOT listed here: it is either
+// OPENFGA_STORE_IDS or OPENFGA_STORE_ID, and parseFgaStoreMap already fails boot
+// with a message naming which one is missing and why.
 export const REQUIRED_PROD_VARS = [
   'OIDC_ISSUER',
   'OIDC_CLIENT_ID',
   'OPENFGA_URL',
-  'OPENFGA_STORE_ID',
   'POSTGRES_URL',
 ] as const;

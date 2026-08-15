@@ -362,6 +362,7 @@ function generateLinkFieldResolvers(
             `user:${user.id}`,
             'viewer',
             `${targetFgaType}:${targetId}`,
+            user.tenantId,
           );
           if (!allowed) continue;
 
@@ -564,6 +565,7 @@ function generateQueryResolvers(
         `user:${user.id}`,
         'viewer',
         `${fgaType}:${args.id}`,
+        user.tenantId,
       );
       if (!allowed) {
         throw createAltiusError({
@@ -635,6 +637,7 @@ function generateQueryResolvers(
         `user:${user.id}`,
         'viewer',
         fgaType,
+        user.tenantId,
       );
 
       // Build filter: combine user filter with authorization filter
@@ -818,11 +821,13 @@ async function resolveAllowedIds(
   deps: ApiDependencies,
   userId: string,
   fgaType: string,
+  tenantId: string,
 ): Promise<string[]> {
   const allowedObjects = await deps.authorizationService.listObjects(
     `user:${userId}`,
     'viewer',
     fgaType,
+    tenantId,
   );
   if (allowedObjects.length === 1 && allowedObjects[0] === '*') {
     return ['*'];
@@ -885,6 +890,7 @@ function generateUpdateMutationResolver(
         `user:${user.id}`,
         'editor',
         `${fgaType}:${id}`,
+        user.tenantId,
       );
       if (!allowed) {
         throw createAltiusError({
@@ -952,6 +958,7 @@ function generateDeleteMutationResolver(
         `user:${user.id}`,
         'editor',
         `${fgaType}:${id}`,
+        user.tenantId,
       );
       if (!allowed) {
         throw createAltiusError({
@@ -1019,7 +1026,7 @@ function generateAggregateResolver(
       const { user, requestContext } = ctx;
 
       // Authorization: restrict aggregation to authorized objects
-      const allowedIds = await resolveAllowedIds(deps, user.id, fgaType);
+      const allowedIds = await resolveAllowedIds(deps, user.id, fgaType, user.tenantId);
       if (allowedIds.length === 0) {
         return { groups: [], totalGroups: 0 };
       }
@@ -1119,7 +1126,7 @@ function generateSearchResolver(
       }
 
       // Authorization: restrict search to authorized objects
-      const allowedIds = await resolveAllowedIds(deps, user.id, fgaType);
+      const allowedIds = await resolveAllowedIds(deps, user.id, fgaType, user.tenantId);
       if (allowedIds.length === 0) {
         return { hits: [], totalCount: 0, hasNextPage: false };
       }
@@ -1632,7 +1639,7 @@ function generateRelationshipResolvers(resolvers: ResolverMap, deps: ApiDependen
       deps.grantAllowlist ?? new Map(),
       action,
       args.input,
-      { id: user.id, roles: user.roles },
+      { id: user.id, roles: user.roles, tenantId: requestContext.tenantId },
       requestContext.traceId,
     );
     if (!result.ok) {

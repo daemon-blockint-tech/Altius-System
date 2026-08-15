@@ -313,6 +313,12 @@ export class ConsentService implements ConsentManager {
     requestor: string,
     tenantId?: string,
   ): Promise<ConsentDecision | null> {
+    // Fail closed: the ReBAC check runs against the tenant's own OpenFGA store,
+    // so with no tenant there is no store to ask and no care relationship can be
+    // established. Returning null means "exemption does not apply" — the caller
+    // then falls through to explicit consent records.
+    if (!tenantId) return null;
+
     const relation = this.config.careRelation ?? "viewer";
     const subjectType = this.config.subjectType ?? "patient";
 
@@ -325,6 +331,7 @@ export class ConsentService implements ConsentManager {
       fgaUser,
       relation,
       fgaSubject,
+      tenantId,
     );
 
     if (!hasRelationship) {

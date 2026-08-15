@@ -122,7 +122,7 @@ export async function applyRelationshipChange(
   allowlist: GrantAllowlist,
   action: 'grant' | 'revoke',
   body: unknown,
-  actor: { id: string; roles: string[] },
+  actor: { id: string; roles: string[]; tenantId: string },
   traceId: string | undefined,
 ): Promise<RelationshipChangeResult> {
   const parsed = parseBody(body);
@@ -165,10 +165,15 @@ export async function applyRelationshipChange(
   }
 
   try {
+    // The tuple lands in the CALLER's own tenant store — the tenant comes from
+    // the authenticated actor, never from the request body (parseBody accepts
+    // only user/relation/objectType/objectId, so there is no field through which
+    // a caller could name another tenant). A granter in tenant A therefore
+    // cannot mint a tuple that authorizes the same object id in tenant B.
     if (action === 'grant') {
-      await deps.authorizationService.writeRelationship(subject, parsed.relation, resource);
+      await deps.authorizationService.writeRelationship(subject, parsed.relation, resource, actor.tenantId);
     } else {
-      await deps.authorizationService.deleteRelationship(subject, parsed.relation, resource);
+      await deps.authorizationService.deleteRelationship(subject, parsed.relation, resource, actor.tenantId);
     }
     await deps.auditWriter?.write({
       actor: auditActor,
@@ -204,7 +209,8 @@ export function generateRelationshipRoutes(
   ): Promise<RestResponse> => {
     const r = await applyRelationshipChange(
       deps, allowlist, action, req.body,
-      { id: ctx.user.id, roles: ctx.user.roles }, ctx.requestContext.traceId,
+      { id: ctx.user.id, roles: ctx.user.roles, tenantId: ctx.requestContext.tenantId },
+      ctx.requestContext.traceId,
     );
     if (!r.ok) {
       return createRestErrorResponse({
