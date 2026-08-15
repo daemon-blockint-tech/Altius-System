@@ -26,6 +26,7 @@ const schema: ParsedSchema = {
       directives: [],
       runtime: 'node',
       entry: 'score-risk/index.js',
+      requiredRoles: [],
     },
     {
       kind: 'functionType',
@@ -36,6 +37,7 @@ const schema: ParsedSchema = {
       directives: [],
       runtime: 'cel',
       entry: 'score * 2',
+      requiredRoles: [],
     },
   ],
   enums: [],

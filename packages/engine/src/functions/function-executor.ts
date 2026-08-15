@@ -178,6 +178,15 @@ export interface FunctionExecutorConfig {
   celEvaluator?: CelEvaluator;
   /** Pack-relative base directory for node runtime module resolution. */
   packDir?: string;
+  /**
+   * Per-function base directory, keyed by FunctionType name.
+   *
+   * A single `packDir` cannot be correct once more than one pack is loaded: the
+   * schema merges every pack's FunctionTypes into one list, while the entry
+   * path is relative to the pack that declared it. Callers that know the
+   * provenance supply it here; `packDir` remains the fallback.
+   */
+  packDirByFunction?: Record<string, string>;
 }
 
 /**
@@ -192,11 +201,13 @@ export class FunctionExecutor {
   private readonly runtimes: Map<string, FunctionRuntime>;
   private readonly celEvaluator?: CelEvaluator;
   private readonly packDir?: string;
+  private readonly packDirByFunction: Record<string, string>;
 
   constructor(config: FunctionExecutorConfig) {
     this.schema = config.schema;
     this.celEvaluator = config.celEvaluator;
     this.packDir = config.packDir;
+    this.packDirByFunction = config.packDirByFunction ?? {};
     this.runtimes = new Map();
 
     const defaults: FunctionRuntime[] = [
@@ -256,7 +267,8 @@ export class FunctionExecutor {
     const result = await runtime.execute({
       fn,
       inputs,
-      packDir: this.packDir,
+      // The declaring pack's directory when known — see packDirByFunction.
+      packDir: this.packDirByFunction[name] ?? this.packDir,
       celEvaluator: this.celEvaluator,
       log,
     });

@@ -182,7 +182,7 @@ async function main(): Promise<void> {
   // ([{"name":"nhs-acute","version":"0.2.0"}]). Handle both formats.
   const packNames = parseDomainPacksEnv(process.env['DOMAIN_PACKS']);
   const {
-    parsed: schema, spiSchema, packs, packInfos, manifestRegistry,
+    parsed: schema, spiSchema, packs, packInfos, manifestRegistry, functionPackDirs,
     fieldPermissions, permissionOverrides, connectorManifests, seedManifests,
   } = await loadDomainPacks(undefined, packNames);
   logger.info(
@@ -338,6 +338,9 @@ async function main(): Promise<void> {
     schema,
     celEvaluator: cel,
     packDir: packInfos[0]?.packDir,
+    // Per-function provenance: a single packDir resolves every pack's entry
+    // against whichever pack loaded first (always `core`, which ships none).
+    packDirByFunction: functionPackDirs,
     runtimes: [
       new IsolatedNodeFunctionRuntime({ name: 'node', packDir: packInfos[0]?.packDir }),
       new CelFunctionRuntime(),

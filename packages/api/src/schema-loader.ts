@@ -113,6 +113,14 @@ export interface LoadedSchema {
   packs: PackManifest[];
   /** Detailed pack info including origin. */
   packInfos: LoadedPackInfo[];
+  /**
+   * FunctionType name → the directory of the pack that declared it.
+   *
+   * mergeSchemas flattens every pack's functionTypes into one list while each
+   * `entry` stays relative to its own pack, so provenance has to be recorded
+   * here — it is a loader concern, not something the ODL grammar expresses.
+   */
+  functionPackDirs: Record<string, string>;
   /** Action manifests (ManifestRegistry for action executor). */
   manifestRegistry: ManifestRegistry;
   /** Field permission configurations for field-level redaction. */
@@ -884,6 +892,7 @@ export async function loadDomainPacks(
   const parsedSchemas: ParsedSchema[] = [];
   const manifests: PackManifest[] = [];
   const packDirs: string[] = [];
+  const functionPackDirs: Record<string, string> = {};
   const packInfos: LoadedPackInfo[] = [];
   const fieldPermissions: FieldPermissionConfig[] = [];
   const permissionOverrides: string[] = [];
@@ -914,6 +923,9 @@ export async function loadDomainPacks(
           enums: parsed.enums.length,
         };
         parsedSchemas.push(parsed);
+        for (const fn of parsed.functionTypes) {
+          functionPackDirs[fn.name] = packDir;
+        }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         throw new Error(`Schema loader: failed to parse ODL from pack '${name}': ${msg}`);
@@ -976,6 +988,7 @@ export async function loadDomainPacks(
     packs: manifests,
     packInfos,
     manifestRegistry,
+    functionPackDirs,
     fieldPermissions,
     permissionOverrides,
     connectorManifests,
