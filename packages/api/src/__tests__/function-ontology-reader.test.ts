@@ -189,7 +189,7 @@ async function actionReader(deps: ApiDependencies, captured: { ontology?: { appl
 
 describe('function ontology edits go through the action pipeline', () => {
   it('runs the action as the invoking user, not a service account', async () => {
-    const execute = vi.fn(async () => ({ success: true, actionId: 'act-1', errors: [], affectedObjects: [] }));
+    const execute = vi.fn(async (..._args: unknown[]) => ({ success: true, actionId: 'act-1', errors: [], affectedObjects: [] }));
     const { deps, captured } = depsWithActions(execute);
     const reader = await actionReader(deps, captured);
 
@@ -201,7 +201,7 @@ describe('function ontology edits go through the action pipeline', () => {
   });
 
   it('derives the consent subject exactly as the HTTP action route does', async () => {
-    const execute = vi.fn(async () => ({ success: true, actionId: 'act-1', errors: [], affectedObjects: [] }));
+    const execute = vi.fn(async (..._args: unknown[]) => ({ success: true, actionId: 'act-1', errors: [], affectedObjects: [] }));
     const { deps, captured } = depsWithActions(execute);
     const reader = await actionReader(deps, captured);
 
@@ -209,12 +209,12 @@ describe('function ontology edits go through the action pipeline', () => {
 
     // Without this, calling an action from a function would skip the consent
     // stage that calling it over HTTP applies.
-    const actionCtx = execute.mock.calls[0]![3] as { consentSubjectId?: string };
+    const actionCtx = execute.mock.calls[0]![3] as unknown as { consentSubjectId?: string };
     expect(actionCtx.consentSubjectId).toBe('p-1');
   });
 
   it('throws when the action is refused, so pack code cannot read it as applied', async () => {
-    const execute = vi.fn(async () => ({
+    const execute = vi.fn(async (..._args: unknown[]) => ({
       success: false, actionId: 'act-1', affectedObjects: [],
       errors: [{ code: 'FORBIDDEN', message: 'not permitted' }],
     }));
@@ -232,5 +232,120 @@ describe('function ontology edits go through the action pipeline', () => {
 
     await expect(reader.applyAction!('Ghost', {})).rejects.toThrow(/Unknown action "Ghost"/);
     expect(execute).not.toHaveBeenCalled();
+  });
+});
+
+// ─── queryObjects: object sets carry the same three controls ───
+
+function depsWithQuery(overrides: {
+  listObjects?: () => Promise<string[]>;
+  items?: Record<string, unknown>[];
+  redactFieldsBatch?: (u: string, r: string[], t: string, o: Record<string, unknown>[]) => { data: Record<string, unknown>; _redactedFields: string[] }[];
+  consentService?: unknown;
+} = {}) {
+  const query = vi.fn(async (..._args: unknown[]) => ({
+    items: overrides.items ?? [
+      { _id: 'p-1', _type: 'Patient', name: 'Ada' },
+      { _id: 'p-2', _type: 'Patient', name: 'Grace' },
+    ],
+    totalCount: 2,
+    hasNextPage: false,
+  }));
+  const captured: { ontology?: { queryObjects?(t: string, f?: unknown, l?: number): Promise<Record<string, unknown>[]> } } = {};
+  const deps = {
+    schema,
+    functionExecutor: {
+      execute: vi.fn(async (_n: string, _i: Record<string, unknown>, opts?: typeof captured) => {
+        if (opts?.ontology) captured.ontology = opts.ontology;
+        return { result: 1, logs: [], durationMs: 1 };
+      }),
+    },
+    auditWriter: { write: vi.fn().mockResolvedValue(undefined) },
+    objectManager: { get: vi.fn(), query },
+    authorizationService: {
+      check: vi.fn(async () => true),
+      listObjects: overrides.listObjects ?? vi.fn(async () => ['*']),
+      redactFields: (_u: string, _r: string[], _t: string, o: Record<string, unknown>) => ({ data: o, _redactedFields: [] }),
+      redactFieldsBatch: overrides.redactFieldsBatch
+        ?? ((_u: string, _r: string[], _t: string, o: Record<string, unknown>[]) => o.map(data => ({ data, _redactedFields: [] }))),
+    },
+    ...(overrides.consentService ? { consentService: overrides.consentService } : {}),
+  } as unknown as ApiDependencies;
+  return { deps, captured, query };
+}
+
+async function queryReader(deps: ApiDependencies, captured: { ontology?: { queryObjects?(t: string, f?: unknown, l?: number): Promise<Record<string, unknown>[]> } }) {
+  await invokeFunction(scoreRisk, deps, ctx, { patientId: 'p-1' });
+  return captured.ontology!;
+}
+
+describe('function ontology queries are scoped like the list route', () => {
+  it('returns the object set the caller may see', async () => {
+    const { deps, captured } = depsWithQuery();
+    const reader = await queryReader(deps, captured);
+
+    const rows = await reader.queryObjects!('Patient');
+
+    expect(rows.map(r => r['name'])).toEqual(['Ada', 'Grace']);
+  });
+
+  it('folds the caller authorized ids into the filter, not a post-filter', async () => {
+    const { deps, captured, query } = depsWithQuery({
+      listObjects: vi.fn(async () => ['patient:p-2']),
+    });
+    const reader = await queryReader(deps, captured);
+
+    await reader.queryObjects!('Patient');
+
+    // Scoping must reach storage: filtering after the fact would still have
+    // pulled every row into the gateway.
+    const filter = query.mock.calls[0]![1] as { field?: string; operator?: string; value?: unknown };
+    expect(filter).toMatchObject({ field: '_id', operator: 'in', value: ['p-2'] });
+  });
+
+  it('returns nothing when the caller is authorized for nothing', async () => {
+    const { deps, captured, query } = depsWithQuery({ listObjects: vi.fn(async () => []) });
+    const reader = await queryReader(deps, captured);
+
+    expect(await reader.queryObjects!('Patient')).toEqual([]);
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it('redacts every row before pack code sees the set', async () => {
+    const { deps, captured } = depsWithQuery({
+      items: [{ _id: 'p-1', _type: 'Patient', name: 'Ada', diagnosis: 'HIV' }],
+      redactFieldsBatch: (_u, _r, _t, rows) => rows.map(({ diagnosis: _d, ...rest }) => ({ data: rest, _redactedFields: ['diagnosis'] })),
+    });
+    const reader = await queryReader(deps, captured);
+
+    const rows = await reader.queryObjects!('Patient');
+
+    expect(rows[0]).not.toHaveProperty('diagnosis');
+  });
+
+  it('drops consent-restricted rows rather than blanking them', async () => {
+    const { deps, captured } = depsWithQuery({
+      consentService: {
+        checkSingleObject: vi.fn(async (row: Record<string, unknown>) => ({
+          _consentRestricted: row['_id'] === 'p-2',
+        })),
+      },
+    });
+    const reader = await queryReader(deps, captured);
+
+    const rows = await reader.queryObjects!('Patient');
+
+    // A function averaging over blanked rows returns a confidently wrong
+    // number; dropping them is the honest answer.
+    expect(rows.map(r => r['_id'])).toEqual(['p-1']);
+  });
+
+  it('caps the row count a single query may pull back', async () => {
+    const { deps, captured, query } = depsWithQuery();
+    const reader = await queryReader(deps, captured);
+
+    await reader.queryObjects!('Patient', undefined, 999_999);
+
+    expect((query.mock.calls[0]![2] as { limit: number }).limit).toBe(1000);
   });
 });

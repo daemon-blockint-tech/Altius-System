@@ -159,6 +159,16 @@ export class IsolatedNodeFunctionRuntime implements FunctionRuntime {
         }
         const [actionName, params] = msg.args as [string, Record<string, unknown>];
         value = await ontology.applyAction(actionName, params);
+      } else if (msg.op === 'queryObjects') {
+        if (!ontology.queryObjects) {
+          throw new Error(
+            'this deployment offers no queryObjects path, so functions cannot read object sets',
+          );
+        }
+        // The child cannot send undefined over IPC, so absent args arrive as
+        // null; normalise before handing them to the host.
+        const [objectType, filter, limit] = msg.args as [string, unknown, number | null];
+        value = await ontology.queryObjects(objectType, filter ?? undefined, limit ?? undefined);
       } else {
         throw new Error(`unsupported ontology operation "${msg.op}"`);
       }

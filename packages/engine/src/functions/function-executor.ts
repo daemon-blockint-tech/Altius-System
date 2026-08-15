@@ -65,6 +65,19 @@ export interface FunctionOntologyAccess {
    * runtime refuses the call rather than silently doing nothing.
    */
   applyAction?(actionName: string, params: Record<string, unknown>): Promise<unknown>;
+  /**
+   * Read an object *set*. Fetching one object by primary key is the weakest
+   * thing a function on objects can do; real ones work over a set.
+   *
+   * The host scopes the result to what the caller may see, redacts it and
+   * applies consent, exactly as the list route does — so the set a function
+   * sees is the set its caller would see.
+   */
+  queryObjects?(
+    objectType: string,
+    filter?: unknown,
+    limit?: number,
+  ): Promise<Record<string, unknown>[]>;
 }
 
 export interface FunctionRuntimeContext {

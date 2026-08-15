@@ -50,6 +50,7 @@ const ontology = {
   // Not a write: the parent runs a declared action through the governed
   // pipeline. Pack code never touches storage.
   applyAction: (actionName, params) => callHost('applyAction', [actionName, params ?? {}]),
+  queryObjects: (type, filter, limit) => callHost('queryObjects', [type, filter ?? null, limit ?? null]),
 };
 
 process.on('message', (msg) => {

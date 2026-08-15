@@ -91,3 +91,51 @@ describe('function ontology access', () => {
       .rejects.toThrow(/ontology/i);
   });
 });
+
+// ─── queryObjects: functions operate on object sets ───
+
+const queryFn: FunctionType = {
+  kind: 'functionType',
+  name: 'CountWard',
+  fields: [
+    { name: 'ward', type: { name: 'String', nonNull: true, isList: false, listElementNonNull: false }, directives: [{ kind: 'param' }] },
+  ],
+  directives: [],
+  runtime: 'node-isolated',
+  entry: 'query-objects.mjs',
+  requiredRoles: ['clinician'],
+};
+
+const querySchema: ParsedSchema = {
+  objectTypes: [], linkTypes: [], actionTypes: [],
+  functionTypes: [queryFn],
+  enums: [], interfaces: [], scalars: [],
+};
+
+describe('function ontology queries', () => {
+  it('hands pack code an object set, not just one object by id', async () => {
+    const queryObjects = vi.fn(async () => [{ _id: 'p-1', name: 'Ada' }, { _id: 'p-2', name: 'Grace' }]);
+    const executor = new FunctionExecutor({
+      schema: querySchema,
+      packDir: FIXTURES,
+      runtimes: [new IsolatedNodeFunctionRuntime({ name: 'node-isolated', packDir: FIXTURES, timeoutMs: 15_000 })],
+      ontology: { getObject: async () => null, queryObjects },
+    });
+
+    const out = await executor.execute('CountWard', { ward: 'w-1' });
+
+    expect(queryObjects).toHaveBeenCalledWith('Patient', { field: 'ward', operator: 'eq', value: 'w-1' }, undefined);
+    expect(out.result).toEqual({ count: 2, names: ['Ada', 'Grace'] });
+  });
+
+  it('fails closed when the host offers no query path', async () => {
+    const executor = new FunctionExecutor({
+      schema: querySchema,
+      packDir: FIXTURES,
+      runtimes: [new IsolatedNodeFunctionRuntime({ name: 'node-isolated', packDir: FIXTURES, timeoutMs: 15_000 })],
+      ontology: { getObject: async () => null },
+    });
+
+    await expect(executor.execute('CountWard', { ward: 'w-1' })).rejects.toThrow(/queryObjects/i);
+  });
+});

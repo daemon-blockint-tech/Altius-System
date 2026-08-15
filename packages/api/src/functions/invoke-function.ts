@@ -12,7 +12,7 @@ import type { FunctionType } from '@altius/odl';
 
 import type { FunctionOntologyAccess } from '@altius/engine';
 import type { ActionActor, ActionContext } from '@altius/actions';
-import type { DataPurpose } from '@altius/spi';
+import type { DataPurpose, FilterExpression } from '@altius/spi';
 
 import type { ApiDependencies, ResolverContext } from '../graphql/types.js';
 import {
@@ -20,10 +20,13 @@ import {
   DEFAULT_CONSENT_SUBJECT_TYPES,
   isConsentSubjectType,
 } from '../graphql/types.js';
-import { objectToGraphQL } from '../graphql/resolver-generator.js';
+import { objectToGraphQL, resolveAllowedIds, buildAuthFilter } from '../graphql/resolver-generator.js';
 import { createAltiusError } from '../graphql/errors.js';
 import { toSnakeCase } from '../utils.js';
 import { logger } from '../logger.js';
+
+/** Cap on rows a single function query may pull back. */
+const FUNCTION_QUERY_LIMIT = 1000;
 
 export interface FunctionInvocationResult {
   result: unknown;
@@ -117,6 +120,65 @@ function ontologyReaderFor(deps: ApiDependencies, ctx: ResolverContext): Functio
       }
 
       return data;
+    },
+
+    async queryObjects(
+      objectType: string,
+      filter?: unknown,
+      limit?: number,
+    ): Promise<Record<string, unknown>[]> {
+      const obj = deps.schema.objectTypes.find(o => o.name === objectType);
+      if (!obj) {
+        throw new Error(`Unknown object type "${objectType}"`);
+      }
+
+      // Same scoping the list route applies: ask OpenFGA which ids this caller
+      // may see and fold that into the filter, rather than filtering after the
+      // fact. resolveAllowedIds returns the ['*'] sentinel for the dev stub,
+      // which buildAuthFilter turns into a pass-through — reimplementing either
+      // is how a subtle authorization hole gets written.
+      const allowedIds = await resolveAllowedIds(
+        deps,
+        ctx.user.id,
+        toSnakeCase(objectType),
+        ctx.user.tenantId,
+      );
+      if (allowedIds.length === 0) return [];
+
+      const page = await deps.objectManager.query(
+        objectType,
+        buildAuthFilter(allowedIds, filter as FilterExpression | undefined),
+        { limit: Math.min(limit ?? FUNCTION_QUERY_LIMIT, FUNCTION_QUERY_LIMIT) },
+        ctx.requestContext,
+      );
+
+      const rows = page.items.map(o => objectToGraphQL(o, obj));
+      const redacted = deps.authorizationService.redactFieldsBatch(
+        ctx.user.id,
+        ctx.user.roles,
+        objectType,
+        rows,
+      );
+      const visible = redacted.map(r => r.data as Record<string, unknown>);
+
+      if (!deps.consentService || !isConsentSubjectType(objectType, deps.consentSubjectTypes)) {
+        return visible;
+      }
+      // Consent-restricted rows are dropped rather than blanked, for the same
+      // reason getObject refuses them: a function counting or averaging over
+      // blanked rows produces a confidently wrong number.
+      const kept: Record<string, unknown>[] = [];
+      for (const row of visible) {
+        const decision = await deps.consentService.checkSingleObject(
+          row,
+          String(row['_id'] ?? ''),
+          DEFAULT_CONSENT_PURPOSE as DataPurpose,
+          ctx.user.id,
+          ctx.requestContext.tenantId,
+        );
+        if (!decision._consentRestricted) kept.push(row);
+      }
+      return kept;
     },
 
     async applyAction(actionName: string, params: Record<string, unknown>): Promise<unknown> {

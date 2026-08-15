@@ -900,7 +900,7 @@ async function resolveConsentedIds(
   return consentResult.edges.map(o => o._id);
 }
 
-async function resolveAllowedIds(
+export async function resolveAllowedIds(
   deps: ApiDependencies,
   userId: string,
   fgaType: string,
@@ -925,7 +925,7 @@ async function resolveAllowedIds(
  * Build a combined filter that restricts to authorized IDs + optional user filter.
  * When allowedIds is ['*'] (dev stub), skip the ID restriction.
  */
-function buildAuthFilter(
+export function buildAuthFilter(
   allowedIds: string[],
   userFilter?: FilterExpression,
 ): FilterExpression {
