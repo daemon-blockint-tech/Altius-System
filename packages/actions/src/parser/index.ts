@@ -656,7 +656,31 @@ function parseSideEffects(
     // POSTing anyway would send a verb the manifest did not ask for, so reject
     // it at load time rather than at execution — side-effects run post-commit.
     if (item['type'] === 'webhook') {
-      const method = (item['config'] as Record<string, unknown>)['method'];
+      const webhookConfig = item['config'] as Record<string, unknown>;
+
+      // config.url is required: expandUrl calls url.replace(...), so a missing
+      // or non-string url throws a TypeError on every attempt — swallowed under
+      // LOG_AND_CONTINUE with no trace, leaving the side effect silently dead.
+      if (webhookConfig['url'] === undefined || webhookConfig['url'] === null || webhookConfig['url'] === '') {
+        errors.push({
+          severity: 'error',
+          code: 'MISSING_FIELD',
+          message: `${path}.config.url is required for webhook side effects.`,
+          path: `${path}.config.url`,
+        });
+        continue;
+      }
+      if (typeof webhookConfig['url'] !== 'string') {
+        errors.push({
+          severity: 'error',
+          code: 'INVALID_TYPE',
+          message: `${path}.config.url must be a string.`,
+          path: `${path}.config.url`,
+        });
+        continue;
+      }
+
+      const method = webhookConfig['method'];
       if (typeof method === 'string' && method.toUpperCase() !== 'POST') {
         errors.push({
           severity: 'error',

@@ -682,6 +682,41 @@ sideEffects:
       expect(result.valid).toBe(false);
       expect(result.errors.some(e => e.code === 'UNSUPPORTED_VALUE' && e.path === 'sideEffects[0].type')).toBe(true);
     });
+
+    it('rejects webhook side effect missing config.url', () => {
+      // A webhook without a url throws a TypeError inside expandUrl on every
+      // attempt (undefined.replace), which under LOG_AND_CONTINUE is swallowed
+      // with no trace — the side effect is silently dead post-commit. Validate
+      // at parse time so boot fails with a named error instead.
+      const yaml = `
+action: TestAction
+version: 1
+sideEffects:
+  - name: notifyWebhook
+    type: webhook
+    config:
+      headers:
+        X-Custom: "value"
+`;
+      const result = parseActionManifest(yaml);
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.code === 'MISSING_FIELD' && e.path === 'sideEffects[0].config.url')).toBe(true);
+    });
+
+    it('rejects webhook side effect with non-string config.url', () => {
+      const yaml = `
+action: TestAction
+version: 1
+sideEffects:
+  - name: notifyWebhook
+    type: webhook
+    config:
+      url: 12345
+`;
+      const result = parseActionManifest(yaml);
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.code === 'INVALID_TYPE' && e.path === 'sideEffects[0].config.url')).toBe(true);
+    });
   });
 
   // -----------------------------------------------------------------------
