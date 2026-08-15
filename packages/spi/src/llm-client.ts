@@ -10,7 +10,10 @@
  * AuditWriter with operation.type = 'llm.call' (convention per T5.3).
  */
 
-import type { RequestContext } from './request-context.js';
+// RequestContext lives in ontology.ts alongside the other core SPI types —
+// there is no request-context module. As committed this did not compile, so
+// @altius/spi (and therefore every package downstream of it) failed to build.
+import type { RequestContext } from './ontology.js';
 
 // ---------------------------------------------------------------------------
 // Completion

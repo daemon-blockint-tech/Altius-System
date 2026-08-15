@@ -39,8 +39,22 @@ import type {
   AffectedObject,
   ActionExecutorConfig,
 } from './types.js';
+import { auditableDefaults } from './auditable.js';
 
 const logger = createLogger('action-executor');
+
+/**
+ * The actor recorded in `@readonly` audit fields. The executor puts
+ * `{ id, roles, type }` on the effect context as `actor`; 'system' covers a
+ * pipeline invoked without one (seeds, internal callers).
+ */
+function actorId(context: Record<string, unknown>): string {
+  const actor = context['actor'];
+  if (actor && typeof actor === 'object' && typeof (actor as { id?: unknown }).id === 'string') {
+    return (actor as { id: string }).id;
+  }
+  return 'system';
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -406,6 +420,14 @@ export class ActionExecutor {
     const affectedObjects: AffectedObject[] = [];
     const beforeStates: Map<string, Record<string, unknown>> = new Map();
     const afterStates: Map<string, Record<string, unknown>> = new Map();
+    /**
+     * Post-commit delivery failures under a non-rollback policy. The action
+     * still succeeded — the transaction is committed and cannot be undone by a
+     * webhook that did not land — but the caller has to be told, or a dropped
+     * notification is invisible until someone downstream asks why it never
+     * arrived.
+     */
+    const sideEffectWarnings: string[] = [];
 
     // Pre-flight: verify the storage provider supports transactions before
     // calling beginTransaction. A read-only or non-transactional provider
@@ -540,7 +562,11 @@ export class ActionExecutor {
               },
             ]);
           }
-          // LOG_AND_CONTINUE / RETRY_INDEFINITELY: continue execution
+          // LOG_AND_CONTINUE / RETRY_INDEFINITELY: the committed effects stand,
+          // but the failure is reported rather than dropped.
+          const detail = `Side-effect "${se.name}" (${se.type}) failed: ${seResult.error ?? 'unknown error'}`;
+          sideEffectWarnings.push(detail);
+          logger.warn({ actionId, actionType, sideEffect: se.name, type: se.type, err: seResult.error, policy }, detail);
         }
       }
     }
@@ -624,6 +650,7 @@ export class ActionExecutor {
       actionId,
       errors: [],
       affectedObjects,
+      ...(sideEffectWarnings.length > 0 ? { warnings: sideEffectWarnings } : {}),
     };
   }
 
@@ -907,6 +934,15 @@ export class ActionExecutor {
       properties[key] = this.resolveExpression(expr, context);
     }
 
+    // Same contract as createObject: updatedAt/updatedBy are @readonly, so the
+    // platform maintains them on every governed write.
+    if (schema) {
+      Object.assign(
+        properties,
+        auditableDefaults(schema, target._type, properties, actorId(context), now(), 'update'),
+      );
+    }
+
     // Capture before state
     const beforeKey = `${target._type}:${target._id}`;
     if (!beforeStates.has(beforeKey)) {
@@ -1030,6 +1066,23 @@ export class ActionExecutor {
     const properties: Record<string, unknown> = {};
     for (const [key, expr] of Object.entries(effect.properties)) {
       properties[key] = this.resolveExpression(expr, context);
+    }
+
+    // Fill the platform-managed @readonly Auditable fields. They are non-null
+    // in the DDL and forbidden to callers, so without this an Auditable type
+    // cannot be created at all on a provider that enforces NOT NULL.
+    if (schema) {
+      Object.assign(
+        properties,
+        auditableDefaults(
+          schema,
+          effect.objectType,
+          properties,
+          actorId(context),
+          now(),
+          'create',
+        ),
+      );
     }
 
     const created = await txn.createObject(effect.objectType, properties);

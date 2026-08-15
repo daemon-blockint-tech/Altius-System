@@ -775,6 +775,29 @@ function parseUndo(
 
 // ─── Schema cross-reference ───
 
+/**
+ * Cross-reference a already-parsed manifest against the merged schema.
+ *
+ * `parseActionManifest` runs the same checks, but only when a caller hands it a
+ * schema — and the boot loader parses each manifest before the merged schema is
+ * assembled, so it cannot. Exposing the pass separately lets the loader run it
+ * once everything is loaded, which is the only point at which cross-pack
+ * references can be resolved at all.
+ *
+ * Severity is the caller's decision: findings are returned rather than thrown,
+ * because drift in a shipped pack should be reported, not turned into a boot
+ * failure.
+ */
+export function crossReferenceManifest(
+  manifest: ActionManifest,
+  schema: ParsedSchema,
+): ManifestIssue[] {
+  const errors: ManifestIssue[] = [];
+  const warnings: ManifestIssue[] = [];
+  crossReferenceSchema(manifest, schema, errors, warnings);
+  return [...errors, ...warnings];
+}
+
 function crossReferenceSchema(
   manifest: ActionManifest,
   schema: ParsedSchema,
@@ -813,8 +836,11 @@ function crossReferenceSchema(
 
     switch (effect.type) {
       case 'updateObject': {
-        // target should reference a @param variable or known name
-        if (actionType && paramNames.size > 0 && !paramNames.has(effect.target)) {
+        // Only the root has to be a @param: a dotted target is a link path
+        // (`patient.currentBed`), which the executor pre-resolves before
+        // effects run — see preResolveLinkPaths in the executor.
+        const targetRoot = effect.target.split('.')[0]!;
+        if (actionType && paramNames.size > 0 && !paramNames.has(targetRoot)) {
           warnings.push({
             severity: 'warning',
             code: 'UNKNOWN_PARAM_REF',
@@ -953,8 +979,14 @@ function extractExpressionRoots(expr: string): Set<string> {
   // Remove string literals to avoid false positives
   const cleaned = expr.replace(/'[^']*'/g, '').replace(/"[^"]*"/g, '');
 
-  // Match identifiers that start a member-access chain or appear as standalone
-  const identPattern = /\b([a-zA-Z_]\w*)\b/g;
+  // Only the ROOT of a member-access chain is a variable. The lookbehind drops
+  // any identifier preceded by a dot, which is a property read or a method
+  // name, not something the activation has to supply: `patient.status` binds
+  // `patient`, and `actor.hasRole('x')` binds `actor`.
+  //
+  // Without it every property and method in every manifest was reported as an
+  // unknown variable, which is what made this pass unusable to turn on.
+  const identPattern = /(?<![.\w])([a-zA-Z_]\w*)/g;
   let match: RegExpExecArray | null;
   while ((match = identPattern.exec(cleaned)) !== null) {
     const ident = match[1]!;

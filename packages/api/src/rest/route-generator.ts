@@ -26,7 +26,7 @@ import type { RestRequest, RestResponse, RestRoute } from './types.js';
 import { createRestErrorResponse, wrapErrorToRest, mapCodeToCategory, mapErrorToHttpStatus } from './errors.js';
 import { invokeFunction } from '../functions/invoke-function.js';
 import { generateLlmRoutes } from './llm-routes.js';
-import { lowerFirst, toSnakeCase } from '../utils.js';
+import { lowerFirst, toSnakeCase, searchableTextFields } from '../utils.js';
 import { paginateWithConsent } from '../consent-pagination.js';
 import { collectRawRecords } from '../cdm/router.js';
 
@@ -81,6 +81,14 @@ function objectToRest(obj: OntologyObject, objectType: ObjectType): Record<strin
       result[field.name] = obj[field.name];
     }
   }
+
+  // The row identity. Not in the declared shape — the @primary field above
+  // already exposes it under its own name — but the consent filter resolves the
+  // subject from `_id`, so without it every row is checked as subject '',
+  // matches no consent record, and is default-denied: a consent-subject type
+  // reads as an empty collection with no error. objectToGraphQL carries it for
+  // the same reason.
+  result._id = obj._id;
 
   // The version the caller sends back in `If-Match` for optimistic concurrency.
   // System metadata, so redaction (which skips `_`-prefixed keys) leaves it alone.
@@ -1222,9 +1230,15 @@ function generateSearchRoute(
 
         // SEC-14b: When no explicit search fields and redaction is active,
         // restrict search to visible fields only (prevents hidden field leakage).
+        //
+        // Intersected with the type's text fields — see the twin in
+        // graphql/resolver-generator.ts. The column policy lists what a role may
+        // SEE, which includes the @primary alias and non-text columns; neither
+        // can carry a substring match.
         let searchFields = fields;
         if (!searchFields && visibleFields) {
-          searchFields = [...visibleFields].filter(f => !f.startsWith('_'));
+          const textFields = searchableTextFields(obj, deps.schema);
+          searchFields = [...visibleFields].filter(f => textFields.has(f));
         }
 
         const { offset, limit } = parsePagination(req.query);

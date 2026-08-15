@@ -23,7 +23,7 @@ export type {
   ProtobufValue,
 } from './cel/index.js';
 
-export { parseActionManifest } from './parser/index.js';
+export { parseActionManifest, crossReferenceManifest } from './parser/index.js';
 
 export type {
   ActionManifest,
