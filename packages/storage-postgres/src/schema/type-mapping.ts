@@ -35,11 +35,32 @@ const ODL_TO_PG: Record<string, string> = {
 };
 
 /**
+ * Case-folded view of ODL_TO_PG, plus the long-form spellings an SPI caller
+ * may use where they are not just a case variant of the ODL name.
+ *
+ * `PropertyDefinition.type` is an unconstrained `string` in the SPI, so no
+ * canonical vocabulary exists: ODL emits `Int`/`String`, while a hand-written
+ * SPI schema may say `integer`/`string`. An unmatched name silently became
+ * TEXT, so a numeric property landed as a text column and SUM/AVG failed at
+ * query time — a divergence from the memory provider that nothing caught.
+ * Accepting both spellings is strictly more permissive and does not decide
+ * which one the SPI should bless.
+ */
+const PG_BY_LOWER: Record<string, string> = {
+  ...Object.fromEntries(Object.entries(ODL_TO_PG).map(([k, v]) => [k.toLowerCase(), v])),
+  integer: 'INTEGER',
+  bool: 'BOOLEAN',
+  text: 'TEXT',
+  timestamp: 'TIMESTAMPTZ',
+};
+
+/**
  * Convert an ODL/SPI property type name to a PostgreSQL column type.
- * Unknown types default to TEXT (enum types, custom scalars).
+ * Matching is case-insensitive. Unknown types default to TEXT (enum types,
+ * custom scalars).
  */
 export function pgType(odlType: string): string {
-  return ODL_TO_PG[odlType] ?? 'TEXT';
+  return ODL_TO_PG[odlType] ?? PG_BY_LOWER[odlType.toLowerCase()] ?? 'TEXT';
 }
 
 /**

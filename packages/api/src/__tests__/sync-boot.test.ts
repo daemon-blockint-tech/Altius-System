@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import { parseOdl } from '@altius/odl';
 import { MemoryStorageProvider } from '@altius/storage-memory';
 import { ObjectManager, InMemoryEventBus, EngineEventEmitter } from '@altius/engine';
@@ -95,6 +95,14 @@ describe('createEngineChangeApplier', () => {
 });
 
 describe('startSyncScheduler', () => {
+  // Resolving @altius/sync costs ~1s cold. Inside a test body that is charged
+  // to the 5s per-test budget, which the full suite blows under load; paid once
+  // here instead.
+  let createDefaultRegistry: typeof import('@altius/sync')['createDefaultRegistry'];
+  beforeAll(async () => {
+    ({ createDefaultRegistry } = await import('@altius/sync'));
+  });
+
   function manifest(config: Record<string, unknown>): ConnectorManifest {
     return { connector: 'jdbc', config, packName: 'test-pack' };
   }
@@ -107,7 +115,6 @@ describe('startSyncScheduler', () => {
   };
 
   it('schedules nothing when manifests are OVERLAY, unparseable, or missing env', async () => {
-    const { createDefaultRegistry } = await import('@altius/sync');
     const { objectManager } = makeManager();
     const result = await startSyncScheduler({
       connectorManifests: [
@@ -125,7 +132,6 @@ describe('startSyncScheduler', () => {
   });
 
   it('rejects target:"id" datasources loudly (skipped, not fatal)', async () => {
-    const { createDefaultRegistry } = await import('@altius/sync');
     const { objectManager } = makeManager();
     const result = await startSyncScheduler({
       connectorManifests: [
