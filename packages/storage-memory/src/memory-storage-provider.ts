@@ -651,10 +651,23 @@ export class MemoryStorageProvider implements StorageProvider {
             ).length;
           }
         } else {
-          // sum, avg, min, max — only on numeric fields
-          const numericValues = groupItems
+          // sum, avg, min, max — only on numeric fields. A present but
+          // non-numeric value is rejected rather than silently skipped:
+          // AggregateGroup.values is Record<string, number | null>, so a
+          // DateTime or string MIN/MAX has no representation, and Postgres
+          // answers such a query with an epoch millisecond count or NaN.
+          // Both providers must refuse it identically. Absent values still
+          // aggregate to null — that case already agrees.
+          const present = groupItems
             .map((item) => item[aggField.field])
-            .filter((v): v is number => typeof v === 'number');
+            .filter((v) => v !== undefined && v !== null);
+
+          if (present.some((v) => typeof v !== 'number')) {
+            throw new Error(
+              `Aggregate ${aggField.fn} on non-numeric field '${aggField.field}'`,
+            );
+          }
+          const numericValues = present as number[];
 
           if (numericValues.length === 0) {
             values[alias] = null;

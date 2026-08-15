@@ -21,11 +21,20 @@ export interface AuditActor {
 }
 
 export interface AuditOperation {
-  type: 'read' | 'create' | 'update' | 'delete' | 'action' | 'query' | 'link' | 'unlink';
+  type: 'read' | 'create' | 'update' | 'delete' | 'action' | 'query' | 'link' | 'unlink' | 'function';
   objectType?: string;
   objectId?: string;
   actionType?: string;
   actionId?: string;
+  /**
+   * FunctionType name, for `type: 'function'`.
+   *
+   * Kept separate from `actionType` rather than reusing it: audit records are
+   * immutable compliance evidence, and a field named actionType holding a
+   * function name would make every filter on it permanently ambiguous about
+   * which one ran.
+   */
+  functionName?: string;
 }
 
 export interface AuditDetail {
@@ -50,10 +59,11 @@ export interface AuditStore {
 export interface AuditFilter {
   actorId?: string;
   actorType?: 'user' | 'system' | 'connector';
-  operationType?: ('read' | 'create' | 'update' | 'delete' | 'action' | 'query' | 'link' | 'unlink')[];
+  operationType?: ('read' | 'create' | 'update' | 'delete' | 'action' | 'query' | 'link' | 'unlink' | 'function')[];
   objectType?: string;
   objectId?: string;
   actionType?: string;
+  functionName?: string;
   result?: 'success' | 'denied' | 'error';
   timeRange?: { from: DateTime; to: DateTime };
   traceId?: string;

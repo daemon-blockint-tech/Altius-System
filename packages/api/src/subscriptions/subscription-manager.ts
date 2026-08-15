@@ -361,7 +361,12 @@ export function createFilteredSubscription(
 
 /**
  * Check if a ChangeEvent matches a subscription filter.
- * Matches on changeType if provided.
+ * Matches on changeType and on the object fields the event carries (id, _type).
+ *
+ * Fails closed: the payload carries no property values, so a filter key naming
+ * an object property (e.g. status) cannot be evaluated. Treating it as a match
+ * would deliver the whole type-level change stream to a subscriber who asked
+ * for a narrow slice — a leak. Drop the event instead.
  */
 function matchesFilter(event: ChangeEvent, filter: SubscriptionFilter): boolean {
   for (const [key, value] of Object.entries(filter)) {
@@ -372,9 +377,9 @@ function matchesFilter(event: ChangeEvent, filter: SubscriptionFilter): boolean 
       continue;
     }
 
-    // Match on object fields when available
-    const objField = (event.object as Record<string, unknown>)[key];
-    if (objField !== undefined && objField !== value) return false;
+    // Match on object fields the event carries; un-evaluable keys never match
+    if (!(key in event.object)) return false;
+    if ((event.object as Record<string, unknown>)[key] !== value) return false;
   }
   return true;
 }

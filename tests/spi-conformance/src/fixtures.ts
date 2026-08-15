@@ -31,6 +31,7 @@ export const baseSchema: OntologySchema = {
         { name: 'active', type: 'boolean' },
         { name: 'tags', type: 'string' },
         { name: 'nhsNumber', type: 'string' },
+        { name: 'lastVisit', type: 'DateTime' },
       ],
     },
     {

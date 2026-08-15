@@ -127,6 +127,10 @@ function generateObjectType(obj: ObjectType): string {
     lines.push(`  ${field.name}: ${gqlType}`);
   }
 
+  // Optimistic concurrency: the value callers pass back as `_expectedVersion`
+  // on action inputs / `expectedVersion` on update mutations.
+  lines.push(`  _version: Int`);
+
   // Spec: metadata fields for redaction/consent
   lines.push(`  _redactedFields: [String!]`);
   lines.push(`  _consentRestricted: Boolean`);

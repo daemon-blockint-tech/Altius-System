@@ -53,8 +53,8 @@ export class PostgresAuditStore {
         ("id", "timestamp", "trace_id",
          "actor_type", "actor_id", "actor_roles", "actor_ip",
          "op_type", "op_object_type", "op_object_id", "op_action_type", "op_action_id",
-         "detail")
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+         "op_function_name", "detail")
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
       [
         record.id,
         record.timestamp,
@@ -68,6 +68,7 @@ export class PostgresAuditStore {
         record.operation.objectId ?? null,
         record.operation.actionType ?? null,
         record.operation.actionId ?? null,
+        record.operation.functionName ?? null,
         JSON.stringify(detail),
       ],
     );
@@ -148,6 +149,7 @@ function rowToAuditRecord(row: Record<string, unknown>): AuditRecord {
   if (row['op_object_id']) operation.objectId = row['op_object_id'] as string;
   if (row['op_action_type']) operation.actionType = row['op_action_type'] as string;
   if (row['op_action_id']) operation.actionId = row['op_action_id'] as string;
+  if (row['op_function_name']) operation.functionName = row['op_function_name'] as string;
 
   const detail = (row['detail'] ?? {}) as AuditDetail;
 

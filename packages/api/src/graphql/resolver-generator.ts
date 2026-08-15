@@ -232,7 +232,14 @@ function objectToGraphQL(obj: OntologyObject, objectType: ObjectType): Record<st
   // exposes `__typename` as a default field, so this is also queryable.
   result.__typename = objectType.name;
 
-  // Include system metadata
+  // Include system metadata. `_id` is not in the generated SDL (so it never
+  // reaches a client), but downstream steps identify the row by it — the list
+  // and search paths resolve the consent subject from `_id`, and without it
+  // every row is checked as subject '' and default-denied.
+  result._id = obj._id;
+  // `_version` is what callers pass back as `expectedVersion` on update/delete
+  // mutations and `_expectedVersion` on action inputs; it is in the SDL.
+  result._version = obj._version;
   result._redactedFields = null;
   result._consentRestricted = false;
 

@@ -3,9 +3,10 @@
  *
  * Extracts the OIDC bearer token from the Authorization header and validates
  * it via the same OidcAuthenticator used by the REST/GraphQL surface. An agent
- * is just another OIDC principal — no special identity, no bypass. In dev mode
- * (isDev=true), a missing token resolves to the dev-user identity, mirroring
- * the API gateway's extractUser behavior.
+ * is just another OIDC principal — no special identity, no bypass. The
+ * dev-user fallback for a missing token is opt-in only (see devBypassEnabled):
+ * NODE_ENV !== 'production' alone covers staging/UAT/demo boxes, which must
+ * never serve an unauthenticated admin identity.
  */
 
 import type { OidcAuthenticator, AuthenticatedUser } from '@altius/security';
@@ -33,6 +34,20 @@ const DEV_USER: AuthenticatedUser = {
 };
 
 /**
+ * Whether the unauthenticated dev-user fallback may be used at all.
+ *
+ * Requires a deliberate opt-in (ALTIUS_MCP_DEV_AUTH_BYPASS=true) and is never
+ * honoured when NODE_ENV=production. Read per call so the flag can be flipped
+ * without re-importing the module. Fails closed when unset.
+ */
+function devBypassEnabled(): boolean {
+  return (
+    process.env['ALTIUS_MCP_DEV_AUTH_BYPASS'] === 'true' &&
+    process.env['NODE_ENV'] !== 'production'
+  );
+}
+
+/**
  * Result of authenticating an incoming MCP request.
  */
 export interface AuthResult {
@@ -46,7 +61,8 @@ export interface AuthResult {
  *
  * @param authHeader  - raw Authorization header value (or undefined)
  * @param authenticator - configured OIDC authenticator
- * @param isDev       - whether dev-mode auth bypass is allowed
+ * @param isDev       - dev mode; the bypass additionally requires
+ *                      ALTIUS_MCP_DEV_AUTH_BYPASS=true outside production
  * @param traceId     - trace ID for the request context
  * @returns AuthResult on success, or an HTTP status code on failure (401)
  */
@@ -57,7 +73,7 @@ export async function authenticateMcpRequest(
   traceId: string,
 ): Promise<AuthResult | { ok: false; status: 401; message: string }> {
   if (!authHeader?.startsWith('Bearer ')) {
-    if (isDev) {
+    if (isDev && devBypassEnabled()) {
       return {
         ok: true,
         user: DEV_USER,

@@ -420,17 +420,24 @@ describe('MCP server', () => {
       expect(res.status).toBe(401);
     });
 
-    it('allows dev-user when isDev=true and no token', async () => {
-      const { deps } = createMockDeps();
-      const handler = createMcpServer({ deps, isDev: true });
+    it('allows dev-user when isDev=true, no token, and the bypass flag is set', async () => {
+      const previous = process.env['ALTIUS_MCP_DEV_AUTH_BYPASS'];
+      process.env['ALTIUS_MCP_DEV_AUTH_BYPASS'] = 'true';
+      try {
+        const { deps } = createMockDeps();
+        const handler = createMcpServer({ deps, isDev: true });
 
-      const res = await handler({
-        method: 'POST',
-        headers: {},
-        body: { jsonrpc: '2.0', id: 13, method: 'tools/list' },
-      });
+        const res = await handler({
+          method: 'POST',
+          headers: {},
+          body: { jsonrpc: '2.0', id: 13, method: 'tools/list' },
+        });
 
-      expect(res.status).toBe(200);
+        expect(res.status).toBe(200);
+      } finally {
+        if (previous === undefined) delete process.env['ALTIUS_MCP_DEV_AUTH_BYPASS'];
+        else process.env['ALTIUS_MCP_DEV_AUTH_BYPASS'] = previous;
+      }
     });
   });
 

@@ -14,11 +14,11 @@ export function registerAggregationTests(name: string, factory: ProviderFactory)
 
     // Seed data for aggregation tests
     async function seedPatients() {
-      await provider.createObject(tenantA, 'Patient', { name: 'Alice', age: 30, status: 'active', score: 95.5 });
-      await provider.createObject(tenantA, 'Patient', { name: 'Bob', age: 25, status: 'active', score: 82.0 });
-      await provider.createObject(tenantA, 'Patient', { name: 'Charlie', age: 40, status: 'inactive', score: 70.5 });
-      await provider.createObject(tenantA, 'Patient', { name: 'Diana', age: 35, status: 'active', score: 88.0 });
-      await provider.createObject(tenantA, 'Patient', { name: 'Eve', age: 28, status: 'pending', score: 91.0 });
+      await provider.createObject(tenantA, 'Patient', { name: 'Alice', age: 30, status: 'active', score: 95.5, lastVisit: '2024-01-05T09:00:00.000Z' });
+      await provider.createObject(tenantA, 'Patient', { name: 'Bob', age: 25, status: 'active', score: 82.0, lastVisit: '2024-03-11T09:00:00.000Z' });
+      await provider.createObject(tenantA, 'Patient', { name: 'Charlie', age: 40, status: 'inactive', score: 70.5, lastVisit: '2024-02-20T09:00:00.000Z' });
+      await provider.createObject(tenantA, 'Patient', { name: 'Diana', age: 35, status: 'active', score: 88.0, lastVisit: '2024-05-02T09:00:00.000Z' });
+      await provider.createObject(tenantA, 'Patient', { name: 'Eve', age: 28, status: 'pending', score: 91.0, lastVisit: '2024-04-17T09:00:00.000Z' });
     }
 
     // ─── Count ───
@@ -114,6 +114,53 @@ export function registerAggregationTests(name: string, factory: ProviderFactory)
         expect(v['ageAvg']).toBeCloseTo(31.6, 1);
         expect(v['minScore']).toBeCloseTo(70.5, 1);
         expect(v['maxScore']).toBeCloseTo(95.5, 1);
+      });
+    });
+
+    // ─── Non-numeric aggregates ───
+
+    // `AggregateGroup.values` is typed `Record<string, number | null>`, so a
+    // MIN/MAX over a DateTime or string column has no representation. Left
+    // unpinned the two providers diverged: memory dropped the non-numeric
+    // inputs and answered null, Postgres ran SQL MIN/MAX and coerced whatever
+    // came back — NaN for text, an epoch millisecond count for a timestamp.
+    // The agreed contract is to refuse, identically, on both.
+    describe('non-numeric aggregates', () => {
+      beforeEach(seedPatients);
+
+      it('rejects min on a DateTime field', async () => {
+        await expect(
+          provider.aggregateObjects(tenantA, 'Patient', {
+            fields: [{ field: 'lastVisit', fn: 'min' }],
+          }),
+        ).rejects.toThrow(/non-numeric/);
+      });
+
+      it('rejects max on a string field', async () => {
+        await expect(
+          provider.aggregateObjects(tenantA, 'Patient', {
+            fields: [{ field: 'status', fn: 'max' }],
+          }),
+        ).rejects.toThrow(/non-numeric/);
+      });
+
+      it('rejects sum on a string field', async () => {
+        // Postgres raises its own "function sum(text) does not exist" here,
+        // so only the rejection itself is portable, not the message.
+        await expect(
+          provider.aggregateObjects(tenantA, 'Patient', {
+            fields: [{ field: 'status', fn: 'sum' }],
+          }),
+        ).rejects.toThrow();
+      });
+
+      it('still returns null for min over a numeric field with no rows', async () => {
+        const result = await provider.aggregateObjects(tenantA, 'Patient', {
+          fields: [{ field: 'age', fn: 'min' }],
+          filter: { field: 'status', operator: 'eq', value: 'nonexistent' },
+        });
+        expect(result.groups).toHaveLength(1);
+        expect(result.groups[0]!.values['min_age']).toBeNull();
       });
     });
 

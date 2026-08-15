@@ -342,9 +342,17 @@ export class ActionExecutor {
       await txn.commit();
     } catch (err) {
       await txn.rollback();
+      // Keep a code the storage layer already assigned (e.g. VERSION_CONFLICT
+      // from the expectedVersion guard) instead of flattening everything to
+      // EFFECT_EXECUTION_ERROR — rest/errors.ts and graphql/errors.ts map those
+      // codes to real statuses, and a client can only retry-on-conflict if the
+      // code survives the transaction boundary. Same extraction the API error
+      // translators use; unrecognised codes are mapped to `system` there.
       return failResult(actionId, [
         {
-          code: 'EFFECT_EXECUTION_ERROR',
+          code: err && typeof err === 'object' && typeof (err as { code?: unknown }).code === 'string'
+            ? (err as { code: string }).code
+            : 'EFFECT_EXECUTION_ERROR',
           message: err instanceof Error ? err.message : String(err),
         },
       ]);

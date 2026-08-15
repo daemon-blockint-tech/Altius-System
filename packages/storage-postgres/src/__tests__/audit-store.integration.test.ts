@@ -173,3 +173,43 @@ describeWithPg('PostgresAuditStore (integration)', () => {
     expect(results).toEqual([]);
   });
 });
+
+describeWithPg('PostgresAuditStore — function invocations', () => {
+  let pool: Pool;
+  let store: PostgresAuditStore;
+
+  beforeAll(async () => {
+    pool = new Pool(parseUrl(PG_TEST_URL!));
+    store = new PostgresAuditStore(pool);
+    for (const stmt of generateAuditDDL()) await pool.query(stmt);
+  });
+
+  afterAll(async () => { await pool.end(); });
+
+  const rec = (id: string, fnName: string): AuditRecord => ({
+    id,
+    timestamp: new Date().toISOString(),
+    traceId: `trace-${id}`,
+    actor: { type: 'user', id: 'u-fn', roles: ['bsa_officer'] },
+    operation: { type: 'function', functionName: fnName },
+    detail: { result: 'success' },
+  });
+
+  it('round-trips a function invocation, including the function name', async () => {
+    await store.append(rec('fnaudit-1', 'ScoreRisk'));
+
+    const got = await store.getAuditRecord('fnaudit-1');
+
+    expect(got!.operation.type).toBe('function');
+    expect(got!.operation.functionName).toBe('ScoreRisk');
+  });
+
+  it('filters by operationType', async () => {
+    await store.append(rec('fnaudit-2', 'ScoreRisk'));
+
+    const page = await store.queryAuditRecords({ operationType: ['function'], actorId: 'u-fn' });
+
+    expect(page.records.length).toBeGreaterThanOrEqual(2);
+    expect(page.records.every(r => r.operation.type === 'function')).toBe(true);
+  });
+});

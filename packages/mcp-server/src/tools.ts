@@ -259,6 +259,28 @@ async function invokeSearchTool(
   const parsed = parseSearchArgs(args);
   const limit = Math.min(parsed.limit ?? SEARCH_TOOL_LIMIT, SEARCH_TOOL_LIMIT);
 
+  // Filtering on a field the caller cannot read leaks its value through the
+  // result count. Mirrors validateQueryFields in the GraphQL resolvers.
+  const visibleFields = deps.authorizationService.getVisibleFields(user.id, user.roles, typeName);
+  if (visibleFields) {
+    const violations = parsed.filterFields.filter(
+      (f) => !f.startsWith('_') && !visibleFields.has(f),
+    );
+    if (violations.length > 0) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              error: `Access denied: cannot filter on redacted fields: ${violations.join(', ')}`,
+            }),
+          },
+        ],
+        isError: true,
+      };
+    }
+  }
+
   // FGA-scoped list: viewer relation on the object type
   const allowedObjects = await deps.authorizationService.listObjects(
     `user:${user.id}`,
@@ -329,6 +351,8 @@ async function invokeSearchTool(
 
 interface ParsedSearchArgs {
   filter?: FilterExpression;
+  /** Field names referenced by the filter, for the redacted-field guard. */
+  filterFields: string[];
   limit?: number;
 }
 
@@ -337,10 +361,11 @@ interface ParsedSearchArgs {
  * Accepts { filter: [{ field, operator, value }, ...], limit?: number }.
  */
 function parseSearchArgs(args: unknown): ParsedSearchArgs {
-  if (!args || typeof args !== 'object') return {};
+  if (!args || typeof args !== 'object') return { filterFields: [] };
   const obj = args as Record<string, unknown>;
 
   let filter: FilterExpression | undefined;
+  const filterFields: string[] = [];
   const rawFilter = obj['filter'];
   if (Array.isArray(rawFilter) && rawFilter.length > 0) {
     const predicates: FilterExpression[] = [];
@@ -353,6 +378,7 @@ function parseSearchArgs(args: unknown): ParsedSearchArgs {
             operator: p.operator,
             value: p.value,
           } as FilterExpression);
+          filterFields.push(p.field);
         }
       }
     }
@@ -368,7 +394,7 @@ function parseSearchArgs(args: unknown): ParsedSearchArgs {
     limit = obj['limit'];
   }
 
-  return { filter, limit };
+  return { filter, filterFields, limit };
 }
 
 /**

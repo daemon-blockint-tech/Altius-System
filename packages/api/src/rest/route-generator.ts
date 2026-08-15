@@ -80,6 +80,10 @@ function objectToRest(obj: OntologyObject, objectType: ObjectType): Record<strin
     }
   }
 
+  // The version the caller sends back in `If-Match` for optimistic concurrency.
+  // System metadata, so redaction (which skips `_`-prefixed keys) leaves it alone.
+  result._version = obj._version;
+
   result._redactedFields = null;
   result._consentRestricted = false;
 

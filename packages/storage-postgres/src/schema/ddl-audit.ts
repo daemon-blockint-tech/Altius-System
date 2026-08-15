@@ -36,6 +36,13 @@ export function generateAuditDDL(): string[] {
   "detail" JSONB NOT NULL DEFAULT '{}'
 );`);
 
+  // Added after audit_records shipped, so it cannot go in the CREATE TABLE
+  // above — that is IF NOT EXISTS and would silently skip existing
+  // deployments, leaving function invocations unattributable there.
+  statements.push(
+    `ALTER TABLE "audit"."audit_records" ADD COLUMN IF NOT EXISTS "op_function_name" TEXT;`
+  );
+
   // Index for time-range queries
   statements.push(
     `CREATE INDEX IF NOT EXISTS "idx_audit_records_timestamp" ON "audit"."audit_records" ("timestamp");`

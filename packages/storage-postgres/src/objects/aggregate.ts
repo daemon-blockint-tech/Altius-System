@@ -149,6 +149,24 @@ export async function aggregateObjects(
       if (rawVal === null || rawVal === undefined) {
         values[alias] = null;
       } else {
+        // MIN/MAX are the only aggregates Postgres accepts on a non-numeric
+        // column — SUM/AVG raise "function sum(text) does not exist" in the
+        // database first. Number() then turned a timestamptz into an epoch
+        // millisecond count and text into NaN, neither of which fits
+        // AggregateGroup.values (Record<string, number | null>) and neither
+        // of which the memory provider produces. Reject instead, matching it.
+        // The numeric column types the DDL emits (INTEGER, DOUBLE PRECISION)
+        // arrive from pg as JS numbers, whereas COUNT/SUM return bigint and
+        // AVG returns numeric — both as strings — so the check applies to
+        // MIN/MAX only and the Number() conversion stays for the rest.
+        if (
+          (aggField.fn.toLowerCase() === 'min' || aggField.fn.toLowerCase() === 'max') &&
+          typeof rawVal !== 'number'
+        ) {
+          throw new Error(
+            `Aggregate ${aggField.fn} on non-numeric field '${aggField.field}'`,
+          );
+        }
         values[alias] = Number(rawVal);
       }
     }
