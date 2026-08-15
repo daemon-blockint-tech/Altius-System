@@ -158,7 +158,7 @@ type Admit @function(runtime: "cel", entry: "1", requiredRoles: "clinician") {
 const schemaWithAction = parseOdl(ODL_WITH_ACTION);
 const admitFn = schemaWithAction.functionTypes.find(f => f.name === 'Admit')!;
 
-function depsWithActions(execute: ReturnType<typeof vi.fn>, manifest: unknown = { action: 'AdmitPatient' }) {
+function depsWithActions(execute: ReturnType<typeof vi.fn>, known = true) {
   const captured: { ontology?: { applyAction?(n: string, p: Record<string, unknown>): Promise<unknown> } } = {};
   const deps = {
     schema: schemaWithAction,
@@ -174,7 +174,9 @@ function depsWithActions(execute: ReturnType<typeof vi.fn>, manifest: unknown = 
       check: vi.fn(async () => true),
       redactFields: (_u: string, _r: string[], _t: string, o: Record<string, unknown>) => ({ data: o, _redactedFields: [] }),
     },
-    manifestRegistry: { get: vi.fn(() => manifest) },
+    // Resolves by name, as the real registry does — passing an undeclared
+    // action must miss, not fall back to whatever manifest the test set up.
+    manifestRegistry: { get: vi.fn((n: string) => (known && n === 'AdmitPatient' ? { action: 'AdmitPatient' } : undefined)) },
     actionExecutor: { execute },
   } as unknown as ApiDependencies;
   return { deps, captured };
@@ -225,7 +227,7 @@ describe('function ontology edits go through the action pipeline', () => {
 
   it('refuses an action that is not declared', async () => {
     const execute = vi.fn();
-    const { deps, captured } = depsWithActions(execute, undefined);
+    const { deps, captured } = depsWithActions(execute, false);
     const reader = await actionReader(deps, captured);
 
     await expect(reader.applyAction!('Ghost', {})).rejects.toThrow(/Unknown action "Ghost"/);
