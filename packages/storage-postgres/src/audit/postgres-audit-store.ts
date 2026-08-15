@@ -24,7 +24,9 @@ export interface AuditQueryFilter {
   objectType?: string;
   objectId?: string;
   actionType?: string;
-  operationType?: 'read' | 'create' | 'update' | 'delete' | 'action' | 'query' | 'link' | 'unlink';
+  operationType?: 'read' | 'create' | 'update' | 'delete' | 'action' | 'query' | 'link' | 'unlink' | 'function';
+  /** FunctionType name, for operationType 'function'. */
+  functionName?: string;
   traceId?: string;
   from?: string;
   to?: string;
@@ -102,6 +104,10 @@ export class PostgresAuditStore {
     if (filter.actionType !== undefined) {
       conditions.push(`"op_action_type" = $${paramIdx++}`);
       params.push(filter.actionType);
+    }
+    if (filter.functionName !== undefined) {
+      conditions.push(`"op_function_name" = $${paramIdx++}`);
+      params.push(filter.functionName);
     }
     if (filter.operationType !== undefined) {
       conditions.push(`"op_type" = $${paramIdx++}`);

@@ -6,6 +6,7 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import type { AuditRecord } from '@altius/spi';
 import { PostgresAuditStore } from '../audit/postgres-audit-store.js';
@@ -186,11 +187,15 @@ describeWithPg('PostgresAuditStore — function invocations', () => {
 
   afterAll(async () => { await pool.end(); });
 
+  // audit_records is append-only by DB trigger, so a reused database keeps
+  // every prior run's rows — ids and the queried actor must be unique per run.
+  const run = randomUUID().slice(0, 8);
+
   const rec = (id: string, fnName: string): AuditRecord => ({
-    id,
+    id: `${id}-${run}`,
     timestamp: new Date().toISOString(),
-    traceId: `trace-${id}`,
-    actor: { type: 'user', id: 'u-fn', roles: ['bsa_officer'] },
+    traceId: `trace-${id}-${run}`,
+    actor: { type: 'user', id: `u-fn-${run}`, roles: ['bsa_officer'] },
     operation: { type: 'function', functionName: fnName },
     detail: { result: 'success' },
   });
@@ -198,7 +203,7 @@ describeWithPg('PostgresAuditStore — function invocations', () => {
   it('round-trips a function invocation, including the function name', async () => {
     await store.append(rec('fnaudit-1', 'ScoreRisk'));
 
-    const got = await store.getAuditRecord('fnaudit-1');
+    const [got] = await store.query({ traceId: `trace-fnaudit-1-${run}` });
 
     expect(got!.operation.type).toBe('function');
     expect(got!.operation.functionName).toBe('ScoreRisk');
@@ -207,9 +212,9 @@ describeWithPg('PostgresAuditStore — function invocations', () => {
   it('filters by operationType', async () => {
     await store.append(rec('fnaudit-2', 'ScoreRisk'));
 
-    const page = await store.queryAuditRecords({ operationType: ['function'], actorId: 'u-fn' });
+    const records = await store.query({ operationType: 'function', functionName: 'ScoreRisk', actorId: `u-fn-${run}` });
 
-    expect(page.records.length).toBeGreaterThanOrEqual(2);
-    expect(page.records.every(r => r.operation.type === 'function')).toBe(true);
+    expect(records.length).toBeGreaterThanOrEqual(2);
+    expect(records.every(r => r.operation.type === 'function')).toBe(true);
   });
 });

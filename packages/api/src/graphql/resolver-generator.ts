@@ -32,6 +32,7 @@ import {
   createFilteredSubscription,
 } from '../subscriptions/subscription-manager.js';
 import { lowerFirst, toSnakeCase } from '../utils.js';
+import { logger } from '../logger.js';
 import {
   buildCdmMetadata,
   handleObjectRead,
@@ -1329,6 +1330,32 @@ function generateFunctionResolver(
 ): void {
   const fieldName = `${lowerFirst(fn.name)}Function`;
 
+  /**
+   * Best-effort, matching the action pipeline: a failed audit write is logged
+   * but never changes the caller's outcome (action-executor.ts does the same
+   * post-commit). Losing the record is bad; turning an audit outage into a
+   * platform outage is worse.
+   */
+  const audit = async (
+    ctx: ResolverContext,
+    result: 'success' | 'denied' | 'error',
+    denialReason?: string,
+  ): Promise<void> => {
+    if (!deps.auditWriter) return;
+    try {
+      // id and timestamp are populated by AuditWriter; traceId is passed
+      // explicitly so the record correlates with the request, not the span.
+      await deps.auditWriter.write({
+        traceId: ctx.requestContext.traceId,
+        actor: { type: 'user', id: ctx.user.id, roles: ctx.user.roles },
+        operation: { type: 'function', functionName: fn.name },
+        detail: { result, ...(denialReason ? { denialReason } : {}) },
+      });
+    } catch (err) {
+      logger.warn({ err, function: fn.name }, 'Failed to write function audit record');
+    }
+  };
+
   resolvers['Mutation']![fieldName] = async (
     _parent: unknown,
     args: { input: Record<string, unknown> },
@@ -1358,18 +1385,29 @@ function generateFunctionResolver(
       // permissive reading is exactly the behaviour being fixed.
       const allowed = fn.requiredRoles.some(role => ctx.user.roles.includes(role));
       if (!allowed) {
+        const reason = fn.requiredRoles.length === 0
+          ? `Function "${fn.name}" declares no requiredRoles, so it cannot be invoked. Add requiredRoles to its @function directive.`
+          : `Function "${fn.name}" requires one of: ${fn.requiredRoles.join(', ')}`;
+        // A refused invocation is the record compliance reads — audit before
+        // throwing, exactly as the action pipeline audits its denials.
+        await audit(ctx, 'denied', reason);
         throw createAltiusError({
           code: 'FORBIDDEN',
           category: 'authorization',
-          message: fn.requiredRoles.length === 0
-            ? `Function "${fn.name}" declares no requiredRoles, so it cannot be invoked. Add requiredRoles to its @function directive.`
-            : `Function "${fn.name}" requires one of: ${fn.requiredRoles.join(', ')}`,
+          message: reason,
           retryable: false,
           traceId: ctx.requestContext.traceId,
         });
       }
 
-      const result = await deps.functionExecutor.execute(fn.name, args.input);
+      let result: Awaited<ReturnType<NonNullable<ApiDependencies['functionExecutor']>['execute']>>;
+      try {
+        result = await deps.functionExecutor.execute(fn.name, args.input);
+      } catch (err) {
+        await audit(ctx, 'error');
+        throw err;
+      }
+      await audit(ctx, 'success');
 
       return {
         result: result.result,

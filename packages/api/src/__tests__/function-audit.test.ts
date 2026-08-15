@@ -14,7 +14,7 @@
 
 import { describe, it, expect, vi } from 'vitest';
 import { parseOdl } from '@altius/odl';
-import type { AuditRecord } from '@altius/spi';
+import type { AuditWriteInput } from '@altius/security';
 
 import { generateResolvers } from '../graphql/resolver-generator.js';
 import type { ApiDependencies, ResolverContext } from '../graphql/types.js';
@@ -28,10 +28,10 @@ type ScoreRisk @function(runtime: "cel", entry: "amount * 2", requiredRoles: "bs
 type QueryFn = (parent: unknown, args: Record<string, unknown>, ctx: ResolverContext) => Promise<unknown>;
 
 function depsWithAudit(execute: () => Promise<unknown>) {
-  const written: AuditRecord[] = [];
+  const written: AuditWriteInput[] = [];
   const deps = {
     functionExecutor: { execute },
-    auditWriter: { write: vi.fn(async (r: AuditRecord) => { written.push(r); }) },
+    auditWriter: { write: vi.fn(async (r: AuditWriteInput) => { written.push(r); }) },
     authorizationService: {
       clearFieldCache: () => {},
       check: vi.fn().mockResolvedValue(true),
