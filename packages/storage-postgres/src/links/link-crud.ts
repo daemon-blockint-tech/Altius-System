@@ -18,6 +18,7 @@ import type {
   DateTime,
   LinkTypeDefinition,
 } from '@altius/spi';
+import { MAX_LINK_QUERY_LIMIT, DEFAULT_LINK_QUERY_LIMIT } from '@altius/spi';
 import { createLogger } from '@altius/observability';
 
 const logger = createLogger('storage-postgres');
@@ -496,9 +497,20 @@ export async function getLinks(
   const countResult = await q.query(countSql, params);
   const totalCount = parseInt(String((countResult.rows[0] as Record<string, unknown>)['cnt']), 10);
 
-  // Pagination — PERF-02: enforce maximum limit to prevent DoS
-  const MAX_LINK_QUERY_LIMIT = 1000;
-  const limit = Math.min(options?.limit ?? 100, MAX_LINK_QUERY_LIMIT);
+  // Pagination — PERF-02: enforce maximum limit to prevent DoS.
+  //
+  // Refused rather than clamped. Clamping answered a different question than
+  // the caller asked and said nothing about it: once the GraphQL link resolver
+  // began forwarding the client's `first`, a request for 5000 came back with
+  // 1000 rows and no indication the other 4000 existed. The bound stays; only
+  // the silence goes.
+  if (options?.limit !== undefined && options.limit > MAX_LINK_QUERY_LIMIT) {
+    throw new Error(
+      `Requested link page limit ${options.limit} exceeds the maximum of ${MAX_LINK_QUERY_LIMIT}. ` +
+      `Request ${MAX_LINK_QUERY_LIMIT} or fewer and page with offset.`,
+    );
+  }
+  const limit = options?.limit ?? DEFAULT_LINK_QUERY_LIMIT;
   const offset = options?.offset ?? 0;
   const paginationParams = [...params, limit, offset];
   const limitParam = `$${params.length + 1}`;

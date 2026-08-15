@@ -38,6 +38,7 @@ import type {
   SearchHit,
 } from '@altius/spi';
 import type { BucketInterval } from '@altius/spi';
+import { MAX_LINK_QUERY_LIMIT, DEFAULT_LINK_QUERY_LIMIT } from '@altius/spi';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -1082,7 +1083,17 @@ export class MemoryStorageProvider implements StorageProvider {
 
     const totalCount = items.length;
     const offset = options?.offset ?? 0;
-    const limit = options?.limit ?? items.length;
+    // Same bound and same default as the Postgres provider. This defaulted to
+    // "every link" while Postgres defaulted to 100 and clamped at 1000, so an
+    // unbounded caller got a different page size per backend; and an
+    // over-large limit was silently shrunk there while being honoured here.
+    if (options?.limit !== undefined && options.limit > MAX_LINK_QUERY_LIMIT) {
+      throw new Error(
+        `Requested link page limit ${options.limit} exceeds the maximum of ${MAX_LINK_QUERY_LIMIT}. ` +
+        `Request ${MAX_LINK_QUERY_LIMIT} or fewer and page with offset.`,
+      );
+    }
+    const limit = options?.limit ?? DEFAULT_LINK_QUERY_LIMIT;
     items = items.slice(offset, offset + limit);
 
     return {

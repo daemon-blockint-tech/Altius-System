@@ -53,6 +53,10 @@ export type {
   SearchResult,
 } from './ontology.js';
 
+// Link paging bounds — values, not types: both providers must enforce the same
+// ceiling and the same default, so the numbers live in the contract.
+export { MAX_LINK_QUERY_LIMIT, DEFAULT_LINK_QUERY_LIMIT } from './ontology.js';
+
 // Transaction (Section 3.4)
 export type { Transaction } from './transaction.js';
 

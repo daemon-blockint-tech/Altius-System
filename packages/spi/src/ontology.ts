@@ -168,6 +168,20 @@ export interface LinkPage {
   cursor?: string;
 }
 
+/**
+ * Largest link page a single `getLinks` call may return (PERF-02 DoS bound).
+ *
+ * Part of the contract rather than each provider's private business: the two
+ * previously disagreed — Postgres defaulted to 100 and silently clamped at
+ * 1000, the memory provider defaulted to every link and clamped at nothing —
+ * so the same call returned a different page depending on the backend.
+ * A provider MUST refuse a larger limit rather than quietly return fewer rows.
+ */
+export const MAX_LINK_QUERY_LIMIT = 1000;
+
+/** Link page size when the caller does not ask for one. */
+export const DEFAULT_LINK_QUERY_LIMIT = 100;
+
 export interface TraversalResult {
   nodes: OntologyObject[];
   edges: OntologyLink[];
