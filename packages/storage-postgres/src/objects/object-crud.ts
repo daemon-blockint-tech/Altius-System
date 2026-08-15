@@ -435,12 +435,32 @@ async function insertHistory(
  * We set the search_path before executing Cypher.
  */
 async function ageQuery(q: Pool | import('pg').PoolClient, cypher: string): Promise<void> {
+  // Catching the error is NOT enough inside a transaction. Postgres aborts the
+  // whole transaction on any failed statement, so a swallowed AGE failure left
+  // the caller's transaction poisoned: every later statement raised "current
+  // transaction is aborted", and COMMIT silently behaved as ROLLBACK. The
+  // source-of-truth write was lost while the caller was told it succeeded.
+  //
+  // Demonstrated with a database that has the AGE extension but no 'altius'
+  // graph: object-crud's "commit persists changes" found 0 rows after a
+  // successful commit.
+  //
+  // A savepoint scopes the failure to this statement. Pool queries are their own
+  // implicit transaction and cannot poison anything, and SAVEPOINT outside a
+  // transaction block is an error, so it is only issued for a PoolClient.
+  const inTransaction = typeof (q as import('pg').PoolClient).release === 'function';
+  if (inTransaction) await q.query('SAVEPOINT age_op');
   try {
     await q.query(`SET search_path = ag_catalog, "$user", public`);
     await q.query(
       `SELECT * FROM cypher('${GRAPH_NAME}', $$${cypher}$$) AS (v agtype)`,
     );
+    if (inTransaction) await q.query('RELEASE SAVEPOINT age_op');
   } catch (err) {
+    if (inTransaction) {
+      // Undo only the AGE statement; the caller's transaction stays usable.
+      await q.query('ROLLBACK TO SAVEPOINT age_op').catch(() => {});
+    }
     // AGE is a write-only mirror of the SQL tables today (traversal runs
     // via JOINs in links/traversal.ts, not Cypher). The writes are best-effort:
     // a failure must not corrupt the source-of-truth SQL op, but it MUST be

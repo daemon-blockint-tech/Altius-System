@@ -103,12 +103,23 @@ function linkTableName(type: string, schema = 'public'): string {
 
 /** AGE Cypher queries use the ag_catalog schema. */
 async function ageQuery(q: Queryable, cypher: string): Promise<void> {
+  // See the twin in objects/object-crud.ts: catching the error does not undo the
+  // transaction abort Postgres performs on any failed statement, so a swallowed
+  // AGE failure turned the caller's COMMIT into a silent ROLLBACK. The savepoint
+  // scopes the failure to this statement. Only meaningful on a PoolClient — a
+  // Pool query is its own implicit transaction.
+  const inTransaction = typeof (q as import('pg').PoolClient).release === 'function';
+  if (inTransaction) await q.query('SAVEPOINT age_op');
   try {
     await q.query(`SET search_path = ag_catalog, "$user", public`);
     await q.query(
       `SELECT * FROM cypher('${GRAPH_NAME}', $$${cypher}$$) AS (v agtype)`,
     );
+    if (inTransaction) await q.query('RELEASE SAVEPOINT age_op');
   } catch (err) {
+    if (inTransaction) {
+      await q.query('ROLLBACK TO SAVEPOINT age_op').catch(() => {});
+    }
     const msg = err instanceof Error ? err.message : String(err);
     if (process.env.NODE_ENV === 'test') {
       logger.debug({ err: msg }, 'AGE graph operation skipped (test env)');
