@@ -19,6 +19,8 @@ import type { AuditRecord, AuditActor, AuditOperation, AuditDetail } from '@alti
 // ---------------------------------------------------------------------------
 
 export interface AuditQueryFilter {
+  /** Scope to one tenant. Callers serving HTTP must always set this. */
+  tenantId?: string;
   actorId?: string;
   actorType?: 'user' | 'system' | 'connector';
   objectType?: string;
@@ -55,8 +57,8 @@ export class PostgresAuditStore {
         ("id", "timestamp", "trace_id",
          "actor_type", "actor_id", "actor_roles", "actor_ip",
          "op_type", "op_object_type", "op_object_id", "op_action_type", "op_action_id",
-         "op_function_name", "detail")
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+         "op_function_name", "tenant_id", "detail")
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
       [
         record.id,
         record.timestamp,
@@ -71,6 +73,7 @@ export class PostgresAuditStore {
         record.operation.actionType ?? null,
         record.operation.actionId ?? null,
         record.operation.functionName ?? null,
+        record.tenantId,
         JSON.stringify(detail),
       ],
     );
@@ -85,6 +88,10 @@ export class PostgresAuditStore {
     const params: unknown[] = [];
     let paramIdx = 1;
 
+    if (filter.tenantId !== undefined) {
+      conditions.push(`"tenant_id" = $${paramIdx++}`);
+      params.push(filter.tenantId);
+    }
     if (filter.actorId !== undefined) {
       conditions.push(`"actor_id" = $${paramIdx++}`);
       params.push(filter.actorId);
@@ -163,6 +170,10 @@ function rowToAuditRecord(row: Record<string, unknown>): AuditRecord {
     id: row['id'] as string,
     timestamp: (row['timestamp'] as Date).toISOString(),
     traceId: row['trace_id'] as string,
+    // Rows written before the column existed read back as '' rather than
+    // undefined: the field is required, and a tenant-scoped query must never
+    // match them by accident.
+    tenantId: (row['tenant_id'] as string | null) ?? '',
     actor,
     operation,
     detail,

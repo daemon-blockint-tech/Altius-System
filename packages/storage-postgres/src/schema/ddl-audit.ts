@@ -43,6 +43,18 @@ export function generateAuditDDL(): string[] {
     `ALTER TABLE "audit"."audit_records" ADD COLUMN IF NOT EXISTS "op_function_name" TEXT;`
   );
 
+  // Same reason as op_function_name: CREATE TABLE IF NOT EXISTS above will not
+  // add a column to a table that already exists, so existing deployments would
+  // keep writing tenant-less records.
+  statements.push(
+    `ALTER TABLE "audit"."audit_records" ADD COLUMN IF NOT EXISTS "tenant_id" TEXT;`
+  );
+
+  // Every served read is tenant-scoped, so the tenant leads the index.
+  statements.push(
+    `CREATE INDEX IF NOT EXISTS "idx_audit_records_tenant" ON "audit"."audit_records" ("tenant_id", "timestamp");`
+  );
+
   // Index for time-range queries
   statements.push(
     `CREATE INDEX IF NOT EXISTS "idx_audit_records_timestamp" ON "audit"."audit_records" ("timestamp");`

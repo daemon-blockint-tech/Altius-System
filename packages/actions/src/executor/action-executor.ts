@@ -523,6 +523,7 @@ export class ActionExecutor {
           id: `audit_${actionId}`,
           timestamp: now(),
           traceId: reqCtx.traceId ?? actionId,
+          tenantId: reqCtx.tenantId,
           actor: {
             type: actor.type,
             id: actor.id,
@@ -1194,6 +1195,7 @@ export class ActionExecutor {
         id: `audit_${actionId}`,
         timestamp: now(),
         traceId: reqCtx.traceId ?? actionId,
+        tenantId: reqCtx.tenantId,
         actor: { type: actor.type, id: actor.id, roles: actor.roles, ip: actor.ip },
         operation: {
           type: 'action',

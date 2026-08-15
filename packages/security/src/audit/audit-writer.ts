@@ -73,6 +73,7 @@ export class AuditWriter {
         id: generateAuditId(),
         timestamp: new Date().toISOString(),
         traceId: input.traceId ?? getTraceId() ?? "no-trace",
+        tenantId: input.tenantId,
         actor: input.actor,
         operation: input.operation,
         detail: input.detail,
@@ -86,6 +87,8 @@ export class AuditWriter {
 
 /** Input for writing an audit record (id, timestamp, traceId auto-populated). */
 export interface AuditWriteInput {
+  /** Tenant whose data the operation touched. See AuditRecord.tenantId. */
+  tenantId: string;
   actor: AuditActor;
   operation: AuditOperation;
   detail: AuditDetail;

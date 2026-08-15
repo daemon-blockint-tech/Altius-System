@@ -117,10 +117,11 @@ export async function applyConsentRecord(
   // not a domain object — keep this pack-agnostic so non-NHS consent subjects
   // (e.g. an AML Customer) are not mislabelled as 'patient' in the audit trail.
   const auditOp = { type: 'update' as const, objectType: 'consent', objectId: subject };
+  const auditTenant = tenantId;
 
   if (!callerCanRecord(actor.roles, recorderRoles)) {
     await deps.auditWriter?.write({
-      actor: auditActor, operation: auditOp,
+      tenantId: auditTenant, actor: auditActor, operation: auditOp,
       detail: { result: 'denied', denialReason: `Caller lacks a consent-recorder role (${recorderRoles.join('/')})`, after: { purpose, decision } },
       traceId,
     });
@@ -134,7 +135,7 @@ export async function applyConsentRecord(
   try {
     await deps.consentService.recordConsent(subject, purpose as DataPurpose, decision as 'GRANT' | 'DENY', evidence, tenantId);
     await deps.auditWriter?.write({
-      actor: auditActor, operation: auditOp,
+      tenantId: auditTenant, actor: auditActor, operation: auditOp,
       detail: { result: 'success', consentDecision: decision === 'GRANT' ? 'granted' : 'denied', after: { purpose, decision, evidence } },
       traceId,
     });
@@ -142,7 +143,7 @@ export async function applyConsentRecord(
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Consent write failed';
     await deps.auditWriter?.write({
-      actor: auditActor, operation: auditOp,
+      tenantId: auditTenant, actor: auditActor, operation: auditOp,
       detail: { result: 'error', denialReason: message, after: { purpose, decision } },
       traceId,
     });

@@ -49,6 +49,7 @@ beforeEach(() => {
 describe("AuditWriter", () => {
   it("writes an audit record on action execution", async () => {
     await writer.write({
+      tenantId: "tenant-test",
       actor: clinician,
       operation: makeOperation(),
       detail: makeDetail(),
@@ -63,6 +64,7 @@ describe("AuditWriter", () => {
 
   it("auto-populates id and timestamp", async () => {
     const record = await writer.write({
+      tenantId: "tenant-test",
       actor: clinician,
       operation: makeOperation(),
       detail: makeDetail(),
@@ -79,6 +81,7 @@ describe("AuditWriter", () => {
     const after = { status: "discharged", ward: "A1" };
 
     const record = await writer.write({
+      tenantId: "tenant-test",
       actor: clinician,
       operation: makeOperation(),
       detail: makeDetail({ before, after }),
@@ -90,6 +93,7 @@ describe("AuditWriter", () => {
 
   it("includes traceId in audit record", async () => {
     const record = await writer.write({
+      tenantId: "tenant-test",
       actor: clinician,
       operation: makeOperation(),
       detail: makeDetail(),
@@ -101,6 +105,7 @@ describe("AuditWriter", () => {
 
   it("falls back to 'no-trace' when no OTel context and no explicit traceId", async () => {
     const record = await writer.write({
+      tenantId: "tenant-test",
       actor: clinician,
       operation: makeOperation(),
       detail: makeDetail(),
@@ -112,6 +117,7 @@ describe("AuditWriter", () => {
 
   it("records denied access with denial reason", async () => {
     const record = await writer.write({
+      tenantId: "tenant-test",
       actor: clinician,
       operation: makeOperation({ type: "read", objectType: "Prescription" }),
       detail: {
@@ -128,6 +134,7 @@ describe("AuditWriter", () => {
 
   it("records consent decision", async () => {
     const record = await writer.write({
+      tenantId: "tenant-test",
       actor: clinician,
       operation: makeOperation({ type: "read", objectType: "Patient" }),
       detail: {
@@ -141,6 +148,7 @@ describe("AuditWriter", () => {
 
   it("records query auditing", async () => {
     const record = await writer.write({
+      tenantId: "tenant-test",
       actor: clinician,
       operation: { type: "query" },
       detail: {
@@ -155,11 +163,13 @@ describe("AuditWriter", () => {
 
   it("generates unique IDs for each record", async () => {
     const r1 = await writer.write({
+      tenantId: "tenant-test",
       actor: clinician,
       operation: makeOperation(),
       detail: makeDetail(),
     });
     const r2 = await writer.write({
+      tenantId: "tenant-test",
       actor: clinician,
       operation: makeOperation(),
       detail: makeDetail(),
@@ -172,6 +182,7 @@ describe("AuditWriter", () => {
 describe("MemoryAuditStore immutability", () => {
   it("audit records cannot be modified after write", async () => {
     await writer.write({
+      tenantId: "tenant-test",
       actor: clinician,
       operation: makeOperation(),
       detail: makeDetail(),
@@ -189,6 +200,7 @@ describe("MemoryAuditStore immutability", () => {
 
   it("audit records cannot be deleted from the store", async () => {
     await writer.write({
+      tenantId: "tenant-test",
       actor: clinician,
       operation: makeOperation(),
       detail: makeDetail(),
@@ -203,6 +215,7 @@ describe("MemoryAuditStore immutability", () => {
 
     // Write another record; the first one is still there
     await writer.write({
+      tenantId: "tenant-test",
       actor: systemActor,
       operation: makeOperation({ type: "create" }),
       detail: makeDetail({ before: undefined }),
@@ -217,6 +230,7 @@ describe("AuditQuery", () => {
   async function seedRecords(): Promise<void> {
     // Record 1: clinician updates patient
     await writer.write({
+      tenantId: "tenant-test",
       actor: clinician,
       operation: makeOperation({
         type: "update",
@@ -229,6 +243,7 @@ describe("AuditQuery", () => {
 
     // Record 2: clinician reads prescription
     await writer.write({
+      tenantId: "tenant-test",
       actor: clinician,
       operation: {
         type: "read",
@@ -241,6 +256,7 @@ describe("AuditQuery", () => {
 
     // Record 3: system creates appointment
     await writer.write({
+      tenantId: "tenant-test",
       actor: systemActor,
       operation: {
         type: "create",
@@ -258,6 +274,7 @@ describe("AuditQuery", () => {
 
     // Record 4: clinician denied access
     await writer.write({
+      tenantId: "tenant-test",
       actor: clinician,
       operation: {
         type: "read",
@@ -316,6 +333,7 @@ describe("AuditQuery", () => {
     // Write records with explicit traceIds so we can verify
     const now = new Date();
     await writer.write({
+      tenantId: "tenant-test",
       actor: clinician,
       operation: makeOperation(),
       detail: makeDetail(),

@@ -143,6 +143,7 @@ describe('@altius/spi type exports', () => {
       id: 'audit-1',
       timestamp: '2026-01-01T00:00:00Z',
       traceId: 'trace-1',
+      tenantId: 'tenant-test',
       actor: {
         type: 'user',
         id: 'user-1',

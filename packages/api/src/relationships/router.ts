@@ -153,6 +153,7 @@ export async function applyRelationshipChange(
   // Authorization gate: only granter roles may grant/revoke. Audit denials.
   if (!callerCanGrant(actor.roles, granterRoles)) {
     await deps.auditWriter?.write({
+      tenantId: actor.tenantId,
       actor: auditActor,
       operation: { type: opType, objectType: objectTypeSnake, objectId: parsed.objectId },
       detail: { result: 'denied', denialReason: `Caller lacks a granter role (${granterRoles.join('/')})`, after: { subject, relation: parsed.relation } },
@@ -176,6 +177,7 @@ export async function applyRelationshipChange(
       await deps.authorizationService.deleteRelationship(subject, parsed.relation, resource, actor.tenantId);
     }
     await deps.auditWriter?.write({
+      tenantId: actor.tenantId,
       actor: auditActor,
       operation: { type: opType, objectType: objectTypeSnake, objectId: parsed.objectId },
       detail: { result: 'success', after: { subject, relation: parsed.relation } },
@@ -188,6 +190,7 @@ export async function applyRelationshipChange(
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Relationship write failed';
     await deps.auditWriter?.write({
+      tenantId: actor.tenantId,
       actor: auditActor,
       operation: { type: opType, objectType: objectTypeSnake, objectId: parsed.objectId },
       detail: { result: 'error', denialReason: message, after: { subject, relation: parsed.relation } },

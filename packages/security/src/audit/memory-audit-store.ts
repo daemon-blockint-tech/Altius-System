@@ -38,6 +38,9 @@ export class MemoryAuditStore implements AuditStore {
   }
 
   private matches(record: AuditRecord, filter: AuditQueryFilter): boolean {
+    if (filter.tenantId !== undefined && record.tenantId !== filter.tenantId) {
+      return false;
+    }
     if (filter.actorId !== undefined && record.actor.id !== filter.actorId) {
       return false;
     }

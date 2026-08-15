@@ -8,6 +8,15 @@ export interface AuditRecord {
   id: string;
   timestamp: DateTime;
   traceId: string;
+  /**
+   * The tenant whose data the operation touched.
+   *
+   * Required, not optional: an audit record is compliance evidence, and one
+   * that cannot say whose it is cannot be served to anyone — object ids are
+   * unique only per tenant, so an unscoped read returns every tenant's
+   * operations on `patient:123`, not just the caller's.
+   */
+  tenantId: string;
   actor: AuditActor;
   operation: AuditOperation;
   detail: AuditDetail;
@@ -57,6 +66,8 @@ export interface AuditStore {
 }
 
 export interface AuditFilter {
+  /** Scope to one tenant. Callers serving HTTP must always set this. */
+  tenantId?: string;
   actorId?: string;
   actorType?: 'user' | 'system' | 'connector';
   operationType?: ('read' | 'create' | 'update' | 'delete' | 'action' | 'query' | 'link' | 'unlink' | 'function')[];

@@ -9,6 +9,8 @@ import type { AuditRecord } from "@altius/spi";
 
 /** Filter criteria for querying audit records. */
 export interface AuditQueryFilter {
+  /** Scope to one tenant. Callers serving HTTP must always set this. */
+  tenantId?: string;
   /** Filter by actor ID. */
   actorId?: string;
   /** Filter by actor type. */

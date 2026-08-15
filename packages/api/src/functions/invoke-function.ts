@@ -39,6 +39,7 @@ async function audit(
     // explicitly so the record correlates with the request, not the span.
     await deps.auditWriter.write({
       traceId: ctx.requestContext.traceId,
+      tenantId: ctx.requestContext.tenantId,
       actor: { type: 'user', id: ctx.user.id, roles: ctx.user.roles },
       operation: { type: 'function', functionName: fn.name },
       detail: { result, ...(denialReason ? { denialReason } : {}) },

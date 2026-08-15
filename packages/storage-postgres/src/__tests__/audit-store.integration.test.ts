@@ -72,6 +72,7 @@ describeWithPg('PostgresAuditStore (integration)', () => {
       id: `test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       timestamp: new Date().toISOString(),
       traceId: 'trace-001',
+      tenantId: 'tenant-test',
       actor: { type: 'user', id: 'user-alice', roles: ['clinician'] },
       operation: { type: 'create', objectType: 'Patient', objectId: 'p-001' },
       detail: { result: 'success' },
@@ -194,6 +195,7 @@ describeWithPg('PostgresAuditStore — function invocations', () => {
   const rec = (id: string, fnName: string): AuditRecord => ({
     id: `${id}-${run}`,
     timestamp: new Date().toISOString(),
+    tenantId: `tenant-${run}`,
     traceId: `trace-${id}-${run}`,
     actor: { type: 'user', id: `u-fn-${run}`, roles: ['bsa_officer'] },
     operation: { type: 'function', functionName: fnName },
@@ -216,5 +218,48 @@ describeWithPg('PostgresAuditStore — function invocations', () => {
 
     expect(records.length).toBeGreaterThanOrEqual(2);
     expect(records.every(r => r.operation.type === 'function')).toBe(true);
+  });
+});
+
+describeWithPg('PostgresAuditStore — tenant scoping', () => {
+  let pool: Pool;
+  let store: PostgresAuditStore;
+  const run = randomUUID().slice(0, 8);
+
+  beforeAll(async () => {
+    pool = new Pool(parseUrl(PG_TEST_URL!));
+    store = new PostgresAuditStore(pool);
+    for (const stmt of generateAuditDDL()) await pool.query(stmt);
+  });
+
+  afterAll(async () => { await pool.end(); });
+
+  const rec = (tenantId: string, actorId: string): AuditRecord => ({
+    id: `tenant-${actorId}-${run}`,
+    timestamp: new Date().toISOString(),
+    traceId: `trace-${actorId}-${run}`,
+    tenantId,
+    actor: { type: 'user', id: actorId, roles: ['clinician'] },
+    // Same object id in both tenants — the case that makes an unscoped read a
+    // leak rather than a nuisance, since ids are unique only per tenant.
+    operation: { type: 'read', objectType: 'Patient', objectId: 'p-1' },
+    detail: { result: 'success' },
+  });
+
+  it('round-trips the tenant that produced the record', async () => {
+    await store.append(rec(`ten-a-${run}`, `alice-${run}`));
+
+    const [got] = await store.query({ traceId: `trace-alice-${run}-${run}` });
+
+    expect(got!.tenantId).toBe(`ten-a-${run}`);
+  });
+
+  it('never returns another tenant records for the same object id', async () => {
+    await store.append(rec(`ten-b-${run}`, `bob-${run}`));
+
+    const forB = await store.query({ tenantId: `ten-b-${run}`, objectId: 'p-1' });
+
+    expect(forB).toHaveLength(1);
+    expect(forB[0]!.actor.id).toBe(`bob-${run}`);
   });
 });
