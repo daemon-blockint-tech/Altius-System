@@ -78,6 +78,14 @@ jobs:
         env:
           PG_TEST_URL: postgresql://postgres:postgres@localhost:5432/altius_test
         run: pnpm --filter @altius/storage-postgres test
+      # The shared SPI conformance suite runs against the memory provider in the
+      # unit job. Without PG_TEST_URL it skips the Postgres half entirely, so any
+      # behaviour that differed between the two providers — a filter honoured by
+      # one and ignored by the other — was structurally undetectable here.
+      - name: SPI conformance against Postgres
+        env:
+          PG_TEST_URL: postgresql://postgres:postgres@localhost:5432/altius_test
+        run: pnpm --filter @altius/spi-conformance test
 
   docker-stack-integration:
     name: Docker-stack integration
