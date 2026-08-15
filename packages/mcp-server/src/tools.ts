@@ -9,7 +9,7 @@
 
 import type { ActionType, ObjectType, FieldDefinition } from '@altius/odl';
 import type { ActionActor, ActionContext, ActionResult } from '@altius/actions';
-import type { FilterExpression, OntologyObject } from '@altius/spi';
+import type { FilterExpression, OntologyObject, TraversalStep } from '@altius/spi';
 import { DataPurpose } from '@altius/spi';
 import type { McpTool, McpCallToolResult } from './protocol.js';
 import type { McpServerDependencies, McpCaller } from './types.js';
@@ -51,9 +51,10 @@ export function buildToolList(deps: McpServerDependencies): McpTool[] {
     tools.push(buildActionTool(actionType));
   }
 
-  // Read tools — one search_<Type> per ObjectType
+  // Read tools — one search_<Type> and one traverse_<Type> per ObjectType
   for (const objType of deps.schema.objectTypes) {
     tools.push(buildSearchTool(objType));
+    tools.push(buildTraverseTool(objType));
   }
 
   return tools;
@@ -178,6 +179,15 @@ export async function invokeTool(
     const objType = deps.schema.objectTypes.find((o) => o.name === typeName);
     if (objType) {
       return invokeSearchTool(objType, args, caller, deps);
+    }
+  }
+
+  // Read tool: name matches traverse_<Type>
+  if (toolName.startsWith('traverse_')) {
+    const typeName = toolName.slice('traverse_'.length);
+    const objType = deps.schema.objectTypes.find((o) => o.name === typeName);
+    if (objType) {
+      return invokeTraverseTool(objType, args, caller, deps);
     }
   }
 
@@ -331,13 +341,24 @@ async function invokeSearchTool(
     page.items.map((o: OntologyObject) => o as unknown as Record<string, unknown>),
   );
 
+  // Consent gate. This surface returned consent-gated rows unchecked, so an
+  // agent could read what the REST and GraphQL paths withhold.
+  const consented: Record<string, unknown>[] = [];
+  for (const [i, row] of redacted.entries()) {
+    const node = page.items[i]!;
+    const data = row.data as Record<string, unknown>;
+    if (await consentAllows(node, data, caller, deps)) consented.push(data);
+  }
+
   return {
     content: [
       {
         type: 'text',
         text: JSON.stringify({
-          items: redacted.map((r) => r.data),
-          totalCount: page.totalCount,
+          items: consented,
+          // Post-consent count: page.totalCount is what storage matched before
+          // the gate, so reporting it discloses how many rows were withheld.
+          totalCount: consented.length,
           limit,
         }),
       },
@@ -404,4 +425,185 @@ function parseSearchArgs(args: unknown): ParsedSearchArgs {
  */
 function toSnakeCase(s: string): string {
   return s.replace(/([A-Z])/g, '_$1').toLowerCase().replace(/^_/, '');
+}
+
+// ─── Traversal tool ───
+
+/** Nodes a `traverse_<Type>` call may return, and hops it may take. */
+const TRAVERSE_NODE_LIMIT = 50;
+const TRAVERSE_MAX_STEPS = 5;
+
+/**
+ * Build a `traverse_<Type>` tool: multi-hop "search around" from one object.
+ *
+ * The provider-side primitive has always existed and was reachable from no
+ * surface at all; an agent could only fan out one `getLinks` per node and
+ * stitch the graph itself.
+ */
+function buildTraverseTool(objType: ObjectType): McpTool {
+  return {
+    name: `traverse_${objType.name}`,
+    description: `Traverse the object graph outward from one ${objType.name}, following up to ${TRAVERSE_MAX_STEPS} link hops. Returns the objects reached (up to ${TRAVERSE_NODE_LIMIT}) and the links between them. Each step names a linkType and a direction; add a 'filter' to a step to keep only targets matching it.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        startId: { type: 'string', description: `Id of the ${objType.name} to start from` },
+        steps: {
+          type: 'array',
+          description: 'Hops to follow, in order. Each is exactly one hop.',
+          items: {
+            type: 'object',
+            properties: {
+              linkType: { type: 'string', description: 'Link type name to follow' },
+              direction: { type: 'string', enum: ['outbound', 'inbound'], description: 'Which way to follow it' },
+            },
+            required: ['linkType'],
+          },
+          minItems: 1,
+          maxItems: TRAVERSE_MAX_STEPS,
+        },
+      },
+      required: ['startId', 'steps'],
+    },
+  };
+}
+
+/**
+ * Run a traversal for an agent.
+ *
+ * Authorization is the hard part: a traversal returns objects of MIXED types,
+ * so every node is checked against its OWN type rather than the starting one.
+ * Three things are withheld beyond the nodes themselves, because each discloses
+ * an object the caller may not see: an edge whose endpoint was dropped (it
+ * confirms the hidden object exists and is connected), the provider's node
+ * count (it reveals the size of the withheld part), and the neighbourhood of a
+ * start object the caller cannot read.
+ */
+async function invokeTraverseTool(
+  objType: ObjectType,
+  args: unknown,
+  caller: McpCaller,
+  deps: McpServerDependencies,
+): Promise<McpCallToolResult> {
+  const { user, requestContext } = caller;
+  const a = (args ?? {}) as Record<string, unknown>;
+
+  const startId = a['startId'];
+  const rawSteps = a['steps'];
+  if (typeof startId !== 'string' || !startId) {
+    return errorResult('startId must be the id of a ' + objType.name);
+  }
+  if (!Array.isArray(rawSteps) || rawSteps.length === 0) {
+    return errorResult('steps must be a non-empty array of hops');
+  }
+  if (rawSteps.length > TRAVERSE_MAX_STEPS) {
+    return errorResult(`steps may contain at most ${TRAVERSE_MAX_STEPS} hops`);
+  }
+
+  const knownLinkTypes = new Set(deps.schema.linkTypes.map((l) => l.name));
+  const steps: TraversalStep[] = [];
+  for (const [i, raw] of rawSteps.entries()) {
+    const step = (raw ?? {}) as Record<string, unknown>;
+    const linkType = step['linkType'];
+    if (typeof linkType !== 'string' || !knownLinkTypes.has(linkType)) {
+      // Named rather than silently empty: an agent comparing an empty result
+      // against an error would otherwise be able to probe which link types exist.
+      return errorResult(`steps[${i}].linkType "${String(linkType)}" is not a link type in this ontology`);
+    }
+    const direction = step['direction'] ?? 'outbound';
+    if (direction !== 'inbound' && direction !== 'outbound') {
+      return errorResult(`steps[${i}].direction must be "inbound" or "outbound"`);
+    }
+    steps.push({ linkType, direction });
+  }
+
+  // Entering the graph requires being able to see where you start from.
+  const startAllowed = await deps.authorizationService.check(
+    `user:${user.id}`,
+    'viewer',
+    `${toSnakeCase(objType.name)}:${startId}`,
+    requestContext.tenantId,
+  );
+  if (!startAllowed) {
+    return errorResult(`Access denied: cannot view ${objType.name} ${startId}`);
+  }
+
+  const result = await deps.storage.traverse(
+    requestContext,
+    startId,
+    { steps },
+    { limit: TRAVERSE_NODE_LIMIT },
+  );
+
+  const visible: Record<string, unknown>[] = [];
+  const visibleIds = new Set<string>();
+  for (const node of result.nodes) {
+    const allowed = await deps.authorizationService.check(
+      `user:${user.id}`,
+      'viewer',
+      `${toSnakeCase(node._type)}:${node._id}`,
+      requestContext.tenantId,
+    );
+    if (!allowed) continue;
+    const [redacted] = deps.authorizationService.redactFieldsBatch(
+      user.id,
+      user.roles,
+      node._type,
+      [node as unknown as Record<string, unknown>],
+    );
+    const data = redacted!.data as Record<string, unknown>;
+    // Dropped, not blanked: on the graph, presence is itself the disclosure.
+    if (!(await consentAllows(node, data, caller, deps))) continue;
+    visible.push(data);
+    visibleIds.add(node._id);
+  }
+
+  const edges = result.edges
+    .filter((e) => visibleIds.has(e._fromId) && visibleIds.has(e._toId))
+    .map((e) => ({ linkType: e._type, fromId: e._fromId, toId: e._toId }));
+
+  return {
+    content: [{
+      type: 'text',
+      text: JSON.stringify({ nodes: visible, edges, totalCount: visible.length }),
+    }],
+    isError: false,
+  };
+}
+
+/** Shape a caller-facing refusal the way the other tools do. */
+function errorResult(message: string): McpCallToolResult {
+  return { content: [{ type: 'text', text: JSON.stringify({ error: message }) }], isError: true };
+}
+
+/**
+ * Whether a node of this type may be returned to an agent, per consent.
+ *
+ * Matches the REST and GraphQL rule exactly: gate when a consent service is
+ * configured, and do not invent one when it is absent. A deployment without a
+ * consent service has no consent control anywhere, so refusing here would be
+ * stricter than the platform and would empty a working agent's reads.
+ *
+ * The hole this closes is the other case — a service IS configured and this
+ * surface never called it, so an agent read exactly what REST and GraphQL
+ * withhold.
+ */
+async function consentAllows(
+  node: { _id: string; _type: string },
+  data: Record<string, unknown>,
+  caller: McpCaller,
+  deps: McpServerDependencies,
+): Promise<boolean> {
+  const gated = deps.consentSubjectTypes ?? DEFAULT_CONSENT_SUBJECT_TYPES;
+  if (!gated.includes(node._type)) return true;
+  if (!deps.consentService) return true;
+
+  const result = await deps.consentService.checkSingleObject(
+    data,
+    node._id,
+    DEFAULT_CONSENT_PURPOSE,
+    caller.user.id,
+    caller.requestContext.tenantId,
+  );
+  return !result._consentRestricted;
 }

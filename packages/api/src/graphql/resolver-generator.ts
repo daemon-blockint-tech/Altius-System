@@ -20,13 +20,14 @@ import { DataPurpose } from '@altius/spi';
 import type { OntologyObject, OntologyLink, FilterExpression, AggregateQuery, AggregateField, AggregateFunction, BucketInterval, SearchQuery, ErrorCategory, RequestContext } from '@altius/spi';
 import { ToolRegistry } from '@altius/actions';
 import type { ActionActor, ActionContext, ActionManifest } from '@altius/actions';
-import type { RedactionResult } from '@altius/security';
+import type { RedactionResult, AuditQueryFilter } from '@altius/security';
 import { PubSub } from 'graphql-subscriptions';
 import type { ApiDependencies, ResolverContext, PaginationArgs } from './types.js';
 import { DEFAULT_CONSENT_PURPOSE, DEFAULT_CONSENT_SUBJECT_TYPES, DEFAULT_PAGE_SIZE, isConsentSubjectType } from './types.js';
 import { resolvePagination, buildConnection, decodeCursor } from './pagination.js';
 import { paginateWithConsent } from '../consent-pagination.js';
 import { createAltiusError, wrapError } from './errors.js';
+import { DEFAULT_AUDIT_READER_ROLES } from '../rest/audit-routes.js';
 import {
   createIdFilteredSubscription,
   createFilteredSubscription,
@@ -241,6 +242,9 @@ export function objectToGraphQL(obj: OntologyObject, objectType: ObjectType): Re
   // `_version` is what callers pass back as `expectedVersion` on update/delete
   // mutations and `_expectedVersion` on action inputs; it is in the SDL.
   result._version = obj._version;
+  // `_actorId` attributes each version to the actor who wrote it; it is in
+  // the SDL and surfaces in history snapshots so the timeline shows who.
+  result._actorId = obj._actorId ?? null;
   result._redactedFields = null;
   result._consentRestricted = false;
 
@@ -314,7 +318,7 @@ function generateLinkFieldResolvers(
 
     typeResolvers[field.name] = async (
       parent: Record<string, unknown>,
-      _args: unknown,
+      args: { first?: number; after?: string },
       ctx: ResolverContext,
     ) => {
       try {
@@ -322,11 +326,19 @@ function generateLinkFieldResolvers(
         if (!parentId) return isList ? [] : null;
         const { user, requestContext } = ctx;
 
+        // Client-supplied pagination for list link fields. Without this,
+        // links with >1000 rows were silently truncated — no pagination,
+        // no filter, no way for the client to know.
+        const limit = isList
+          ? (typeof args?.first === 'number' && args.first > 0 ? args.first : DEFAULT_PAGE_SIZE)
+          : 1;
+        const after = isList ? args?.after : undefined;
+
         const page = await deps.linkManager.getLinks(
           parentId,
           link.type,
           direction,
-          { limit: isList ? 1000 : 1, offset: 0, includeDeleted },
+          { limit, offset: 0, includeDeleted, after },
           requestContext,
         );
         const links = page.items;
@@ -520,6 +532,7 @@ export function generateResolvers(
     generateQueryResolvers(obj, resolvers, deps);
     generateAggregateResolver(obj, resolvers, deps);
     generateSearchResolver(obj, resolvers, deps);
+    generateTraverseResolver(obj, resolvers, deps);
     generateSubscriptionResolvers(obj, resolvers, pubsub);
     // Type-level resolvers for @link fields (nested relationship traversal).
     generateLinkFieldResolvers(obj, schema, resolvers, deps);
@@ -624,6 +637,9 @@ export function generateResolvers(
 
   // LLM generate + embed resolvers (Section AIP).
   generateLlmResolvers(resolvers, deps);
+
+  // Audit trail read resolver (Section 7.2.1) — mirrors REST /api/v1/audit.
+  generateAuditResolvers(resolvers, deps);
 
   return { resolvers, pubsub };
 }
@@ -1887,6 +1903,106 @@ function generateLlmResolvers(resolvers: ResolverMap, deps: ApiDependencies): vo
   };
 }
 
+// ─── Audit trail resolver (Section 7.2.1) ───
+
+const DEFAULT_AUDIT_LIMIT_GQL = 100;
+const MAX_AUDIT_LIMIT_GQL = 1000;
+
+/**
+ * Generate the `auditRecords` query resolver — the GraphQL mirror of
+ * REST GET /api/v1/audit.
+ *
+ * Every query is scoped to the caller's tenantId (object ids are unique only
+ * per tenant), role-gated identically to the REST route, and paginated
+ * client-side from the store's full result set.
+ */
+function generateAuditResolvers(resolvers: ResolverMap, deps: ApiDependencies): void {
+  resolvers['Query']!['auditRecords'] = async (
+    _parent: unknown,
+    args: {
+      filter?: {
+        actorId?: string;
+        actorType?: string;
+        objectType?: string;
+        objectId?: string;
+        actionType?: string;
+        operationType?: string;
+        traceId?: string;
+        from?: string;
+        to?: string;
+      };
+      limit?: number;
+      offset?: number;
+    },
+    ctx: ResolverContext,
+  ) => {
+    try {
+      if (!deps.auditStore) {
+        throw createAltiusError({
+          code: 'AUDIT_NOT_CONFIGURED',
+          category: 'unsupported',
+          message: 'Audit trail reads are not configured for this deployment.',
+          retryable: false,
+          traceId: ctx.requestContext.traceId,
+        });
+      }
+
+      const readerRoles = deps.auditReaderRoles ?? DEFAULT_AUDIT_READER_ROLES;
+      if (!readerRoles.some(role => ctx.user.roles.includes(role))) {
+        throw createAltiusError({
+          code: 'FORBIDDEN',
+          category: 'authorization',
+          message: readerRoles.length === 0
+            ? 'Audit trail reads are disabled: no audit-reader role is configured.'
+            : `Reading the audit trail requires one of: ${readerRoles.join(', ')}`,
+          retryable: false,
+          traceId: ctx.requestContext.traceId,
+        });
+      }
+
+      // Build filter, always scoped to the caller's tenant — a caller cannot
+      // read another tenant's trail by passing tenantId in the filter.
+      const filter: AuditQueryFilter = {
+        tenantId: ctx.user.tenantId,
+      };
+      const f = args.filter;
+      if (f) {
+        if (typeof f.actorId === 'string') filter.actorId = f.actorId;
+        if (typeof f.actorType === 'string') filter.actorType = f.actorType as AuditQueryFilter['actorType'];
+        if (typeof f.objectType === 'string') filter.objectType = f.objectType;
+        if (typeof f.objectId === 'string') filter.objectId = f.objectId;
+        if (typeof f.actionType === 'string') filter.actionType = f.actionType;
+        if (typeof f.operationType === 'string') filter.operationType = f.operationType as AuditQueryFilter['operationType'];
+        if (typeof f.traceId === 'string') filter.traceId = f.traceId;
+        if (typeof f.from === 'string') filter.from = f.from;
+        if (typeof f.to === 'string') filter.to = f.to;
+      }
+
+      const records = await deps.auditStore.query(filter);
+      const totalCount = records.length;
+
+      let limit = DEFAULT_AUDIT_LIMIT_GQL;
+      let offset = 0;
+      if (typeof args.limit === 'number' && args.limit > 0) {
+        limit = Math.min(args.limit, MAX_AUDIT_LIMIT_GQL);
+      }
+      if (typeof args.offset === 'number' && args.offset >= 0) {
+        offset = args.offset;
+      }
+
+      const paginated = records.slice(offset, offset + limit);
+
+      return {
+        records: paginated,
+        totalCount,
+        hasMore: offset + limit < totalCount,
+      };
+    } catch (err) {
+      throw wrapError(err, ctx.requestContext.traceId);
+    }
+  };
+}
+
 /**
  * Consent-record mutation (v0.2.0 A2), reusing the same core (validation +
  * recorder-role gate + audit) as the REST /api/v1/consent route.
@@ -1942,5 +2058,121 @@ function objectSetToGraphQL(def: {
     createdBy: def.createdBy,
     createdAt: def.createdAt,
     updatedAt: def.updatedAt,
+  };
+}
+
+/**
+ * Generate `traverse<Type>` — multi-hop search-around from one object.
+ *
+ * The provider primitive is conformance-tested on both storage backends and,
+ * until REST and MCP got it, was reachable from nothing. GraphQL is the third
+ * surface, and the same rule applies on all of them: a traversal returns
+ * objects of MIXED types, so authorization, redaction and consent run per node
+ * against its OWN type — not the type the traversal started from.
+ */
+function generateTraverseResolver(
+  obj: ObjectType,
+  resolvers: ResolverMap,
+  deps: ApiDependencies,
+): void {
+  const typeName = obj.name;
+  const NODE_LIMIT = 100;
+
+  resolvers['Query']![`traverse${typeName}`] = async (
+    _parent: unknown,
+    args: { startId: string; steps: { linkType: string; direction?: string; filter?: unknown }[]; limit?: number },
+    ctx: ResolverContext,
+  ) => {
+    try {
+      const { user, requestContext } = ctx;
+      const knownLinkTypes = new Set(deps.schema.linkTypes.map(l => l.name));
+
+      const steps = args.steps.map((step, i) => {
+        // Named rather than silently empty: comparing an empty result against
+        // an error would otherwise let a caller probe which link types exist.
+        if (!knownLinkTypes.has(step.linkType)) {
+          throw createAltiusError({
+            code: 'VALIDATION_ERROR',
+            category: 'validation',
+            message: `steps[${i}].linkType "${step.linkType}" is not a link type in this ontology`,
+            retryable: false,
+            traceId: requestContext.traceId,
+          });
+        }
+        return {
+          linkType: step.linkType,
+          direction: (step.direction ?? 'OUTBOUND').toLowerCase() as 'inbound' | 'outbound',
+          ...(step.filter ? { filter: step.filter as never } : {}),
+        };
+      });
+
+      // Entering the graph requires being able to see where you start from,
+      // or a caller learns the neighbourhood of an object they cannot read.
+      const startAllowed = await deps.authorizationService.check(
+        `user:${user.id}`,
+        'viewer',
+        `${toSnakeCase(typeName)}:${args.startId}`,
+        requestContext.tenantId,
+      );
+      if (!startAllowed) {
+        throw createAltiusError({
+          code: 'FORBIDDEN',
+          category: 'authorization',
+          message: `Not authorized to view ${typeName} ${args.startId}`,
+          retryable: false,
+          traceId: requestContext.traceId,
+        });
+      }
+
+      const limit = Math.min(args.limit ?? NODE_LIMIT, NODE_LIMIT);
+      const result = await deps.linkManager.traverse(args.startId, { steps }, { limit }, requestContext);
+
+      const nodes: { id: string; type: string; properties: Record<string, unknown> }[] = [];
+      const visibleIds = new Set<string>();
+
+      for (const node of result.nodes) {
+        const allowed = await deps.authorizationService.check(
+          `user:${user.id}`,
+          'viewer',
+          `${toSnakeCase(node._type)}:${node._id}`,
+          requestContext.tenantId,
+        );
+        if (!allowed) continue;
+
+        const redacted = deps.authorizationService.redactFields(
+          user.id, user.roles, node._type, node as unknown as Record<string, unknown>,
+        );
+
+        if (deps.consentService && isConsentSubjectType(node._type, deps.consentSubjectTypes)) {
+          const consent = await deps.consentService.checkSingleObject(
+            redacted.data as Record<string, unknown>,
+            node._id,
+            DEFAULT_CONSENT_PURPOSE as DataPurpose,
+            user.id,
+            requestContext.tenantId,
+          );
+          // Dropped, not blanked: on a single-object read the caller already
+          // named the object, so an emptied shell tells them nothing new. Here
+          // its presence in the graph is itself the disclosure.
+          if (consent._consentRestricted) continue;
+        }
+
+        nodes.push({ id: node._id, type: node._type, properties: redacted.data as Record<string, unknown> });
+        visibleIds.add(node._id);
+      }
+
+      return {
+        nodes,
+        // An edge to a dropped node confirms the hidden object exists and is
+        // connected, so keep only edges whose both ends survived.
+        edges: result.edges
+          .filter(e => visibleIds.has(e._fromId) && visibleIds.has(e._toId))
+          .map(e => ({ linkType: e._type, fromId: e._fromId, toId: e._toId })),
+        // Post-authorization count: the provider's would leak how much was withheld.
+        totalCount: nodes.length,
+      };
+    } catch (err) {
+      throw wrapError(err, ctx.requestContext.traceId);
+    }
   };
 }

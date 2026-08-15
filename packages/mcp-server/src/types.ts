@@ -5,7 +5,7 @@
 import type { ParsedSchema } from '@altius/odl';
 import type { StorageProvider, RequestContext } from '@altius/spi';
 import type { ActionExecutor, ActionManifest } from '@altius/actions';
-import type { AuthorizationService, OidcAuthenticator, AuthenticatedUser } from '@altius/security';
+import type { AuthorizationService, OidcAuthenticator, AuthenticatedUser, ConsentService } from '@altius/security';
 
 /**
  * Registry that resolves action names to parsed YAML manifests.
@@ -28,6 +28,12 @@ export interface McpServerDependencies {
   manifestRegistry: ManifestRegistry;
   /** Consent subject types (mirrors ApiDependencies.consentSubjectTypes). */
   consentSubjectTypes?: readonly string[];
+  /**
+   * Consent gate for subject types. Absent means no deployment configured one
+   * — NOT that consent may be skipped: the read tools drop consent-gated types
+   * rather than route an agent around a gate REST and GraphQL both apply.
+   */
+  consentService?: ConsentService;
 }
 
 /**

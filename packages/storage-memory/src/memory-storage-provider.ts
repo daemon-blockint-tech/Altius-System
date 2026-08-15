@@ -494,6 +494,7 @@ export class MemoryStorageProvider implements StorageProvider {
       _version: 1,
       _createdAt: timestamp,
       _updatedAt: timestamp,
+      _actorId: ctx.actorId,
       ...properties,
     };
     const key = `${type}:${id}`;
@@ -527,6 +528,7 @@ export class MemoryStorageProvider implements StorageProvider {
       _version: existing._version + 1,
       _createdAt: existing._createdAt,
       _updatedAt: now(),
+      _actorId: ctx.actorId,
     };
     m.objects.set(key, updated);
     this._pushVersionHistory(key, updated, m.versionHistory);
@@ -545,6 +547,7 @@ export class MemoryStorageProvider implements StorageProvider {
       _deletedAt: now(),
       _version: existing._version + 1,
       _updatedAt: now(),
+      _actorId: ctx.actorId,
     };
     m.objects.set(key, updated);
     this._pushVersionHistory(key, updated, m.versionHistory);

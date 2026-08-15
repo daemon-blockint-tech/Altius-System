@@ -1290,6 +1290,7 @@ async function main(): Promise<void> {
         storage,
         manifestRegistry: manifestRegistry ?? { get: () => undefined },
         ...(consentSubjectTypes ? { consentSubjectTypes } : {}),
+        ...(consentService ? { consentService } : {}),
       },
       isDev,
     });

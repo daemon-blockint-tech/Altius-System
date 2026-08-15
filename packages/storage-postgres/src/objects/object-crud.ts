@@ -83,10 +83,14 @@ function rowToObject(row: Record<string, unknown>): OntologyObject {
     obj._deletedAt = (row['_deleted_at'] as Date).toISOString() as DateTime;
   }
 
+  if (row['_actor_id'] != null) {
+    obj._actorId = row['_actor_id'] as string;
+  }
+
   // Map remaining columns (user-defined properties)
   const systemCols = new Set([
     '_tenant_id', '_id', '_type', '_version',
-    '_created_at', '_updated_at', '_deleted_at',
+    '_created_at', '_updated_at', '_deleted_at', '_actor_id',
   ]);
   for (const [key, value] of Object.entries(row)) {
     if (!systemCols.has(key)) {
@@ -134,8 +138,8 @@ export async function createObject(
 
   // Build column names and values for user properties
   const propEntries = Object.entries(properties);
-  const systemCols = ['"_tenant_id"', '"_id"', '"_type"', '"_version"', '"_created_at"', '"_updated_at"'];
-  const systemVals = [ctx.tenantId, id, type, 1, timestamp, timestamp];
+  const systemCols = ['"_tenant_id"', '"_id"', '"_type"', '"_version"', '"_created_at"', '"_updated_at"', '"_actor_id"'];
+  const systemVals = [ctx.tenantId, id, type, 1, timestamp, timestamp, ctx.actorId ?? null];
 
   const propCols = propEntries.map(([k]) => pgIdent(snakeCase(k)));
   // Serialize objects/arrays as JSON strings for JSONB columns —
@@ -234,9 +238,10 @@ export async function updateObject(
   const setClauses: string[] = [
     `"_version" = "_version" + 1`,
     `"_updated_at" = $1`,
+    `"_actor_id" = $2`,
   ];
-  const params: unknown[] = [timestamp];
-  let paramIdx = 2;
+  const params: unknown[] = [timestamp, ctx.actorId ?? null];
+  let paramIdx = 3;
 
   for (const [key, value] of propEntries) {
     setClauses.push(`${pgIdent(snakeCase(key))} = $${paramIdx}`);
@@ -307,9 +312,9 @@ export async function softDeleteObject(
   const table = tableName(type, schema);
   const timestamp = now();
 
-  const sql = `UPDATE ${table} SET "_deleted_at" = $1, "_version" = "_version" + 1, "_updated_at" = $1 WHERE "_tenant_id" = $2 AND "_id" = $3 AND "_deleted_at" IS NULL RETURNING *`;
+  const sql = `UPDATE ${table} SET "_deleted_at" = $1, "_version" = "_version" + 1, "_updated_at" = $1, "_actor_id" = $4 WHERE "_tenant_id" = $2 AND "_id" = $3 AND "_deleted_at" IS NULL RETURNING *`;
 
-  const result = await q.query(sql, [timestamp, ctx.tenantId, id]);
+  const result = await q.query(sql, [timestamp, ctx.tenantId, id, ctx.actorId ?? null]);
   if (result.rows.length === 0) {
     throw new Error(`Object ${type}:${id} not found or already deleted`);
   }

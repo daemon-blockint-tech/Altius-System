@@ -219,9 +219,9 @@ describe('generateObjectTableDDL', () => {
     for (const objectType of nhsSchema.objectTypes) {
       const ddl = generateObjectTableDDL(objectType);
       for (const stmt of ddl) {
-        // Each statement should be valid SQL (ends with semicolon, has CREATE)
+        // Each statement should be valid SQL (ends with semicolon)
         expect(stmt.trim()).toMatch(/;$/);
-        expect(stmt).toMatch(/^(CREATE|SELECT)/);
+        expect(stmt).toMatch(/^(CREATE|ALTER|SELECT)/);
       }
     }
   });

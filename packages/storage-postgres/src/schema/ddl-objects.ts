@@ -19,7 +19,8 @@ const SYSTEM_COLUMNS = `
   "_version" INTEGER NOT NULL DEFAULT 1,
   "_created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   "_updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  "_deleted_at" TIMESTAMPTZ`;
+  "_deleted_at" TIMESTAMPTZ,
+  "_actor_id" TEXT`;
 
 /**
  * Generate DDL for an ObjectType table.
@@ -73,6 +74,15 @@ export function generateObjectTableDDL(objectType: ObjectTypeDefinition, schema 
     // We don't have directive info on PropertyDefinition directly,
     // but the caller can add IndexDefinitions for @indexed/@unique fields.
   }
+
+  // Migration: add _actor_id to pre-existing tables that lack it (additive).
+  // Emitted last so existing array-index-based tests stay stable.
+  statements.push(
+    `ALTER TABLE ${qualifiedTable} ADD COLUMN IF NOT EXISTS "_actor_id" TEXT;`,
+  );
+  statements.push(
+    `ALTER TABLE ${pgIdent(schema)}.${pgIdent(tableName + '_history')} ADD COLUMN IF NOT EXISTS "_actor_id" TEXT;`,
+  );
 
   return statements;
 }

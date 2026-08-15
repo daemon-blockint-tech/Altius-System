@@ -1,11 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync, readFileSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { parseOdl } from '../parser/index.js';
 import { validateSchema } from '../validator/index.js';
 import { generateGraphQLSchema } from '../codegen/index.js';
 import { generateOpenFGASchema } from '../codegen/openfga.js';
+import { generateSdk } from '../codegen/sdk.js';
 import { diff, classify, reverseDiff } from '../diff/index.js';
 
 /**
@@ -283,6 +284,58 @@ describe('odl generate openfga', () => {
     expect(fga).toContain('schema 1.1');
     expect(fga).toContain('type user');
     expect(fga).toContain('type patient');
+  });
+});
+
+// ─── Tests: generate sdk ───
+
+describe('odl generate sdk', () => {
+  it('generates TypeScript SDK from NHS Acute ODL file', () => {
+    const filePath = join(tmpDir, 'nhs-acute.odl');
+    writeFileSync(filePath, NHS_ACUTE_ODL, 'utf-8');
+
+    const source = readOdlFromFile(filePath);
+    const schema = parseOdl(source);
+    const output = generateSdk(schema);
+
+    expect(output.files.has('src/index.ts')).toBe(true);
+    const sdk = output.files.get('src/index.ts')!;
+    expect(sdk).toContain('export class Altius');
+    expect(sdk).toContain('export interface Patient');
+  });
+
+  it('generated SDK includes a working transport (no "Not implemented")', () => {
+    const filePath = join(tmpDir, 'nhs-acute.odl');
+    writeFileSync(filePath, NHS_ACUTE_ODL, 'utf-8');
+
+    const source = readOdlFromFile(filePath);
+    const schema = parseOdl(source);
+    const output = generateSdk(schema);
+    const sdk = output.files.get('src/index.ts')!;
+
+    expect(sdk).not.toContain('Not implemented');
+    expect(sdk).toMatch(/fetch\(/);
+  });
+
+  it('writes SDK files to an output directory', () => {
+    const filePath = join(tmpDir, 'nhs-acute.odl');
+    const outDir = join(tmpDir, 'sdk-out');
+    writeFileSync(filePath, NHS_ACUTE_ODL, 'utf-8');
+    mkdirSync(outDir, { recursive: true });
+
+    const source = readOdlFromFile(filePath);
+    const schema = parseOdl(source);
+    const output = generateSdk(schema);
+
+    for (const [relPath, content] of output.files) {
+      const fullPath = join(outDir, relPath);
+      mkdirSync(resolve(fullPath, '..'), { recursive: true });
+      writeFileSync(fullPath, content, 'utf-8');
+    }
+
+    const sdkFile = join(outDir, 'src', 'index.ts');
+    const content = readFileSync(sdkFile, 'utf-8');
+    expect(content).toContain('export class Altius');
   });
 });
 

@@ -94,6 +94,10 @@ function objectToRest(obj: OntologyObject, objectType: ObjectType): Record<strin
   // System metadata, so redaction (which skips `_`-prefixed keys) leaves it alone.
   result._version = obj._version;
 
+  // Actor attribution: who produced this version. Surfaces in history so the
+  // timeline can show who made each change.
+  result._actorId = obj._actorId ?? null;
+
   result._redactedFields = null;
   result._consentRestricted = false;
 
@@ -1173,6 +1177,7 @@ function generateHistoryRoute(
             : null;
           data._version = atTime._version;
           data._updatedAt = atTime._updatedAt;
+          data._actorId = atTime._actorId ?? null;
 
           if (deps.consentService && isConsentSubjectType(typeName, deps.consentSubjectTypes)) {
             const consent = await deps.consentService.checkSingleObject(
@@ -1218,6 +1223,7 @@ function generateHistoryRoute(
           // Preserve version metadata for history entries
           data._version = versions[i]?._version;
           data._updatedAt = versions[i]?._updatedAt;
+          data._actorId = versions[i]?._actorId ?? null;
           data._redactedFields = r._redactedFields.length > 0 ? r._redactedFields : null;
           data._consentRestricted = false;
           return data;

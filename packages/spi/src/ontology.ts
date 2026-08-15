@@ -17,6 +17,8 @@ export interface OntologyObject {
   _createdAt: DateTime;
   _updatedAt: DateTime;
   _deletedAt?: DateTime;
+  /** Actor who produced this version (from RequestContext.actorId). */
+  _actorId?: string;
   [key: string]: unknown;
 }
 
@@ -107,6 +109,8 @@ export interface QueryOptions {
   includeDeleted?: boolean;
   asOfVersion?: number;
   asOfTime?: DateTime;
+  /** Cursor from a previous page's LinkPage.cursor / ObjectPage.cursor. */
+  after?: string;
 }
 
 // ---------------------------------------------------------------------------

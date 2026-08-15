@@ -270,11 +270,13 @@ describe('TypeScript SDK codegen', () => {
 
     it('contains no raw ODL types — all mapped to TS', () => {
       const code = getIndexTs();
-      // ODL scalar types like ID, Int, Float should be mapped to TS types
-      // They should NOT appear as standalone type declarations
-      expect(code).not.toMatch(/:\s+ID\b(?!\s*\|)/);
-      expect(code).not.toMatch(/:\s+Int\b(?!\s*\|)/);
-      expect(code).not.toMatch(/:\s+Float\b(?!\s*\|)/);
+      // ODL scalar types like ID, Int, Float should be mapped to TS types.
+      // They should NOT appear as standalone type annotations on interface
+      // fields (followed by ';'). GraphQL query strings may legitimately
+      // contain ': Int' as variable declarations — those are not TS types.
+      expect(code).not.toMatch(/:\s+ID\b(?!\s*\|)(?=\s*;)/);
+      expect(code).not.toMatch(/:\s+Int\b(?!\s*\|)(?=\s*;)/);
+      expect(code).not.toMatch(/:\s+Float\b(?!\s*\|)(?=\s*;)/);
     });
   });
 
@@ -307,6 +309,60 @@ describe('TypeScript SDK codegen', () => {
       const code = getIndexTs();
       // status: PatientStatus! → status: PatientStatus | null (non-primary)
       expect(code).toContain('status: PatientStatus | null;');
+    });
+  });
+
+  // ─── Transport implementation ───
+  //
+  // The generated SDK must ship with a working runtime transport, not
+  // placeholder throws. A consumer should be able to `new Altius(config)`
+  // and call `.patient.get(id)` without writing platform code.
+
+  describe('transport implementation', () => {
+    it('does not contain "Not implemented" placeholders', () => {
+      const code = getIndexTs();
+      expect(code).not.toContain('Not implemented');
+    });
+
+    it('query method uses fetch to POST to the endpoint', () => {
+      const code = getIndexTs();
+      expect(code).toMatch(/query<T>.*fetch\(/s);
+      expect(code).toContain("method: 'POST'");
+      expect(code).toContain("'Content-Type': 'application/json'");
+    });
+
+    it('query method transmits the authorization token', () => {
+      const code = getIndexTs();
+      expect(code).toMatch(/Authorization.*Bearer/s);
+    });
+
+    it('query method surfaces GraphQL errors', () => {
+      const code = getIndexTs();
+      expect(code).toMatch(/errors.*message/s);
+    });
+
+    it('mutate method uses fetch to POST a mutation', () => {
+      const code = getIndexTs();
+      expect(code).toMatch(/mutate<T>.*fetch\(/s);
+    });
+
+    it('subscribe method opens a WebSocket connection', () => {
+      const code = getIndexTs();
+      // The subscribe method calls ensureWebSocket which creates the socket.
+      // Both must be present in the generated code.
+      expect(code).toContain('subscribe<T>');
+      expect(code).toContain('new WebSocket(');
+    });
+
+    it('subscribe method uses the graphql-ws protocol (connection_init)', () => {
+      const code = getIndexTs();
+      expect(code).toContain('connection_init');
+    });
+
+    it('Subscription.unsubscribe stops delivery', () => {
+      const code = getIndexTs();
+      // unsubscribe must send a `complete` control message or close the socket
+      expect(code).toMatch(/unsubscribe.*complete/s);
     });
   });
 });

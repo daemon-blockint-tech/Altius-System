@@ -7,12 +7,13 @@
  */
 
 import { Command } from 'commander';
-import { readFileSync, writeFileSync, statSync, readdirSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { readFileSync, writeFileSync, statSync, readdirSync, mkdirSync } from 'node:fs';
+import { resolve, dirname } from 'node:path';
 import { parseOdl } from '../parser/index.js';
 import { validateSchema } from '../validator/index.js';
 import { generateGraphQLSchema } from '../codegen/index.js';
 import { generateOpenFGASchema } from '../codegen/openfga.js';
+import { generateSdk } from '../codegen/sdk.js';
 import { diff, classify, reverseDiff } from '../diff/index.js';
 import { InMemorySchemaRegistry } from '../registry/index.js';
 import type { MigrationPlan } from '../registry/types.js';
@@ -244,6 +245,33 @@ generate
       } else {
         process.stdout.write(fga);
       }
+    } catch (err) {
+      process.stderr.write(
+        `ERROR: ${err instanceof Error ? err.message : String(err)}\n`,
+      );
+      process.exitCode = 1;
+    }
+  });
+
+generate
+  .command('sdk <path>')
+  .description('Generate TypeScript SDK package source from ODL.')
+  .requiredOption('-o, --output <dir>', 'Output directory for SDK package files')
+  .action((filePath: string, opts: { output: string }) => {
+    try {
+      const source = readOdlSource(filePath);
+      const schema = parseOdl(source);
+      const output = generateSdk(schema);
+
+      const outDir = resolve(opts.output);
+      for (const [relPath, content] of output.files) {
+        const fullPath = resolve(outDir, relPath);
+        mkdirSync(dirname(fullPath), { recursive: true });
+        writeFileSync(fullPath, content, 'utf-8');
+      }
+
+      const fileList = [...output.files.keys()].join(', ');
+      process.stderr.write(`SDK files written to ${opts.output}: ${fileList}\n`);
     } catch (err) {
       process.stderr.write(
         `ERROR: ${err instanceof Error ? err.message : String(err)}\n`,

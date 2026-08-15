@@ -12,6 +12,9 @@
     }
   },
   "scripts": {
+    "generate": "odl generate sdk ../../domain-packs/nhs-acute/schema -o .",
+    "prebuild": "odl generate sdk ../../domain-packs/nhs-acute/schema -o .",
+    "pretypecheck": "odl generate sdk ../../domain-packs/nhs-acute/schema -o .",
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "test": "echo \"no tests yet\"",
@@ -20,5 +23,9 @@
   "files": [
     "dist"
   ],
-  "license": "Apache-2.0"
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "@altius/odl": "workspace:*",
+    "@types/node": "^22.0.0"
+  }
 }

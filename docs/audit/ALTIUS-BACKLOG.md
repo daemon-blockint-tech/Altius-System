@@ -15,7 +15,7 @@ Generated from three code-verification passes at HEAD `ebba280`. **189** capabil
 
 ## Already landed — check before you claim
 
-These 27 changes landed AFTER the gradings below were taken (2 still in the working tree, not yet committed), so the evidence on the rows they touch is stale. They are changes, not re-measurements — a row listed here has **not** been re-graded, only invalidated. Re-doing landed work is the most expensive mistake available here, so read the change before you start.
+These 34 changes landed AFTER the gradings below were taken, so the evidence on the rows they touch is stale. They are changes, not re-measurements — a row listed here has **not** been re-graded, only invalidated. Re-doing landed work is the most expensive mistake available here, so read the change before you start.
 
 - **`mcp-auth-bypass`** (`a065ac1`) — MCP served an unauthenticated ~9-role admin identity on every non-production deployment (the gate was NODE_ENV !== "production"). Now requires an explicit opt-in flag that cannot be true in production; fails closed by default.
 - **`mcp-filter-guard`** (`a065ac1`) — The MCP search tool passed agent-supplied filter fields straight to storage, letting an agent filter on a field it cannot read and recover the value from the result count. Now guarded like the GraphQL path.
@@ -42,8 +42,91 @@ These 27 changes landed AFTER the gradings below were taken (2 still in the work
 - **`function-ontology-access`** (`2deda98, a64911f, d5ce1c1`) — FunctionRuntimeContext carried no storage handle, so "functions on objects" could not read or query objects at all. A function can now read an object and an object set scoped as its caller, and a test pins that function-driven edits still go through the action pipeline rather than around it.
 - **`param-forgery`** (`c34a3cd`) — SECURITY: the action param type-check EXEMPTED object-typed params, and its comment wrongly claimed step 4 resolved and existence-checked them — step 4 only loads from storage when the value is a STRING. A caller could send an object literal instead of an id, so CEL preconditions were evaluated against FABRICATED data. Reachable over REST (untyped body) and MCP. Object params must now be id strings.
 - **`subscription-tenant-isolation`** (`c34a3cd`) — SECURITY: subscription delivery is one topic per object type shared by every tenant (one Kafka topic deployment-wide in production), and the CloudEvent carried no tenant because the emitter took RequestContext as an unused _ctx. The only discriminator was an FGA check run against the SUBSCRIBER's own store, which approves another tenant's event whenever an object id collides — delivering previousValues across the boundary. tenantid is now a required CloudEvents extension attribute and both subscribe helpers drop on mismatch or absence before the FGA check.
-- **`search-around-rest`** (_in working tree, not yet committed_) — Multi-hop traversal was implemented in both storage providers, conformance-tested and wrapped by LinkManager.traverse — with zero callers outside the test harness. Now exposed as POST /api/v1/{plural}/:id/traverse. Mixed-type nodes are authorized, redacted and consent-gated per node against their own type; edges to dropped nodes are removed and totalCount is post-authorization, because both otherwise disclose objects the caller may not see.
-- **`self-link-support`** (_in working tree, not yet committed_) — Self-referential link types (a reply pointing at its parent comment, a task at its parent task) were never exercised by any fixture, and the OpenFGA generator derives permissions through a type's outbound link — exactly the shape that could emit a cycle. Proven to parse, validate and generate usable GraphQL and OpenFGA output, and pinned so threading stays available to packs.
+- **`search-around-rest`** (`7ace314`) — Multi-hop traversal was implemented in both storage providers, conformance-tested and wrapped by LinkManager.traverse — with zero callers outside the test harness. Now exposed as POST /api/v1/{plural}/:id/traverse. Mixed-type nodes are authorized, redacted and consent-gated per node against their own type; edges to dropped nodes are removed and totalCount is post-authorization, because both otherwise disclose objects the caller may not see.
+- **`self-link-support`** (`7ace314`) — Self-referential link types (a reply pointing at its parent comment, a task at its parent task) were never exercised by any fixture, and the OpenFGA generator derives permissions through a type's outbound link — exactly the shape that could emit a cycle. Proven to parse, validate and generate usable GraphQL and OpenFGA output, and pinned so threading stays available to packs.
+
+- **`fga-deployment-config`** (`7ace314`) — BLOCKER: nothing shipped could express the per-tenant store map — `OPENFGA_STORE_IDS` appeared nowhere in `Orion/`, `secrets.yaml` demanded `storeId` unconditionally so multi-tenant was impossible, single-tenant crashed on the chart defaults, and prod-test never set `OIDC_DEFAULT_TENANT` (why the SECURITY_E2E stack stopped booting). CI was linting a configuration that could not boot. A store id without a default tenant is now refused at helm-template time, with the reason.
+- **`sync-conflict-refusal`** (`7ace314`) — A datasource declaring `sync.conflictResolution` was scheduled and the strategy silently ignored, so an operator believed user edits were protected while every poll overwrote them. Both declarable strategies decide by comparing the existing value's writer, and nothing wrote field provenance. Such a datasource is now refused rather than synced unprotected.
+- **`provenance-producer`** (`45dfc0d`) — `lineage.field_provenance` was created by the DDL, indexed three ways, and stayed permanently empty: `LineageRecorder` is its only producer and the sole `LineageStore` implementation was in-memory. A Postgres store was added and the recorder wired into the production ObjectManager (Postgres only — a recorder writing nowhere would make conflict strategies look enforced). Lineage queries were also made tenant-scoped.
+- **`action-precondition-status`** (`45dfc0d`) — The action route accepted `If-Match`, detected the conflict, kept the VERSION_CONFLICT code and had a 412 mapping — then answered 200 with the failure in the body, so a client acting on the status recorded a refused write as applied. Precondition and conflict failures now answer with their real status.
+- **`aggregate-field-validation`** (`9504d9c`) — Aggregate field names were never checked against the schema, so the two providers answered the same request differently: Postgres built `SUM("no_such_column")` and raised, while the memory provider returned a null group — a silent wrong answer that looks like data. Unknown and `@computed` fields are now refused before storage is touched.
+- **`traversal-maxdepth-refused`** (`9504d9c`) — `TraversalStep.maxDepth` is in the SPI contract and was honoured by NEITHER provider: a caller asking for 2 hops got 1, with no error. Unlike an ignored filter (which returns more, and looks wrong), an ignored depth returns less and looks like real data. Both providers now refuse it, pinned in the shared conformance suite.
+- **`memory-snapshot-isolation`** (`9504d9c`) — The in-memory provider claimed `supportsTransactions: true` while applying writes immediately and undoing them from a journal — atomicity without isolation, so a conformance suite passing against it could rely on a dirty read Postgres would never serve. An isolation capability was declared and pinned to observed behaviour; the provider then gained real snapshot-on-begin transactions and the flag moved with it.
+
+## Re-verification, 15 Aug 2026
+
+The five rows judged closest to `full` were re-read against source, because a
+wrong `full` claim is the most expensive error available here — the original
+report made 16 of them and 15 did not survive contact with the code.
+
+**Result: none of the five reaches `full`.** Two moved materially (graph
+traversal, transactional writeback); three did not move at all on their
+defining gap (audit reads, object-set execution/ACL, link-field pagination).
+
+The reason two otherwise-complete rows still fall short is shared: the
+generated SDK throws on every operation and its generator is invoked by no
+build step, so "without writing platform code" fails on the client side no
+matter how complete the server is. That single blocker gates several rows.
+
+The remaining ~50 stale rows are NOT re-verified. Their evidence is still
+invalidated-not-regraded.
+
+
+## Blocker review, 15 Aug 2026 (20:43)
+
+Three cross-cutting blockers were reviewed against source. All three are real.
+Two open questions from that review were closed by verification below; the
+third rests on an external spec this pass did **not** confirm.
+
+**B1 — published SDK package exports nothing; its generator is unreachable.**
+Verified — and verified *greenfield*, which the review left open. The package
+is `@altius/sdk`; the directory is `sdk-typescript`, so greps on the directory
+name return nothing and miss it. It has zero code consumers repo-wide (only
+the README package table, an illustrative import at
+`docs/altius-spec-v2.md:2310`, and this file), and no workflow publishes it.
+This is an unbuilt feature, not a live breakage — materially cheaper than a
+repair.
+
+> **IN FLIGHT as this was written.** An uncommitted working tree removes all
+> three `Not implemented: provide runtime transport` throw sites, adds
+> `odl generate sdk <path>` (`packages/odl/src/cli/index.ts:257`) beside the
+> existing `generate graphql`/`generate openfga`, and wires it as a `prebuild`
+> script. Nothing is committed, so every row gated on the SDK stays as graded
+> until it lands. One thing to check before it does: `prebuild` generates from
+> `domain-packs/nhs-acute/schema` alone, not the merged multi-pack schema the
+> server actually serves.
+
+**B2 — generated link fields truncate at 1000 rows with no signal.** Verified
+and still open at `packages/api/src/graphql/resolver-generator.ts:333` —
+`{ limit: isList ? 1000 : 1, offset: 0, includeDeleted }`. Codegen emits the
+field with no arguments at all, so a client cannot page even if it knew it had
+been truncated, and the response carries no `totalCount` or `hasNextPage` to
+tell it. Inconsistent with the platform's own contract: object lists return a
+`Connection` with real pagination; link traversal — the primary way
+relationships are read — silently does not.
+**New:** the cap is *not* a deliberate safety limit. It entered in `3dffbca`,
+whose stated purpose was making link fields resolve at all (they returned
+`null` before). That commit message documents arity, redaction, consent and
+both resolver branches in detail and never mentions a row limit; the
+surrounding code comments intent freely (`returnsLinkRecords`,
+`includeDeleted`) while the magic number carries none. It is a stopgap and is
+safe to replace — no product decision needed.
+
+**S1 — SDK package has no test surface.** Verified, still open:
+`packages/sdk-typescript/package.json` remains `"test": "echo \"no tests yet\""`
+even as SDK code lands around it. Fix with B1, not after.
+
+**B3 — MCP server is one protocol era behind.** The local facts are verified:
+`MCP_PROTOCOL_VERSION = '2025-03-26'`; implemented methods are `initialize`,
+`tools/list`, `tools/call` only; advertised capabilities `{ tools: {} }`; no
+`bin` declared, so stdio-only IDE clients cannot connect. The claims that make
+this a *blocker* rather than a roadmap item — that the 2026-07-28 revision
+removes the handshake, that modern-client/legacy-server fails outright, and
+that servers must implement `server/discover` — come from an external spec
+that this pass did not independently confirm. **Confirm before gating work on
+it.** Either way this needs a product decision (dual-era vs full migrate) that
+should not be resolved unilaterally.
+
 
 ## Repo orientation
 
@@ -77,6 +160,8 @@ Use the indexed code graph before grepping: `search_graph`, `query_graph`. On a 
 
 **Status:** `partial`
 
+> ⚠ **Evidence below is STALE.** Landed since it was taken: `aggregate-field-validation` (`9504d9c`). Re-read the code before doing anything.
+
 > ⚠ **Evidence below is STALE.** Landed since it was taken: `aggregate-parity` (`a065ac1`). Re-read the code before doing anything.
 
 **Evidence (read 15 Aug):** Aggregation is real and dual-surface. SPI: packages/spi/src/storage-provider.ts:46 aggregateObjects; packages/spi/src/ontology.ts:251 AggregateFunction = count|sum|avg|min|max. Postgres builds real SQL with GROUP BY/ORDER BY/LIMIT/OFFSET and a fn allowlist (packages/storage-postgres/src/objects/aggregate.ts:54-76, :92-131); memory mirrors it (packages/storage-memory/src/memory-storage-provider.ts:583-700). Exposed as POST /api/v1/{plural}/aggregate (route-generator.ts:1028) and `{lower}Aggregate(filter, groupBy, fields)` (codegen/index.ts:749, resolver-generator.ts:991-1080), both with FGA scoping, field-redaction rejection and a consent gate. DEMOTIONS: (1) PROVIDER DIVERGENCE — packages/storage-memory/src/memory-storage-provider.ts:654-657 filters min/max/sum/avg inputs with `typeof v === 'number'`, returning null for a DateTime or string column, while packages/storage-postgres/src/objects/aggregate.ts:151 does `Number(rawVal)` on whatever SQL MIN/MAX returns — the same chart yields different values on the two backends; (2) AggregateGroup.values is typed `Record<string, number | null>` (ontology.ts:270), so non-numeric aggregates are lossy by contract; (3) no bucketing, percentile, distinct-count or stddev — the fn allowlist is the five listed; (4) 'Observability Chart' has no data path: /metrics is Prometheus text and is gated by podDirectOnly (packages/api/src/server.ts:914, guard at packages/api/src/metrics.ts:145-153 404s any request carrying x-forwarded-for), and Orion/ ships no Grafana dashboards.
@@ -95,9 +180,11 @@ Use the indexed code graph before grepping: `search_graph`, `query_graph`. On a 
 
 **Status:** `partial`
 
+> ⚠ **Evidence below is STALE.** Landed since it was taken: `audit-graphql` (pending commit). Re-read the code before doing anything.
+
 **Evidence (read 15 Aug):** Edit history is real; the audit log is write-only. HISTORY: GET /api/v1/{plural}/:id/history (packages/api/src/rest/route-generator.ts:923-1012) walks getObjectAtVersion 1..currentVersion and returns redacted, consent-filtered snapshots carrying _version and _updatedAt (:983-984); both providers implement the temporal reads (packages/storage-memory/src/memory-storage-provider.ts:980-1005; packages/storage-postgres/src/postgres-storage-provider.ts:63-66). AUDIT — THE DEAD PATH: records are written on every operation (packages/security/src/audit/audit-writer.ts:70-84 → store.append) into a real table with actor/operation/detail columns and an actor index (packages/storage-postgres/src/schema/ddl-audit.ts:27-46), and PostgresAuditStore.query() is fully implemented with a filter builder (packages/storage-postgres/src/audit/postgres-audit-store.ts:80-127). But a repo-wide grep for getAuditTrail / queryAuditRecords / getAuditRecord returns hits ONLY in the interface declaration packages/spi/src/audit.ts:45-47 — zero implementations and zero callers. Grep for '/api/v1/audit' or any '/audit' route across packages returns nothing, and route-generator.ts / resolver-generator.ts / mcp-server tools.ts mention audit only in comments. Second demotion: OntologyObject (packages/spi/src/ontology.ts:12-21) has no actor field, so history snapshots show what changed and when but never who.
 
-**Gap:** Action Log Timeline has no read API — audit records are written and indexed but unreachable over HTTP, and the SPI's own query contract is implemented by nobody. Edit History exists but is REST-only (no GraphQL field), unpaginated N+1 over versions, and cannot attribute a change to an actor.
+**Gap:** ~~Action Log Timeline has no read API — audit records are written and indexed but unreachable over HTTP~~ REST /api/v1/audit + GraphQL `auditRecords` query now landed (audit-graphql). Edit History GraphQL `history` field landed (graphql-history). ~~OntologyObject has no actor field, so history snapshots show what changed and when but never who~~ `_actorId` system column added to OntologyObject + both storage providers + DDL migration; exposed in REST and GraphQL history (history-actor-attribution). Item fully closed.
 
 ### `widgets/filtering-and-search-widgets-filter-list-his` — Filtering and search widgets (Filter List histograms, Object Dropdown/Selector, date/text/numeric inputs, Exploration Filter Pills/Search Bar, Prominent Terms, User Select)
 
@@ -330,6 +417,8 @@ Use the indexed code graph before grepping: `search_graph`, `query_graph`. On a 
 
 **Status:** `absent`
 
+> ⚠ **Evidence below is STALE.** Landed since it was taken: `fga-deployment-config` (`7ace314`). Re-read the code before doing anything.
+
 > ⚠ **Evidence below is STALE.** Landed since it was taken: `fga-per-tenant` (`379e5be, 6e8b4ba, 36b5b6d`). Re-read the code before doing anything.
 
 **Evidence (read 15 Aug):** Exactly ONE ontology exists per deployment. Domain packs are merged at boot into a single ParsedSchema by mergeSchemas (packages/api/src/schema-loader.ts:673-723) and applied once via storage.applySchema(bootCtx, spiSchema) with bootCtx = {tenantId:'system'} (packages/api/src/server.ts:210-211). Every tenant reads that same global schema. What DOES exist is row-level tenant data isolation: RequestContext.tenantId on every SPI call (packages/spi/src/ontology.ts:106-110), a _tenant_id NOT NULL column (packages/storage-postgres/src/schema/ddl-objects.ts:16), and a conformance suite proving cross-tenant invisibility (tests/spi-conformance/src/categories/multi-tenancy.ts:18-50) — but that is data isolation, not ontology governance. Searched all *.ts/*.yaml/*.odl/*.json for ontologyId, spaceId, orgId, organization, and 'marking' as a governance concept: no such symbol exists. The single 'marking' hit is the English word in a code comment (packages/api/src/cdm/mappers.ts:18). No cross-org sharing construct exists.
@@ -559,6 +648,10 @@ Use the indexed code graph before grepping: `search_graph`, `query_graph`. On a 
 ### `misc-2/datasource-vs-user-edit-conflict-resolution-` — Datasource-vs-user-edit conflict resolution (user-edits-win vs latest-value-wins strategies when synced source rows and action edits touch the same object/properties)
 
 **Status:** `absent`
+
+> ⚠ **Evidence below is STALE.** Landed since it was taken: `provenance-producer` (`45dfc0d`). Re-read the code before doing anything.
+
+> ⚠ **Evidence below is STALE.** Landed since it was taken: `sync-conflict-refusal` (`7ace314`). Re-read the code before doing anything.
 
 **Evidence (read 15 Aug):** Classic generated-but-dead code. ConflictResolver implements exactly the two named strategies — ACTION_PRIORITY = user-edits-win (packages/sync/src/conflict/conflict-resolver.ts:274-290) and LAST_WRITE_WINS (:237-242) — and is fully unit-tested and exported (packages/sync/src/index.ts:125). But it is NEVER instantiated in any production path: grep for ConflictResolver/conflictResolver across packages (excluding dist and *.test.ts) yields only its own definition, the barrel exports, and one comment at packages/api/src/sync-boot.ts:10-11 stating 'action-protected fields are the ConflictResolver's concern (not yet wired — no provenance producer exists; all shipped manifests are OVERLAY today)'. The `sync.conflictResolution` manifest key IS parsed into config (packages/sync/src/mapping/mapping-parser.ts:28,126,256-257) and read by NOTHING. The real sync write path calls objectManager.update unconditionally, blindly overwriting action edits (packages/api/src/sync-boot.ts:90-99). There is also no per-field provenance to compare against: LineageRecorder is an optional ObjectManager dependency (packages/engine/src/objects/object-manager.ts:44,105-107,215-221) that packages/api/src/server.ts:338-344 never supplies, so the lineage.field_provenance table created by DDL (packages/storage-postgres/src/schema/ddl-lineage.ts:20-31, applied at packages/storage-postgres/src/postgres-storage-provider.ts:239) is never written, and packages/spi/src/provenance.ts:7-20 FieldProvenance has zero producers. Finally all three shipped connector manifests are `mode: OVERLAY` (domain-packs/aml/connectors/tms-jdbc.yaml, domain-packs/nhs-acute/connectors/pas-jdbc.yaml:21, domain-packs/supply-chain/connectors/erp-jdbc.yaml:28), which sync-boot.ts:149 skips outright — and OverlayEngine is never instantiated either.
 
@@ -913,6 +1006,8 @@ Use the indexed code graph before grepping: `search_graph`, `query_graph`. On a 
 
 **Status:** `absent`
 
+> ⚠ **Evidence below is STALE.** Landed since it was taken: `provenance-producer` (`45dfc0d`). Re-read the code before doing anything.
+
 **Evidence (read 15 Aug):** No markings exist to propagate (cap 1), and the lineage substrate is generated-but-dead: packages/storage-postgres/src/schema/ddl-lineage.ts:20-43 creates lineage.field_provenance (tenant_id, object_type, object_id, field, value_hash, produced_at, source) and it is applied at boot (packages/storage-postgres/src/postgres-storage-provider.ts:239), but nothing ever writes it — repo-wide grep for field_provenance/FieldProvenance outside the DDL generator matches only the DDL test (packages/storage-postgres/src/__tests__/ddl-generation.test.ts:409-428). No propagation simulator and no stop_propagating anywhere.
 
 **Gap:** Doubly greenfield: no label to propagate and no populated lineage graph to propagate through. The provenance table would first need a writer on the sync/action write paths before any inheritance or simulation could be built.
@@ -947,6 +1042,8 @@ Use the indexed code graph before grepping: `search_graph`, `query_graph`. On a 
 ### `platform-ops/continuous-delivery-upgrade-orchestration-ap` — Continuous delivery & upgrade orchestration (Apollo)
 
 **Status:** `partial`
+
+> ⚠ **Evidence below is STALE.** Landed since it was taken: `fga-deployment-config` (`7ace314`). Re-read the code before doing anything.
 
 **Evidence (read 15 Aug):** Packaging and install mechanics are solid. Helm chart Orion/helm/altius (Chart.yaml v0.2.0, appVersion 0.2.0) ships per-service Deployments, Services, PDBs, an HPA (templates/api-gateway-hpa.yaml), NetworkPolicy, Ingress, ServiceAccount, Secrets and a ConfigMap, plus a post-install/post-upgrade Job hook that creates the AGE graph and platform tables (templates/init-job.yaml:9-12, enabled by default at values.yaml:308-309). Docker Compose stacks exist for dev/test/prod-test (Orion/docker-compose*.yaml). CI runs build+typecheck+unit tests, Postgres/AGE integration, SPI conformance, a full docker-stack integration run and an enforcement E2E (.github/workflows/ci.yml). Runtime health/monitoring is real: liveness/readiness probes (templates/api-gateway-deployment.yaml:77,83), /metrics via prom-client (packages/api/src/metrics.ts:26-75, mounted at packages/api/src/server.ts:911-914), ServiceMonitor and PrometheusRule alerts (templates/prometheusrule.yaml), with packages/api/src/__tests__/prometheus-rule-metrics.test.ts asserting every app metric named in the alert PromQL is actually registered.
 
@@ -1227,6 +1324,10 @@ Use the indexed code graph before grepping: `search_graph`, `query_graph`. On a 
 
 **Status:** `partial`
 
+> **RE-VERIFIED 15 Aug 2026 — still partial.** Re-verified 15 Aug. Same finding as links-graph/graph-traversal: all three surfaces now expose it; `maxDepth` and the SDK keep it short of full.
+
+> ⚠ **Evidence below is STALE.** Landed since it was taken: `traversal-maxdepth-refused` (`9504d9c`). Re-read the code before doing anything.
+
 > ⚠ **Evidence below is STALE.** Landed since it was taken: `search-around-rest` (pending commit). Re-read the code before doing anything.
 
 **Evidence (read 15 Aug):** A real multi-hop engine exists but is unreachable by users. TraversalPath/TraversalStep with per-step linkType, direction, filter is defined at packages/spi/src/ontology.ts:71-90; Postgres implements it with sequential SQL hops, per-step target filters, depth cap 10 and node cap 10k at packages/storage-postgres/src/links/traversal.ts:107-246; storage-memory implements the same contract at packages/storage-memory/src/memory-storage-provider.ts:887-960 (both report supportsGraphTraversal true, maxTraversalDepth 10 — postgres-storage-provider.ts:660-662, memory-storage-provider.ts:1036-1039); LinkManager.traverse wraps it at packages/engine/src/links/link-manager.ts:263-275. Nothing calls it: grep for 'traverse' across packages/api/src, packages/mcp-server/src returns only an unrelated AST comment at packages/api/src/governance/query-complexity.ts:183 — no GraphQL field, no REST route, no MCP tool. What a user can actually reach is one hop with no filtering: REST GET /api/v1/{plural}/:id/links/:linkType accepting only direction + pagination (packages/api/src/rest/route-generator.ts:849-885), and GraphQL link fields emitted with no arguments at all (packages/odl/src/codegen/index.ts:124-127) resolved by a single getLinks call at packages/api/src/graphql/resolver-generator.ts:317. MCP exposes only search_<Type> and action tools (packages/mcp-server/src/tools.ts:79,:97). Also note TraversalStep.maxDepth (spi/ontology.ts:78) is read by neither provider — each step is exactly one hop.
@@ -1440,6 +1541,8 @@ Use the indexed code graph before grepping: `search_graph`, `query_graph`. On a 
 
 **Status:** `partial`
 
+> ⚠ **Evidence below is STALE.** Landed since it was taken: `memory-snapshot-isolation` (`9504d9c`). Re-read the code before doing anything.
+
 > ⚠ **Evidence below is STALE.** Landed since it was taken: `pg-conformance-ci` (`e2a86b1`). Re-read the code before doing anything.
 
 **Evidence (read 15 Aug):** Base types map end to end: ODL/SPI names → Postgres columns at packages/storage-postgres/src/schema/type-mapping.ts:5-64, now including GeoPoint→JSONB (:25, from 98ae60f) and case-folded long-form names integer/bool/text/timestamp (:49-55, from 74520f0 — before it a property typed 'integer' silently became TEXT and SUM/AVG failed, diverging from memory). Runtime type checks for ID/String/Int/Float/Boolean/Date/DateTime/Duration/GeoPoint/JSON/URI live in packages/engine/src/objects/validation.ts:72-83 with list handling at :251-278. Required: NOT NULL emitted in DDL (packages/storage-postgres/src/schema/ddl-objects.ts:83-91, link columns at ddl-links.ts:77-82) and checked pre-write with @default exemption (validation.ts:202-214). Unique: @unique → IndexDefinition{unique:true} (packages/api/src/schema-loader.ts:766-772) → tenant-scoped CREATE UNIQUE INDEX (ddl-objects.ts:97-114), plus a pre-write query-based check (validation.ts:548-587). Gaps found by reading: the memory provider enforces neither — ensureIndex is a no-op (packages/storage-memory/src/memory-storage-provider.ts:1008-1010), it has no NOT NULL and no uniqueness store — so on memory the only uniqueness guard is the engine's non-atomic check-then-write (validation.ts:566-577), while Postgres has the index as backstop. Custom scalars are unvalidated: NHSNumber/ODS/SNOMED/Email/Phone/URL/Markdown are absent from SCALAR_TYPE_CHECKS (validation.ts:72-83) so any JS value passes, and pgType falls through to TEXT (type-mapping.ts:63). List-ness is dropped on the way to storage — mapFieldType takes only field.type.name (schema-loader.ts:737-740) and convertObjectType never copies isList (:747-782) — so a scalar list would be JSON.stringify'd into a TEXT column in Postgres (object-crud.ts:144-146) and stay a real array in memory; no shipped pack declares one today (all list fields in domain-packs are @link virtuals, which convertObjectType skips at :753). ODL's BUILTIN_SCALARS (packages/odl/src/validator/index.ts:20-24) omits 'Time' although pgType maps it. Whether these gaps are caught is unknowable in CI: the Postgres conformance file exists (tests/spi-conformance/src/postgres-provider.test.ts:55-79) but is skipped unless PG_TEST_URL is set (:18, :86-88), and .github/workflows/ci.yml sets PG_TEST_URL only for `pnpm --filter @altius/storage-postgres test` (:76-80) — the build-test job runs `pnpm run test` (turbo, package.json:13) with no PG_TEST_URL, and turbo.json declares no env/globalEnv so strict mode would strip it anyway. The suite runs against BOTH providers only when a human runs it locally.
@@ -1488,6 +1591,8 @@ Use the indexed code graph before grepping: `search_graph`, `query_graph`. On a 
 ### `sync-ingest-ops/source-system-sync-cdc-ingestion-with-edit-v` — Source-system sync / CDC ingestion with edit-vs-source reconciliation
 
 **Status:** `partial`
+
+> ⚠ **Evidence below is STALE.** Landed since it was taken: `sync-conflict-refusal` (`7ace314`). Re-read the code before doing anything.
 
 > ⚠ **Evidence below is STALE.** Landed since it was taken: `cdc-shutdown` (`6d701a8`). Re-read the code before doing anything.
 
@@ -1538,6 +1643,8 @@ Use the indexed code graph before grepping: `search_graph`, `query_graph`. On a 
 
 **Status:** `partial`
 
+> ⚠ **Evidence below is STALE.** Landed since it was taken: `action-precondition-status` (`45dfc0d`). Re-read the code before doing anything.
+
 > ⚠ **Evidence below is STALE.** Landed since it was taken: `version-conflict-code` (`a065ac1`), `version-exposed` (`a065ac1`). Re-read the code before doing anything.
 
 **Evidence (read 15 Aug):** All effects of one action run inside a single SPI transaction with rollback on any failure (action-executor.ts:327-351), gated by a capabilities pre-flight that returns READ_ONLY/NOT_SUPPORTED instead of throwing (action-executor.ts:317-325). Two layers of optimistic concurrency now exist. Caller-level: ctx.expectedVersion is compared against the action's first object @param before the transaction opens and returns code VERSION_CONFLICT (action-executor.ts:74-101, 258-265); it is client-reachable on both transports — REST `If-Match` on the action route (route-generator.ts:1285-1296; committed at HEAD:1096) and GraphQL `_expectedVersion`, which is a real field of every generated ${Action}Input (packages/odl/src/codegen/index.ts:240-244, read at resolver-generator.ts:1210). Storage-level: executeUpdateObject passes the context version, and chains to the version the previous effect produced when two effects touch the same object (action-executor.ts:796-801). Both providers implement it identically and throw code VERSION_CONFLICT: packages/storage-memory/src/memory-storage-provider.ts:372-375 and packages/storage-postgres/src/objects/object-crud.ts:233-257 (UPDATE ... AND _version = $n plus a follow-up SELECT to distinguish not-found). 154 package tests pass, including 'fails with VERSION_CONFLICT when the object changed between read and write' and 'does not raise a false conflict when two effects update the same object'.
@@ -1550,6 +1657,8 @@ Use the indexed code graph before grepping: `search_graph`, `query_graph`. On a 
 ### `security-consent/access-decision-audit-trail` — Access-decision audit trail
 
 **Status:** `partial`
+
+> **RE-VERIFIED 15 Aug 2026 — still partial — unchanged.** Re-verified 15 Aug: `grep -c auditWriter` returns 0 in BOTH read paths (rest/route-generator.ts, graphql/resolver-generator.ts). Reads are still not audited. A tenant column and a read API landed, but the defining gap — who read this record — is untouched.
 
 > ⚠ **Evidence below is STALE.** Landed since it was taken: `function-audit` (`6f94194`), `audit-tenant` (`ce7ae32`). Re-read the code before doing anything.
 
@@ -1623,6 +1732,10 @@ CELL-LEVEL: does not exist. The visible-field computation never receives a row i
 
 **Status:** `partial`
 
+> **RE-VERIFIED 15 Aug 2026 — still partial.** Re-verified 15 Aug against source. MOVED: reachable on all three surfaces — REST (traverse-route.ts), GraphQL (generated `traverse<Type>`), MCP (`traverse_<Type>`), each authorizing MIXED-type nodes per node and withholding orphan edges, the provider count, and an unreadable start object. NOT MOVED: `TraversalStep.maxDepth` is refused rather than implemented, and the generated SDK still throws, so a consumer hand-wires HTTP. Does not clear the bar.
+
+> ⚠ **Evidence below is STALE.** Landed since it was taken: `traversal-maxdepth-refused` (`9504d9c`). Re-read the code before doing anything.
+
 > ⚠ **Evidence below is STALE.** Landed since it was taken: `search-around-rest` (pending commit). Re-read the code before doing anything.
 
 **Evidence (read 14 Aug):** The two providers do NOT agree on the SPI contract. `TraversalStep.filter` is part of the interface (packages/spi/src/ontology.ts:75-80). The memory provider honours it — packages/storage-memory/src/memory-storage-provider.ts:938-941 `if (step.filter && !evaluateFilter(targetObj, step.filter)) continue;`. The Postgres provider ignores it entirely: packages/storage-postgres/src/links/traversal.ts reads only `step.linkType` (:143) and `step.direction` (:150-158) and contains zero references to `step.filter` or `step.maxDepth`, so a filtered search-around silently returns the unfiltered neighbourhood in the production provider. The SPI conformance suite tests exactly this — tests/spi-conformance/src/categories/lineage.ts:136-152 'traversal with filters narrows results' expects `nodes` length 1 out of 2 — but the only `runConformanceSuite` invocation in the repo is tests/spi-conformance/src/memory-provider.test.ts:10 against MemoryStorageProvider; there is no Postgres conformance runner, and packages/storage-postgres/src/__tests__/traversal.test.ts has no filter case. Pagination defaults also diverge: pg defaults `limit` to 100 (traversal.ts:219), memory defaults it to every node (memory-storage-provider.ts:962). Reachability: `StorageProvider.traverse` has zero production callers — packages/engine/src/links/link-manager.ts:263-276 is a pass-through that nothing invokes, and a repo-wide grep for `traverse` finds it only in the SPI interface, the two providers, link-manager, and the conformance tests. No REST route, no GraphQL field, no SDK method, no MCP tool, and not even the new ComputedFieldEvaluator (packages/engine/src/computed/computed-field-evaluator.ts:71,113 use `storage.getLinks`, not traverse). Multi-hop for a real user is GraphQL field nesting under a depth-10 cap (packages/api/src/governance/query-complexity.ts:50).
@@ -1682,6 +1795,8 @@ REFUTED parts: (a) generated GraphQL link fields take NO arguments — packages/
 
 **Status:** `partial`
 
+> ⚠ **Evidence below is STALE.** Landed since it was taken: `aggregate-field-validation` (`9504d9c`). Re-read the code before doing anything.
+
 > ⚠ **Evidence below is STALE.** Landed since it was taken: `aggregate-parity` (`a065ac1`). Re-read the code before doing anything.
 
 **Evidence (read 14 Aug):** Core pivot is real in both providers: packages/storage-postgres/src/objects/aggregate.ts:27-159 (COUNT/SUM/AVG/MIN/MAX allowlist, multi-column GROUP BY, ORDER BY, LIMIT/OFFSET, totalGroups via a subquery count) and packages/storage-memory/src/memory-storage-provider.ts:583-706 (same functions, grouping, ordering, slice). Surfaces: REST POST /api/v1/{plural}/aggregate (route-generator.ts:776-850) passes filter/groupBy/orderBy/limit/offset; GraphQL fooAggregate is generated (packages/odl/src/codegen/index.ts:743) and resolved (resolver-generator.ts:747-816); object sets can persist an aggregation (route-generator.ts:1391). DEFECTS: (1) computed/derived fields cannot be aggregated — packages/api/src/schema-loader.ts:675-676 skips @computed fields so they get no column, and packages/engine/src/objects/object-manager.ts:311-321 hands the query straight to storage with no ComputedFieldEvaluator (the evaluator runs only in get(), :157-159). AggregateFieldInput.field is an unvalidated String! (codegen/index.ts:713-718) and neither surface validates field names against the schema, so aggregating a computed field diverges by provider: Postgres emits SUM("current_occupancy") against a non-existent column (SQL error), memory returns a null value / a single all-null group — silent wrong answer. (2) GraphQL fooAggregate takes only (filter, groupBy, fields) — no orderBy, limit or offset, so a GraphQL client cannot order or paginate groups that REST can. (3) Aggregates bypass consent: resolver-generator.ts:747-816 and route-generator.ts:776-850 never call consentService, while list (:652-676) and search (:922-940) apply EXCLUDE — users can SUM/COUNT rows they cannot list. (4) Row scoping is an IN-list from an unpaginated FGA listObjects (config.ts:44-51), so large authorized sets silently truncate.
@@ -1691,6 +1806,8 @@ REFUTED parts: (a) generated GraphQL link fields take NO arguments — packages/
 ### `data-ops/object-sets-saved-shareable-executable-objec` — Object sets — saved, shareable, executable object collections with aggregations (report line 151)
 
 **Status:** `partial`
+
+> **RE-VERIFIED 15 Aug 2026 — still partial — unchanged.** Re-verified 15 Aug: no `executeObjectSet` in codegen (0 hits), so execution remains REST-only; sharing is still the single `isPublic` boolean in packages/spi/src/object-set.ts. Neither gap moved.
 
 **Evidence (read 14 Aug):** Real and wired in both providers: packages/api/src/server.ts:718-720 selects PostgresObjectSetStore(storage.pool) or InMemoryObjectSetStore and builds ObjectSetManager; packages/storage-postgres/src/object-sets/postgres-object-set-store.ts:42,53-75 self-initialises the _object_sets table; packages/engine/src/object-sets/in-memory-object-set-store.ts:11 mirrors it. REST is complete: packages/api/src/rest/route-generator.ts:207 registers CRUD at :1103/:1123/:1155/:1192/:1223, execute at :1246 (auth-filtered, redacted, consent-paginated, plus ?format=ndjson at :1358) and aggregate at :1391. BUT — (a) sharing is one boolean: in-memory-object-set-store.ts:130-134 and postgres-object-set-store.ts:227-231 (visibilitySql) implement only isPublic=tenant-wide vs creator-only, and mutation is creator-only (postgres-object-set-store.ts:206-222 loadForMutation); there is no grant to a user, group or role. (b) GraphQL exposes definitions only — packages/odl/src/codegen/index.ts:750-751 and 781-783 emit objectSet/objectSets/create/update/deleteObjectSet and no execute/aggregate field; packages/api/src/graphql/resolver-generator.ts:1162-1280 confirms no execution resolver. (c) SEC-14 predicate check is missing on the execute path: route-generator.ts:279-281 (list) and :1447-1462 (object-set aggregate) call getVisibleFields and reject filters over redacted fields, but the execute handler (:1246-1387) never does — a saved filter on a redacted field is executed verbatim. (d) No set algebra: ObjectSetDefinition is one objectType + one filter + orderBy + limit + one aggregation (packages/spi/src/object-set.ts), no union/intersect/subtract/search-around composition. (e) create does no input validation (route-generator.ts:1167-1181 casts body fields straight through).
 
@@ -1702,6 +1819,12 @@ REFUTED parts: (a) generated GraphQL link fields take NO arguments — packages/
 ### `actions-writeback/transactional-object-writeback-via-actions-w` — Transactional object writeback via Actions with version consistency — edits through actions, read-your-writes, StaleObject/version-conflict detection, edit history retention (report line 502)
 
 **Status:** `partial`
+
+> **RE-VERIFIED 15 Aug 2026 — still partial.** Re-verified 15 Aug. MOVED: `expectedVersion` is threaded to storage, a stale `If-Match` now answers 412 rather than 200, and the in-memory provider gained real snapshot isolation. NOT MOVED: a manifest still cannot declare a version, and the SDK still throws. Does not clear the bar.
+
+> ⚠ **Evidence below is STALE.** Landed since it was taken: `memory-snapshot-isolation` (`9504d9c`). Re-read the code before doing anything.
+
+> ⚠ **Evidence below is STALE.** Landed since it was taken: `action-precondition-status` (`45dfc0d`). Re-read the code before doing anything.
 
 > ⚠ **Evidence below is STALE.** Landed since it was taken: `version-conflict-code` (`a065ac1`). Re-read the code before doing anything.
 

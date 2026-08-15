@@ -13,6 +13,7 @@ import type {
   FunctionType,
   FieldDefinition,
   InterfaceDefinition,
+  LinkDirective,
 } from '../parser/types.js';
 
 // ─── Scalar type mapping from ODL to GraphQL ───
@@ -115,6 +116,11 @@ function lowerFirst(s: string): string {
   return s.charAt(0).toLowerCase() + s.slice(1);
 }
 
+/** Detect the @link directive on a field, if present. */
+function linkDirectiveOf(field: FieldDefinition): LinkDirective | undefined {
+  return field.directives.find((d): d is LinkDirective => d.kind === 'link');
+}
+
 // ─── Type generators ───
 
 function generateObjectType(obj: ObjectType): string {
@@ -124,12 +130,24 @@ function generateObjectType(obj: ObjectType): string {
 
   for (const field of obj.fields) {
     const gqlType = fieldToGqlType(field);
-    lines.push(`  ${field.name}: ${gqlType}`);
+    // List link fields accept pagination arguments so callers can page
+    // through large collections instead of being silently truncated at 1000.
+    const link = linkDirectiveOf(field);
+    if (link && field.type.isList) {
+      lines.push(`  ${field.name}(first: Int, after: String): ${gqlType}`);
+    } else {
+      lines.push(`  ${field.name}: ${gqlType}`);
+    }
   }
 
   // Optimistic concurrency: the value callers pass back as `_expectedVersion`
   // on action inputs / `expectedVersion` on update mutations.
   lines.push(`  _version: Int`);
+
+  // Actor attribution: who produced this version. Set from
+  // RequestContext.actorId on every write, surfaced in history snapshots so
+  // the edit timeline can show who made each change.
+  lines.push(`  _actorId: String`);
 
   // Spec: metadata fields for redaction/consent
   lines.push(`  _redactedFields: [String!]`);
@@ -564,6 +582,61 @@ function generateSharedTypes(): string {
     '  model: String!',
     '  dimensions: Int!',
     '}',
+    '',
+    '# ─── Audit trail (Section 7.2.1) ───',
+    '',
+    'type AuditRecord {',
+    '  id: ID!',
+    '  timestamp: DateTime!',
+    '  traceId: String!',
+    '  tenantId: String!',
+    '  actor: AuditActor!',
+    '  operation: AuditOperation!',
+    '  detail: AuditDetail',
+    '}',
+    '',
+    'type AuditActor {',
+    '  type: String!',
+    '  id: String!',
+    '  roles: [String!]!',
+    '  ip: String',
+    '}',
+    '',
+    'type AuditOperation {',
+    '  type: String!',
+    '  objectType: String',
+    '  objectId: ID',
+    '  actionType: String',
+    '  actionId: String',
+    '  functionName: String',
+    '}',
+    '',
+    'type AuditDetail {',
+    '  before: JSON',
+    '  after: JSON',
+    '  query: String',
+    '  result: String',
+    '  denialReason: String',
+    '  consentDecision: String',
+    '}',
+    '',
+    'input AuditFilter {',
+    '  actorId: String',
+    '  actorType: String',
+    '  objectType: String',
+    '  objectId: ID',
+    '  actionType: String',
+    '  operationType: String',
+    '  traceId: String',
+    '  from: DateTime',
+    '  to: DateTime',
+    '}',
+    '',
+    'type AuditPage {',
+    '  records: [AuditRecord!]!',
+    '  totalCount: Int!',
+    '  hasMore: Boolean!',
+    '}',
   ].join('\n');
 }
 
@@ -792,6 +865,53 @@ export function generateGraphQLSchema(schema: ParsedSchema, options?: GraphQLSch
     '}',
   ].join('\n'));
 
+  // Traversal (search-around). Nodes come back with MIXED types — a path can
+  // end on any object type — so there is no single GraphQL object type to
+  // return. `properties: JSON` carries the record and `type` says what it is;
+  // a caller wanting a typed object fetches it by id. A union would need every
+  // object type as a member and still could not be selected without an inline
+  // fragment per type.
+  sections.push([
+    'enum LinkDirection {',
+    '  OUTBOUND',
+    '  INBOUND',
+    '}',
+  ].join('\n'));
+
+  sections.push([
+    'input TraversalStepInput {',
+    '  linkType: String!',
+    '  direction: LinkDirection',
+    '  filter: JSON',
+    '}',
+  ].join('\n'));
+
+  sections.push([
+    'type TraversalNode {',
+    '  id: ID!',
+    '  type: String!',
+    '  properties: JSON!',
+    '}',
+  ].join('\n'));
+
+  sections.push([
+    'type TraversalEdge {',
+    '  linkType: String!',
+    '  fromId: ID!',
+    '  toId: ID!',
+    '}',
+  ].join('\n'));
+
+  // totalCount is what was RETURNED, not what the traversal reached: the
+  // provider count would disclose the size of the part the caller cannot see.
+  sections.push([
+    'type TraversalResult {',
+    '  nodes: [TraversalNode!]!',
+    '  edges: [TraversalEdge!]!',
+    '  totalCount: Int!',
+    '}',
+  ].join('\n'));
+
   sections.push([
     'type AggregateResult {',
     '  groups: [AggregateGroup!]!',
@@ -812,6 +932,9 @@ export function generateGraphQLSchema(schema: ParsedSchema, options?: GraphQLSch
     );
     queryFields.push(
       `  search${obj.name}s(query: String!, fields: [String!], filter: ${obj.name}Filter, first: Int, after: String): SearchResult_${obj.name}!`,
+    );
+    queryFields.push(
+      `  traverse${obj.name}(startId: ID!, steps: [TraversalStepInput!]!, limit: Int): TraversalResult!`,
     );
   }
   // Interface-typed queries — the only polymorphic entry point in the schema.
@@ -835,6 +958,9 @@ export function generateGraphQLSchema(schema: ParsedSchema, options?: GraphQLSch
     queryFields.push(`  ${fieldName}(first: Int): [${iface.name}!]!`);
   }
 
+  // Audit trail read API (Section 7.2.1) — mirrors REST GET /api/v1/audit.
+  // Always in the SDL; the resolver errors when deps.auditStore is absent.
+  queryFields.push('  auditRecords(filter: AuditFilter, limit: Int, offset: Int): AuditPage!');
   queryFields.push('  availableTools(filter: ToolFilter): [ToolDescriptor!]!');
   // Per-object action applicability: which actions target this object?
   // Returns action names that have a @param of this objectType and whose

@@ -327,7 +327,14 @@ importers:
         specifier: ^3.0.0
         version: 3.2.4(@types/node@22.19.10)(tsx@4.21.0)(yaml@2.8.2)
 
-  packages/sdk-typescript: {}
+  packages/sdk-typescript:
+    devDependencies:
+      '@altius/odl':
+        specifier: workspace:*
+        version: link:../odl
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.19.10
 
   packages/security:
     dependencies:

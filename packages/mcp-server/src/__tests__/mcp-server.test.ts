@@ -182,7 +182,7 @@ describe('MCP server', () => {
   });
 
   describe('tools/list', () => {
-    it('returns one tool per ActionType plus one search_<Type> per ObjectType', async () => {
+    it('returns one tool per ActionType, plus search_ and traverse_ per ObjectType', async () => {
       const { deps } = createMockDeps();
       const handler = createMcpServer({ deps, isDev: false });
 
@@ -198,7 +198,11 @@ describe('MCP server', () => {
       expect(names).toContain('AdmitPatient');
       expect(names).toContain('search_Patient');
       expect(names).toContain('search_Ward');
-      expect(names).toHaveLength(3);
+      // Multi-hop traversal is exposed alongside search: the provider primitive
+      // existed all along and no surface reached it.
+      expect(names).toContain('traverse_Patient');
+      expect(names).toContain('traverse_Ward');
+      expect(names).toHaveLength(5);
     });
 
     it('action tool has inputSchema with required params', async () => {
