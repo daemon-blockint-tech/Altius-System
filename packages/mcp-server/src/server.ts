@@ -107,6 +107,29 @@ export function createMcpServer(config: McpServerConfig): (req: McpHttpRequest) 
       };
     }
 
+    // ── Per-principal rate limiting (parity with GraphQL/REST/CDM/FHIR) ──
+    // Without this, an agent is bounded only by the global per-IP limiter,
+    // not the per-principal 200 req/min limit humans get on every other surface.
+    if (deps.rateLimiter) {
+      try {
+        const rlResult = await deps.rateLimiter.check({
+          tenantId: authResult.user.tenantId,
+          principalId: authResult.user.id,
+        });
+        if (!rlResult.allowed) {
+          return {
+            status: 429,
+            body: {
+              jsonrpc: '2.0',
+              error: { code: JSON_RPC_ERROR.INVALID_REQUEST, message: 'Rate limit exceeded' },
+            },
+          };
+        }
+      } catch {
+        // Fail open: rate limiter error should not block requests.
+      }
+    }
+
     const caller = { user: authResult.user, requestContext: authResult.requestContext };
 
     // ── Parse JSON-RPC request ──

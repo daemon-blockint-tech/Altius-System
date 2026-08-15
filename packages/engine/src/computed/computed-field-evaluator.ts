@@ -297,9 +297,15 @@ export class ComputedFieldEvaluator {
   }
 
   /**
-   * Get all LAZY computed fields for a given object type.
-   * Returns field definitions that have @computed with cache LAZY or no cache
-   * (LAZY is the default).
+   * Get all computed fields for a given object type that should be evaluated
+   * on read. Returns field definitions that have @computed with cache LAZY,
+   * EAGER, or no cache (LAZY is the default).
+   *
+   * EAGER fields are evaluated on read the same way as LAZY — the difference
+   * is that an EAGER field may eventually be pre-computed at write time and
+   * cached, but until that write-time pipeline exists, evaluating on read is
+   * the only way to populate them. Excluding EAGER fields left them silently
+   * null in every response despite being declared in the SDL/REST shape.
    */
   getComputedFields(objectType: string): FieldDefinition[] {
     const typeDef = this.schema.objectTypes.find((t) => t.name === objectType);
@@ -310,13 +316,16 @@ export class ComputedFieldEvaluator {
         (d): d is ComputedDirective => d.kind === 'computed',
       );
       if (!computed) return false;
-      // LAZY is the default, and the only strategy supported for MVP
-      return !computed.cache || computed.cache === 'LAZY';
+      // LAZY is the default. EAGER is treated the same as LAZY for now —
+      // both are evaluated on read. A future write-time pipeline may
+      // pre-compute and cache EAGER fields, but until then they must not
+      // be silently null.
+      return !computed.cache || computed.cache === 'LAZY' || computed.cache === 'EAGER';
     });
   }
 
   /**
-   * Evaluate all LAZY computed fields for an object and return them as a
+   * Evaluate all computed fields for an object and return them as a
    * properties map to merge into the returned object.
    */
   async evaluateAll(

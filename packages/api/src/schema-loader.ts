@@ -497,7 +497,12 @@ export function crossReferenceManifests(
   const issues: ManifestIssue[] = [];
   for (const manifest of manifests.values()) {
     for (const issue of crossReferenceManifest(manifest, schema)) {
-      issues.push({ ...issue, severity: 'warning' });
+      // Preserve the original severity from crossReferenceManifest.
+      // Errors (UNKNOWN_LINK_TYPE, UNKNOWN_OBJECT_TYPE, UNKNOWN_ACTION_TYPE)
+      // must stay errors so the boot-time check below can refuse to start;
+      // demoting them to warnings would let a typo'd linkType boot and fail
+      // mid-transaction.
+      issues.push(issue);
     }
   }
   return issues;
@@ -1009,9 +1014,25 @@ export async function loadDomainPacks(
   // happens per pack, before the merge, so this is the first point at which a
   // manifest can be checked against the schema it will execute against.
   const manifestIssues = crossReferenceManifests(actionManifests, merged);
+  const manifestErrors = manifestIssues.filter(i => i.severity === 'error');
   for (const issue of manifestIssues) {
-    logger.warn(
-      `Action manifest: ${issue.code} — ${issue.message}${issue.path ? ` (${issue.path})` : ''}`,
+    if (issue.severity === 'error') {
+      logger.error(
+        `Action manifest: ${issue.code} — ${issue.message}${issue.path ? ` (${issue.path})` : ''}`,
+      );
+    } else {
+      logger.warn(
+        `Action manifest: ${issue.code} — ${issue.message}${issue.path ? ` (${issue.path})` : ''}`,
+      );
+    }
+  }
+  // Error-severity manifest issues (UNKNOWN_LINK_TYPE, UNKNOWN_OBJECT_TYPE,
+  // UNKNOWN_ACTION_TYPE) are fatal: a typo'd linkType would boot and then
+  // fail mid-transaction, which is worse than refusing to start.
+  if (manifestErrors.length > 0) {
+    throw new Error(
+      `Schema loader: ${manifestErrors.length} action manifest error(s) — refusing to start:\n` +
+      manifestErrors.map(e => `  ${e.code}: ${e.message}${e.path ? ` (${e.path})` : ''}`).join('\n'),
     );
   }
 

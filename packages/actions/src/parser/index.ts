@@ -13,8 +13,10 @@ import type { ParsedSchema } from '@altius/odl';
 import type {
   ActionManifest,
   ActionEffect,
+  EffectValue,
   UpdateObjectEffect,
   CreateLinkEffect,
+  UpdateLinkEffect,
   DeleteLinkEffect,
   CreateObjectEffect,
   DeleteObjectEffect,
@@ -242,7 +244,7 @@ function parsePreconditions(
 
 // ─── Effects ───
 
-const VALID_EFFECT_TYPES = new Set(['updateObject', 'createLink', 'deleteLink', 'createObject', 'deleteObject', 'recordConsent']);
+const VALID_EFFECT_TYPES = new Set(['updateObject', 'createLink', 'updateLink', 'deleteLink', 'createObject', 'deleteObject', 'recordConsent']);
 
 function parseEffects(
   raw: unknown,
@@ -293,6 +295,11 @@ function parseEffects(
       }
       case 'createLink': {
         const effect = parseCreateLink(item, path, errors);
+        if (effect) result.push(effect);
+        break;
+      }
+      case 'updateLink': {
+        const effect = parseUpdateLink(item, path, errors);
         if (effect) result.push(effect);
         break;
       }
@@ -497,6 +504,83 @@ function parseDeleteLink(
     linkType: item['linkType'] as string,
     filter,
     expect,
+  };
+}
+
+function parseUpdateLink(
+  item: Record<string, unknown>,
+  path: string,
+  errors: ManifestIssue[],
+): UpdateLinkEffect | undefined {
+  if (typeof item['linkType'] !== 'string' || !item['linkType']) {
+    errors.push({
+      severity: 'error',
+      code: 'MISSING_FIELD',
+      message: `${path}.linkType is required for updateLink effect.`,
+      path: `${path}.linkType`,
+    });
+    return undefined;
+  }
+
+  // Parse filter (same shape as deleteLink)
+  const filterRaw = item['filter'];
+  const filter: UpdateLinkEffect['filter'] = {};
+  if (filterRaw && typeof filterRaw === 'object' && !Array.isArray(filterRaw)) {
+    const f = filterRaw as Record<string, unknown>;
+    if (typeof f['from'] === 'string') filter.from = f['from'];
+    if (typeof f['to'] === 'string') filter.to = f['to'];
+    if (typeof f['active'] === 'boolean') filter.active = f['active'];
+  } else if (filterRaw !== undefined && filterRaw !== null) {
+    errors.push({
+      severity: 'error',
+      code: 'INVALID_TYPE',
+      message: `${path}.filter must be an object.`,
+      path: `${path}.filter`,
+    });
+    return undefined;
+  }
+
+  // Parse set (required — same shape as updateObject.set)
+  const setRaw = item['set'];
+  let set: Record<string, EffectValue> | undefined;
+  if (setRaw && typeof setRaw === 'object' && !Array.isArray(setRaw)) {
+    set = setRaw as Record<string, EffectValue>;
+  } else {
+    errors.push({
+      severity: 'error',
+      code: 'MISSING_FIELD',
+      message: `${path}.set is required for updateLink effect and must be an object.`,
+      path: `${path}.set`,
+    });
+    return undefined;
+  }
+
+  // Parse expect
+  const expectRaw = item['expect'];
+  let expect: 'ONE' | 'ALL' | undefined;
+  if (expectRaw !== undefined && expectRaw !== null) {
+    if (expectRaw === 'ONE' || expectRaw === 'ALL') {
+      expect = expectRaw;
+    } else {
+      errors.push({
+        severity: 'error',
+        code: 'INVALID_VALUE',
+        message: `${path}.expect must be "ONE" or "ALL". Got "${expectRaw}".`,
+        path: `${path}.expect`,
+      });
+      return undefined;
+    }
+  }
+
+  const condition = typeof item['condition'] === 'string' ? item['condition'] : undefined;
+
+  return {
+    type: 'updateLink',
+    linkType: item['linkType'] as string,
+    filter,
+    set,
+    expect,
+    condition,
   };
 }
 
@@ -915,6 +999,36 @@ function crossReferenceSchema(
         }
         break;
       }
+      case 'updateLink': {
+        if (!linkTypeNames.has(effect.linkType)) {
+          errors.push({
+            severity: 'error',
+            code: 'UNKNOWN_LINK_TYPE',
+            message: `${path}.linkType "${effect.linkType}" does not match any LinkType in the schema.`,
+            path: `${path}.linkType`,
+          });
+        }
+        // filter.from / filter.to should reference @param variables
+        if (actionType && paramNames.size > 0) {
+          if (effect.filter.from && !paramNames.has(effect.filter.from)) {
+            warnings.push({
+              severity: 'warning',
+              code: 'UNKNOWN_PARAM_REF',
+              message: `${path}.filter.from "${effect.filter.from}" is not a @param field on ${manifest.action}.`,
+              path: `${path}.filter.from`,
+            });
+          }
+          if (effect.filter.to && !paramNames.has(effect.filter.to)) {
+            warnings.push({
+              severity: 'warning',
+              code: 'UNKNOWN_PARAM_REF',
+              message: `${path}.filter.to "${effect.filter.to}" is not a @param field on ${manifest.action}.`,
+              path: `${path}.filter.to`,
+            });
+          }
+        }
+        break;
+      }
       case 'createObject': {
         if (!objectTypeNames.has(effect.objectType)) {
           errors.push({
@@ -1042,6 +1156,7 @@ export type {
   ActionEffect,
   UpdateObjectEffect,
   CreateLinkEffect,
+  UpdateLinkEffect,
   DeleteLinkEffect,
   CreateObjectEffect,
   DeleteObjectEffect,

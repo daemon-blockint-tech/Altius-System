@@ -26,6 +26,7 @@ import type {
   ActionEffect,
   UpdateObjectEffect,
   CreateLinkEffect,
+  UpdateLinkEffect,
   DeleteLinkEffect,
   CreateObjectEffect,
   DeleteObjectEffect,
@@ -859,6 +860,9 @@ export class ActionExecutor {
       case 'createLink':
         await this.executeCreateLink(effect, context, txn, reqCtx, schema, affectedObjects, afterStates);
         break;
+      case 'updateLink':
+        await this.executeUpdateLink(effect, context, txn, reqCtx, schema, affectedObjects, beforeStates, afterStates);
+        break;
       case 'deleteLink':
         await this.executeDeleteLink(effect, context, txn, reqCtx, affectedObjects, beforeStates, schema);
         break;
@@ -1010,6 +1014,55 @@ export class ActionExecutor {
       id: link._id,
       changeType: 'created',
     });
+  }
+
+  private async executeUpdateLink(
+    effect: UpdateLinkEffect,
+    context: Record<string, unknown>,
+    txn: Transaction,
+    reqCtx: RequestContext,
+    schema: ParsedSchema,
+    affectedObjects: AffectedObject[],
+    beforeStates: Map<string, Record<string, unknown>>,
+    afterStates: Map<string, Record<string, unknown>>,
+  ): Promise<void> {
+    // Evaluate condition if present
+    if (effect.condition) {
+      const condResult = await this.config.cel.evaluate(effect.condition, context);
+      if (condResult.value !== true) return;
+    }
+
+    // Resolve filter to matching links (same logic as deleteLink)
+    const matchingLinks = await this.resolveUpdateLinkFilter(effect, context, reqCtx, schema);
+
+    const expect = effect.expect ?? 'ONE';
+    if (expect === 'ONE') {
+      if (matchingLinks.length !== 1) {
+        throw new Error(
+          `updateLink ${effect.linkType}: expected exactly ONE matching link, found ${matchingLinks.length}`,
+        );
+      }
+    }
+
+    // Resolve set expressions
+    const properties: Record<string, unknown> = {};
+    for (const [key, expr] of Object.entries(effect.set)) {
+      properties[key] = this.resolveExpression(expr, context);
+    }
+
+    for (const link of matchingLinks) {
+      const linkKey = `link:${effect.linkType}:${link._id}`;
+      beforeStates.set(linkKey, { ...link });
+
+      const updated = await txn.updateLink(effect.linkType, link._id, properties);
+
+      afterStates.set(linkKey, { ...updated });
+      affectedObjects.push({
+        type: effect.linkType,
+        id: link._id,
+        changeType: 'updated',
+      });
+    }
   }
 
   private async executeDeleteLink(
@@ -1198,6 +1251,46 @@ export class ActionExecutor {
       }
     }
 
+    return results;
+  }
+
+  /**
+   * Resolve an updateLink filter to concrete link IDs — same logic as
+   * resolveDeleteLinkFilter but typed for UpdateLinkEffect.
+   */
+  private async resolveUpdateLinkFilter(
+    effect: UpdateLinkEffect,
+    context: Record<string, unknown>,
+    reqCtx: RequestContext,
+    schema?: ParsedSchema,
+  ): Promise<OntologyLink[]> {
+    let fromId: string | undefined;
+    let toId: string | undefined;
+
+    if (effect.filter.from) {
+      const fromObj = await this.resolveTarget(effect.filter.from, context, schema, reqCtx);
+      if (fromObj) fromId = fromObj._id;
+    }
+    if (effect.filter.to) {
+      const toObj = await this.resolveTarget(effect.filter.to, context, schema, reqCtx);
+      if (toObj) toId = toObj._id;
+    }
+
+    const results: OntologyLink[] = [];
+    if (fromId) {
+      const page = await this.config.storage.getLinks(reqCtx, fromId, effect.linkType, 'outbound');
+      for (const link of page.items) {
+        if (toId && link._toId !== toId) continue;
+        if (effect.filter.active !== undefined && effect.filter.active && link._deletedAt) continue;
+        results.push(link);
+      }
+    } else if (toId) {
+      const page = await this.config.storage.getLinks(reqCtx, toId, effect.linkType, 'inbound');
+      for (const link of page.items) {
+        if (effect.filter.active !== undefined && effect.filter.active && link._deletedAt) continue;
+        results.push(link);
+      }
+    }
     return results;
   }
 

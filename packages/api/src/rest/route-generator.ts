@@ -905,6 +905,31 @@ function generateUpdateRoute(
 
         const properties = (req.body as Record<string, unknown>) ?? {};
 
+        // Write-side field permissions: a caller who cannot READ a field
+        // must not be able to OVERWRITE it. Without this, an 'editor' can
+        // overwrite @sensitive fields they cannot see, bypassing the column
+        // policy that redaction enforces on reads. The check uses the same
+        // getVisibleFields set that redaction uses — if a field is not
+        // visible, it is not writable.
+        const visibleFields = deps.authorizationService.getVisibleFields(user.id, user.roles, typeName);
+        if (visibleFields) {
+          const writableFields = new Set(visibleFields);
+          // _id, _version, _type, _tenantId, _createdAt, _updatedAt, _deletedAt
+          // are system fields — always excluded from user writes.
+          const systemFields = new Set(['_id', '_version', '_type', '_tenantId', '_createdAt', '_updatedAt', '_deletedAt']);
+          const attemptedFields = Object.keys(properties).filter(f => !systemFields.has(f));
+          const blocked = attemptedFields.filter(f => !writableFields.has(f));
+          if (blocked.length > 0) {
+            return createRestErrorResponse({
+              code: 'FORBIDDEN',
+              category: 'authorization',
+              message: `Cannot write redacted fields: ${blocked.join(', ')}`,
+              retryable: false,
+              traceId: requestContext.traceId,
+            });
+          }
+        }
+
         const updated = await deps.objectManager.update(
           typeName,
           id,
@@ -1309,25 +1334,44 @@ function generateAggregateRoute(
             .filter(f => !f.directives.some(d => d.kind === 'link' || d.kind === 'computed'))
             .map(f => f.name),
         );
+        // orderBy may reference either a groupBy key (a schema field) or an
+        // aggregate alias. An alias is the explicit `alias` on a field/bucket
+        // or the default `${fn}_${field}` / `${field}` form the providers use.
+        // Without this allowance, "top N groups by the measure" — the core
+        // pivot operation — is rejected even though both providers implement it.
+        const aliasNames = new Set<string>();
+        for (const f of rawFields) {
+          if (f.field === '*') continue;
+          aliasNames.add(f.alias ?? `${f.fn.toLowerCase()}_${f.field}`);
+        }
+        for (const b of rawBuckets ?? []) {
+          aliasNames.add(b.alias ?? b.field);
+        }
         const namedFields = [
           ...rawFields.filter(f => f.field !== '*').map(f => f.field),
           ...(groupBy ?? []),
           ...(rawBuckets ?? []).map(b => b.field),
-          ...(orderBy ?? []).map(o => o.field),
         ];
         const unknown = namedFields.filter(f => !f.startsWith('_') && !aggregatable.has(f));
-        if (unknown.length > 0) {
+        const unknownOrderBy = (orderBy ?? [])
+          .map(o => o.field)
+          .filter(f => !f.startsWith('_') && !aggregatable.has(f) && !aliasNames.has(f));
+        if (unknown.length > 0 || unknownOrderBy.length > 0) {
+          const all = [...unknown, ...unknownOrderBy];
           return createRestErrorResponse({
             code: 'VALIDATION_ERROR',
             category: 'validation',
-            message: `Cannot aggregate on ${unknown.join(', ')}: not an aggregatable field of ${typeName}. Computed and link fields have no stored value to aggregate.`,
+            message: `Cannot aggregate on ${all.join(', ')}: not an aggregatable field of ${typeName}. Computed and link fields have no stored value to aggregate.`,
             retryable: false,
             traceId: requestContext.traceId,
           });
         }
 
         // Field-level authorization: reject aggregation over redacted fields
-        // Check aggregate fields, groupBy, buckets, orderBy, and filter predicates
+        // Check aggregate fields, groupBy, buckets, and filter predicates.
+        // orderBy may reference an aggregate alias (e.g. "total") which is not
+        // a schema field and therefore not in visibleFields; the underlying
+        // field it derives from is already checked above, so aliases are safe.
         const visibleFields = deps.authorizationService.getVisibleFields(user.id, user.roles, typeName);
         if (visibleFields) {
           const allRequestedFields = [
@@ -1335,7 +1379,7 @@ function generateAggregateRoute(
             ...(groupBy ?? []),
             ...(rawBuckets ?? []).map(b => b.field),
             ...collectFilterFields(userFilter),
-            ...(orderBy ?? []).map(o => o.field),
+            ...(orderBy ?? []).map(o => o.field).filter(f => !aliasNames.has(f)),
           ];
           const blocked = allRequestedFields.filter(f => !visibleFields.has(f));
           if (blocked.length > 0) {
@@ -2130,7 +2174,17 @@ function generateObjectSetRoutes(schema: ParsedSchema, deps: ApiDependencies): R
           }
 
           // Field-level authorization: reject aggregation over redacted fields
-          // Check aggregate fields, groupBy, orderBy, saved filter, and aggregation filter
+          // Check aggregate fields, groupBy, saved filter, and aggregation filter.
+          // orderBy may reference an aggregate alias (not a schema field), so
+          // aliases are excluded — the underlying field is already checked.
+          const aliasNames = new Set<string>();
+          for (const f of def.aggregation.fields) {
+            if (f.field === '*') continue;
+            aliasNames.add(f.alias ?? `${f.fn}_${f.field}`);
+          }
+          for (const b of def.aggregation.buckets ?? []) {
+            aliasNames.add(b.alias ?? b.field);
+          }
           const visibleFields = deps.authorizationService.getVisibleFields(user.id, user.roles, def.objectType);
           if (visibleFields) {
             const allRequestedFields = [
@@ -2138,7 +2192,7 @@ function generateObjectSetRoutes(schema: ParsedSchema, deps: ApiDependencies): R
               ...(def.aggregation.groupBy ?? []),
               ...collectFilterFields(def.filter),
               ...collectFilterFields(def.aggregation.filter),
-              ...(def.aggregation.orderBy ?? []).map(o => o.field),
+              ...(def.aggregation.orderBy ?? []).map(o => o.field).filter(f => !aliasNames.has(f)),
             ];
             const blocked = allRequestedFields.filter(f => !visibleFields.has(f));
             if (blocked.length > 0) {
@@ -2152,10 +2206,21 @@ function generateObjectSetRoutes(schema: ParsedSchema, deps: ApiDependencies): R
             }
           }
 
-          // Merge auth filter + saved filter into the aggregation query
+          // Consent gate: for consent-subject types, constrain the aggregate to
+          // consented records only — parity with the per-type aggregate route.
+          // Without this, a saved aggregation over a consent-subject type
+          // aggregates non-consented records.
+          const consentedIds = await resolveConsentedIds(
+            deps, def.objectType, allowedIds, def.filter, user.id, ctx.requestContext,
+          );
+          if (consentedIds.length === 0) {
+            return { status: 200, body: { data: { groups: [], totalGroups: 0 } } };
+          }
+
+          // Merge consented-id filter + saved filter into the aggregation query
           const aggregation = { ...def.aggregation };
           const savedFilter = def.filter;
-          const authFilter = buildAuthFilter(allowedIds, savedFilter);
+          const authFilter = buildAuthFilter(consentedIds, savedFilter);
           if (aggregation.filter) {
             aggregation.filter = { and: [authFilter, aggregation.filter] };
           } else {

@@ -12,10 +12,12 @@
  * effect naming a link type that does not exist, a target that is not a @param
  * — shipped silently and failed at execution time instead.
  *
- * Findings are reported, not thrown. Structural manifest errors stay fatal (a
- * manifest that does not parse cannot run), but cross-reference drift is
- * surfaced as a warning so an existing deployment reports its drift instead of
- * failing to boot on it.
+ * Findings are reported with their original severity. Structural manifest
+ * errors stay fatal (a manifest that does not parse cannot run), and
+ * cross-reference errors (UNKNOWN_LINK_TYPE, UNKNOWN_OBJECT_TYPE,
+ * UNKNOWN_ACTION_TYPE) are also fatal — a typo'd linkType would boot and fail
+ * mid-transaction, which is worse than refusing to start. Cross-reference
+ * warnings (UNKNOWN_PARAM_REF) are reported but do not block boot.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -114,7 +116,7 @@ describe('crossReferenceManifests (boot pass)', () => {
     expect(issues.some(i => i.code === 'UNKNOWN_LINK_TYPE')).toBe(true);
   });
 
-  it('reports drift as a warning so boot is not blocked', () => {
+  it('preserves error severity for UNKNOWN_LINK_TYPE so boot can refuse to start', () => {
     const schema = parseOdl(ODL);
     const manifests = new Map<string, ActionManifest>([
       ['AdmitPatient', parse(DRIFTED_MANIFEST)],
@@ -123,8 +125,9 @@ describe('crossReferenceManifests (boot pass)', () => {
     const issues = crossReferenceManifests(manifests, schema);
 
     expect(issues.length).toBeGreaterThan(0);
-    // Structural errors are fatal elsewhere; drift must not be.
-    expect(issues.every(i => i.severity === 'warning')).toBe(true);
+    // UNKNOWN_LINK_TYPE is severity 'error' — a typo'd linkType must not boot
+    // and fail mid-transaction. The boot loader throws on error-severity issues.
+    expect(issues.some(i => i.code === 'UNKNOWN_LINK_TYPE' && i.severity === 'error')).toBe(true);
   });
 
   it('is empty when every manifest matches the schema', () => {

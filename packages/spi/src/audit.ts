@@ -23,7 +23,7 @@ export interface AuditRecord {
 }
 
 export interface AuditActor {
-  type: 'user' | 'system' | 'connector';
+  type: 'user' | 'system' | 'connector' | 'agent';
   id: string;
   roles: string[];
   ip?: string;

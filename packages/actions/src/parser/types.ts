@@ -42,6 +42,26 @@ export interface DeleteLinkEffect {
   expect?: 'ONE' | 'ALL';
 }
 
+/**
+ * Update link properties on an existing link. `filter` resolves to the
+ * target link(s) the same way deleteLink does; `set` is a map of property
+ * names to CEL expressions, resolved the same way as updateObject.
+ * `expect` defaults to 'ONE' — updating exactly one link is the safe default;
+ * 'ALL' updates every matching link.
+ */
+export interface UpdateLinkEffect {
+  type: 'updateLink';
+  linkType: string;
+  filter: {
+    from?: string;
+    to?: string;
+    active?: boolean;
+  };
+  set: Record<string, EffectValue>;
+  expect?: 'ONE' | 'ALL';
+  condition?: string;
+}
+
 export interface CreateObjectEffect {
   type: 'createObject';
   objectType: string;
@@ -82,6 +102,7 @@ export interface RecordConsentEffect {
 export type ActionEffect =
   | UpdateObjectEffect
   | CreateLinkEffect
+  | UpdateLinkEffect
   | DeleteLinkEffect
   | CreateObjectEffect
   | DeleteObjectEffect

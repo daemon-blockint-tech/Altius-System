@@ -1083,6 +1083,26 @@ function generateUpdateMutationResolver(
         });
       }
 
+      // Write-side field permissions: a caller who cannot READ a field
+      // must not be able to OVERWRITE it. Without this, an 'editor' can
+      // overwrite @sensitive fields they cannot see, bypassing the column
+      // policy that redaction enforces on reads.
+      const visibleFields = deps.authorizationService.getVisibleFields(user.id, user.roles, typeName);
+      if (visibleFields) {
+        const systemFields = new Set(['_id', '_version', '_type', '_tenantId', '_createdAt', '_updatedAt', '_deletedAt']);
+        const attemptedFields = Object.keys(args.input).filter(f => !systemFields.has(f));
+        const blocked = attemptedFields.filter(f => !visibleFields.has(f));
+        if (blocked.length > 0) {
+          throw createAltiusError({
+            code: 'FORBIDDEN',
+            category: 'authorization',
+            message: `Cannot write redacted fields: ${blocked.join(', ')}`,
+            retryable: false,
+            traceId: requestContext.traceId,
+          });
+        }
+      }
+
       const updated = await deps.objectManager.update(
         typeName,
         id,
@@ -1232,7 +1252,7 @@ function generateAggregateResolver(
   const lower = lowerFirst(typeName);
   const fgaType = toSnakeCase(typeName);
 
-  // fooAggregate(filter, groupBy, fields): AggregateResult!
+  // fooAggregate(filter, groupBy, fields, orderBy, limit, offset): AggregateResult!
   resolvers['Query']![`${lower}Aggregate`] = async (
     _parent: unknown,
     args: {
@@ -1240,6 +1260,9 @@ function generateAggregateResolver(
       groupBy?: string[];
       buckets?: Array<{ field: string; interval: string; alias?: string }>;
       fields: Array<{ field: string; fn: string; alias?: string }>;
+      orderBy?: Array<{ field: string; direction: 'asc' | 'desc' }>;
+      limit?: number;
+      offset?: number;
     },
     ctx: ResolverContext,
   ) => {
@@ -1252,8 +1275,47 @@ function generateAggregateResolver(
         return { groups: [], totalGroups: 0 };
       }
 
+      // Field validation: a field name the schema does not have must be
+      // refused here, because the two providers disagree on what to do with
+      // it (Postgres raises, memory returns a null group). @computed and @link
+      // fields have no stored column. orderBy may reference an aggregate alias
+      // instead of a schema field, so aliases are excluded from this check.
+      const aggregatable = new Set(
+        obj.fields
+          .filter(f => !f.directives.some(d => d.kind === 'link' || d.kind === 'computed'))
+          .map(f => f.name),
+      );
+      const aliasNames = new Set<string>();
+      for (const f of args.fields) {
+        if (f.field === '*') continue;
+        aliasNames.add(f.alias ?? `${f.fn.toLowerCase()}_${f.field}`);
+      }
+      for (const b of args.buckets ?? []) {
+        aliasNames.add(b.alias ?? b.field);
+      }
+      const namedFields = [
+        ...args.fields.filter(f => f.field !== '*').map(f => f.field),
+        ...(args.groupBy ?? []),
+        ...(args.buckets ?? []).map(b => b.field),
+      ];
+      const unknown = namedFields.filter(f => !f.startsWith('_') && !aggregatable.has(f));
+      const unknownOrderBy = (args.orderBy ?? [])
+        .map(o => o.field)
+        .filter(f => !f.startsWith('_') && !aggregatable.has(f) && !aliasNames.has(f));
+      if (unknown.length > 0 || unknownOrderBy.length > 0) {
+        const all = [...unknown, ...unknownOrderBy];
+        throw createAltiusError({
+          code: 'VALIDATION_ERROR',
+          category: 'validation',
+          message: `Cannot aggregate on ${all.join(', ')}: not an aggregatable field of ${typeName}. Computed and link fields have no stored value to aggregate.`,
+          retryable: false,
+          traceId: requestContext.traceId,
+        });
+      }
+
       // Field-level authorization: reject aggregation over redacted fields
-      // Check aggregate fields, groupBy, and filter predicates
+      // Check aggregate fields, groupBy, and filter predicates. orderBy aliases
+      // are excluded — the underlying field is already checked.
       const visibleFields = deps.authorizationService.getVisibleFields(user.id, user.roles, typeName);
       if (visibleFields) {
         const allRequestedFields = [
@@ -1261,6 +1323,7 @@ function generateAggregateResolver(
           ...(args.groupBy ?? []),
           ...(args.buckets ?? []).map(b => b.field),
           ...collectGraphQLFilterFields(args.filter),
+          ...(args.orderBy ?? []).map(o => o.field).filter(f => !aliasNames.has(f)),
         ];
         const blocked = allRequestedFields.filter(f => !visibleFields.has(f));
         if (blocked.length > 0) {
@@ -1307,6 +1370,9 @@ function generateAggregateResolver(
           alias: b.alias,
         })),
         filter: combinedFilter,
+        orderBy: args.orderBy,
+        limit: args.limit,
+        offset: args.offset,
       };
 
       return deps.objectManager.aggregate(typeName, query, requestContext);

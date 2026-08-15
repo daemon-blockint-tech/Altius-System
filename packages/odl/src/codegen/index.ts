@@ -870,6 +870,13 @@ export function generateGraphQLSchema(schema: ParsedSchema, options?: GraphQLSch
   ].join('\n'));
 
   sections.push([
+    'input AggregateOrderByInput {',
+    '  field: String!',
+    '  direction: SortDirection = ASC',
+    '}',
+  ].join('\n'));
+
+  sections.push([
     'type AggregateGroup {',
     '  keys: JSON!',
     '  values: JSON!',
@@ -939,7 +946,7 @@ export function generateGraphQLSchema(schema: ParsedSchema, options?: GraphQLSch
       `  ${lower}s(filter: ${obj.name}Filter, orderBy: ${obj.name}OrderBy, first: Int, after: String, last: Int, before: String): ${obj.name}Connection!`,
     );
     queryFields.push(
-      `  ${lower}Aggregate(filter: ${obj.name}Filter, groupBy: [String!], buckets: [DateBucketInput!], fields: [AggregateFieldInput!]!): AggregateResult!`,
+      `  ${lower}Aggregate(filter: ${obj.name}Filter, groupBy: [String!], buckets: [DateBucketInput!], fields: [AggregateFieldInput!]!, orderBy: [AggregateOrderByInput!], limit: Int, offset: Int): AggregateResult!`,
     );
     queryFields.push(
       `  search${obj.name}s(query: String!, fields: [String!], filter: ${obj.name}Filter, first: Int, after: String): SearchResult_${obj.name}!`,

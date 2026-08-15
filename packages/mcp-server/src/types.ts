@@ -6,6 +6,7 @@ import type { ParsedSchema } from '@altius/odl';
 import type { StorageProvider, RequestContext } from '@altius/spi';
 import type { ActionExecutor, ActionManifest } from '@altius/actions';
 import type { AuthorizationService, OidcAuthenticator, AuthenticatedUser, ConsentService } from '@altius/security';
+import type { ObjectManager } from '@altius/engine';
 
 /**
  * Registry that resolves action names to parsed YAML manifests.
@@ -13,6 +14,16 @@ import type { AuthorizationService, OidcAuthenticator, AuthenticatedUser, Consen
  */
 export interface ManifestRegistry {
   get(actionName: string): ActionManifest | undefined;
+}
+
+/**
+ * Minimal rate-limiter interface mirroring the API layer's RateLimiter.
+ * Defined here so @altius/mcp-server does not depend on @altius/api.
+ * Accepts any object with `allowed: boolean` as the return — the API layer's
+ * richer RateLimitResult is structurally compatible.
+ */
+export interface McpRateLimiter {
+  check(identity: { tenantId: string; principalId: string; clientAppId?: string }, cost?: number): Promise<{ allowed: boolean }> | { allowed: boolean };
 }
 
 /**
@@ -34,6 +45,26 @@ export interface McpServerDependencies {
    * rather than route an agent around a gate REST and GraphQL both apply.
    */
   consentService?: ConsentService;
+  /**
+   * Per-principal rate limiter. When provided, every authenticated MCP request
+   * is checked against it — parity with the GraphQL, REST, CDM and FHIR
+   * surfaces. Without this, an agent is bounded only by the global per-IP
+   * limiter, not the per-principal 200 req/min limit humans get.
+   */
+  rateLimiter?: McpRateLimiter;
+  /**
+   * Consent purpose for MCP read tools. Defaults to DIRECT_CARE when absent;
+   * should mirror the deployment's DEFAULT_CONSENT_PURPOSE so an agent and a
+   * human invoking the same action are consent-checked under the same purpose.
+   */
+  consentPurpose?: string;
+  /**
+   * ObjectManager for read queries. When provided, search_<Type> tools route
+   * through it instead of calling storage directly, so computed fields are
+   * resolved (parity with REST and GraphQL). Without this, computed fields
+   * are absent on /mcp while present on every other surface.
+   */
+  objectManager?: ObjectManager;
 }
 
 /**

@@ -14,7 +14,7 @@ import type { AuditRecord, DataPurpose, StorageProvider, RequestContext } from '
 /** The actor executing an action. Passed through the pipeline for authz/audit. */
 export interface ActionActor {
   id: string;
-  type: 'user' | 'system' | 'connector';
+  type: 'user' | 'system' | 'connector' | 'agent';
   roles: string[];
   ip?: string;
 }

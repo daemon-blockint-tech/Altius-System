@@ -17,8 +17,17 @@ import type { McpServerDependencies, McpCaller } from './types.js';
 /** Default consent subject types (mirrors ApiDependencies default). */
 const DEFAULT_CONSENT_SUBJECT_TYPES: readonly string[] = ['Patient'];
 
-/** Default consent purpose (mirrors ApiDependencies default). */
+/** Default consent purpose when the deployment does not configure one. */
 const DEFAULT_CONSENT_PURPOSE: DataPurpose = DataPurpose.DIRECT_CARE;
+
+/** Resolve the consent purpose from deps, falling back to the default. */
+function resolveConsentPurpose(deps: McpServerDependencies): DataPurpose {
+  const configured = deps.consentPurpose;
+  if (configured && configured in DataPurpose) {
+    return configured as DataPurpose;
+  }
+  return DEFAULT_CONSENT_PURPOSE;
+}
 
 /** Max objects a `search_<Type>` tool returns in one call. */
 const SEARCH_TOOL_LIMIT = 50;
@@ -221,7 +230,7 @@ async function invokeActionTool(
 
   const actor: ActionActor = {
     id: user.id,
-    type: 'user',
+    type: 'agent',
     roles: user.roles,
   };
 
@@ -235,7 +244,7 @@ async function invokeActionTool(
   const actionCtx: ActionContext = {
     requestContext,
     ...(consentSubjectId
-      ? { consentPurpose: DEFAULT_CONSENT_PURPOSE, consentSubjectId }
+      ? { consentPurpose: resolveConsentPurpose(deps), consentSubjectId }
       : {}),
   };
 
@@ -328,10 +337,15 @@ async function invokeSearchTool(
     combinedFilter = userFilter ? { and: [passThrough, userFilter] } : passThrough;
   }
 
-  const page = await deps.storage.queryObjects(requestContext, typeName, combinedFilter, {
-    limit,
-    offset: 0,
-  });
+  // Route through ObjectManager when available so computed fields are
+  // resolved (parity with REST and GraphQL). Fall back to direct storage
+  // query only when ObjectManager is not injected.
+  const page = deps.objectManager
+    ? await deps.objectManager.query(typeName, combinedFilter, { limit, offset: 0 }, requestContext)
+    : await deps.storage.queryObjects(requestContext, typeName, combinedFilter, {
+        limit,
+        offset: 0,
+      });
 
   // Redact sensitive fields per user role
   const redacted = deps.authorizationService.redactFieldsBatch(
@@ -601,7 +615,7 @@ async function consentAllows(
   const result = await deps.consentService.checkSingleObject(
     data,
     node._id,
-    DEFAULT_CONSENT_PURPOSE,
+    resolveConsentPurpose(deps),
     caller.user.id,
     caller.requestContext.tenantId,
   );

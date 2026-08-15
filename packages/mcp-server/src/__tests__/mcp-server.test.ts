@@ -625,3 +625,105 @@ describe('protocol version handling', () => {
     expect(body.result?.protocolVersion).toBe('2025-03-26');
   });
 });
+
+// ─── Uniform governance (parity with GraphQL/REST/CDM/FHIR) ───
+
+describe('MCP uniform governance', () => {
+  const validHeaders = { authorization: 'Bearer valid-token' };
+
+  it('applies per-principal rate limiting and returns 429 when exceeded', async () => {
+    const { deps } = createMockDeps();
+    const rateLimiter = {
+      check: vi.fn(async () => ({ allowed: false, exceededBy: 'principal', remaining: 0, resetAt: 0 })),
+    };
+    deps.rateLimiter = rateLimiter as never;
+    const handler = createMcpServer({ deps, isDev: false });
+
+    const res = await handler({
+      method: 'POST',
+      headers: validHeaders,
+      body: { jsonrpc: '2.0', id: 1, method: 'tools/list' },
+    });
+
+    expect(res.status).toBe(429);
+    expect(rateLimiter.check).toHaveBeenCalledWith({
+      tenantId: DEV_USER.tenantId,
+      principalId: DEV_USER.id,
+    });
+  });
+
+  it('passes through when rate limiter allows', async () => {
+    const { deps } = createMockDeps();
+    const rateLimiter = {
+      check: vi.fn(async () => ({ allowed: true, exceededBy: undefined, remaining: 199, resetAt: 0 })),
+    };
+    deps.rateLimiter = rateLimiter as never;
+    const handler = createMcpServer({ deps, isDev: false });
+
+    const res = await handler({
+      method: 'POST',
+      headers: validHeaders,
+      body: { jsonrpc: '2.0', id: 1, method: 'tools/list' },
+    });
+
+    expect(res.status).toBe(200);
+    expect(rateLimiter.check).toHaveBeenCalled();
+  });
+
+  it('stamps ActionActor.type as "agent" so audit records distinguish AI from human', async () => {
+    const executeMock = vi.fn(async (_manifest: unknown, _params: unknown, _actor: { type: string }, _ctx: unknown): Promise<ActionResult> => ({
+      success: true,
+      actionId: 'act_test',
+      errors: [],
+      affectedObjects: [{ type: 'Patient', id: 'p-1', changeType: 'updated' }],
+    }));
+    const { deps } = createMockDeps();
+    deps.actionExecutor = { execute: executeMock } as unknown as McpServerDependencies['actionExecutor'];
+    const handler = createMcpServer({ deps, isDev: false });
+
+    await handler({
+      method: 'POST',
+      headers: validHeaders,
+      body: {
+        jsonrpc: '2.0',
+        id: 5,
+        method: 'tools/call',
+        params: { name: 'AdmitPatient', arguments: { patient: 'p-1', ward: 'w-1' } },
+      },
+    });
+
+    expect(executeMock).toHaveBeenCalledTimes(1);
+    const actor = executeMock.mock.calls[0]![2] as { type: string };
+    expect(actor.type).toBe('agent');
+  });
+
+  it('uses the configured consent purpose instead of hardcoding DIRECT_CARE', async () => {
+    const executeMock = vi.fn(async (_manifest: unknown, _params: unknown, _actor: unknown, _ctx: { consentPurpose?: string }): Promise<ActionResult> => ({
+      success: true,
+      actionId: 'act_test',
+      errors: [],
+      affectedObjects: [{ type: 'Patient', id: 'p-1', changeType: 'updated' }],
+    }));
+    const { deps } = createMockDeps();
+    deps.actionExecutor = { execute: executeMock } as unknown as McpServerDependencies['actionExecutor'];
+    // Make Patient a consent subject type so consentPurpose is set on the context
+    deps.consentSubjectTypes = ['Patient'];
+    deps.consentPurpose = 'RESEARCH';
+    const handler = createMcpServer({ deps, isDev: false });
+
+    await handler({
+      method: 'POST',
+      headers: validHeaders,
+      body: {
+        jsonrpc: '2.0',
+        id: 5,
+        method: 'tools/call',
+        params: { name: 'AdmitPatient', arguments: { patient: 'p-1', ward: 'w-1' } },
+      },
+    });
+
+    expect(executeMock).toHaveBeenCalledTimes(1);
+    const actionCtx = executeMock.mock.calls[0]![3] as { consentPurpose?: string };
+    expect(actionCtx.consentPurpose).toBe('RESEARCH');
+  });
+});

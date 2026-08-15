@@ -30,6 +30,7 @@ export type {
   ActionEffect,
   UpdateObjectEffect,
   CreateLinkEffect,
+  UpdateLinkEffect,
   DeleteLinkEffect,
   CreateObjectEffect,
   DeleteObjectEffect,

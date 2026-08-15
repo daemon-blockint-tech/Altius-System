@@ -1291,6 +1291,9 @@ async function main(): Promise<void> {
         manifestRegistry: manifestRegistry ?? { get: () => undefined },
         ...(consentSubjectTypes ? { consentSubjectTypes } : {}),
         ...(consentService ? { consentService } : {}),
+        rateLimiter,
+        consentPurpose: DEFAULT_CONSENT_PURPOSE as string,
+        objectManager,
       },
       isDev,
     });
