@@ -100,6 +100,16 @@ function extractErrorCode(err: unknown): ErrorCode {
   if (err && typeof err === 'object' && 'code' in err && typeof (err as Record<string, unknown>).code === 'string') {
     return (err as Record<string, unknown>).code as ErrorCode;
   }
+  // createAltiusError builds a GraphQLError, which carries the code under
+  // extensions.altius rather than on the error itself. Any logic shared
+  // between the GraphQL and REST transports throws that shape, and reading
+  // only the top level turned every one of them into a 500 with the message
+  // replaced by "An internal error occurred" — a 403 became indistinguishable
+  // from a crash.
+  const extensions = (err as { extensions?: { altius?: { code?: unknown } } })?.extensions;
+  if (typeof extensions?.altius?.code === 'string') {
+    return extensions.altius.code as ErrorCode;
+  }
   return 'INTERNAL_ERROR';
 }
 

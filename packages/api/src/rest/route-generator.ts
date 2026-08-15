@@ -15,7 +15,7 @@
  * as the GraphQL layer. Error responses use the unified error model (Section 8.8).
  */
 
-import type { ParsedSchema, ObjectType, ActionType, FieldDefinition } from '@altius/odl';
+import type { ParsedSchema, ObjectType, ActionType, FunctionType, FieldDefinition } from '@altius/odl';
 import { DataPurpose } from '@altius/spi';
 import type { OntologyObject, FilterExpression, AggregateQuery, AggregateField, AggregateFunction, SearchQuery, ObjectSetDefinition, RequestContext } from '@altius/spi';
 import type { ActionActor, ActionContext } from '@altius/actions';
@@ -24,6 +24,7 @@ import type { ApiDependencies, ResolverContext } from '../graphql/types.js';
 import { DEFAULT_CONSENT_PURPOSE, DEFAULT_CONSENT_SUBJECT_TYPES, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, isConsentSubjectType } from '../graphql/types.js';
 import type { RestRequest, RestResponse, RestRoute } from './types.js';
 import { createRestErrorResponse, wrapErrorToRest } from './errors.js';
+import { invokeFunction } from '../functions/invoke-function.js';
 import { lowerFirst, toSnakeCase } from '../utils.js';
 import { paginateWithConsent } from '../consent-pagination.js';
 import { collectRawRecords } from '../cdm/router.js';
@@ -266,6 +267,10 @@ export function generateRestRoutes(
 
   for (const action of schema.actionTypes) {
     routes.push(generateActionRoute(action, schema, deps));
+  }
+
+  for (const fn of schema.functionTypes) {
+    routes.push(generateFunctionRoute(fn, deps));
   }
 
   // Object Set routes
@@ -1335,6 +1340,31 @@ function generateActionRoute(
             },
           },
         };
+      } catch (err) {
+        return wrapErrorToRest(err, ctx.requestContext.traceId);
+      }
+    },
+  };
+}
+
+// ─── Function routes ───
+
+/**
+ * POST /api/v1/functions/{Name}
+ *
+ * Delegates to invokeFunction, the same entry point generateFunctionResolver
+ * uses, so the role gate and the audit record are the function's rather than
+ * the transport's — a control tightened on one path cannot silently stay loose
+ * on the other.
+ */
+function generateFunctionRoute(fn: FunctionType, deps: ApiDependencies): RestRoute {
+  return {
+    method: 'POST',
+    pattern: `/api/v1/functions/${fn.name}`,
+    handler: async (req: RestRequest, ctx: ResolverContext): Promise<RestResponse> => {
+      try {
+        const data = await invokeFunction(fn, deps, ctx, (req.body ?? {}) as Record<string, unknown>);
+        return { status: 200, body: { data } };
       } catch (err) {
         return wrapErrorToRest(err, ctx.requestContext.traceId);
       }

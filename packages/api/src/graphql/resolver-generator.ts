@@ -32,7 +32,7 @@ import {
   createFilteredSubscription,
 } from '../subscriptions/subscription-manager.js';
 import { lowerFirst, toSnakeCase } from '../utils.js';
-import { logger } from '../logger.js';
+import { invokeFunction } from '../functions/invoke-function.js';
 import {
   buildCdmMetadata,
   handleObjectRead,
@@ -1317,11 +1317,15 @@ function generateMutationResolver(
  * subject, and no affected-objects payload. The result shape matches the
  * `${name}FunctionResult` SDL type.
  *
- * Authorization: functions inherit the caller's authenticated context.
- * Per-function authorization (e.g. restricting who may invoke a scoring
- * function) is a future concern and will be handled via an
- * `@authorization` directive on FunctionType; for now any authenticated
- * user may invoke any declared function.
+ * Authorization: role-based and fail-closed — the caller must hold one of the
+ * FunctionType's `requiredRoles`, and a function declaring none is denied
+ * rather than allowed. A function runs pack-authored code, so leaving it
+ * ungated would let the same logic ship as a function to bypass every control
+ * the action pipeline applies. Roles rather than a ReBAC relation because the
+ * inputs are scalars: there is no object for OpenFGA to resolve against.
+ *
+ * Success, denial, and a throw from inside the pack code are all audited
+ * best-effort — a failed audit write is logged, never surfaced to the caller.
  */
 function generateFunctionResolver(
   fn: FunctionType,
@@ -1330,90 +1334,15 @@ function generateFunctionResolver(
 ): void {
   const fieldName = `${lowerFirst(fn.name)}Function`;
 
-  /**
-   * Best-effort, matching the action pipeline: a failed audit write is logged
-   * but never changes the caller's outcome (action-executor.ts does the same
-   * post-commit). Losing the record is bad; turning an audit outage into a
-   * platform outage is worse.
-   */
-  const audit = async (
-    ctx: ResolverContext,
-    result: 'success' | 'denied' | 'error',
-    denialReason?: string,
-  ): Promise<void> => {
-    if (!deps.auditWriter) return;
-    try {
-      // id and timestamp are populated by AuditWriter; traceId is passed
-      // explicitly so the record correlates with the request, not the span.
-      await deps.auditWriter.write({
-        traceId: ctx.requestContext.traceId,
-        actor: { type: 'user', id: ctx.user.id, roles: ctx.user.roles },
-        operation: { type: 'function', functionName: fn.name },
-        detail: { result, ...(denialReason ? { denialReason } : {}) },
-      });
-    } catch (err) {
-      logger.warn({ err, function: fn.name }, 'Failed to write function audit record');
-    }
-  };
-
   resolvers['Mutation']![fieldName] = async (
     _parent: unknown,
     args: { input: Record<string, unknown> },
     ctx: ResolverContext,
   ) => {
     try {
-      if (!deps.functionExecutor) {
-        throw createAltiusError({
-          code: 'FUNCTION_EXECUTOR_NOT_CONFIGURED',
-          category: 'system',
-          message: `Function "${fn.name}" cannot be executed: no function executor is configured`,
-          retryable: false,
-          traceId: ctx.requestContext.traceId,
-        });
-      }
-
-      // Authorize before executing. A function runs pack-authored code inside
-      // the platform; until this check existed, any authenticated caller could
-      // invoke any declared function, which made every other control on the
-      // action pipeline (ReBAC, consent, preconditions) bypassable by shipping
-      // the same logic as a function instead.
-      //
-      // Roles, not a ReBAC relation: the inputs are scalars, so there is no
-      // object for OpenFGA to resolve a relation against.
-      //
-      // A function declaring no roles is denied rather than allowed — the
-      // permissive reading is exactly the behaviour being fixed.
-      const allowed = fn.requiredRoles.some(role => ctx.user.roles.includes(role));
-      if (!allowed) {
-        const reason = fn.requiredRoles.length === 0
-          ? `Function "${fn.name}" declares no requiredRoles, so it cannot be invoked. Add requiredRoles to its @function directive.`
-          : `Function "${fn.name}" requires one of: ${fn.requiredRoles.join(', ')}`;
-        // A refused invocation is the record compliance reads — audit before
-        // throwing, exactly as the action pipeline audits its denials.
-        await audit(ctx, 'denied', reason);
-        throw createAltiusError({
-          code: 'FORBIDDEN',
-          category: 'authorization',
-          message: reason,
-          retryable: false,
-          traceId: ctx.requestContext.traceId,
-        });
-      }
-
-      let result: Awaited<ReturnType<NonNullable<ApiDependencies['functionExecutor']>['execute']>>;
-      try {
-        result = await deps.functionExecutor.execute(fn.name, args.input);
-      } catch (err) {
-        await audit(ctx, 'error');
-        throw err;
-      }
-      await audit(ctx, 'success');
-
-      return {
-        result: result.result,
-        logs: result.logs.length > 0 ? result.logs : null,
-        durationMs: result.durationMs,
-      };
+      // Authorization and audit live in invokeFunction, shared with the REST
+      // route — they belong to the function, not to GraphQL.
+      return await invokeFunction(fn, deps, ctx, args.input ?? {});
     } catch (err) {
       throw wrapError(err, ctx.requestContext.traceId);
     }
