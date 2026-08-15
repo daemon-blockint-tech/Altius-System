@@ -142,6 +142,8 @@ export class SyncScheduler {
   private readonly entries = new Map<string, Entry>();
   private started = false;
   private stopped = false;
+  /** Aborted by stop() so a tick blocked on a quiet push source can end. */
+  private readonly aborter = new AbortController();
 
   constructor(config: SyncSchedulerConfig) {
     this.registry = config.registry;
@@ -213,6 +215,11 @@ export class SyncScheduler {
   /** Stop all loops, await in-flight ticks, shut down connectors. */
   async stop(): Promise<void> {
     this.stopped = true;
+    // Before awaiting in-flight ticks: a CDC tick is parked on the next Kafka
+    // message, and the only other thing that would end it is connector
+    // shutdown — which runs after that await. Signalling first is what keeps
+    // this from deadlocking on an idle topic.
+    this.aborter.abort();
     const inFlight: Promise<void>[] = [];
     for (const entry of this.entries.values()) {
       if (entry.timer) clearTimeout(entry.timer);
@@ -288,24 +295,76 @@ export class SyncScheduler {
     return connector.incrementalExtract(config.connection.table, checkpoint);
   }
 
+  /**
+   * Await the next record, giving up when the tick deadline passes or stop()
+   * is called.
+   *
+   * A CDC source is a push stream that can stay quiet indefinitely, and an
+   * `await` suspended inside its generator cannot be cancelled from out here —
+   * calling .return() on it does nothing until it resumes. So the *wait* is
+   * what has to be bounded, not the generator asked to stop.
+   */
+  private async raceNext(
+    it: AsyncIterator<SourceRecord>,
+    deadline: number,
+  ): Promise<IteratorResult<SourceRecord> | "interrupted"> {
+    const signal = this.aborter.signal;
+    if (signal.aborted) return "interrupted";
+    let timer: NodeJS.Timeout | undefined;
+    let onAbort: (() => void) | undefined;
+    const interrupted = new Promise<"interrupted">((resolve) => {
+      timer = setTimeout(() => resolve("interrupted"), Math.max(0, deadline - Date.now()));
+      timer.unref?.();
+      onAbort = () => resolve("interrupted");
+      signal.addEventListener("abort", onAbort, { once: true });
+    });
+    try {
+      return await Promise.race([it.next(), interrupted]);
+    } finally {
+      // Both must go: the listener would otherwise accumulate on the shared
+      // signal, one per record, for the life of the process.
+      if (timer) clearTimeout(timer);
+      if (onAbort) signal.removeEventListener("abort", onAbort);
+    }
+  }
+
   /** Enforce maxRecordsPerTick and maxTickMs on a source stream. */
   private async *bounded(
     source: AsyncIterable<SourceRecord>,
     datasource: string,
   ): AsyncIterable<SourceRecord> {
     const deadline = Date.now() + this.maxTickMs;
+    const it = source[Symbol.asyncIterator]();
     let count = 0;
-    for await (const record of source) {
-      yield record;
-      count++;
-      if (count >= this.maxRecordsPerTick) {
-        logger.warn({ datasource, count }, "Sync tick hit maxRecordsPerTick; remainder next tick");
-        return;
+    try {
+      for (;;) {
+        const next = await this.raceNext(it, deadline);
+        if (next === "interrupted") {
+          logger.warn(
+            { datasource, count },
+            this.aborter.signal.aborted
+              ? "Sync tick interrupted by stop; remainder resumes from checkpoint"
+              : "Sync tick hit maxTickMs; remainder next tick",
+          );
+          return;
+        }
+        if (next.done) return;
+        yield next.value;
+        count++;
+        if (count >= this.maxRecordsPerTick) {
+          logger.warn({ datasource, count }, "Sync tick hit maxRecordsPerTick; remainder next tick");
+          return;
+        }
+        if (Date.now() > deadline) {
+          logger.warn({ datasource, count }, "Sync tick hit maxTickMs; remainder next tick");
+          return;
+        }
       }
-      if (Date.now() > deadline) {
-        logger.warn({ datasource, count }, "Sync tick hit maxTickMs; remainder next tick");
-        return;
-      }
+    } finally {
+      // Deliberately not awaited: .return() on a generator parked at an await
+      // only settles once it resumes, which is the deadlock this method exists
+      // to avoid. Finite sources still get closed promptly.
+      void Promise.resolve(it.return?.()).catch(() => {});
     }
   }
 }
