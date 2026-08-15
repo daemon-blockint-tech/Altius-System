@@ -19,7 +19,7 @@ import type {
   DateTime,
   DataPurpose,
 } from '@altius/spi';
-import type { ParsedSchema, ActionType } from '@altius/odl';
+import type { ParsedSchema, ActionType, FieldDefinition } from '@altius/odl';
 import { createLogger } from '@altius/observability';
 import type {
   ActionManifest,
@@ -58,6 +58,70 @@ function now(): DateTime {
 
 function failResult(actionId: string, errors: ActionError[]): ActionResult {
   return { success: false, actionId, errors, affectedObjects: [] };
+}
+
+/**
+ * Built-in scalar checks for action params. Deliberately a local copy of the
+ * engine's SCALAR_TYPE_CHECKS (packages/engine/src/objects/validation.ts): it
+ * is not exported, and @altius/engine is not a dependency of this package —
+ * the action pipeline sits above storage, not on top of the engine.
+ */
+const PARAM_TYPE_CHECKS: Record<string, (v: unknown) => boolean> = {
+  ID: (v) => typeof v === 'string',
+  String: (v) => typeof v === 'string',
+  Int: (v) => typeof v === 'number' && Number.isInteger(v),
+  Float: (v) => typeof v === 'number',
+  Boolean: (v) => typeof v === 'boolean',
+  Date: (v) => typeof v === 'string',
+  DateTime: (v) => typeof v === 'string',
+  Duration: (v) => typeof v === 'string',
+  GeoPoint: (v) => typeof v === 'object' && v !== null,
+  JSON: (_v) => true,
+  URI: (v) => typeof v === 'string',
+};
+
+/**
+ * Returns an error message if `value` does not match the param's declared ODL
+ * type, or undefined if it does (including for types this cannot check —
+ * object/link types, custom scalars).
+ */
+function checkParamType(
+  field: FieldDefinition,
+  value: unknown,
+  schema: ParsedSchema,
+): string | undefined {
+  const typeName = field.type.name;
+
+  if (field.type.isList) {
+    if (!Array.isArray(value)) {
+      return `Parameter "${field.name}" must be a list of ${typeName}`;
+    }
+    for (const item of value) {
+      const itemError = checkParamType(
+        { ...field, type: { ...field.type, isList: false } },
+        item,
+        schema,
+      );
+      if (itemError) return itemError;
+    }
+    return undefined;
+  }
+
+  const enumDef = schema.enums.find((e) => e.name === typeName);
+  if (enumDef) {
+    const values = enumDef.values.map((v) => v.name);
+    if (typeof value !== 'string' || !values.includes(value)) {
+      return `Parameter "${field.name}" has invalid value ${JSON.stringify(value)} for enum ${typeName}. Valid values: ${values.join(', ')}`;
+    }
+    return undefined;
+  }
+
+  const check = PARAM_TYPE_CHECKS[typeName];
+  if (check && !check(value)) {
+    return `Parameter "${field.name}" has invalid type. Expected ${typeName}, got ${typeof value}`;
+  }
+
+  return undefined;
 }
 
 /**
@@ -189,7 +253,7 @@ export class ActionExecutor {
     // ------------------------------------------------------------------
     // Step 1: VALIDATE — schema validation of params
     // ------------------------------------------------------------------
-    const validationErrors = this.validateParams(actionTypeDef, params);
+    const validationErrors = this.validateParams(actionTypeDef, params, schema);
     if (validationErrors.length > 0) {
       return failResult(actionId, validationErrors);
     }
@@ -533,6 +597,7 @@ export class ActionExecutor {
   private validateParams(
     actionTypeDef: ActionType | undefined,
     params: Record<string, unknown>,
+    schema: ParsedSchema,
   ): ActionError[] {
     if (!actionTypeDef) {
       // If no schema definition, skip validation (structural-only mode)
@@ -544,10 +609,30 @@ export class ActionExecutor {
       const isParam = field.directives.some((d) => d.kind === 'param');
       if (!isParam) continue;
 
-      if (field.type.nonNull && (params[field.name] === undefined || params[field.name] === null)) {
+      const value = params[field.name];
+
+      if (field.type.nonNull && (value === undefined || value === null)) {
         errors.push({
           code: 'MISSING_REQUIRED_PARAM',
           message: `Required parameter "${field.name}" is missing`,
+          path: `params.${field.name}`,
+        });
+        continue;
+      }
+
+      if (value === undefined || value === null) continue;
+
+      // Type-check the value against the declared ODL type. Without this a
+      // String param accepts a number and an enum param accepts any string;
+      // the mismatch only surfaces later as a storage or CEL error naming
+      // neither the param nor the expected type. Object-typed params carry an
+      // id string and are resolved (and existence-checked) in step 4, so they
+      // are deliberately not covered here.
+      const typeError = checkParamType(field, value, schema);
+      if (typeError) {
+        errors.push({
+          code: 'INVALID_PARAM_TYPE',
+          message: typeError,
           path: `params.${field.name}`,
         });
       }
@@ -1159,7 +1244,12 @@ export class ActionExecutor {
     }
   }
 
-  private resolveExpression(expr: string, context: Record<string, unknown>): unknown {
+  private resolveExpression(expr: unknown, context: Record<string, unknown>): unknown {
+    // Only strings are CEL expressions. A manifest value YAML parsed as a
+    // number, boolean or null is the value itself and passes through with its
+    // type intact — stringifying it writes "5" into an Int column.
+    if (typeof expr !== 'string') return expr;
+
     // String literal: 'VALUE'
     if (expr.startsWith("'") && expr.endsWith("'")) {
       return expr.slice(1, -1);

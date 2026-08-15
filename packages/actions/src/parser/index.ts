@@ -376,7 +376,7 @@ function parseUpdateObject(
 
   if (!valid) return undefined;
 
-  const set = toStringRecord(item['set'] as Record<string, unknown>);
+  const set = item['set'] as Record<string, unknown>;
   const condition = typeof item['condition'] === 'string' ? item['condition'] : undefined;
 
   return {
@@ -427,7 +427,7 @@ function parseCreateLink(
   if (!valid) return undefined;
 
   const properties = item['properties'] && typeof item['properties'] === 'object' && !Array.isArray(item['properties'])
-    ? toStringRecord(item['properties'] as Record<string, unknown>)
+    ? (item['properties'] as Record<string, unknown>)
     : undefined;
 
   const condition = typeof item['condition'] === 'string' ? item['condition'] : undefined;
@@ -532,7 +532,7 @@ function parseCreateObject(
   return {
     type: 'createObject',
     objectType: item['objectType'] as string,
-    properties: toStringRecord(item['properties'] as Record<string, unknown>),
+    properties: item['properties'] as Record<string, unknown>,
   };
 }
 
@@ -979,16 +979,6 @@ const CEL_KEYWORDS = new Set([
   // Common operators
   'and', 'or', 'not',
 ]);
-
-// ─── Utility ───
-
-function toStringRecord(obj: Record<string, unknown>): Record<string, string> {
-  const result: Record<string, string> = {};
-  for (const [key, value] of Object.entries(obj)) {
-    result[key] = String(value);
-  }
-  return result;
-}
 
 // Re-export types
 export type {

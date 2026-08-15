@@ -7,10 +7,18 @@
 
 // ─── Effect types (discriminated union) ───
 
+/**
+ * Effect values are CEL expressions when they are strings ("params.reason",
+ * "'PRIMARY'", "now"); a non-string YAML scalar (5, 2.5, true) is the value
+ * itself and must reach storage with that type — coercing it to a string
+ * writes "5" into an Int column.
+ */
+export type EffectValue = unknown;
+
 export interface UpdateObjectEffect {
   type: 'updateObject';
   target: string;
-  set: Record<string, string>;
+  set: Record<string, EffectValue>;
   condition?: string;
 }
 
@@ -19,7 +27,7 @@ export interface CreateLinkEffect {
   linkType: string;
   from: string;
   to: string;
-  properties?: Record<string, string>;
+  properties?: Record<string, EffectValue>;
   condition?: string;
 }
 
@@ -37,7 +45,7 @@ export interface DeleteLinkEffect {
 export interface CreateObjectEffect {
   type: 'createObject';
   objectType: string;
-  properties: Record<string, string>;
+  properties: Record<string, EffectValue>;
 }
 
 /**
