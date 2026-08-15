@@ -3,6 +3,7 @@ export {
   type FunctionExecutorConfig,
   type FunctionRuntime,
   type FunctionRuntimeContext,
+  type FunctionOntologyAccess,
   type FunctionExecutionResult,
   type FunctionLogEntry,
   NodeFunctionRuntime,
