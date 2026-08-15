@@ -530,3 +530,48 @@ describe('function queries cannot filter on redacted fields', () => {
     expect(query).toHaveBeenCalled();
   });
 });
+
+// ─── withheld vs absent: pack code must be able to tell them apart ───
+
+describe('function reads report which fields were withheld', () => {
+  const redactDiagnosis = (_u: string, _r: string[], _t: string, o: Record<string, unknown>) => ({
+    data: { ...o, diagnosis: null },
+    _redactedFields: ['diagnosis'],
+  });
+
+  it('marks a redacted field on a direct read', async () => {
+    const { deps, captured } = depsWith({ redactFields: redactDiagnosis });
+    const reader = await readerFrom(deps, captured);
+
+    const got = await reader.getObject('Patient', 'p-1');
+
+    // Redaction nulls the value rather than deleting it, so without this a
+    // function cannot tell "no diagnosis recorded" from "you may not see it"
+    // — and the two give different answers.
+    expect(got!['diagnosis']).toBeNull();
+    expect(got!['_redactedFields']).toEqual(['diagnosis']);
+  });
+
+  it('reports nothing withheld when nothing was', async () => {
+    const { deps, captured } = depsWith({});
+    const reader = await readerFrom(deps, captured);
+
+    const got = await reader.getObject('Patient', 'p-1');
+
+    expect(got!['_redactedFields']).toBeNull();
+  });
+});
+
+describe('function query rows report which fields were withheld', () => {
+  it('marks redacted fields on every row of a set', async () => {
+    const { deps, captured } = depsWithQuery({
+      redactFieldsBatch: (_u, _r, _t, rows) =>
+        rows.map(o => ({ data: { ...o, diagnosis: null }, _redactedFields: ['diagnosis'] })),
+    });
+    const reader = await queryReader(deps, captured);
+
+    const rows = await reader.queryObjects!('Patient');
+
+    expect(rows.every(r => Array.isArray(r['_redactedFields']))).toBe(true);
+  });
+});

@@ -112,6 +112,12 @@ async function readOne(
     objectToGraphQL(found, obj),
   );
   const data = redacted.data as Record<string, unknown>;
+  // objectToGraphQL presets _redactedFields to null, so leaving it unset does
+  // not merely omit the information — it asserts nothing was withheld.
+  // Redaction nulls a value rather than deleting it, so without this a function
+  // cannot tell "no diagnosis recorded" from "you may not see it", and the two
+  // give different answers.
+  data['_redactedFields'] = redacted._redactedFields.length > 0 ? redacted._redactedFields : null;
 
   if (deps.consentService && isConsentSubjectType(objectType, deps.consentSubjectTypes)) {
     const decision = await deps.consentService.checkSingleObject(
@@ -249,7 +255,11 @@ function ontologyReaderFor(deps: ApiDependencies, ctx: ResolverContext): Functio
         objectType,
         rows,
       );
-      const visible = redacted.map(r => r.data as Record<string, unknown>);
+      const visible = redacted.map(r => {
+        const row = r.data as Record<string, unknown>;
+        row['_redactedFields'] = r._redactedFields.length > 0 ? r._redactedFields : null;
+        return row;
+      });
 
       if (!deps.consentService || !isConsentSubjectType(objectType, deps.consentSubjectTypes)) {
         return visible;
