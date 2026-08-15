@@ -43,6 +43,18 @@ export interface FunctionExecutionResult {
 }
 
 /** Context passed to a FunctionRuntime adapter. */
+/**
+ * The ontology surface a function may reach.
+ *
+ * Deliberately narrow: every method is performed by the host under the
+ * invoking user's identity, so a function can read exactly what its caller
+ * could and nothing more. Widen it one operation at a time, not by handing
+ * pack code a storage handle.
+ */
+export interface FunctionOntologyReader {
+  getObject(objectType: string, id: string): Promise<Record<string, unknown> | null>;
+}
+
 export interface FunctionRuntimeContext {
   /** The FunctionType definition from the parsed schema. */
   fn: FunctionType;
@@ -54,6 +66,8 @@ export interface FunctionRuntimeContext {
   celEvaluator?: CelEvaluator;
   /** Logger sink for runtimes that capture logs. */
   log: (level: FunctionLogEntry['level'], message: string) => void;
+  /** Authorized ontology reads, performed by the host. Absent means none. */
+  ontology?: FunctionOntologyReader;
 }
 
 /**
@@ -187,6 +201,12 @@ export interface FunctionExecutorConfig {
    * provenance supply it here; `packDir` remains the fallback.
    */
   packDirByFunction?: Record<string, string>;
+  /**
+   * Ontology reads offered to pack code, already bound to the invoking user.
+   * Absent means functions cannot read objects — which is fail-closed, not a
+   * silent null the pack author would read as "not found".
+   */
+  ontology?: FunctionOntologyReader;
 }
 
 /**
@@ -202,12 +222,14 @@ export class FunctionExecutor {
   private readonly celEvaluator?: CelEvaluator;
   private readonly packDir?: string;
   private readonly packDirByFunction: Record<string, string>;
+  private readonly ontology?: FunctionOntologyReader;
 
   constructor(config: FunctionExecutorConfig) {
     this.schema = config.schema;
     this.celEvaluator = config.celEvaluator;
     this.packDir = config.packDir;
     this.packDirByFunction = config.packDirByFunction ?? {};
+    this.ontology = config.ontology;
     this.runtimes = new Map();
 
     const defaults: FunctionRuntime[] = [
@@ -238,6 +260,17 @@ export class FunctionExecutor {
   async execute(
     name: string,
     inputs: Record<string, unknown>,
+    opts?: {
+      /**
+       * Ontology reads bound to *this* caller.
+       *
+       * Per call rather than per executor: the reader carries an identity, and
+       * one executor serves every request. A construction-time reader would
+       * hand whoever's identity happened to be wired at boot to every later
+       * caller.
+       */
+      ontology?: FunctionOntologyReader;
+    },
   ): Promise<FunctionExecutionResult> {
     const fn = this.getFunction(name);
     if (!fn) {
@@ -270,6 +303,7 @@ export class FunctionExecutor {
       // The declaring pack's directory when known — see packDirByFunction.
       packDir: this.packDirByFunction[name] ?? this.packDir,
       celEvaluator: this.celEvaluator,
+      ...((opts?.ontology ?? this.ontology) ? { ontology: opts?.ontology ?? this.ontology } : {}),
       log,
     });
     const durationMs = Date.now() - start;

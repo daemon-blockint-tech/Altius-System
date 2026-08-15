@@ -57,6 +57,7 @@ export {
   type FunctionExecutorConfig,
   type FunctionRuntime,
   type FunctionRuntimeContext,
+  type FunctionOntologyReader,
   type FunctionExecutionResult,
   type FunctionLogEntry,
   NodeFunctionRuntime,

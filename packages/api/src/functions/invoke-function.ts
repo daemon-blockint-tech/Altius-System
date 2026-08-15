@@ -10,8 +10,14 @@
 
 import type { FunctionType } from '@altius/odl';
 
+import type { FunctionOntologyReader } from '@altius/engine';
+import type { DataPurpose } from '@altius/spi';
+
 import type { ApiDependencies, ResolverContext } from '../graphql/types.js';
+import { DEFAULT_CONSENT_PURPOSE, isConsentSubjectType } from '../graphql/types.js';
+import { objectToGraphQL } from '../graphql/resolver-generator.js';
 import { createAltiusError } from '../graphql/errors.js';
+import { toSnakeCase } from '../utils.js';
 import { logger } from '../logger.js';
 
 export interface FunctionInvocationResult {
@@ -47,6 +53,67 @@ async function audit(
   } catch (err) {
     logger.warn({ err, function: fn.name }, 'Failed to write function audit record');
   }
+}
+
+/**
+ * Ontology reads offered to the function, bound to the invoking user.
+ *
+ * The isolated runtime forks pack code with a scrubbed env so it holds no
+ * database or OpenFGA credentials; the read is performed here instead and runs
+ * the same three controls the object routes run — ReBAC scoping, field
+ * redaction, then consent. A function therefore cannot read anything its
+ * caller could not read directly.
+ *
+ * A consent-restricted subject is refused rather than returned with its fields
+ * nulled, which is where this deliberately departs from the object resolver: a
+ * function computing over silently-nulled fields yields a wrong answer that
+ * looks like a right one.
+ */
+function ontologyReaderFor(deps: ApiDependencies, ctx: ResolverContext): FunctionOntologyReader {
+  return {
+    async getObject(objectType: string, id: string): Promise<Record<string, unknown> | null> {
+      const obj = deps.schema.objectTypes.find(o => o.name === objectType);
+      if (!obj) {
+        throw new Error(`Unknown object type "${objectType}"`);
+      }
+
+      const allowed = await deps.authorizationService.check(
+        `user:${ctx.user.id}`,
+        'viewer',
+        `${toSnakeCase(objectType)}:${id}`,
+        ctx.user.tenantId,
+      );
+      if (!allowed) {
+        throw new Error(`Access denied to ${objectType} ${id}`);
+      }
+
+      const found = await deps.objectManager.get(objectType, id, ctx.requestContext);
+      if (!found) return null;
+
+      const redacted = deps.authorizationService.redactFields(
+        ctx.user.id,
+        ctx.user.roles,
+        objectType,
+        objectToGraphQL(found, obj),
+      );
+      const data = redacted.data as Record<string, unknown>;
+
+      if (deps.consentService && isConsentSubjectType(objectType, deps.consentSubjectTypes)) {
+        const decision = await deps.consentService.checkSingleObject(
+          data,
+          id,
+          DEFAULT_CONSENT_PURPOSE as DataPurpose,
+          ctx.user.id,
+          ctx.requestContext.tenantId,
+        );
+        if (decision._consentRestricted) {
+          throw new Error(`Consent denied for ${objectType} ${id}`);
+        }
+      }
+
+      return data;
+    },
+  };
 }
 
 /**
@@ -100,7 +167,9 @@ export async function invokeFunction(
 
   let result: Awaited<ReturnType<NonNullable<ApiDependencies['functionExecutor']>['execute']>>;
   try {
-    result = await deps.functionExecutor.execute(fn.name, input);
+    result = await deps.functionExecutor.execute(fn.name, input, {
+      ontology: ontologyReaderFor(deps, ctx),
+    });
   } catch (err) {
     await audit(fn, deps, ctx, 'error');
     throw err;

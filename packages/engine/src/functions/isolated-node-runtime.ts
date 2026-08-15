@@ -23,7 +23,12 @@
 
 import { fork } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
-import type { FunctionRuntime, FunctionRuntimeContext, FunctionLogEntry } from './function-executor.js';
+import type {
+  FunctionRuntime,
+  FunctionRuntimeContext,
+  FunctionLogEntry,
+  FunctionOntologyReader,
+} from './function-executor.js';
 
 const WORKER_URL = new URL('../../function-worker.js', import.meta.url);
 
@@ -40,6 +45,7 @@ export interface IsolatedNodeRuntimeConfig {
 
 type WorkerMessage =
   | { type: 'log'; level: FunctionLogEntry['level']; message: string }
+  | { type: 'ontology'; id: number; op: string; args: unknown[] }
   | { type: 'done'; result: unknown }
   | { type: 'error'; message: string };
 
@@ -98,6 +104,13 @@ export class IsolatedNodeFunctionRuntime implements FunctionRuntime {
           ctx.log(msg.level, msg.message);
           return;
         }
+        if (msg.type === 'ontology') {
+          // Served, not settled: the function is still running and is awaiting
+          // this reply. Errors travel back as a rejected read so pack code can
+          // catch them, rather than killing the call from out here.
+          void this.serveOntology(child, ctx.ontology, msg);
+          return;
+        }
         if (msg.type === 'done') {
           finish(() => resolve(msg.result));
           return;
@@ -120,5 +133,35 @@ export class IsolatedNodeFunctionRuntime implements FunctionRuntime {
 
       child.send({ entry, inputs: ctx.inputs, packDir: ctx.packDir ?? this.packDir });
     });
+  }
+
+  private async serveOntology(
+    child: ChildProcess,
+    ontology: FunctionOntologyReader | undefined,
+    msg: { id: number; op: string; args: unknown[] },
+  ): Promise<void> {
+    let reply: Record<string, unknown>;
+    try {
+      if (!ontology) {
+        throw new Error(
+          'no ontology reader is configured for this runtime, so functions cannot read objects',
+        );
+      }
+      if (msg.op !== 'getObject') {
+        throw new Error(`unsupported ontology operation "${msg.op}"`);
+      }
+      const [objectType, id] = msg.args as [string, string];
+      const value = await ontology.getObject(objectType, id);
+      reply = { type: 'ontology-result', id: msg.id, ok: true, value: value ?? null };
+    } catch (err) {
+      reply = {
+        type: 'ontology-result',
+        id: msg.id,
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
+    // The child may already be gone (timeout kill, crash); sending then throws.
+    if (child.connected) child.send(reply);
   }
 }

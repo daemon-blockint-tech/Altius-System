@@ -215,7 +215,7 @@ function validateQueryFields(
  * Convert an OntologyObject to a GraphQL-friendly shape.
  * Strips the underscore prefix from system fields that map to schema fields.
  */
-function objectToGraphQL(obj: OntologyObject, objectType: ObjectType): Record<string, unknown> {
+export function objectToGraphQL(obj: OntologyObject, objectType: ObjectType): Record<string, unknown> {
   const result: Record<string, unknown> = {};
 
   for (const field of objectType.fields) {

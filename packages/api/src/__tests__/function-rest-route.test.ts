@@ -77,7 +77,12 @@ describe('function REST route', () => {
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ data: { result: 42, logs: null, durationMs: 3 } });
-    expect(execute).toHaveBeenCalledWith('ScoreRisk', { amount: 21 });
+    // The third argument is the caller-bound ontology reader; pinning it here
+    // means a transport that forgot to pass one would fail loudly rather than
+    // silently hand pack code a function that cannot read anything.
+    expect(execute).toHaveBeenCalledWith('ScoreRisk', { amount: 21 }, {
+      ontology: expect.objectContaining({ getObject: expect.any(Function) }),
+    });
   });
 
   it('applies the same role gate as GraphQL, without executing', async () => {
