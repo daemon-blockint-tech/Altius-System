@@ -44,6 +44,29 @@ const tracer = getTracer('engine', 'objectManager');
  */
 const COMPUTED_ROW_CONCURRENCY = 16;
 
+/**
+ * Rewrite every reference to a declared @primary field onto the system `_id`
+ * it aliases.
+ *
+ * Storage never materialises the @primary field: the DDL skips it and its
+ * value IS `_id`, which reads alias back to the declared name. Filters and
+ * sorts, though, arrive under the declared name the generated schema
+ * advertises, so they have to be translated before they reach a provider.
+ * Above the SPI is the only place that fixes every backend at once —
+ * Postgres would otherwise emit a WHERE on a column that does not exist,
+ * and the memory provider would silently match nothing.
+ */
+function rewritePrimaryField(filter: FilterExpression, primary: string): FilterExpression {
+  if ('field' in filter && 'operator' in filter) {
+    return filter.field === primary ? { ...filter, field: '_id' } : filter;
+  }
+  const out: FilterExpression = { ...filter };
+  if (out.and) out.and = out.and.map((f) => rewritePrimaryField(f, primary));
+  if (out.or) out.or = out.or.map((f) => rewritePrimaryField(f, primary));
+  if (out.not) out.not = rewritePrimaryField(out.not, primary);
+  return out;
+}
+
 /** Configuration for the ObjectManager. */
 export interface ObjectManagerConfig {
   storage: StorageProvider;
@@ -312,6 +335,16 @@ export class ObjectManager {
       [SpanAttributes.TENANT_ID]: ctx.tenantId,
       [SpanAttributes.OPERATION]: 'query',
     }, async () => {
+      const primary = this.primaryFieldName(type);
+      if (primary) {
+        filter = rewritePrimaryField(filter, primary);
+        if (options?.orderBy?.some((s) => s.field === primary)) {
+          options = {
+            ...options,
+            orderBy: options.orderBy.map((s) => (s.field === primary ? { ...s, field: '_id' } : s)),
+          };
+        }
+      }
       const page = await this.storage.queryObjects(ctx, type, filter, options);
       return { ...page, items: await this.withComputed(type, page.items, ctx) };
     });
@@ -357,6 +390,19 @@ export class ObjectManager {
         hits: result.hits.map((hit, i) => ({ ...hit, object: objects[i]! })),
       };
     });
+  }
+
+  /**
+   * The declared @primary field name for a type, when it differs from `_id`.
+   *
+   * Undefined for an unknown type, so a query against something outside the
+   * schema is passed through rather than rejected here — the provider owns
+   * that error.
+   */
+  private primaryFieldName(type: string): string | undefined {
+    const objectType = this.schema.objectTypes.find((o) => o.name === type);
+    const primary = objectType?.fields.find((f) => f.directives.some((d) => d.kind === 'primary'));
+    return primary && primary.name !== '_id' ? primary.name : undefined;
   }
 
   /**
