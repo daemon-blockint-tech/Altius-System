@@ -78,6 +78,20 @@ export interface FunctionOntologyAccess {
     filter?: unknown,
     limit?: number,
   ): Promise<Record<string, unknown>[]>;
+  /**
+   * Walk a declared link from one object to its neighbours.
+   *
+   * Links are what make an ontology an ontology; without traversal a function
+   * is working on a table. Each neighbour goes through the same per-object
+   * controls a direct read does, and neighbours the caller may not see are
+   * omitted rather than surfaced.
+   */
+  getLinkedObjects?(
+    objectType: string,
+    id: string,
+    linkType: string,
+    direction?: 'outbound' | 'inbound',
+  ): Promise<Record<string, unknown>[]>;
 }
 
 export interface FunctionRuntimeContext {

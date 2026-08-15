@@ -63,6 +63,66 @@ async function audit(
   }
 }
 
+type ReadOutcome =
+  | { status: 'ok'; data: Record<string, unknown> }
+  | { status: 'missing' }
+  | { status: 'denied'; reason: string };
+
+/**
+ * One authorized object read: ReBAC check, then field redaction, then consent.
+ *
+ * Shared so a direct read and a traversal cannot drift apart — they differ
+ * only in what they do with a refusal, which is the caller's decision, not the
+ * control's.
+ */
+async function readOne(
+  deps: ApiDependencies,
+  ctx: ResolverContext,
+  objectType: string,
+  id: string,
+): Promise<ReadOutcome> {
+  const obj = deps.schema.objectTypes.find(o => o.name === objectType);
+  if (!obj) {
+    throw new Error(`Unknown object type "${objectType}"`);
+  }
+
+  const allowed = await deps.authorizationService.check(
+    `user:${ctx.user.id}`,
+    'viewer',
+    `${toSnakeCase(objectType)}:${id}`,
+    ctx.user.tenantId,
+  );
+  if (!allowed) {
+    return { status: 'denied', reason: `Access denied to ${objectType} ${id}` };
+  }
+
+  const found = await deps.objectManager.get(objectType, id, ctx.requestContext);
+  if (!found) return { status: 'missing' };
+
+  const redacted = deps.authorizationService.redactFields(
+    ctx.user.id,
+    ctx.user.roles,
+    objectType,
+    objectToGraphQL(found, obj),
+  );
+  const data = redacted.data as Record<string, unknown>;
+
+  if (deps.consentService && isConsentSubjectType(objectType, deps.consentSubjectTypes)) {
+    const decision = await deps.consentService.checkSingleObject(
+      data,
+      id,
+      DEFAULT_CONSENT_PURPOSE as DataPurpose,
+      ctx.user.id,
+      ctx.requestContext.tenantId,
+    );
+    if (decision._consentRestricted) {
+      return { status: 'denied', reason: `Consent denied for ${objectType} ${id}` };
+    }
+  }
+
+  return { status: 'ok', data };
+}
+
 /**
  * Ontology reads offered to the function, bound to the invoking user.
  *
@@ -80,46 +140,56 @@ async function audit(
 function ontologyReaderFor(deps: ApiDependencies, ctx: ResolverContext): FunctionOntologyAccess {
   return {
     async getObject(objectType: string, id: string): Promise<Record<string, unknown> | null> {
-      const obj = deps.schema.objectTypes.find(o => o.name === objectType);
-      if (!obj) {
-        throw new Error(`Unknown object type "${objectType}"`);
+      const outcome = await readOne(deps, ctx, objectType, id);
+      if (outcome.status === 'missing') return null;
+      if (outcome.status === 'denied') throw new Error(outcome.reason);
+      return outcome.data;
+    },
+
+    async getLinkedObjects(
+      objectType: string,
+      id: string,
+      linkType: string,
+      direction: 'outbound' | 'inbound' = 'outbound',
+    ): Promise<Record<string, unknown>[]> {
+      const link = deps.schema.linkTypes.find(l => l.name === linkType);
+      if (!link) {
+        throw new Error(`Unknown link type "${linkType}"`);
       }
-
-      const allowed = await deps.authorizationService.check(
-        `user:${ctx.user.id}`,
-        'viewer',
-        `${toSnakeCase(objectType)}:${id}`,
-        ctx.user.tenantId,
-      );
-      if (!allowed) {
-        throw new Error(`Access denied to ${objectType} ${id}`);
-      }
-
-      const found = await deps.objectManager.get(objectType, id, ctx.requestContext);
-      if (!found) return null;
-
-      const redacted = deps.authorizationService.redactFields(
-        ctx.user.id,
-        ctx.user.roles,
-        objectType,
-        objectToGraphQL(found, obj),
-      );
-      const data = redacted.data as Record<string, unknown>;
-
-      if (deps.consentService && isConsentSubjectType(objectType, deps.consentSubjectTypes)) {
-        const decision = await deps.consentService.checkSingleObject(
-          data,
-          id,
-          DEFAULT_CONSENT_PURPOSE as DataPurpose,
-          ctx.user.id,
-          ctx.requestContext.tenantId,
+      // The declared endpoint the traversal starts from. Checking it turns a
+      // mistyped traversal into an error instead of an empty result that reads
+      // like "no neighbours".
+      const sourceType = direction === 'outbound' ? link.from : link.to;
+      if (sourceType !== objectType) {
+        throw new Error(
+          `Link "${linkType}" does not run ${direction} from ${objectType} (it starts at ${sourceType})`,
         );
-        if (decision._consentRestricted) {
-          throw new Error(`Consent denied for ${objectType} ${id}`);
-        }
       }
+      const targetType = direction === 'outbound' ? link.to : link.from;
 
-      return data;
+      // Traversal must not become a way around a direct read: the link
+      // resolver checks every target individually for exactly this reason, so
+      // ward.patients cannot surface a patient the caller could not fetch.
+      const page = await deps.linkManager.getLinks(
+        id,
+        linkType,
+        direction,
+        { limit: FUNCTION_QUERY_LIMIT, offset: 0 },
+        ctx.requestContext,
+      );
+
+      const out: Record<string, unknown>[] = [];
+      const seen = new Set<string>();
+      for (const l of page.items) {
+        const targetId = direction === 'outbound' ? l._toId : l._fromId;
+        if (!targetId || seen.has(targetId)) continue;
+        seen.add(targetId);
+        const outcome = await readOne(deps, ctx, targetType, targetId);
+        // A neighbour the caller may not see is omitted, not surfaced and not
+        // fatal — one restricted neighbour must not fail the whole traversal.
+        if (outcome.status === 'ok') out.push(outcome.data);
+      }
+      return out;
     },
 
     async queryObjects(

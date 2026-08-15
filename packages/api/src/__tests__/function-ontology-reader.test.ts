@@ -349,3 +349,110 @@ describe('function ontology queries are scoped like the list route', () => {
     expect((query.mock.calls[0]![2] as { limit: number }).limit).toBe(1000);
   });
 });
+
+// ─── getLinkedObjects: traversal carries the per-object controls ───
+
+const ODL_LINKED = `
+type Patient @objectType {
+  id: ID! @primary
+  name: String!
+}
+
+type Ward @objectType {
+  id: ID! @primary
+  label: String!
+}
+
+type AdmittedTo @linkType(from: "Patient", to: "Ward", cardinality: MANY_TO_ONE) {
+  since: String
+}
+
+type ScoreRisk @function(runtime: "cel", entry: "1", requiredRoles: "clinician") {
+  patientId: ID! @param
+}
+`;
+
+const linkedSchema = parseOdl(ODL_LINKED);
+const linkedFn = linkedSchema.functionTypes.find(f => f.name === 'ScoreRisk')!;
+
+function depsWithLinks(overrides: {
+  check?: (u: string, r: string, res: string, t: string) => Promise<boolean>;
+  links?: { _fromId: string; _toId: string }[];
+  consentService?: unknown;
+} = {}) {
+  const captured: { ontology?: { getLinkedObjects?(t: string, id: string, lt: string, d?: 'outbound' | 'inbound'): Promise<Record<string, unknown>[]> } } = {};
+  const deps = {
+    schema: linkedSchema,
+    functionExecutor: {
+      execute: vi.fn(async (_n: string, _i: Record<string, unknown>, opts?: typeof captured) => {
+        if (opts?.ontology) captured.ontology = opts.ontology;
+        return { result: 1, logs: [], durationMs: 1 };
+      }),
+    },
+    auditWriter: { write: vi.fn().mockResolvedValue(undefined) },
+    linkManager: {
+      getLinks: vi.fn(async () => ({
+        items: overrides.links ?? [
+          { _fromId: 'p-1', _toId: 'w-1' },
+          { _fromId: 'p-1', _toId: 'w-2' },
+          { _fromId: 'p-1', _toId: 'w-1' },
+        ],
+        totalCount: 3, hasNextPage: false,
+      })),
+    },
+    objectManager: {
+      get: vi.fn(async (_t: string, id: string) => ({ _id: id, _type: 'Ward', label: `Ward ${id}` })),
+    },
+    authorizationService: {
+      check: overrides.check ?? vi.fn(async () => true),
+      redactFields: (_u: string, _r: string[], _t: string, o: Record<string, unknown>) => ({ data: o, _redactedFields: [] }),
+    },
+    ...(overrides.consentService ? { consentService: overrides.consentService } : {}),
+  } as unknown as ApiDependencies;
+  return { deps, captured };
+}
+
+async function linkReader(deps: ApiDependencies, captured: { ontology?: { getLinkedObjects?(t: string, id: string, lt: string, d?: 'outbound' | 'inbound'): Promise<Record<string, unknown>[]> } }) {
+  await invokeFunction(linkedFn, deps, ctx, { patientId: 'p-1' });
+  return captured.ontology!;
+}
+
+describe('function ontology traversal is scoped like the link resolver', () => {
+  it('walks the link and de-duplicates repeated neighbours', async () => {
+    const { deps, captured } = depsWithLinks();
+    const reader = await linkReader(deps, captured);
+
+    const wards = await reader.getLinkedObjects!('Patient', 'p-1', 'AdmittedTo');
+
+    expect(wards.map(w => w['_id'])).toEqual(['w-1', 'w-2']);
+  });
+
+  it('omits a neighbour the caller may not view, without failing the walk', async () => {
+    const { deps, captured } = depsWithLinks({
+      check: vi.fn(async (_u: string, _r: string, res: string) => res !== 'ward:w-2'),
+    });
+    const reader = await linkReader(deps, captured);
+
+    const wards = await reader.getLinkedObjects!('Patient', 'p-1', 'AdmittedTo');
+
+    // Traversal must not become a way around a direct read, and one refused
+    // neighbour must not fail the whole walk.
+    expect(wards.map(w => w['_id'])).toEqual(['w-1']);
+  });
+
+  it('rejects a traversal that does not start where the link does', async () => {
+    const { deps, captured } = depsWithLinks();
+    const reader = await linkReader(deps, captured);
+
+    await expect(reader.getLinkedObjects!('Ward', 'w-1', 'AdmittedTo'))
+      .rejects.toThrow(/does not run outbound from Ward/);
+  });
+
+  it('rejects an undeclared link type', async () => {
+    const { deps, captured } = depsWithLinks();
+    const reader = await linkReader(deps, captured);
+
+    await expect(reader.getLinkedObjects!('Patient', 'p-1', 'Ghost'))
+      .rejects.toThrow(/Unknown link type "Ghost"/);
+  });
+});

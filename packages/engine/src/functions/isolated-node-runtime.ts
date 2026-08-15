@@ -169,6 +169,15 @@ export class IsolatedNodeFunctionRuntime implements FunctionRuntime {
         // null; normalise before handing them to the host.
         const [objectType, filter, limit] = msg.args as [string, unknown, number | null];
         value = await ontology.queryObjects(objectType, filter ?? undefined, limit ?? undefined);
+      } else if (msg.op === 'getLinkedObjects') {
+        if (!ontology.getLinkedObjects) {
+          throw new Error(
+            'this deployment offers no getLinkedObjects path, so functions cannot traverse links',
+          );
+        }
+        const [objectType, id, linkType, direction] =
+          msg.args as [string, string, string, 'outbound' | 'inbound' | null];
+        value = await ontology.getLinkedObjects(objectType, id, linkType, direction ?? undefined);
       } else {
         throw new Error(`unsupported ontology operation "${msg.op}"`);
       }

@@ -139,3 +139,48 @@ describe('function ontology queries', () => {
     await expect(executor.execute('CountWard', { ward: 'w-1' })).rejects.toThrow(/queryObjects/i);
   });
 });
+
+// ─── getLinkedObjects: traversal is what makes it an ontology ───
+
+const traverseFn: FunctionType = {
+  kind: 'functionType',
+  name: 'WardsOf',
+  fields: [
+    { name: 'patientId', type: { name: 'ID', nonNull: true, isList: false, listElementNonNull: false }, directives: [{ kind: 'param' }] },
+  ],
+  directives: [],
+  runtime: 'node-isolated',
+  entry: 'traverse-link.mjs',
+  requiredRoles: ['clinician'],
+};
+
+const traverseSchema: ParsedSchema = {
+  objectTypes: [], linkTypes: [], actionTypes: [],
+  functionTypes: [traverseFn],
+  enums: [], interfaces: [], scalars: [],
+};
+
+function traverseExecutor(ontology: Record<string, unknown>) {
+  return new FunctionExecutor({
+    schema: traverseSchema,
+    packDir: FIXTURES,
+    runtimes: [new IsolatedNodeFunctionRuntime({ name: 'node-isolated', packDir: FIXTURES, timeoutMs: 15_000 })],
+    ontology: { getObject: async () => null, ...ontology } as never,
+  });
+}
+
+describe('function ontology traversal', () => {
+  it('walks a declared link and hands back the neighbours', async () => {
+    const getLinkedObjects = vi.fn(async () => [{ _id: 'w-1' }, { _id: 'w-2' }]);
+
+    const out = await traverseExecutor({ getLinkedObjects }).execute('WardsOf', { patientId: 'p-1' });
+
+    expect(getLinkedObjects).toHaveBeenCalledWith('Patient', 'p-1', 'AdmittedTo', undefined);
+    expect(out.result).toEqual({ count: 2, ids: ['w-1', 'w-2'] });
+  });
+
+  it('fails closed when the host offers no traversal path', async () => {
+    await expect(traverseExecutor({}).execute('WardsOf', { patientId: 'p-1' }))
+      .rejects.toThrow(/getLinkedObjects/i);
+  });
+});

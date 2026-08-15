@@ -51,6 +51,8 @@ const ontology = {
   // pipeline. Pack code never touches storage.
   applyAction: (actionName, params) => callHost('applyAction', [actionName, params ?? {}]),
   queryObjects: (type, filter, limit) => callHost('queryObjects', [type, filter ?? null, limit ?? null]),
+  getLinkedObjects: (type, id, linkType, direction) =>
+    callHost('getLinkedObjects', [type, id, linkType, direction ?? null]),
 };
 
 process.on('message', (msg) => {
