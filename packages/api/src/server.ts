@@ -45,6 +45,8 @@ import {
   InMemoryObjectSetStore,
   ObjectSetManager,
   FunctionExecutor,
+  IsolatedNodeFunctionRuntime,
+  CelFunctionRuntime,
   ComputedFieldEvaluator,
 } from '@altius/engine';
 import { ActionExecutor, CelClient, SideEffectExecutor } from '@altius/actions';
@@ -316,10 +318,30 @@ async function main(): Promise<void> {
   // The same CEL evaluator instance is reused for cel-runtime functions
   // and for @constraint evaluation. Pack-relative module resolution uses
   // the first loaded pack's directory as a base.
+  // Pack-authored function code runs in a forked child, never in this process.
+  //
+  // FunctionExecutor's built-in `node` runtime imports the entry module into the
+  // API process, where it can read the Postgres URL, the OIDC client secret and
+  // the OpenFGA store token straight out of process.env, and a non-terminating
+  // function hangs the gateway for every tenant. IsolatedNodeFunctionRuntime
+  // forks with a scrubbed env, a heap cap and a wall-clock timeout instead.
+  //
+  // Registered under the name 'node' on purpose: packs declare `runtime: "node"`
+  // and get isolation without opting in. Leaving it under its default name
+  // ('node-isolated') would make safety a per-pack decision, which is the wrong
+  // default for code the platform operator did not write.
+  //
+  // Both runtimes are listed because `runtimes` REPLACES the built-in set rather
+  // than extending it — omitting CEL here would silently remove cel-runtime
+  // functions.
   const functionExecutor = new FunctionExecutor({
     schema,
     celEvaluator: cel,
     packDir: packInfos[0]?.packDir,
+    runtimes: [
+      new IsolatedNodeFunctionRuntime({ name: 'node', packDir: packInfos[0]?.packDir }),
+      new CelFunctionRuntime(),
+    ],
   });
   if (schema.functionTypes.length > 0) {
     logger.info(`Functions: ${schema.functionTypes.length} function type(s) declared`);

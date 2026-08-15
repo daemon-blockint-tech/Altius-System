@@ -63,4 +63,9 @@ export {
   type NodeRuntimeConfig,
   type NodeRuntimeHelpers,
   CelFunctionRuntime,
+  // The isolating runtime was reachable from './functions/index.js' but not
+  // from this barrel, so the API package could not import it even deliberately
+  // — which is why production still ran pack code in-process.
+  IsolatedNodeFunctionRuntime,
+  type IsolatedNodeRuntimeConfig,
 } from './functions/index.js';
