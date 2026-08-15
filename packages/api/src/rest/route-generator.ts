@@ -975,6 +975,65 @@ function generateHistoryRoute(
           });
         }
 
+        // ?asOf=<ISO-8601> — the single version that was live at that instant.
+        //
+        // getObjectAtTime is implemented by both providers and covered by the
+        // conformance suite, but nothing above the SPI called it, so the
+        // question temporal storage exists to answer ("what did this look like
+        // on the 3rd?") had no route. Answered here rather than on a new
+        // endpoint because it is the same question the version list answers,
+        // narrowed to one point — so it inherits the authorization, redaction
+        // and consent path above unchanged.
+        const asOfRaw = typeof req.query['asOf'] === 'string' ? req.query['asOf'] : undefined;
+        if (asOfRaw !== undefined) {
+          // Rejected rather than coerced: Date.parse('last tuesday') is NaN,
+          // but Date.parse('2026') silently means January 1st. A timestamp the
+          // caller did not mean is worse than an error, because the answer
+          // still looks like a real record.
+          if (Number.isNaN(Date.parse(asOfRaw))) {
+            return createRestErrorResponse({
+              code: 'VALIDATION_ERROR',
+              category: 'validation',
+              message: `asOf must be an ISO-8601 timestamp, got "${asOfRaw}"`,
+              retryable: false,
+              traceId: requestContext.traceId,
+            });
+          }
+
+          const atTime = await deps.storage.getObjectAtTime(requestContext, typeName, id, asOfRaw);
+          if (!atTime) {
+            return createRestErrorResponse({
+              code: 'OBJECT_NOT_FOUND',
+              category: 'not_found',
+              message: `${typeName} ${id} did not exist at ${asOfRaw}`,
+              retryable: false,
+              traceId: requestContext.traceId,
+            });
+          }
+
+          const shaped = objectToRest(atTime, obj);
+          const redactedAtTime = deps.authorizationService.redactFields(
+            user.id, user.roles, typeName, shaped,
+          );
+          const data = redactedAtTime.data as Record<string, unknown>;
+          data._redactedFields = redactedAtTime._redactedFields.length > 0
+            ? redactedAtTime._redactedFields
+            : null;
+          data._version = atTime._version;
+          data._updatedAt = atTime._updatedAt;
+
+          if (deps.consentService && isConsentSubjectType(typeName, deps.consentSubjectTypes)) {
+            const consent = await deps.consentService.checkSingleObject(
+              data, id, DEFAULT_CONSENT_PURPOSE as DataPurpose, user.id, requestContext.tenantId,
+            );
+            if (consent._consentRestricted) {
+              return { status: 200, body: { data: [] } };
+            }
+          }
+
+          return { status: 200, body: { data: [data] } };
+        }
+
         // Get current object to determine version count
         const current = await deps.objectManager.get(typeName, id, requestContext);
         if (!current) {
