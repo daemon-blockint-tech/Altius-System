@@ -1,0 +1,10 @@
+name: demofn
+version: 0.1.0
+namespace: altius.demofn
+description: >
+  Fixture pack used to exercise the function chain end to end. Not shipped:
+  it exists so a FunctionType is loaded by the real pack loader from a pack
+  that is not `core`, which is the only shape in which per-pack entry
+  resolution can go wrong.
+schema:
+  - schema/demofn.odl

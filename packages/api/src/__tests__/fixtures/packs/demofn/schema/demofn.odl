@@ -1,0 +1,5 @@
+extend schema @namespace(name: "altius.demofn", version: "0.1.0")
+
+type Doubler @function(runtime: "node-isolated", entry: "functions/double.mjs", requiredRoles: "analyst") {
+  value: Float! @param
+}
