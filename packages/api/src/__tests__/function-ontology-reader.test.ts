@@ -265,6 +265,7 @@ function depsWithQuery(overrides: {
     authorizationService: {
       check: vi.fn(async () => true),
       listObjects: overrides.listObjects ?? vi.fn(async () => ['*']),
+      getVisibleFields: vi.fn(() => undefined),
       redactFields: (_u: string, _r: string[], _t: string, o: Record<string, unknown>) => ({ data: o, _redactedFields: [] }),
       redactFieldsBatch: overrides.redactFieldsBatch
         ?? ((_u: string, _r: string[], _t: string, o: Record<string, unknown>[]) => o.map(data => ({ data, _redactedFields: [] }))),
@@ -454,5 +455,78 @@ describe('function ontology traversal is scoped like the link resolver', () => {
 
     await expect(reader.getLinkedObjects!('Patient', 'p-1', 'Ghost'))
       .rejects.toThrow(/Unknown link type "Ghost"/);
+  });
+});
+
+// ─── predicate leakage: filtering on a field you cannot see ───
+
+describe('function queries cannot filter on redacted fields', () => {
+  function depsWithVisibility(visible: string[] | undefined) {
+    const query = vi.fn(async (..._a: unknown[]) => ({
+      items: [{ _id: 'p-1', _type: 'Patient', name: 'Ada' }],
+      totalCount: 1, hasNextPage: false,
+    }));
+    const captured: { ontology?: { queryObjects?(t: string, f?: unknown, l?: number): Promise<Record<string, unknown>[]> } } = {};
+    const deps = {
+      schema,
+      functionExecutor: {
+        execute: vi.fn(async (_n: string, _i: Record<string, unknown>, opts?: typeof captured) => {
+          if (opts?.ontology) captured.ontology = opts.ontology;
+          return { result: 1, logs: [], durationMs: 1 };
+        }),
+      },
+      auditWriter: { write: vi.fn().mockResolvedValue(undefined) },
+      objectManager: { get: vi.fn(), query },
+      authorizationService: {
+        check: vi.fn(async () => true),
+        listObjects: vi.fn(async () => ['*']),
+        getVisibleFields: vi.fn(() => (visible ? new Set(visible) : undefined)),
+        redactFields: (_u: string, _r: string[], _t: string, o: Record<string, unknown>) => ({ data: o, _redactedFields: [] }),
+        redactFieldsBatch: (_u: string, _r: string[], _t: string, o: Record<string, unknown>[]) => o.map(data => ({ data, _redactedFields: [] })),
+      },
+    } as unknown as ApiDependencies;
+    return { deps, captured, query };
+  }
+
+  it('refuses a filter on a field the caller cannot see, without querying', async () => {
+    const { deps, captured, query } = depsWithVisibility(['id', 'name']);
+    await invokeFunction(scoreRisk, deps, ctx, { patientId: 'p-1' });
+    const reader = captured.ontology!;
+
+    // The leak this closes: the rows that come back tell the caller which
+    // patients carry the value, without the field ever being returned.
+    await expect(reader.queryObjects!('Patient', { field: 'diagnosis', operator: 'eq', value: 'HIV' }))
+      .rejects.toThrow(/redacted field/i);
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it('allows a filter on a visible field', async () => {
+    const { deps, captured, query } = depsWithVisibility(['id', 'name']);
+    await invokeFunction(scoreRisk, deps, ctx, { patientId: 'p-1' });
+    const reader = captured.ontology!;
+
+    await reader.queryObjects!('Patient', { field: 'name', operator: 'eq', value: 'Ada' });
+
+    expect(query).toHaveBeenCalled();
+  });
+
+  it('allows system fields, which carry no field-level policy', async () => {
+    const { deps, captured, query } = depsWithVisibility(['id', 'name']);
+    await invokeFunction(scoreRisk, deps, ctx, { patientId: 'p-1' });
+    const reader = captured.ontology!;
+
+    await reader.queryObjects!('Patient', { field: '_id', operator: 'in', value: ['p-1'] });
+
+    expect(query).toHaveBeenCalled();
+  });
+
+  it('imposes no restriction when no field policy is configured', async () => {
+    const { deps, captured, query } = depsWithVisibility(undefined);
+    await invokeFunction(scoreRisk, deps, ctx, { patientId: 'p-1' });
+    const reader = captured.ontology!;
+
+    await reader.queryObjects!('Patient', { field: 'diagnosis', operator: 'eq', value: 'HIV' });
+
+    expect(query).toHaveBeenCalled();
   });
 });

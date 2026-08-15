@@ -20,7 +20,13 @@ import {
   DEFAULT_CONSENT_SUBJECT_TYPES,
   isConsentSubjectType,
 } from '../graphql/types.js';
-import { objectToGraphQL, resolveAllowedIds, buildAuthFilter } from '../graphql/resolver-generator.js';
+import {
+  objectToGraphQL,
+  resolveAllowedIds,
+  buildAuthFilter,
+  extractFilterFields,
+  validateQueryFields,
+} from '../graphql/resolver-generator.js';
 import { createAltiusError } from '../graphql/errors.js';
 import { toSnakeCase } from '../utils.js';
 import { logger } from '../logger.js';
@@ -213,6 +219,20 @@ function ontologyReaderFor(deps: ApiDependencies, ctx: ResolverContext): Functio
         toSnakeCase(objectType),
         ctx.user.tenantId,
       );
+      // Predicate leakage: a caller who cannot see a field must not be able to
+      // filter on it either, or the rows that come back reveal which objects
+      // carry the value without the field ever being returned. The list route
+      // refuses this (SEC-14); a function query that did not would be the way
+      // around it.
+      const violations = validateQueryFields(
+        extractFilterFields(filter as FilterExpression | undefined),
+        [],
+        deps.authorizationService.getVisibleFields(ctx.user.id, ctx.user.roles, objectType),
+      );
+      if (violations.length > 0) {
+        throw new Error(`Cannot filter on redacted field(s): ${violations.join(', ')}`);
+      }
+
       if (allowedIds.length === 0) return [];
 
       const page = await deps.objectManager.query(

@@ -162,7 +162,7 @@ function convertOrderBy(orderBy: Record<string, string> | undefined): { field: s
  * Extract all field names referenced in a filter expression.
  * Used to validate that users cannot filter/sort on redacted fields.
  */
-function extractFilterFields(filter: FilterExpression | undefined): Set<string> {
+export function extractFilterFields(filter: FilterExpression | undefined): Set<string> {
   const fields = new Set<string>();
   if (!filter) return fields;
 
@@ -190,7 +190,7 @@ function extractFilterFields(filter: FilterExpression | undefined): Set<string> 
  * Validate that filter and sort fields are not targeting redacted fields.
  * Returns the set of disallowed field names, or empty set if all are valid.
  */
-function validateQueryFields(
+export function validateQueryFields(
   filterFields: Set<string>,
   orderByFields: string[],
   visibleFields: Set<string> | undefined,
