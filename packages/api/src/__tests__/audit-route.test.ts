@@ -210,3 +210,89 @@ describe('GET /api/v1/audit', () => {
     expect(routes).toHaveLength(0);
   });
 });
+
+// ════════════════════════════════════════════════════════════════════
+// Pagination has to happen in the store, not after the fetch.
+//
+// PostgresAuditStore.query() ends in a hardcoded `LIMIT 1000`, and the route
+// used to page by slicing whatever came back. So on any tenant with more than
+// 1000 audit records totalCount silently pinned at 1000, hasMore went false
+// while records remained, and every offset past 1000 returned an empty page —
+// a trail that looks complete and is not. The stores also disagreed on order:
+// Postgres sorted timestamp DESC, memory returned insertion order.
+// ════════════════════════════════════════════════════════════════════
+
+describe('GET /api/v1/audit — pagination is delegated to the store', () => {
+  it('orders records newest-first regardless of insertion order', async () => {
+    const store = new MemoryAuditStore();
+    await store.append(createAuditRecord({ id: 'oldest', timestamp: '2025-01-01T00:00:00Z' }));
+    await store.append(createAuditRecord({ id: 'newest', timestamp: '2025-03-01T00:00:00Z' }));
+    await store.append(createAuditRecord({ id: 'middle', timestamp: '2025-02-01T00:00:00Z' }));
+
+    const deps = createDeps(store);
+    const routes = generateAuditRoutes(deps);
+    const result = await routes[0]!.handler(createRequest(), createCtx(deps));
+
+    const records = (result.body as Record<string, unknown>)['data'] as AuditRecord[];
+    expect(records.map(r => r.id)).toEqual(['newest', 'middle', 'oldest']);
+  });
+
+  it('asks the store for the page rather than fetching everything and slicing', async () => {
+    const seen: { limit?: number; offset?: number }[] = [];
+    const store = {
+      append: async () => {},
+      query: async (_f: unknown, options?: { limit?: number; offset?: number }) => {
+        seen.push({ limit: options?.limit, offset: options?.offset });
+        return [createAuditRecord({ id: 'page-item' })];
+      },
+      count: async () => 5000,
+    };
+
+    const deps = createDeps(store as unknown as MemoryAuditStore);
+    const routes = generateAuditRoutes(deps);
+    await routes[0]!.handler(
+      createRequest({ query: { limit: '25', offset: '1200' } }),
+      createCtx(deps),
+    );
+
+    expect(seen).toEqual([{ limit: 25, offset: 1200 }]);
+  });
+
+  it('reports a totalCount larger than the page and keeps hasMore true past 1000', async () => {
+    const store = {
+      append: async () => {},
+      query: async () => [createAuditRecord({ id: 'page-item' })],
+      count: async () => 5000,
+    };
+
+    const deps = createDeps(store as unknown as MemoryAuditStore);
+    const routes = generateAuditRoutes(deps);
+    const result = await routes[0]!.handler(
+      createRequest({ query: { limit: '1', offset: '1200' } }),
+      createCtx(deps),
+    );
+
+    const body = result.body as Record<string, unknown>;
+    expect(body['totalCount']).toBe(5000);
+    expect(body['hasMore']).toBe(true);
+  });
+
+  it('counts the filtered set, not the whole trail', async () => {
+    const store = new MemoryAuditStore();
+    await store.append(createAuditRecord({ id: 'a1', traceId: 'trace-abc' }));
+    await store.append(createAuditRecord({ id: 'a2', traceId: 'trace-xyz' }));
+    await store.append(createAuditRecord({ id: 'a3', traceId: 'trace-xyz' }));
+
+    const deps = createDeps(store);
+    const routes = generateAuditRoutes(deps);
+    const result = await routes[0]!.handler(
+      createRequest({ query: { traceId: 'trace-xyz', limit: '1' } }),
+      createCtx(deps),
+    );
+
+    const body = result.body as Record<string, unknown>;
+    expect((body['data'] as AuditRecord[])).toHaveLength(1);
+    expect(body['totalCount']).toBe(2);
+    expect(body['hasMore']).toBe(true);
+  });
+});

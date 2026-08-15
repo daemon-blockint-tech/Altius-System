@@ -67,16 +67,23 @@ export function generateAuditRoutes(deps: ResolverContext['deps']): RestRoute[] 
           const filter = parseAuditFilter(req, ctx);
           const { limit, offset } = parsePagination(req);
 
-          const records = await deps.auditStore!.query(filter);
-          const totalCount = records.length;
-          const paginated = records.slice(offset, offset + limit);
+          // Paged by the store, not here. Slicing a fetched result meant the
+          // page was bounded by whatever the store chose to return — for
+          // Postgres a hardcoded 1000 — so totalCount pinned at that bound,
+          // hasMore went false with records still unread, and any offset past
+          // it returned empty. The count is a separate query because the page
+          // length only describes the page.
+          const [records, totalCount] = await Promise.all([
+            deps.auditStore!.query(filter, { limit, offset }),
+            deps.auditStore!.count(filter),
+          ]);
 
           return {
             status: 200,
             body: {
-              data: paginated,
+              data: records,
               totalCount,
-              hasMore: offset + limit < totalCount,
+              hasMore: offset + records.length < totalCount,
             },
           };
         } catch (err) {

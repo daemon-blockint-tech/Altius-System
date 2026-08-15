@@ -83,7 +83,52 @@ export class PostgresAuditStore {
    * Query audit records matching the given filter.
    * Returns records ordered by timestamp descending (most recent first).
    */
-  async query(filter: AuditQueryFilter): Promise<AuditRecord[]> {
+  async query(
+    filter: AuditQueryFilter,
+    options?: { limit?: number; offset?: number },
+  ): Promise<AuditRecord[]> {
+    const { where, params } = buildAuditWhere(filter);
+
+    // Paged in SQL rather than by the caller. The previous hardcoded
+    // `LIMIT 1000` with no OFFSET meant any page past the thousandth record
+    // was unreachable and every total derived from the result was capped.
+    const limit = Math.min(options?.limit ?? DEFAULT_QUERY_LIMIT, MAX_QUERY_LIMIT);
+    const offset = Math.max(options?.offset ?? 0, 0);
+
+    const sql =
+      `SELECT * FROM "audit"."audit_records" ${where} ORDER BY "timestamp" DESC` +
+      ` LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+
+    const result = await this.pool.query(sql, [...params, limit, offset]);
+    return result.rows.map(rowToAuditRecord);
+  }
+
+  /** Total records matching the filter, ignoring limit/offset. */
+  async count(filter: AuditQueryFilter): Promise<number> {
+    const { where, params } = buildAuditWhere(filter);
+    const sql = `SELECT COUNT(*) AS cnt FROM "audit"."audit_records" ${where}`;
+    const result = await this.pool.query(sql, params);
+    return parseInt(String(result.rows[0]?.['cnt'] ?? '0'), 10);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Filter → WHERE
+// ---------------------------------------------------------------------------
+
+/** Default page size when a caller does not ask for one. */
+const DEFAULT_QUERY_LIMIT = 1000;
+/** Ceiling on a single page, so one request cannot pull the whole trail. */
+const MAX_QUERY_LIMIT = 1000;
+
+/**
+ * Build the parameterised WHERE clause shared by query() and count().
+ *
+ * Shared so the two cannot drift: a count over different predicates than the
+ * page it describes is worse than no count at all.
+ */
+function buildAuditWhere(filter: AuditQueryFilter): { where: string; params: unknown[] } {
+  {
     const conditions: string[] = [];
     const params: unknown[] = [];
     let paramIdx = 1;
@@ -134,10 +179,7 @@ export class PostgresAuditStore {
     }
 
     const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-    const sql = `SELECT * FROM "audit"."audit_records" ${where} ORDER BY "timestamp" DESC LIMIT 1000`;
-
-    const result = await this.pool.query(sql, params);
-    return result.rows.map(rowToAuditRecord);
+    return { where, params };
   }
 }
 

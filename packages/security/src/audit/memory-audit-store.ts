@@ -7,7 +7,7 @@
  */
 
 import type { AuditRecord } from "@altius/spi";
-import type { AuditStore, AuditQueryFilter } from "./types.js";
+import type { AuditStore, AuditQueryFilter, AuditQueryOptions } from "./types.js";
 
 export class MemoryAuditStore implements AuditStore {
   private readonly records: AuditRecord[] = [];
@@ -23,8 +23,25 @@ export class MemoryAuditStore implements AuditStore {
     }
   }
 
-  async query(filter: AuditQueryFilter): Promise<AuditRecord[]> {
-    return this.records.filter((r) => this.matches(r, filter));
+  async query(
+    filter: AuditQueryFilter,
+    options?: AuditQueryOptions,
+  ): Promise<AuditRecord[]> {
+    // Sorted newest-first to match PostgresAuditStore's ORDER BY timestamp
+    // DESC. Returning insertion order here meant the same query produced a
+    // different page depending on which store a deployment ran.
+    const matched = this.records
+      .filter((r) => this.matches(r, filter))
+      .sort((a, b) => (a.timestamp < b.timestamp ? 1 : a.timestamp > b.timestamp ? -1 : 0));
+
+    const offset = options?.offset ?? 0;
+    return options?.limit === undefined
+      ? matched.slice(offset)
+      : matched.slice(offset, offset + options.limit);
+  }
+
+  async count(filter: AuditQueryFilter): Promise<number> {
+    return this.records.filter((r) => this.matches(r, filter)).length;
   }
 
   /** Return all stored records (read-only snapshot for testing). */
