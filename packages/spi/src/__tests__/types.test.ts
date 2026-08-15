@@ -193,6 +193,7 @@ describe('@altius/spi type exports', () => {
   it('can construct StorageCapabilities', () => {
     const caps: StorageCapabilities = {
       supportsTransactions: true,
+      supportsTransactionIsolation: true,
       supportsTemporalQueries: true,
       supportsFullTextSearch: false,
       supportsGeoQueries: false,
