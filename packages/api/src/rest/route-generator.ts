@@ -17,7 +17,7 @@
 
 import type { ParsedSchema, ObjectType, ActionType, FunctionType, FieldDefinition } from '@altius/odl';
 import { DataPurpose } from '@altius/spi';
-import type { OntologyObject, FilterExpression, AggregateQuery, AggregateField, AggregateFunction, BucketInterval, SearchQuery, ObjectSetDefinition, RequestContext } from '@altius/spi';
+import type { OntologyObject, FilterExpression, FieldPredicate, AggregateQuery, AggregateField, AggregateFunction, BucketInterval, SearchQuery, ObjectSetDefinition, RequestContext } from '@altius/spi';
 import type { ActionActor, ActionContext } from '@altius/actions';
 import type { RedactionResult } from '@altius/security';
 import type { ApiDependencies, ResolverContext } from '../graphql/types.js';
@@ -101,18 +101,102 @@ function objectToRest(obj: OntologyObject, objectType: ObjectType): Record<strin
 }
 
 /**
+ * Wire operator names accepted in `filter[field][op]=value`.
+ *
+ * Deliberately the same vocabulary the generated GraphQL filter inputs use
+ * (see mapFilterOp in graphql/resolver-generator.ts) — `ne` rather than the
+ * SPI's `neq` — so one filter vocabulary spans both surfaces.
+ */
+const REST_FILTER_OPS: Record<string, FieldPredicate['operator']> = {
+  eq: 'eq',
+  ne: 'neq',
+  gt: 'gt',
+  gte: 'gte',
+  lt: 'lt',
+  lte: 'lte',
+  in: 'in',
+  contains: 'contains',
+  startsWith: 'startsWith',
+  exists: 'exists',
+};
+
+type ParseResult<T> = { ok: true; value: T } | { ok: false; message: string };
+
+/**
+ * The fields a caller may filter or sort on: everything with a stored column.
+ *
+ * Link and @computed fields are excluded because they have no column to
+ * compare — and an unknown name must be refused rather than passed through,
+ * since the providers disagree about it (Postgres raises on a missing column,
+ * the memory provider matches nothing and returns a plausible empty page).
+ */
+function queryableFields(obj: ObjectType): Set<string> {
+  return new Set(
+    obj.fields
+      .filter(f => !f.directives.some(d => d.kind === 'link' || d.kind === 'computed'))
+      .map(f => f.name),
+  );
+}
+
+/** Coerce a raw query-string value for the given operator. */
+function coerceFilterValue(op: string, raw: unknown): unknown {
+  if (op === 'in') {
+    if (Array.isArray(raw)) return raw;
+    return String(raw).split(',').map(s => s.trim()).filter(s => s.length > 0);
+  }
+  if (op === 'exists') {
+    const s = String(Array.isArray(raw) ? raw[0] : raw).toLowerCase();
+    return !(s === 'false' || s === '0');
+  }
+  // Everything else compares against a single value; a repeated param is
+  // handled by the caller as set membership before reaching here.
+  return Array.isArray(raw) ? raw[0] : raw;
+}
+
+/**
  * Parse REST query params into a FilterExpression.
- * Supports filter[field]=value format for simple equality filters.
+ *
+ * Accepts `filter[field]=value` (equality) and `filter[field][op]=value` for
+ * the operator set above. A repeated `filter[field]=a&filter[field]=b` becomes
+ * set membership rather than silently discarding all but the first value.
+ *
+ * Unknown fields and unknown operators are refused. Skipping them instead —
+ * which is what passing the raw nested object through amounted to — widens the
+ * result set, so a typo returns more rows than the caller asked for rather
+ * than an error.
  */
 function parseQueryFilter(
   query: Record<string, unknown>,
-): FilterExpression | undefined {
+  queryable: Set<string>,
+): ParseResult<FilterExpression | undefined> {
   const predicates: FilterExpression[] = [];
 
-  const addPredicate = (fieldName: string, value: unknown): void => {
-    const fieldValue = Array.isArray(value) ? value[0] : value;
-    if (fieldValue == null) return;
-    predicates.push({ field: fieldName, operator: 'eq', value: fieldValue as string });
+  const addField = (fieldName: string, raw: unknown): string | undefined => {
+    if (raw == null) return undefined;
+    if (!fieldName.startsWith('_') && !queryable.has(fieldName)) {
+      return `Cannot filter on ${fieldName}: not a filterable field. Computed and link fields have no stored value to filter on.`;
+    }
+
+    // Nested form: filter[field][op]=value, possibly several ops per field.
+    if (typeof raw === 'object' && !Array.isArray(raw)) {
+      for (const [op, opValue] of Object.entries(raw as Record<string, unknown>)) {
+        const spiOp = REST_FILTER_OPS[op];
+        if (!spiOp) {
+          return `Unknown filter operator '${op}' on ${fieldName}. Supported: ${Object.keys(REST_FILTER_OPS).join(', ')}.`;
+        }
+        predicates.push({ field: fieldName, operator: spiOp, value: coerceFilterValue(op, opValue) });
+      }
+      return undefined;
+    }
+
+    // Repeated param: treat as set membership.
+    if (Array.isArray(raw)) {
+      predicates.push({ field: fieldName, operator: 'in', value: raw });
+      return undefined;
+    }
+
+    predicates.push({ field: fieldName, operator: 'eq', value: raw });
+    return undefined;
   };
 
   // Express's default (qs) query parser turns `filter[specialty]=x` into a
@@ -120,22 +204,61 @@ function parseQueryFilter(
   const nested = query['filter'];
   if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
     for (const [fieldName, value] of Object.entries(nested as Record<string, unknown>)) {
-      addPredicate(fieldName, value);
+      const err = addField(fieldName, value);
+      if (err) return { ok: false, message: err };
     }
   }
 
   // ...and the flat form `filter[specialty]` as a literal key (simple parsers).
   for (const [key, value] of Object.entries(query)) {
     if (value == null) continue;
-    const match = key.match(/^filter\[(\w+)\]$/);
+    const match = key.match(/^filter\[(\w+)\](?:\[(\w+)\])?$/);
     if (match && match[1]) {
-      addPredicate(match[1], value);
+      const err = match[2]
+        ? addField(match[1], { [match[2]]: value })
+        : addField(match[1], value);
+      if (err) return { ok: false, message: err };
     }
   }
 
-  if (predicates.length === 0) return undefined;
-  if (predicates.length === 1) return predicates[0];
-  return { and: predicates };
+  if (predicates.length === 0) return { ok: true, value: undefined };
+  if (predicates.length === 1) return { ok: true, value: predicates[0] };
+  return { ok: true, value: { and: predicates } };
+}
+
+/**
+ * Parse `?sort=field&order=asc|desc` into QueryOptions.orderBy.
+ *
+ * openapi.ts has always advertised these two params on the list route; the
+ * handler never read them, so a client following the published contract got an
+ * arbitrary order back with no signal it had been ignored.
+ */
+function parseOrderBy(
+  query: Record<string, unknown>,
+  queryable: Set<string>,
+): ParseResult<{ field: string; direction: 'asc' | 'desc' }[] | undefined> {
+  const rawSort = query['sort'];
+  if (rawSort == null) return { ok: true, value: undefined };
+
+  const field = String(Array.isArray(rawSort) ? rawSort[0] : rawSort);
+  if (!field.startsWith('_') && !queryable.has(field)) {
+    return {
+      ok: false,
+      message: `Cannot sort on ${field}: not a sortable field. Computed and link fields have no stored value to sort on.`,
+    };
+  }
+
+  const rawOrder = query['order'];
+  let direction: 'asc' | 'desc' = 'asc';
+  if (rawOrder != null) {
+    const o = String(Array.isArray(rawOrder) ? rawOrder[0] : rawOrder).toLowerCase();
+    if (o !== 'asc' && o !== 'desc') {
+      return { ok: false, message: `Invalid order '${o}': expected 'asc' or 'desc'.` };
+    }
+    direction = o;
+  }
+
+  return { ok: true, value: [{ field, direction }] };
 }
 
 /**
@@ -363,17 +486,46 @@ function generateListRoute(
           };
         }
 
-        const userFilter = parseQueryFilter(req.query);
+        const queryable = queryableFields(obj);
+
+        const parsedFilter = parseQueryFilter(req.query, queryable);
+        if (!parsedFilter.ok) {
+          return createRestErrorResponse({
+            code: 'VALIDATION_ERROR',
+            category: 'validation',
+            message: parsedFilter.message,
+            retryable: false,
+            traceId: requestContext.traceId,
+          });
+        }
+        const userFilter = parsedFilter.value;
+
+        const parsedOrderBy = parseOrderBy(req.query, queryable);
+        if (!parsedOrderBy.ok) {
+          return createRestErrorResponse({
+            code: 'VALIDATION_ERROR',
+            category: 'validation',
+            message: parsedOrderBy.message,
+            retryable: false,
+            traceId: requestContext.traceId,
+          });
+        }
+        const orderBy = parsedOrderBy.value;
 
         // SEC-14: Validate filter fields against redacted fields
         const visibleFields = deps.authorizationService.getVisibleFields(user.id, user.roles, typeName);
-        if (visibleFields && userFilter) {
-          const filterViolations = collectFilterFields(userFilter).filter(f => !f.startsWith('_') && !visibleFields.has(f));
-          if (filterViolations.length > 0) {
+        if (visibleFields) {
+          // Sorting reveals ordering over a value just as filtering reveals
+          // membership, so a redacted field is refused for both.
+          const violations = [
+            ...(userFilter ? collectFilterFields(userFilter) : []),
+            ...(orderBy ?? []).map(o => o.field),
+          ].filter(f => !f.startsWith('_') && !visibleFields.has(f));
+          if (violations.length > 0) {
             return createRestErrorResponse({
               code: 'ACCESS_DENIED',
               category: 'authorization',
-              message: `Cannot filter on redacted fields: ${filterViolations.join(', ')}`,
+              message: `Cannot filter on redacted fields: ${violations.join(', ')}`,
               retryable: false,
               traceId: requestContext.traceId,
             });
@@ -421,7 +573,7 @@ function generateListRoute(
             limit,
             async (windowLimit) => {
               const scan = await deps.objectManager.query(
-                typeName, combinedFilter, { limit: windowLimit, offset: 0 }, requestContext,
+                typeName, combinedFilter, { limit: windowLimit, offset: 0, ...(orderBy ? { orderBy } : {}) }, requestContext,
               );
               return { items: scan.items, total: scan.totalCount };
             },
@@ -441,7 +593,7 @@ function generateListRoute(
           const page = await deps.objectManager.query(
             typeName,
             combinedFilter,
-            { limit, offset },
+            { limit, offset, ...(orderBy ? { orderBy } : {}) },
             requestContext,
           );
           items = mapAndRedact(page.items);
