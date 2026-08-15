@@ -93,6 +93,8 @@ import { SlidingWindowRateLimiter, RedisRateLimiter } from './governance/index.j
 import type { RateLimiter, RateLimitIdentity } from './governance/index.js';
 import { toSnakeCase } from './utils.js';
 import { metricsMiddleware, metricsEndpoint, startStorageHealthGauge, startSyncMetricsGauge, packLoaded, podDirectOnly } from './metrics.js';
+import { buildHealthReport } from './health.js';
+import type { HealthProbe } from './health.js';
 import { logger } from './logger.js';
 
 const PORT = parseInt(process.env['PORT'] ?? '4000', 10);
@@ -983,17 +985,35 @@ async function main(): Promise<void> {
   const stopHealthGauge = startStorageHealthGauge(storage);
 
   // ── Health check ──
-  // /health — used by readiness probe; returns 503 when storage is degraded
+  // /health — used by readiness probe. Storage is the only CRITICAL dependency,
+  // so only it can return 503: the rest are reported as degraded on a 200
+  // because the gateway already survives without them (the rate limiter fails
+  // open, the event bus falls back to in-memory). Failing readiness on those
+  // would turn a QoS wobble into an outage.
+  const healthProbes: HealthProbe[] = [
+    { name: 'storage', critical: true, check: async () => (await storage.healthCheck()).healthy },
+  ];
+  if (!isDev && process.env['OPENFGA_URL']) {
+    const fgaUrl = process.env['OPENFGA_URL'];
+    healthProbes.push({
+      name: 'openfga',
+      check: async () => (await fetch(`${fgaUrl}/healthz`, { signal: AbortSignal.timeout(2_000) })).ok,
+    });
+  }
+  if (cel instanceof CelClient) {
+    healthProbes.push({ name: 'cel', check: () => cel.healthCheck() });
+  }
+  if (redisClient) {
+    healthProbes.push({ name: 'redis', check: async () => (await redisClient.ping()) === 'PONG' });
+  }
+  if (eventBus instanceof RedpandaEventBus) {
+    healthProbes.push({ name: 'eventBus', check: async () => eventBus.isConnected() });
+  }
+
   app.get('/health', async (_req, res) => {
     try {
-      const storageHealth = await storage.healthCheck();
-      const status = storageHealth.healthy ? 'ok' : 'degraded';
-      const httpStatus = storageHealth.healthy ? 200 : 503;
-      res.status(httpStatus).json({
-        status,
-        service: 'api-gateway',
-        storage: { healthy: storageHealth.healthy },
-      });
+      const report = await buildHealthReport(healthProbes);
+      res.status(report.httpStatus).json(report.body);
     } catch (err) {
       logger.error({ err: err instanceof Error ? err.message : 'unknown' }, 'Health check failed');
       res.status(503).json({ status: 'unhealthy', service: 'api-gateway' });

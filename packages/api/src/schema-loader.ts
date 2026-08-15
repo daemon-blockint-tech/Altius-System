@@ -20,9 +20,9 @@ import { fileURLToPath } from 'node:url';
 import { parse as parseYaml } from 'yaml';
 import { parseOdl } from '@altius/odl';
 import type { ParsedSchema, ObjectType, LinkType } from '@altius/odl';
-import { parseActionManifest } from '@altius/actions';
+import { parseActionManifest, crossReferenceManifest } from '@altius/actions';
 import { logger } from './logger.js';
-import type { ActionManifest } from '@altius/actions';
+import type { ActionManifest, ManifestIssue } from '@altius/actions';
 import type { OntologySchema, ObjectTypeDefinition, LinkTypeDefinition, PropertyDefinition, IndexDefinition } from '@altius/spi';
 import type { FieldPermissionConfig } from '@altius/security';
 import type { ManifestRegistry } from './graphql/types.js';
@@ -131,6 +131,11 @@ export interface LoadedSchema {
   connectorManifests: ConnectorManifest[];
   /** Seed manifests from pack seed/*.yaml files. */
   seedManifests: SeedManifest[];
+  /**
+   * Manifest/schema drift found at boot. Warnings, never fatal — see
+   * crossReferenceManifests.
+   */
+  manifestIssues: ManifestIssue[];
 }
 
 // ---------------------------------------------------------------------------
@@ -465,6 +470,37 @@ function loadPackSeeds(
       seeds.push({ packName: manifest.name, objects, links });
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// Manifest cross-reference
+// ---------------------------------------------------------------------------
+
+/**
+ * Cross-reference every loaded action manifest against the merged schema.
+ *
+ * Manifests are parsed per pack, before the merged schema exists, so
+ * `parseActionManifest` is necessarily called without one and its
+ * cross-reference step is skipped. Running the pass here — once, after the
+ * merge — is the only point where a manifest can be checked against the schema
+ * it will actually execute against, including types contributed by other packs.
+ *
+ * Findings are returned as warnings. A manifest that fails to PARSE is still
+ * fatal (it cannot run at all), but drift between a shipped manifest and the
+ * schema must not stop an existing deployment from booting: the same posture
+ * the loader already takes for field-permission drift.
+ */
+export function crossReferenceManifests(
+  manifests: Map<string, ActionManifest>,
+  schema: ParsedSchema,
+): ManifestIssue[] {
+  const issues: ManifestIssue[] = [];
+  for (const manifest of manifests.values()) {
+    for (const issue of crossReferenceManifest(manifest, schema)) {
+      issues.push({ ...issue, severity: 'warning' });
+    }
+  }
+  return issues;
 }
 
 // ---------------------------------------------------------------------------
@@ -969,6 +1005,16 @@ export async function loadDomainPacks(
     );
   }
 
+  // Phase 3b: Cross-reference manifests against the merged schema. Parsing
+  // happens per pack, before the merge, so this is the first point at which a
+  // manifest can be checked against the schema it will execute against.
+  const manifestIssues = crossReferenceManifests(actionManifests, merged);
+  for (const issue of manifestIssues) {
+    logger.warn(
+      `Action manifest: ${issue.code} — ${issue.message}${issue.path ? ` (${issue.path})` : ''}`,
+    );
+  }
+
   // Phase 4: Validate field permissions against merged schema, then make
   // @sensitive enforceable for any type the packs left unconfigured.
   validateFieldPermissions(fieldPermissions, merged);
@@ -993,5 +1039,6 @@ export async function loadDomainPacks(
     permissionOverrides,
     connectorManifests,
     seedManifests,
+    manifestIssues,
   };
 }

@@ -31,7 +31,7 @@ import {
   createIdFilteredSubscription,
   createFilteredSubscription,
 } from '../subscriptions/subscription-manager.js';
-import { lowerFirst, toSnakeCase } from '../utils.js';
+import { lowerFirst, toSnakeCase, searchableTextFields } from '../utils.js';
 import { invokeFunction } from '../functions/invoke-function.js';
 import {
   buildCdmMetadata,
@@ -1251,9 +1251,16 @@ function generateSearchResolver(
 
       // SEC-14b: When no explicit search fields provided and redaction is active,
       // restrict search to visible fields only (prevents hidden field leakage).
+      //
+      // Intersected with the type's text fields, because the column policy is a
+      // visibility list, not a searchability one: it legitimately names the
+      // @primary field (an alias for `_id`, with no column) and non-text columns
+      // like a Date. Sending either to a provider makes an ordinary search a 500
+      // on Postgres and a silent zero-hit on memory.
       let searchFields = args.fields;
       if (!searchFields && visibleFields) {
-        searchFields = [...visibleFields].filter(f => !f.startsWith('_'));
+        const textFields = searchableTextFields(obj, deps.schema);
+        searchFields = [...visibleFields].filter(f => textFields.has(f));
       }
 
       const combinedFilter = buildAuthFilter(allowedIds, userFilter);

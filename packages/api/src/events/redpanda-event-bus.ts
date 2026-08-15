@@ -99,6 +99,17 @@ export class RedpandaEventBus implements SubscribableEventBus {
   }
 
   /**
+   * Whether the producer/consumer pair is currently connected.
+   *
+   * `publish` already drops events when disconnected, so this is what a health
+   * probe needs to report the bus as degraded before those drops are noticed
+   * downstream.
+   */
+  isConnected(): boolean {
+    return this.connected;
+  }
+
+  /**
    * Disconnect producer and consumer. Call during graceful shutdown.
    */
   async disconnect(): Promise<void> {

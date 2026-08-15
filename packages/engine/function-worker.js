@@ -27,6 +27,28 @@
 import { pathToFileURL } from 'node:url';
 import { resolve as resolvePath } from 'node:path';
 
+// The parent forks with `env: {}`, but that is not honoured everywhere: on
+// Windows Node injects PATH, HOMEDRIVE, HOMEPATH, SYSTEMROOT and friends into
+// the child regardless, so the isolation the parent asks for is silently
+// weaker there than on Linux.
+//
+// Scrubbed here rather than in the parent because only the child can see what
+// its own runtime actually handed it. Done before the entry module is
+// imported, so pack code cannot observe the pre-scrub state.
+//
+// The allowlist is what Node itself needs to keep working: without SystemRoot
+// the child cannot resolve DNS on Windows, and without PATH it cannot spawn
+// the platform's own helpers. Neither carries a credential; the parent's
+// POSTGRES_URL, OIDC secret and OpenFGA token do, and none of them survive.
+const RUNTIME_ENV_KEYS = new Set([
+  'SystemRoot', 'SYSTEMROOT', 'windir', 'TEMP', 'TMP', 'PATHEXT',
+  'NUMBER_OF_PROCESSORS', 'PROCESSOR_ARCHITECTURE', 'OS', 'COMSPEC',
+]);
+
+for (const key of Object.keys(process.env)) {
+  if (!RUNTIME_ENV_KEYS.has(key)) delete process.env[key];
+}
+
 function send(msg) {
   if (process.send) process.send(msg);
 }

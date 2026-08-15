@@ -1567,6 +1567,68 @@ effects:
   });
 
   // -------------------------------------------------------------------------
+  // Side-effect failure reporting under the DEFAULT policy
+  // -------------------------------------------------------------------------
+
+  describe('side-effect failure under LOG_AND_CONTINUE', () => {
+    it('surfaces the failure as a warning instead of discarding it', async () => {
+      // LOG_AND_CONTINUE is the default when a manifest declares no rollback
+      // policy, and the branch that handles it was a bare comment: the effects
+      // committed, the webhook/event never landed, and the caller was told the
+      // action succeeded with nothing to indicate otherwise. A dropped
+      // notification is invisible until someone downstream asks why it never
+      // arrived.
+      //
+      // Continuing is still correct — the transaction is committed and a
+      // post-commit delivery failure must not fail the action — but it has to
+      // be reported.
+      const failingSideEffectHandler: SideEffectHandler = {
+        async execute() {
+          return { success: false, error: 'downstream broker unavailable' };
+        },
+      };
+      const executorUnderTest = new ActionExecutor({
+        storage,
+        security: createAllowAllSecurity(),
+        cel: createMockCelEvaluator(),
+        auditWriter,
+        sideEffectHandler: failingSideEffectHandler,
+      });
+
+      const { manifest } = parseActionManifest(ADMIT_PATIENT_YAML);
+      const result = await executorUnderTest.execute(
+        manifest!,
+        { patient: patient._id, ward: ward._id, consultant: consultant._id, bed: null, reason: 'Test' },
+        ACTOR,
+        ACTION_CTX,
+        NHS_SCHEMA,
+      );
+
+      // The committed work stands.
+      expect(result.success).toBe(true);
+      expect(result.errors).toEqual([]);
+
+      // ...but the caller is told delivery failed, and which one.
+      expect(result.warnings ?? []).toHaveLength(1);
+      expect(result.warnings![0]).toContain('emitAdmissionEvent');
+      expect(result.warnings![0]).toContain('downstream broker unavailable');
+    });
+
+    it('reports no warnings when every side effect is delivered', async () => {
+      const { manifest } = parseActionManifest(ADMIT_PATIENT_YAML);
+      const result = await executor.execute(
+        manifest!,
+        { patient: patient._id, ward: ward._id, consultant: consultant._id, bed: null, reason: 'Test' },
+        ACTOR,
+        ACTION_CTX,
+        NHS_SCHEMA,
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.warnings ?? []).toEqual([]);
+    });
+  });
+
   // ROLLBACK_ALL compensation (CQ-24)
   // -------------------------------------------------------------------------
 

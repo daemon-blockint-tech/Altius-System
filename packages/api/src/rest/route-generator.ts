@@ -26,7 +26,7 @@ import type { RestRequest, RestResponse, RestRoute } from './types.js';
 import { createRestErrorResponse, wrapErrorToRest, mapCodeToCategory, mapErrorToHttpStatus } from './errors.js';
 import { invokeFunction } from '../functions/invoke-function.js';
 import { generateLlmRoutes } from './llm-routes.js';
-import { lowerFirst, toSnakeCase } from '../utils.js';
+import { lowerFirst, toSnakeCase, searchableTextFields } from '../utils.js';
 import { paginateWithConsent } from '../consent-pagination.js';
 import { collectRawRecords } from '../cdm/router.js';
 
@@ -81,6 +81,14 @@ function objectToRest(obj: OntologyObject, objectType: ObjectType): Record<strin
       result[field.name] = obj[field.name];
     }
   }
+
+  // The row identity. Not in the declared shape — the @primary field above
+  // already exposes it under its own name — but the consent filter resolves the
+  // subject from `_id`, so without it every row is checked as subject '',
+  // matches no consent record, and is default-denied: a consent-subject type
+  // reads as an empty collection with no error. objectToGraphQL carries it for
+  // the same reason.
+  result._id = obj._id;
 
   // The version the caller sends back in `If-Match` for optimistic concurrency.
   // System metadata, so redaction (which skips `_`-prefixed keys) leaves it alone.
@@ -967,6 +975,65 @@ function generateHistoryRoute(
           });
         }
 
+        // ?asOf=<ISO-8601> — the single version that was live at that instant.
+        //
+        // getObjectAtTime is implemented by both providers and covered by the
+        // conformance suite, but nothing above the SPI called it, so the
+        // question temporal storage exists to answer ("what did this look like
+        // on the 3rd?") had no route. Answered here rather than on a new
+        // endpoint because it is the same question the version list answers,
+        // narrowed to one point — so it inherits the authorization, redaction
+        // and consent path above unchanged.
+        const asOfRaw = typeof req.query['asOf'] === 'string' ? req.query['asOf'] : undefined;
+        if (asOfRaw !== undefined) {
+          // Rejected rather than coerced: Date.parse('last tuesday') is NaN,
+          // but Date.parse('2026') silently means January 1st. A timestamp the
+          // caller did not mean is worse than an error, because the answer
+          // still looks like a real record.
+          if (Number.isNaN(Date.parse(asOfRaw))) {
+            return createRestErrorResponse({
+              code: 'VALIDATION_ERROR',
+              category: 'validation',
+              message: `asOf must be an ISO-8601 timestamp, got "${asOfRaw}"`,
+              retryable: false,
+              traceId: requestContext.traceId,
+            });
+          }
+
+          const atTime = await deps.storage.getObjectAtTime(requestContext, typeName, id, asOfRaw);
+          if (!atTime) {
+            return createRestErrorResponse({
+              code: 'OBJECT_NOT_FOUND',
+              category: 'not_found',
+              message: `${typeName} ${id} did not exist at ${asOfRaw}`,
+              retryable: false,
+              traceId: requestContext.traceId,
+            });
+          }
+
+          const shaped = objectToRest(atTime, obj);
+          const redactedAtTime = deps.authorizationService.redactFields(
+            user.id, user.roles, typeName, shaped,
+          );
+          const data = redactedAtTime.data as Record<string, unknown>;
+          data._redactedFields = redactedAtTime._redactedFields.length > 0
+            ? redactedAtTime._redactedFields
+            : null;
+          data._version = atTime._version;
+          data._updatedAt = atTime._updatedAt;
+
+          if (deps.consentService && isConsentSubjectType(typeName, deps.consentSubjectTypes)) {
+            const consent = await deps.consentService.checkSingleObject(
+              data, id, DEFAULT_CONSENT_PURPOSE as DataPurpose, user.id, requestContext.tenantId,
+            );
+            if (consent._consentRestricted) {
+              return { status: 200, body: { data: [] } };
+            }
+          }
+
+          return { status: 200, body: { data: [data] } };
+        }
+
         // Get current object to determine version count
         const current = await deps.objectManager.get(typeName, id, requestContext);
         if (!current) {
@@ -1222,9 +1289,15 @@ function generateSearchRoute(
 
         // SEC-14b: When no explicit search fields and redaction is active,
         // restrict search to visible fields only (prevents hidden field leakage).
+        //
+        // Intersected with the type's text fields — see the twin in
+        // graphql/resolver-generator.ts. The column policy lists what a role may
+        // SEE, which includes the @primary alias and non-text columns; neither
+        // can carry a substring match.
         let searchFields = fields;
         if (!searchFields && visibleFields) {
-          searchFields = [...visibleFields].filter(f => !f.startsWith('_'));
+          const textFields = searchableTextFields(obj, deps.schema);
+          searchFields = [...visibleFields].filter(f => textFields.has(f));
         }
 
         const { offset, limit } = parsePagination(req.query);
