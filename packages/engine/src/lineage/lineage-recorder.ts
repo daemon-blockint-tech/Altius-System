@@ -30,16 +30,25 @@ export interface LineageStore {
   /** Write a provenance record. */
   write(provenance: FieldProvenance): Promise<void>;
 
-  /** Query provenance records for a specific field. */
+  /**
+   * Query provenance records for a specific field.
+   *
+   * `tenantId` is required, not optional: object ids are unique only per
+   * tenant, so an unscoped read returns every tenant's provenance for
+   * `patient:123`. Required rather than optional so a caller that omits it is
+   * a compile error instead of a silent cross-tenant read.
+   */
   query(
+    tenantId: string,
     objectType: string,
     objectId: string,
     field: string,
     options?: LineageQueryOptions,
   ): Promise<FieldProvenance[]>;
 
-  /** Query all provenance records for an object. */
+  /** Query all provenance records for an object, scoped to one tenant. */
   queryByObject(
+    tenantId: string,
     objectType: string,
     objectId: string,
     options?: LineageQueryOptions,
@@ -59,6 +68,7 @@ export class InMemoryLineageStore implements LineageStore {
   }
 
   async query(
+    tenantId: string,
     objectType: string,
     objectId: string,
     field: string,
@@ -66,6 +76,7 @@ export class InMemoryLineageStore implements LineageStore {
   ): Promise<FieldProvenance[]> {
     let results = this.records.filter(
       (r) =>
+        r.tenantId === tenantId &&
         r.objectType === objectType &&
         r.objectId === objectId &&
         r.field === field,
@@ -84,12 +95,13 @@ export class InMemoryLineageStore implements LineageStore {
   }
 
   async queryByObject(
+    tenantId: string,
     objectType: string,
     objectId: string,
     options?: LineageQueryOptions,
   ): Promise<FieldProvenance[]> {
     let results = this.records.filter(
-      (r) => r.objectType === objectType && r.objectId === objectId,
+      (r) => r.tenantId === tenantId && r.objectType === objectType && r.objectId === objectId,
     );
 
     results.sort((a, b) =>
@@ -173,23 +185,25 @@ export class LineageRecorder {
    * Query provenance chain for a specific field.
    */
   async getLineage(
+    tenantId: string,
     objectType: string,
     objectId: string,
     field: string,
     options?: LineageQueryOptions,
   ): Promise<FieldProvenance[]> {
-    return this.store.query(objectType, objectId, field, options);
+    return this.store.query(tenantId, objectType, objectId, field, options);
   }
 
   /**
    * Query all provenance records for an object.
    */
   async getObjectLineage(
+    tenantId: string,
     objectType: string,
     objectId: string,
     options?: LineageQueryOptions,
   ): Promise<FieldProvenance[]> {
-    return this.store.queryByObject(objectType, objectId, options);
+    return this.store.queryByObject(tenantId, objectType, objectId, options);
   }
 }
 

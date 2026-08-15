@@ -198,6 +198,7 @@ describe('@altius/spi type exports', () => {
       supportsGeoQueries: false,
       supportsGraphTraversal: true,
       supportsBulkMutations: true,
+      supportsVectorSearch: false,
       supportsWrites: true,
       maxTraversalDepth: 10,
       replicationSupport: 'BOTH',

@@ -54,7 +54,25 @@ auth:
 authz:
   openfga:
     url: http://openfga:8080
+    # Single-tenant: one store, serving the tenant named by
+    # auth.oidc.defaultTenant. Both must be set together — a store id with no
+    # default tenant IS the shared-store configuration this replaced, so the
+    # API refuses to boot on it rather than serving every tenant from one
+    # tuple namespace.
     storeId: ""
+    # Multi-tenant: one store per tenant, as tenant -> storeId. Takes
+    # precedence over storeId when non-empty.
+    #
+    #   storeIds:
+    #     nhs-trust-01: 01HXY...
+    #     nhs-trust-02: 01HXZ...
+    #
+    # Each tenant needs its OWN store: object ids are unique only per tenant,
+    # so two tenants sharing a store means a grant in one authorises the same
+    # id in the other. The API rejects a duplicated store id at boot.
+    # Stores are NOT created on demand — provision them first (see
+    # Orion/init-services.sh) and list the ids here.
+    storeIds: {}
 
 # -- Domain packs to load at startup
 domainPacks:

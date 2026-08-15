@@ -50,6 +50,20 @@ export async function aggregateObjects(
     }
   }
 
+  // Date bucket columns — date_trunc produces a timestamptz at the bucket
+  // boundary, which becomes a group key. The alias is the key name in the
+  // result (defaults to the field name).
+  const bucketAliases: { alias: string; field: string }[] = [];
+  if (query.buckets && query.buckets.length > 0) {
+    for (const bucket of query.buckets) {
+      const col = fieldCol(bucket.field);
+      const aliasName = bucket.alias ?? bucket.field;
+      const aliasIdent = pgIdent(snakeCase(aliasName));
+      selectParts.push(`date_trunc('${bucket.interval}', ${col}) AS ${aliasIdent}`);
+      bucketAliases.push({ alias: aliasName, field: bucket.field });
+    }
+  }
+
   // Aggregate functions — allowlist to prevent SQL injection
   const ALLOWED_FNS = new Set(['count', 'sum', 'avg', 'min', 'max']);
 
@@ -91,8 +105,14 @@ export async function aggregateObjects(
 
   // --- GROUP BY clause ---
   let groupByClause = '';
+  const groupCols: string[] = [];
   if (query.groupBy && query.groupBy.length > 0) {
-    const groupCols = query.groupBy.map((f) => fieldCol(f));
+    groupCols.push(...query.groupBy.map((f) => fieldCol(f)));
+  }
+  if (bucketAliases.length > 0) {
+    groupCols.push(...bucketAliases.map((b) => pgIdent(snakeCase(b.alias))));
+  }
+  if (groupCols.length > 0) {
     groupByClause = ` GROUP BY ${groupCols.join(', ')}`;
   }
 
@@ -106,9 +126,10 @@ export async function aggregateObjects(
   }
 
   // Total group count (before LIMIT/OFFSET).
-  // When no GROUP BY is used, there is always exactly one aggregate group.
+  // When no GROUP BY or buckets are used, there is always exactly one aggregate group.
+  const hasGrouping = (query.groupBy && query.groupBy.length > 0) || bucketAliases.length > 0;
   let totalGroups: number;
-  if (query.groupBy && query.groupBy.length > 0) {
+  if (hasGrouping) {
     const countSql = `SELECT COUNT(*) AS cnt FROM (SELECT 1 FROM ${table} WHERE ${whereClause}${groupByClause}) AS _sub`;
     const countResult = await q.query(countSql, baseParams);
     totalGroups = parseInt(String((countResult.rows[0] as Record<string, unknown>)['cnt']), 10);
@@ -139,6 +160,12 @@ export async function aggregateObjects(
     for (const field of groupByFields) {
       const col = fieldColName(field);
       keys[field] = row[col] ?? null;
+    }
+    // Bucket keys — date_trunc returns a Date (timestamptz → JS Date via pg)
+    for (const bucket of query.buckets ?? []) {
+      const aliasName = bucket.alias ?? bucket.field;
+      const col = snakeCase(aliasName);
+      keys[aliasName] = row[col] ?? null;
     }
 
     const values: Record<string, number | null> = {};

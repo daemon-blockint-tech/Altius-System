@@ -247,6 +247,7 @@ export class ActionExecutor {
    * @param actor     - The actor executing the action
    * @param ctx       - Execution context (tenant, consent, etc.)
    * @param schema    - Parsed ODL schema for param resolution
+   * @param options   - Optional execution flags (e.g. dryRun)
    */
   async execute(
     manifest: ActionManifest,
@@ -254,6 +255,7 @@ export class ActionExecutor {
     actor: ActionActor,
     ctx: ActionContext,
     schema: ParsedSchema,
+    options?: { dryRun?: boolean },
   ): Promise<ActionResult> {
     const actionId = generateActionId();
     const actionType = manifest.action;
@@ -374,6 +376,24 @@ export class ActionExecutor {
           },
         ]);
       }
+    }
+
+    // ------------------------------------------------------------------
+    // Dry-run: validation, authorization, consent, and preconditions all
+    // passed. Stop here — no transaction, no effects, no side-effects.
+    // The caller gets a success result with no affectedObjects so a Stepper
+    // can confirm "this would work" without committing.
+    // ------------------------------------------------------------------
+    if (options?.dryRun) {
+      return {
+        success: true,
+        actionId: `dryrun_${actionId}`,
+        errors: [],
+        affectedObjects: [],
+        warnings: [
+          'Dry-run: validation, authorization, consent, and preconditions passed. No effects were applied.',
+        ],
+      };
     }
 
     // ------------------------------------------------------------------

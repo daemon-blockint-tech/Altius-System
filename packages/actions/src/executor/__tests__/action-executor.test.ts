@@ -2164,4 +2164,81 @@ effects:
       expect(result.errors?.some(e => e.code === 'VERSION_CONFLICT')).toBeFalsy();
     });
   });
+
+  // -------------------------------------------------------------------------
+  // Dry-run mode
+  // -------------------------------------------------------------------------
+
+  describe('dry-run mode', () => {
+    it('validates and returns success without applying effects', async () => {
+      const { manifest } = parseActionManifest(ADMIT_PATIENT_YAML);
+
+      const result = await executor.execute(
+        manifest!,
+        { patient: patient._id, ward: ward._id, consultant: consultant._id, bed: bed._id, reason: 'chest pain' },
+        ACTOR,
+        ACTION_CTX,
+        NHS_SCHEMA,
+        { dryRun: true },
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.affectedObjects).toHaveLength(0);
+      expect(result.warnings).toBeDefined();
+      expect(result.warnings![0]).toContain('Dry-run');
+
+      // The patient's status must NOT have changed — no effects applied
+      const current = await storage.getObject(REQ_CTX, 'Patient', patient._id);
+      expect(current!.status).toBe('WAITING');
+    });
+
+    it('still fails on validation errors in dry-run', async () => {
+      const { manifest } = parseActionManifest(ADMIT_PATIENT_YAML);
+
+      // Missing required param `patient`
+      const result = await executor.execute(
+        manifest!,
+        { ward: ward._id, consultant: consultant._id, bed: bed._id, reason: 'x' },
+        ACTOR,
+        ACTION_CTX,
+        NHS_SCHEMA,
+        { dryRun: true },
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.errors.some(e => e.code === 'MISSING_REQUIRED_PARAM')).toBe(true);
+    });
+
+    it('still fails on precondition errors in dry-run', async () => {
+      const { manifest } = parseActionManifest(DISCHARGE_PATIENT_YAML);
+
+      // Patient status is WAITING, precondition requires ACTIVE
+      const result = await executor.execute(
+        manifest!,
+        { patient: patient._id, reason: 'recovered' },
+        ACTOR,
+        ACTION_CTX,
+        NHS_SCHEMA,
+        { dryRun: true },
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.errors.some(e => e.code === 'PRECONDITION_FAILED')).toBe(true);
+    });
+
+    it('does not write audit records in dry-run', async () => {
+      const { manifest } = parseActionManifest(ADMIT_PATIENT_YAML);
+
+      await executor.execute(
+        manifest!,
+        { patient: patient._id, ward: ward._id, consultant: consultant._id, bed: bed._id, reason: 'x' },
+        ACTOR,
+        ACTION_CTX,
+        NHS_SCHEMA,
+        { dryRun: true },
+      );
+
+      expect(auditWriter.records).toHaveLength(0);
+    });
+  });
 });

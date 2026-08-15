@@ -37,6 +37,7 @@ import type {
   SearchResult,
   SearchHit,
 } from '@altius/spi';
+import type { BucketInterval } from '@altius/spi';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -45,6 +46,29 @@ import type {
 let _counter = 0;
 function genId(): string {
   return `mem_${Date.now().toString(36)}_${(++_counter).toString(36)}`;
+}
+
+/**
+ * Truncate a date value to the start of the given interval.
+ * Matches Postgres `date_trunc(interval, value)`.
+ * Returns null for null/undefined/non-date input.
+ */
+function bucketDate(raw: unknown, interval: BucketInterval): string | null {
+  if (raw === null || raw === undefined) return null;
+  const d = raw instanceof Date ? raw : new Date(raw as string);
+  if (isNaN(d.getTime())) return null;
+  const utc = new Date(Date.UTC(
+    d.getUTCFullYear(),
+    interval === 'year' ? 0 : d.getUTCMonth(),
+    interval === 'year' || interval === 'month' ? 1 : d.getUTCDate(),
+  ));
+  // Week: truncate to Monday of the week (ISO week, like Postgres with week starting Monday)
+  if (interval === 'week') {
+    const day = utc.getUTCDay(); // 0=Sun..6=Sat
+    const diff = day === 0 ? 6 : day - 1; // days since Monday
+    utc.setUTCDate(utc.getUTCDate() - diff);
+  }
+  return utc.toISOString();
 }
 
 function now(): DateTime {
@@ -700,6 +724,14 @@ export class MemoryStorageProvider implements StorageProvider {
           keys[field] = (obj as Record<string, unknown>)[field] ?? null;
         }
       }
+      // Date bucketing — truncate the field value to the bucket boundary
+      if (query.buckets) {
+        for (const bucket of query.buckets) {
+          const aliasName = bucket.alias ?? bucket.field;
+          const raw = (obj as Record<string, unknown>)[bucket.field];
+          keys[aliasName] = bucketDate(raw, bucket.interval);
+        }
+      }
       const groupKey = JSON.stringify(keys);
       if (!groupMap.has(groupKey)) {
         groupMap.set(groupKey, []);
@@ -708,8 +740,9 @@ export class MemoryStorageProvider implements StorageProvider {
       groupMap.get(groupKey)!.push(obj as Record<string, unknown>);
     }
 
-    // If no items and no groupBy, return empty
-    if (groupMap.size === 0 && (!query.groupBy || query.groupBy.length === 0)) {
+    // If no items and no groupBy/buckets, return empty
+    const hasGrouping = (query.groupBy && query.groupBy.length > 0) || (query.buckets && query.buckets.length > 0);
+    if (groupMap.size === 0 && !hasGrouping) {
       // No groupBy: aggregate over all matching items as a single group
       groupMap.set('{}', []);
       groupKeyMap.set('{}', {});
@@ -1163,6 +1196,7 @@ export class MemoryStorageProvider implements StorageProvider {
       supportsGeoQueries: false,
       supportsGraphTraversal: true,
       supportsBulkMutations: true,
+      supportsVectorSearch: false,
       supportsWrites: true,
       maxTraversalDepth: 10,
       replicationSupport: 'NONE',

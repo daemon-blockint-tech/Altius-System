@@ -252,6 +252,11 @@ function generateMutationInputType(action: ActionType, objectTypeNames: Set<stri
   lines.push('  """`_version` this action asserts its target object is at. Omit to skip the check."""');
   lines.push('  _expectedVersion: Int');
 
+  // Dry-run, opt-in: validate + authorize + check preconditions but do not
+  // apply effects. The REST equivalent is ?dryRun=true.
+  lines.push('  """If true, validate and authorize but do not apply effects. Returns success with no affectedObjects."""');
+  lines.push('  dryRun: Boolean');
+
   lines.push('}');
   return lines.join('\n');
 }
@@ -733,6 +738,23 @@ export function generateGraphQLSchema(schema: ParsedSchema, options?: GraphQLSch
   ].join('\n'));
 
   sections.push([
+    'enum BucketInterval {',
+    '  DAY',
+    '  WEEK',
+    '  MONTH',
+    '  YEAR',
+    '}',
+  ].join('\n'));
+
+  sections.push([
+    'input DateBucketInput {',
+    '  field: String!',
+    '  interval: BucketInterval!',
+    '  alias: String',
+    '}',
+  ].join('\n'));
+
+  sections.push([
     'type AggregateGroup {',
     '  keys: JSON!',
     '  values: JSON!',
@@ -755,7 +777,7 @@ export function generateGraphQLSchema(schema: ParsedSchema, options?: GraphQLSch
       `  ${lower}s(filter: ${obj.name}Filter, orderBy: ${obj.name}OrderBy, first: Int, after: String, last: Int, before: String): ${obj.name}Connection!`,
     );
     queryFields.push(
-      `  ${lower}Aggregate(filter: ${obj.name}Filter, groupBy: [String!], fields: [AggregateFieldInput!]!): AggregateResult!`,
+      `  ${lower}Aggregate(filter: ${obj.name}Filter, groupBy: [String!], buckets: [DateBucketInput!], fields: [AggregateFieldInput!]!): AggregateResult!`,
     );
     queryFields.push(
       `  search${obj.name}s(query: String!, fields: [String!], filter: ${obj.name}Filter, first: Int, after: String): SearchResult_${obj.name}!`,
@@ -783,6 +805,10 @@ export function generateGraphQLSchema(schema: ParsedSchema, options?: GraphQLSch
   }
 
   queryFields.push('  availableTools(filter: ToolFilter): [ToolDescriptor!]!');
+  // Per-object action applicability: which actions target this object?
+  // Returns action names that have a @param of this objectType and whose
+  // preconditions the caller could satisfy — without executing anything.
+  queryFields.push('  applicableActions(objectType: String!, objectId: ID!): [String!]!');
   queryFields.push('  objectSet(id: ID!): ObjectSet');
   queryFields.push('  objectSets(objectType: String): [ObjectSet!]!');
   // FDP/CDM read-only projection (Section S1.0). Records are a version-pinned

@@ -10,4 +10,7 @@ services:
       OIDC_CLIENT_ID: altius
       OIDC_JWKS_URI: "http://keycloak:8080/auth/realms/altius/protocol/openid-connect/certs"
       OPENFGA_STORE_ID: "${OPENFGA_STORE_ID:?set OPENFGA_STORE_ID}"
+      # One store must name the tenant it serves; without this the API
+      # refuses to boot rather than serving every tenant from one namespace.
+      OIDC_DEFAULT_TENANT: "${OIDC_DEFAULT_TENANT:-nhs-trust-01}"
       FHIR_BASE_URL: "http://localhost:4000/fhir"

@@ -240,6 +240,11 @@ export interface StorageCapabilities {
    * of hitting a provider-specific exception mid-transaction.
    */
   supportsWrites: boolean;
+  /**
+   * Whether the provider supports vector similarity search (e.g. pgvector).
+   * When false, LLMClient.vectorSearch is not available on this provider.
+   */
+  supportsVectorSearch: boolean;
   maxTraversalDepth: number;
   replicationSupport: ReplicationCapability;
 }
@@ -250,6 +255,17 @@ export interface StorageCapabilities {
 
 export type AggregateFunction = 'count' | 'sum' | 'avg' | 'min' | 'max';
 
+export type BucketInterval = 'day' | 'week' | 'month' | 'year';
+
+export interface DateBucket {
+  /** The date field to bucket (must be a DateTime property). */
+  field: string;
+  /** Bucket granularity. */
+  interval: BucketInterval;
+  /** Group key name in the result (defaults to the field name). */
+  alias?: string;
+}
+
 export interface AggregateField {
   field: string;          // Property name ('*' for count)
   fn: AggregateFunction;
@@ -259,6 +275,8 @@ export interface AggregateField {
 export interface AggregateQuery {
   fields: AggregateField[];
   groupBy?: string[];
+  /** Optional date bucketing dimensions. Each bucket becomes a group key. */
+  buckets?: DateBucket[];
   filter?: FilterExpression;
   orderBy?: { field: string; direction: 'asc' | 'desc' }[];
   limit?: number;

@@ -5,10 +5,13 @@
  * Opt-in via SYNC_SCHEDULER_ENABLED=true. Only POLLING / CDC / BATCH
  * datasources are scheduled; OVERLAY manifests remain read-through caches.
  *
- * Sync writes intentionally bypass the action pipeline (Spec Section 6):
- * they go straight to the ObjectManager under a dedicated sync actor, and
- * action-protected fields are the ConflictResolver's concern (not yet wired —
- * no provenance producer exists; all shipped manifests are OVERLAY today).
+ * Sync writes intentionally bypass the action pipeline (Spec Section 6): they
+ * go straight to the ObjectManager under a dedicated sync actor. Sync therefore
+ * OVERWRITES whatever an action wrote — there is no conflict resolution on this
+ * path. ConflictResolver implements both declarable strategies, but both decide
+ * by comparing the existing value's writer, and nothing in production writes
+ * field provenance (LineageRecorder is never constructed). A datasource that
+ * declares conflictResolution is refused rather than scheduled unprotected.
  */
 
 import { createLogger } from '@altius/observability';
@@ -147,6 +150,22 @@ export async function startSyncScheduler(opts: {
       continue;
     }
     if (config.sync.mode === 'OVERLAY') continue; // read-through cache, not scheduled
+
+    // A declared conflict strategy that does not run is worse than none: the
+    // operator believes user edits are protected while every poll overwrites
+    // them, and nothing logs it. Both declarable strategies (SOURCE_PRIORITY,
+    // ACTION_PRIORITY) decide by comparing the EXISTING value's writer, and no
+    // production code writes field provenance — LineageRecorder is never
+    // constructed, so lineage.field_provenance has no producer. Refuse the
+    // datasource rather than sync it unprotected.
+    if (config.sync.conflictResolution) {
+      logger.error(
+        { datasource: config.datasource, pack: manifest.packName, strategy: config.sync.conflictResolution },
+        'Sync: datasource declares conflictResolution but field provenance has no producer, ' +
+        'so the strategy cannot be enforced and user edits would be silently overwritten — not scheduled',
+      );
+      continue;
+    }
 
     try {
       config.connection.url = resolveEnvPlaceholders(config.connection.url);

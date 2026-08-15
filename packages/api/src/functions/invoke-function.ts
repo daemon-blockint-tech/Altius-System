@@ -303,11 +303,20 @@ function ontologyReaderFor(deps: ApiDependencies, ctx: ResolverContext): Functio
       );
       const consentSubjectId = subjectParam ? String(params[subjectParam.name] ?? '') : undefined;
 
+      // Optimistic concurrency, same reserved-input convention the GraphQL
+      // mutation uses (the REST equivalent is an If-Match header, which a
+      // function has no way to send). This matters more here than on either
+      // HTTP path: a function can now read an object and then act on it, which
+      // is the read-modify-write window this exists to guard — without it the
+      // write lands regardless of what changed in between.
+      const expectedVersion = params['_expectedVersion'];
+
       const actionCtx: ActionContext = {
         requestContext: ctx.requestContext,
         ...(consentSubjectId
           ? { consentPurpose: DEFAULT_CONSENT_PURPOSE as DataPurpose, consentSubjectId }
           : {}),
+        ...(typeof expectedVersion === 'number' ? { expectedVersion } : {}),
       };
 
       const result = await deps.actionExecutor.execute(manifest, params, actor, actionCtx, deps.schema);

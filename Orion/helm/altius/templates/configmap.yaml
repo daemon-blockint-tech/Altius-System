@@ -26,8 +26,18 @@ data:
   OIDC_DEFAULT_TENANT: {{ .Values.auth.oidc.defaultTenant | quote }}
   # {{end}}
   OPENFGA_URL: {{ .Values.authz.openfga.url | quote }}
-  # HELM-06: OPENFGA_STORE_ID is infrastructure config, not a secret
+  # Authorization is per-tenant: each tenant's tuples live in its own OpenFGA
+  # store. Fail at template time rather than letting the pod crash-loop — the
+  # API refuses to start on a config that cannot isolate tenants, and a chart
+  # error says which knob is missing.
+  # {{ if and (not .Values.authz.openfga.storeIds) (not (and .Values.authz.openfga.storeId .Values.auth.oidc.defaultTenant)) }}
+  # {{ fail "Set authz.openfga.storeIds (tenant -> storeId) for a multi-tenant install, or BOTH authz.openfga.storeId and auth.oidc.defaultTenant for a single-tenant one. A store id without a default tenant would serve every tenant from one tuple namespace." }}
+  # {{ end }}
+  # HELM-06: store ids are infrastructure config, not secrets
   OPENFGA_STORE_ID: {{ .Values.authz.openfga.storeId | quote }}
+  # {{ if .Values.authz.openfga.storeIds }}
+  OPENFGA_STORE_IDS: {{ $pairs := list }}{{ range $tenant, $store := .Values.authz.openfga.storeIds }}{{ $pairs = append $pairs (printf "%s=%s" $tenant $store) }}{{ end }}{{ join "," $pairs | quote }}
+  # {{ end }}
   CEL_EVALUATOR_URL: {{ .Values.celEvaluator.url | quote }}
   # T6: Debezium Connect REST endpoint. Used to register connectors that
   # stream change events into Redpanda topics consumed by KafkaCdcSource.

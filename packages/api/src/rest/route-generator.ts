@@ -17,7 +17,7 @@
 
 import type { ParsedSchema, ObjectType, ActionType, FunctionType, FieldDefinition } from '@altius/odl';
 import { DataPurpose } from '@altius/spi';
-import type { OntologyObject, FilterExpression, AggregateQuery, AggregateField, AggregateFunction, SearchQuery, ObjectSetDefinition, RequestContext } from '@altius/spi';
+import type { OntologyObject, FilterExpression, AggregateQuery, AggregateField, AggregateFunction, BucketInterval, SearchQuery, ObjectSetDefinition, RequestContext } from '@altius/spi';
 import type { ActionActor, ActionContext } from '@altius/actions';
 import type { RedactionResult } from '@altius/security';
 import type { ApiDependencies, ResolverContext } from '../graphql/types.js';
@@ -277,6 +277,9 @@ export function generateRestRoutes(
 
   // Object Set routes
   routes.push(...generateObjectSetRoutes(schema, deps));
+
+  // Per-object action applicability
+  routes.push(generateApplicableActionsRoute(schema, deps));
 
   return routes;
 }
@@ -1051,9 +1054,10 @@ function generateAggregateRoute(
         // Build AggregateQuery from body
         const rawFields = (body['fields'] ?? []) as Array<{ field: string; fn: string; alias?: string }>;
         const groupBy = body['groupBy'] as string[] | undefined;
+        const rawBuckets = body['buckets'] as Array<{ field: string; interval: string; alias?: string }> | undefined;
 
         // Field-level authorization: reject aggregation over redacted fields
-        // Check aggregate fields, groupBy, orderBy, and filter predicates
+        // Check aggregate fields, groupBy, buckets, orderBy, and filter predicates
         const userFilter = body['filter'] as FilterExpression | undefined;
         const orderBy = body['orderBy'] as { field: string; direction: 'asc' | 'desc' }[] | undefined;
         const visibleFields = deps.authorizationService.getVisibleFields(user.id, user.roles, typeName);
@@ -1061,6 +1065,7 @@ function generateAggregateRoute(
           const allRequestedFields = [
             ...rawFields.filter(f => f.field !== '*').map(f => f.field),
             ...(groupBy ?? []),
+            ...(rawBuckets ?? []).map(b => b.field),
             ...collectFilterFields(userFilter),
             ...(orderBy ?? []).map(o => o.field),
           ];
@@ -1095,6 +1100,11 @@ function generateAggregateRoute(
         const query: AggregateQuery = {
           fields,
           groupBy,
+          buckets: rawBuckets?.map(b => ({
+            field: b.field,
+            interval: b.interval.toLowerCase() as BucketInterval,
+            alias: b.alias,
+          })),
           filter: combinedFilter,
           orderBy,
           limit: body['limit'] as number | undefined,
@@ -1323,6 +1333,7 @@ function generateActionRoute(
           actor,
           actionCtx,
           schema,
+          { dryRun: req.query['dryRun'] === 'true' },
         );
 
         return {
@@ -1340,6 +1351,77 @@ function generateActionRoute(
             },
           },
         };
+      } catch (err) {
+        return wrapErrorToRest(err, ctx.requestContext.traceId);
+      }
+    },
+  };
+}
+
+/**
+ * GET /api/v1/actions?objectType=X&objectId=Y — per-object action applicability.
+ *
+ * Returns the names of actions that target the given object (have a @param
+ * whose type is that ObjectType), filtered by FGA viewer access. This lets a
+ * right-click row menu show only the actions that could apply to that row
+ * without trial execution.
+ */
+function generateApplicableActionsRoute(
+  schema: ParsedSchema,
+  deps: ApiDependencies,
+): RestRoute {
+  // Pre-compute: for each ObjectType, which actions target it?
+  const actionsByTargetType = new Map<string, string[]>();
+  for (const action of schema.actionTypes) {
+    for (const field of action.fields) {
+      const isParam = field.directives.some((d) => d.kind === 'param');
+      if (!isParam) continue;
+      if (schema.objectTypes.some((ot) => ot.name === field.type.name)) {
+        const list = actionsByTargetType.get(field.type.name) ?? [];
+        list.push(action.name);
+        actionsByTargetType.set(field.type.name, list);
+        break;
+      }
+    }
+  }
+
+  return {
+    method: 'GET',
+    pattern: '/api/v1/actions',
+    handler: async (req: RestRequest, ctx: ResolverContext): Promise<RestResponse> => {
+      try {
+        const { user, requestContext } = ctx;
+        const objectType = req.query['objectType'] as string | undefined;
+        const objectId = req.query['objectId'] as string | undefined;
+
+        if (!objectType || !objectId) {
+          return createRestErrorResponse({
+            code: 'MISSING_PARAMETER',
+            category: 'validation',
+            message: 'Both objectType and objectId query parameters are required',
+            retryable: false,
+            traceId: requestContext.traceId,
+          });
+        }
+
+        const candidates = actionsByTargetType.get(objectType) ?? [];
+        if (candidates.length === 0) {
+          return { status: 200, body: { data: [] } };
+        }
+
+        // FGA viewer check — fail-closed
+        const fgaType = toSnakeCase(objectType);
+        const allowed = await deps.authorizationService.check(
+          `user:${user.id}`,
+          'viewer',
+          `${fgaType}:${objectId}`,
+          user.tenantId,
+        );
+        if (!allowed) {
+          return { status: 200, body: { data: [] } };
+        }
+
+        return { status: 200, body: { data: candidates } };
       } catch (err) {
         return wrapErrorToRest(err, ctx.requestContext.traceId);
       }

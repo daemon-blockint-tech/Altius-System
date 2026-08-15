@@ -575,3 +575,44 @@ describe('function query rows report which fields were withheld', () => {
     expect(rows.every(r => Array.isArray(r['_redactedFields']))).toBe(true);
   });
 });
+
+// ─── read-modify-write from a function needs the version it decided on ───
+
+describe('function-applied actions carry optimistic concurrency', () => {
+  it('forwards _expectedVersion into the action context', async () => {
+    const execute = vi.fn(async (..._args: unknown[]) => ({ success: true, actionId: 'act-1', errors: [], affectedObjects: [] }));
+    const { deps, captured } = depsWithActions(execute);
+    const reader = await actionReader(deps, captured);
+
+    // A function reads a patient at _version 3, computes, then acts on it.
+    // Without carrying that version the write lands regardless of what changed
+    // in between — and functions only became able to read *and* act recently,
+    // which is exactly the read-modify-write window this guards.
+    await reader.applyAction!('AdmitPatient', { patientId: 'p-1', wardId: 'w-1', _expectedVersion: 3 });
+
+    const actionCtx = execute.mock.calls[0]![3] as unknown as { expectedVersion?: number };
+    expect(actionCtx.expectedVersion).toBe(3);
+  });
+
+  it('leaves the check off when the function does not claim a version', async () => {
+    const execute = vi.fn(async (..._args: unknown[]) => ({ success: true, actionId: 'act-1', errors: [], affectedObjects: [] }));
+    const { deps, captured } = depsWithActions(execute);
+    const reader = await actionReader(deps, captured);
+
+    await reader.applyAction!('AdmitPatient', { patientId: 'p-1', wardId: 'w-1' });
+
+    const actionCtx = execute.mock.calls[0]![3] as unknown as { expectedVersion?: number };
+    expect(actionCtx.expectedVersion).toBeUndefined();
+  });
+
+  it('ignores a non-numeric version rather than failing the call', async () => {
+    const execute = vi.fn(async (..._args: unknown[]) => ({ success: true, actionId: 'act-1', errors: [], affectedObjects: [] }));
+    const { deps, captured } = depsWithActions(execute);
+    const reader = await actionReader(deps, captured);
+
+    await reader.applyAction!('AdmitPatient', { patientId: 'p-1', _expectedVersion: 'three' });
+
+    const actionCtx = execute.mock.calls[0]![3] as unknown as { expectedVersion?: number };
+    expect(actionCtx.expectedVersion).toBeUndefined();
+  });
+});

@@ -296,14 +296,14 @@ describe('Lineage', () => {
       }, ctx);
 
       // Should have provenance records for 'name' and 'capacity'
-      const nameLineage = await lineageRecorder.getLineage('Ward', obj._id, 'name');
+      const nameLineage = await lineageRecorder.getLineage(ctx.tenantId, 'Ward', obj._id, 'name');
       expect(nameLineage).toHaveLength(1);
       expect(nameLineage[0]!.field).toBe('name');
       expect(nameLineage[0]!.objectType).toBe('Ward');
       expect(nameLineage[0]!.objectId).toBe(obj._id);
       expect(nameLineage[0]!.tenantId).toBe('tenant-1');
 
-      const capacityLineage = await lineageRecorder.getLineage('Ward', obj._id, 'capacity');
+      const capacityLineage = await lineageRecorder.getLineage(ctx.tenantId, 'Ward', obj._id, 'capacity');
       expect(capacityLineage).toHaveLength(1);
       expect(capacityLineage[0]!.field).toBe('capacity');
     });
@@ -311,7 +311,7 @@ describe('Lineage', () => {
     it('records correct ACTION source kind', async () => {
       const obj = await objectManager.create('Patient', { name: 'Jane Doe' }, ctx);
 
-      const lineage = await lineageRecorder.getLineage('Patient', obj._id, 'name');
+      const lineage = await lineageRecorder.getLineage(ctx.tenantId, 'Patient', obj._id, 'name');
       expect(lineage).toHaveLength(1);
       expect(lineage[0]!.source.kind).toBe('ACTION');
 
@@ -327,7 +327,7 @@ describe('Lineage', () => {
         { actionType: 'AdmitPatient', actionId: 'act-123', actor: 'nurse:n1' },
       );
 
-      const lineage = await lineageRecorder.getLineage('Patient', obj._id, 'name');
+      const lineage = await lineageRecorder.getLineage(ctx.tenantId, 'Patient', obj._id, 'name');
       expect(lineage).toHaveLength(1);
 
       const source = lineage[0]!.source as {
@@ -363,12 +363,12 @@ describe('Lineage', () => {
       await objectManager.update('Ward', obj._id, { capacity: 40 }, ctx);
 
       // Only capacity should have a new record (name didn't change)
-      const capacityLineage = await lineageRecorder.getLineage('Ward', obj._id, 'capacity');
+      const capacityLineage = await lineageRecorder.getLineage(ctx.tenantId, 'Ward', obj._id, 'capacity');
       expect(capacityLineage).toHaveLength(1);
       expect(capacityLineage[0]!.field).toBe('capacity');
 
       // No new records for 'name' since we cleared and it wasn't updated
-      const nameLineage = await lineageRecorder.getLineage('Ward', obj._id, 'name');
+      const nameLineage = await lineageRecorder.getLineage(ctx.tenantId, 'Ward', obj._id, 'name');
       expect(nameLineage).toHaveLength(0);
     });
 
@@ -381,7 +381,7 @@ describe('Lineage', () => {
       await objectManager.update('Ward', obj._id, { capacity: 40 }, ctx);
 
       // capacity should have 2 records: one from create, one from update
-      const capacityLineage = await lineageRecorder.getLineage('Ward', obj._id, 'capacity');
+      const capacityLineage = await lineageRecorder.getLineage(ctx.tenantId, 'Ward', obj._id, 'capacity');
       expect(capacityLineage).toHaveLength(2);
     });
   });
@@ -391,7 +391,7 @@ describe('Lineage', () => {
       const obj = await objectManager.create('Patient', { name: 'Jane Doe' }, ctx);
       await objectManager.update('Patient', obj._id, { name: 'Jane Smith' }, ctx);
 
-      const lineage = await lineageRecorder.getLineage(
+      const lineage = await lineageRecorder.getLineage(ctx.tenantId, 
         'Patient',
         obj._id,
         'name',
@@ -409,7 +409,7 @@ describe('Lineage', () => {
         capacity: 30,
       }, ctx);
 
-      const allLineage = await lineageRecorder.getObjectLineage('Ward', obj._id);
+      const allLineage = await lineageRecorder.getObjectLineage(ctx.tenantId, 'Ward', obj._id);
       expect(allLineage).toHaveLength(2); // name + capacity
       const fields = allLineage.map((r) => r.field).sort();
       expect(fields).toEqual(['capacity', 'name']);
@@ -420,7 +420,7 @@ describe('Lineage', () => {
       await objectManager.update('Patient', obj._id, { name: 'Jane Smith' }, ctx);
       await objectManager.update('Patient', obj._id, { name: 'Jane Brown' }, ctx);
 
-      const lineage = await lineageRecorder.getLineage(
+      const lineage = await lineageRecorder.getLineage(ctx.tenantId, 
         'Patient',
         obj._id,
         'name',
@@ -431,7 +431,7 @@ describe('Lineage', () => {
     });
 
     it('returns empty array for non-existent field lineage', async () => {
-      const lineage = await lineageRecorder.getLineage(
+      const lineage = await lineageRecorder.getLineage(ctx.tenantId, 
         'Patient',
         'non-existent-id',
         'name',
@@ -445,7 +445,7 @@ describe('Lineage', () => {
       const obj = await objectManager.create('Patient', { name: 'Jane Doe' }, ctx);
       await objectManager.update('Patient', obj._id, { name: 'Jane Smith' }, ctx);
 
-      const lineage = await lineageRecorder.getLineage('Patient', obj._id, 'name');
+      const lineage = await lineageRecorder.getLineage(ctx.tenantId, 'Patient', obj._id, 'name');
       expect(lineage).toHaveLength(2);
       expect(lineage[0]!.valueHash).not.toBe(lineage[1]!.valueHash);
     });

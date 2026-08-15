@@ -200,6 +200,7 @@ jobs:
           helm lint --strict Orion/helm/altius
           --set auth.oidc.clientId=ci
           --set authz.openfga.storeId=ci
+          --set auth.oidc.defaultTenant=ci-tenant
 
   image-scan:
     name: Trivy image scan (HIGH/CRITICAL)

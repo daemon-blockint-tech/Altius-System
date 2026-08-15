@@ -60,6 +60,7 @@ import type { StorageProvider, RequestContext } from '@altius/spi';
 import { createGraphQLServer, buildResolverContext } from './graphql/index.js';
 import { generateRestRoutes, generateOpenApiSpec } from './rest/index.js';
 import { generateAuditRoutes } from './rest/audit-routes.js';
+import { generateTraverseRoutes } from './rest/traverse-route.js';
 import { readPlatformVersion } from './version.js';
 import { createFhirRouter } from './fhir/index.js';
 import { createCdmRouter } from './cdm/index.js';
@@ -1067,6 +1068,7 @@ async function main(): Promise<void> {
   const restRoutes = [
     ...generateRestRoutes(schema, deps),
     ...generateAuditRoutes(deps),
+    ...generateTraverseRoutes(deps),
     ...generateRelationshipRoutes(deps, grantAllowlist),
     ...generateConsentRoutes(deps),
   ];

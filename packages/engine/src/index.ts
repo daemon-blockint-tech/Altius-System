@@ -70,3 +70,6 @@ export {
   IsolatedNodeFunctionRuntime,
   type IsolatedNodeRuntimeConfig,
 } from './functions/index.js';
+
+// LLM Client
+export { NoOpLLMClient } from './llm/noop-llm-client.js';

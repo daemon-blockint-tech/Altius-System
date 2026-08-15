@@ -1,0 +1,35 @@
+# Foundry-built Security with HelmGuard AI | DevCon 3
+
+Introducing from Helmguard, co-founder and CEO John Daly. Hey everyone. Uh good afternoon.
+
+Uh it's great to be here. Uh I'm I'm John. I actually uh I worked at Palanteer for 8 years.
+
+Ate a lot of breakfast and lunch in this room. So it's great to be back in uh in a bit of a different role. Um going to be talking to you about Helmguard today.
+
+We are uh the first cyber security super intelligence platform. And what we mean by that is we really want to bring um context uh to a lot of cyber workflows where we see it lacking today and drive that into better more secure operational decision-m. So the workflow we're going to walk through today is one of our modules uh focused around uh thirdparty uh uh uh risk management, but it's one of several things we offer that again try to get to that idea of um going beyond sort of checkbox compliance or security and and making more secure secure decisions.
+
+So given where we're meeting today, uh I've actually decided to base this demo around Paler itself. Uh but this is all based on publicly available data. there's no no proprietary or or confidential information here.
+
+Um obviously in production this would be significantly enriched uh with internal information and supplier information but I think you'll see that even just based on uh the public information that our agent infrastructure searched through we can generate some pretty interesting insights in just a few minutes. Um, so we're going to start here in a moment uh with autonomous vendor discovery and onboarding and we're going to try to build back to what you see on on this graph here in a in a bit of a cleaner version uh at the end. Um so typically when you're thinking about your supply chain uh and security and uh for example we're talking to one industrial firm right now that has 20,000 plus suppliers in their network that they're trying to identify and assess.
+
+It's uh very manual. Um and to improve that uh what we do is we ingest data from multiple sources. Um including through the drag and drop interface that you see here and a robust set of integrations with things like uh contract management systems, procurement systems and even msso logs to identify shadow IT.
+
+Um and basically after that initial search and identification phase, we do automated onboarding where we can identify a set uh of vendors um with firm details beginning to be captured um that we can then that that we can then work on and this can be automatically triggered or manual based on what you like. So let's drill down into one uh as an example workday to see what then the automated risk assessment looks like. So for each uh vendor, we build up a comprehensive knowledge base of things like uh contract documents, security schedules, uh things uh from from their trust center and vendor questionnaires um to begin to reason across.
+
+But we don't just want to collect that data. We actually want to analyze it of course. So this is where we bring to bear the AI to uh evaluate that vendor across any set of frameworks.
+
+Sock 2, ISO, a custom framework that your company's defined. uh and then the confidence score gives the team uh uh an indication of where human review uh might be valuable. So and then control by control uh we get a full transparent uh uh reasoning for the the evaluation of that control with citations to the knowledge base.
+
+So it's fully transparent um and and granular. I think this goes far beyond sort of uh in questionnaire based assessments today. And then this feature is actually around contract performance management where we can build up automatically contractual obligations, security obligations uh from the documentation and then assess them uh based on available evidence.
+
+So this assists teams like security, legal, procurement, data protection um and so on in actually managing it uh your your vendors on an ongoing basis. Uh we also assess criticality using firm specific frameworks. So how critical is this supplier to your company?
+
+based on very contextual information about what they do for you. So the upshot at this point is that we can conduct very granular assessments of suppliers for a fraction of the time and cost and again on the order of tens of thousands in a few days or weeks uh versus what could previously be done manually. Um but beyond these point in time onboarding and assessments uh we can schedule actions to do periodic reviews uh or event- driven analysis.
+
+when uh information changes in your supplier landscape from either external information uh thread intel feeds things like that uh you can update uh or uh the system will update and guide your responses um and then the next step takes us even deeper by by looking at endparty discovery and supply chain vulnerability analysis. So most enterprises sort of struggle to know their fourth and fifth parties the suppliers of their suppliers even though this is a growing risk vector in many ways. So our automation will discover these uh and then represent them on the graph um which you'll see in a moment allowing you to sort of traverse and look at those interconnected dependencies uh and and so uh as an example here if we click on the edge between Workday and Amazon we can see the relationship and given that that's a shared supplier you can begin to sort of simulate and and game out what happens to that service if if their supplier uh experiences some event and so with this type of analytical workflow, you begin to drive uh these results much more into your enterprise risk management workflows and your um operational resilience uh and use this information in a a much deeper and more effective way.
+
+Um and what what you're seeing here is an example of an event, a simulation where a downstream supplier um experiences an outage and how that flows through your supplier network. Uh finally in terms of reporting and compliance which we'll see in a moment here um we can configure the reporting either within the platform uh but the information can flow out in in whatever way makes sense for your organization. So through APIs through email summaries executive dashboards uh compliance reports or otherwise.
+
+Um our goal is to have your existing workflows remain intact but with much much better data uh being sourced from the system. Um so going to pull that all together. Uh our view with this module is that it it really goes beyond what a lot of current uh solutions on the on market offer and allows you to bring the analytical power of the platform into your operational decisions.
+
+And I think that was one of the main uh lessons I took from my time at Palunteer that you know decisions drive your business and if you're not able to use this to to make better uh more secure decisions then it's probably not that valuable. So I think uh that's a good example of of our ambition. Uh, thanks very much.

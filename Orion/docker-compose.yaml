@@ -188,6 +188,9 @@ services:
       POSTGRES_URL: "postgresql://${POSTGRES_USER:-altius}:${POSTGRES_PASSWORD}@postgresql:5432/${POSTGRES_DB:-altius}"
       OPENFGA_URL: "http://openfga:8080"
       OPENFGA_STORE_ID: ${OPENFGA_STORE_ID:-}
+      # Multi-tenant: 'tenant=storeId,tenant2=storeId2'. Takes precedence
+      # over OPENFGA_STORE_ID, which needs OIDC_DEFAULT_TENANT alongside it.
+      OPENFGA_STORE_IDS: ${OPENFGA_STORE_IDS:-}
       CEL_EVALUATOR_URL: "cel-evaluator:50051"
       REDPANDA_BROKERS: "redpanda:9092"
       REDIS_URL: "redis://redis:6379"
@@ -351,6 +354,9 @@ services:
       POSTGRES_URL: "postgresql://${POSTGRES_USER:-altius}:${POSTGRES_PASSWORD}@postgresql:5432/${POSTGRES_DB:-altius}"
       OPENFGA_URL: "http://openfga:8080"
       OPENFGA_STORE_ID: ${OPENFGA_STORE_ID:-}
+      # Multi-tenant: 'tenant=storeId,tenant2=storeId2'. Takes precedence
+      # over OPENFGA_STORE_ID, which needs OIDC_DEFAULT_TENANT alongside it.
+      OPENFGA_STORE_IDS: ${OPENFGA_STORE_IDS:-}
       KEYCLOAK_URL: "http://keycloak:8080/auth"
       KEYCLOAK_REALM: ${KEYCLOAK_REALM:-altius}
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4317"

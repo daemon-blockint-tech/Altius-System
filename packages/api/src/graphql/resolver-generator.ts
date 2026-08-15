@@ -17,7 +17,7 @@
 
 import type { ParsedSchema, ObjectType, ActionType, FunctionType, FieldDefinition, LinkType, LinkDirective } from '@altius/odl';
 import { DataPurpose } from '@altius/spi';
-import type { OntologyObject, OntologyLink, FilterExpression, AggregateQuery, AggregateField, AggregateFunction, SearchQuery, ErrorCategory, RequestContext } from '@altius/spi';
+import type { OntologyObject, OntologyLink, FilterExpression, AggregateQuery, AggregateField, AggregateFunction, BucketInterval, SearchQuery, ErrorCategory, RequestContext } from '@altius/spi';
 import { ToolRegistry } from '@altius/actions';
 import type { ActionActor, ActionContext, ActionManifest } from '@altius/actions';
 import type { RedactionResult } from '@altius/security';
@@ -603,6 +603,9 @@ export function generateResolvers(
   // availableTools query (Section 5.7)
   resolvers['Query']!['availableTools'] = generateAvailableToolsResolver(schema, deps);
 
+  // Per-object action applicability: which actions target this object?
+  resolvers['Query']!['applicableActions'] = generateApplicableActionsResolver(schema, deps);
+
   // Object Set resolvers
   generateObjectSetResolvers(resolvers, deps);
 
@@ -1101,6 +1104,7 @@ function generateAggregateResolver(
     args: {
       filter?: Record<string, unknown>;
       groupBy?: string[];
+      buckets?: Array<{ field: string; interval: string; alias?: string }>;
       fields: Array<{ field: string; fn: string; alias?: string }>;
     },
     ctx: ResolverContext,
@@ -1121,6 +1125,7 @@ function generateAggregateResolver(
         const allRequestedFields = [
           ...args.fields.filter(f => f.field !== '*').map(f => f.field),
           ...(args.groupBy ?? []),
+          ...(args.buckets ?? []).map(b => b.field),
           ...collectGraphQLFilterFields(args.filter),
         ];
         const blocked = allRequestedFields.filter(f => !visibleFields.has(f));
@@ -1162,6 +1167,11 @@ function generateAggregateResolver(
       const query: AggregateQuery = {
         fields,
         groupBy: args.groupBy,
+        buckets: args.buckets?.map(b => ({
+          field: b.field,
+          interval: b.interval.toLowerCase() as BucketInterval,
+          alias: b.alias,
+        })),
         filter: combinedFilter,
       };
 
@@ -1375,6 +1385,7 @@ function generateMutationResolver(
         actor,
         actionCtx,
         schema,
+        { dryRun: args.input?.['dryRun'] === true },
       );
 
       // Change events reach subscribers via the event bus path:
@@ -1482,10 +1493,10 @@ function generateAvailableToolsResolver(
 
   const tools = registry.availableTools().map((d) => ({
     ...d,
-    // The HTTP surface accepts no dryRun flag (REST/GraphQL action routes), so
-    // descriptors served here must not advertise it. ToolRegistry reports true
-    // for library embeddings, where executeForAgent does support dry-run.
-    dryRunSupported: false,
+    // The HTTP surface now accepts a dryRun flag on both REST (?dryRun=true)
+    // and GraphQL (dryRun: true in the mutation input), so the descriptor
+    // accurately advertises it.
+    dryRunSupported: true,
     // SDL requires tags; descriptors don't carry pack tags yet.
     tags: [] as string[],
   }));
@@ -1502,6 +1513,57 @@ function generateAvailableToolsResolver(
     }
 
     return filtered;
+  };
+}
+
+// ─── Per-object action applicability resolver ───
+
+/**
+ * Resolve which actions apply to a given object. An action "applies" to an
+ * object when it has a @param field whose type is that ObjectType — the
+ * action's target is that object. The caller must also have FGA viewer
+ * access to the object; without that, the action list is empty so a
+ * right-click menu never offers actions on a row the user cannot see.
+ *
+ * This is a read-only check — no manifest is loaded, no preconditions are
+ * evaluated, no effects are applied. It answers "which actions COULD this
+ * row trigger?", not "would they succeed?".
+ */
+function generateApplicableActionsResolver(
+  schema: ParsedSchema,
+  deps: ApiDependencies,
+): (_parent: unknown, args: { objectType: string; objectId: string }, ctx: ResolverContext) => Promise<string[]> {
+  // Pre-compute: for each ObjectType, which actions target it?
+  const actionsByTargetType = new Map<string, string[]>();
+  for (const action of schema.actionTypes) {
+    for (const field of action.fields) {
+      const isParam = field.directives.some((d) => d.kind === 'param');
+      if (!isParam) continue;
+      if (schema.objectTypes.some((ot) => ot.name === field.type.name)) {
+        const list = actionsByTargetType.get(field.type.name) ?? [];
+        list.push(action.name);
+        actionsByTargetType.set(field.type.name, list);
+        break; // one targeting param is enough
+      }
+    }
+  }
+
+  return async (_parent, args, ctx) => {
+    const { user } = ctx;
+    const candidates = actionsByTargetType.get(args.objectType) ?? [];
+    if (candidates.length === 0) return [];
+
+    // FGA viewer check on the object — fail-closed
+    const fgaType = toSnakeCase(args.objectType);
+    const allowed = await deps.authorizationService.check(
+      `user:${user.id}`,
+      'viewer',
+      `${fgaType}:${args.objectId}`,
+      user.tenantId,
+    );
+    if (!allowed) return [];
+
+    return candidates;
   };
 }
 

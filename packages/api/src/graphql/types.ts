@@ -8,7 +8,7 @@ import type {
   AuditStore,
 } from '@altius/security';
 import type { ParsedSchema } from '@altius/odl';
-import type { RequestContext, StorageProvider } from '@altius/spi';
+import type { RequestContext, StorageProvider, LLMClient } from '@altius/spi';
 import { DataPurpose } from '@altius/spi';
 
 /**

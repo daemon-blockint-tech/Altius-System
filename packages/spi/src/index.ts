@@ -46,6 +46,8 @@ export type {
   AggregateQuery,
   AggregateGroup,
   AggregateResult,
+  BucketInterval,
+  DateBucket,
   SearchQuery,
   SearchHit,
   SearchResult,
@@ -56,6 +58,18 @@ export type { Transaction } from './transaction.js';
 
 // Storage Provider (Section 3.1)
 export type { StorageProvider } from './storage-provider.js';
+
+// LLM Client (Section AIP)
+export type {
+  LLMClient,
+  LLMCompleteOptions,
+  LLMResponse,
+  LLMEmbedOptions,
+  LLMEmbedResult,
+  VectorSearchOptions,
+  VectorSearchHit,
+  VectorSearchResult,
+} from './llm-client.js';
 
 // CloudEvents (Section 4.2)
 export type { CloudEvent, CloudEventType } from './events.js';
