@@ -33,6 +33,17 @@ import type { ProvenanceSource } from '@altius/spi';
 
 const tracer = getTracer('engine', 'objectManager');
 
+/**
+ * How many rows of a page have their computed fields evaluated at once.
+ *
+ * Every computed field costs at least one storage round trip per row (the
+ * aggregate builtins cost one more per linked object), so evaluating a page
+ * row by row makes a 100-row list 100+ serial trips. A fixed wave keeps the
+ * latency win without letting a full page — storage caps a query at 1000 —
+ * open a thousand concurrent requests and drain the connection pool.
+ */
+const COMPUTED_ROW_CONCURRENCY = 16;
+
 /** Configuration for the ObjectManager. */
 export interface ObjectManagerConfig {
   storage: StorageProvider;
@@ -287,7 +298,8 @@ export class ObjectManager {
 
   /**
    * Query objects by type with filters and options.
-   * Pass-through to SPI — no validation needed for reads.
+   * Delegates to SPI — no validation needed for reads — then resolves LAZY
+   * computed fields on every row, as get() does for a single object.
    */
   async query(
     type: string,
@@ -300,7 +312,8 @@ export class ObjectManager {
       [SpanAttributes.TENANT_ID]: ctx.tenantId,
       [SpanAttributes.OPERATION]: 'query',
     }, async () => {
-      return this.storage.queryObjects(ctx, type, filter, options);
+      const page = await this.storage.queryObjects(ctx, type, filter, options);
+      return { ...page, items: await this.withComputed(type, page.items, ctx) };
     });
   }
 
@@ -324,7 +337,8 @@ export class ObjectManager {
 
   /**
    * Search objects by type with full-text query.
-   * Pass-through to SPI — no validation needed for reads.
+   * Delegates to SPI — no validation needed for reads — then resolves LAZY
+   * computed fields on every hit, as get() does for a single object.
    */
   async search(
     type: string,
@@ -336,8 +350,41 @@ export class ObjectManager {
       [SpanAttributes.TENANT_ID]: ctx.tenantId,
       [SpanAttributes.OPERATION]: 'search',
     }, async () => {
-      return this.storage.searchObjects(ctx, type, query);
+      const result = await this.storage.searchObjects(ctx, type, query);
+      const objects = await this.withComputed(type, result.hits.map((h) => h.object), ctx);
+      return {
+        ...result,
+        hits: result.hits.map((hit, i) => ({ ...hit, object: objects[i]! })),
+      };
     });
+  }
+
+  /**
+   * Merge LAZY computed fields into a page of objects, in bounded waves.
+   *
+   * Returns the input untouched when nothing is computed for the type, so a
+   * type without @computed fields — the common case — pays nothing. Results
+   * are never truncated: a large page is slow, not silently incomplete.
+   */
+  private async withComputed(
+    type: string,
+    objects: OntologyObject[],
+    ctx: RequestContext,
+  ): Promise<OntologyObject[]> {
+    const evaluator = this.computedFieldEvaluator;
+    if (!evaluator || evaluator.getComputedFields(type).length === 0) return objects;
+
+    const resolved: OntologyObject[] = [];
+    for (let i = 0; i < objects.length; i += COMPUTED_ROW_CONCURRENCY) {
+      const wave = await Promise.all(
+        objects.slice(i, i + COMPUTED_ROW_CONCURRENCY).map(async (obj) => ({
+          ...obj,
+          ...await evaluator.evaluateAll(type, obj._id, ctx),
+        })),
+      );
+      resolved.push(...wave);
+    }
+    return resolved;
   }
 
   /**

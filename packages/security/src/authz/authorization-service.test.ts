@@ -5,6 +5,9 @@ import type { OpenFgaClientInterface } from "./authorization-service.js";
 import type { FieldPermissionConfig } from "./types.js";
 import { AuthorizationError } from "./types.js";
 
+/** Single tenant for the pre-existing suite; the isolation suite below uses two. */
+const TENANT = "tenant-a";
+
 // ---------------------------------------------------------------------------
 // In-memory OpenFGA model stub
 //
@@ -203,19 +206,19 @@ describe("AuthorizationService", () => {
     it("returns true when user has direct relation", async () => {
       fga.addTuple({ user: "user:alice", relation: "assigned", object: "ward:cardiology" });
 
-      const result = await authz.check("user:alice", "assigned", "ward:cardiology");
+      const result = await authz.check("user:alice", "assigned", "ward:cardiology", TENANT);
       expect(result).toBe(true);
     });
 
     it("returns false when user has no relation", async () => {
-      const result = await authz.check("user:alice", "viewer", "patient:123");
+      const result = await authz.check("user:alice", "viewer", "patient:123", TENANT);
       expect(result).toBe(false);
     });
 
     it("derives ward viewer from assigned relation", async () => {
       fga.addTuple({ user: "user:alice", relation: "assigned", object: "ward:cardiology" });
 
-      const result = await authz.check("user:alice", "viewer", "ward:cardiology");
+      const result = await authz.check("user:alice", "viewer", "ward:cardiology", TENANT);
       expect(result).toBe(true);
     });
 
@@ -225,7 +228,7 @@ describe("AuthorizationService", () => {
       // Patient 123 is admitted to cardiology ward
       fga.addTuple({ user: "ward:cardiology", relation: "admitted_to", object: "patient:123" });
 
-      const result = await authz.check("user:alice", "viewer", "patient:123");
+      const result = await authz.check("user:alice", "viewer", "patient:123", TENANT);
       expect(result).toBe(true);
     });
 
@@ -235,16 +238,16 @@ describe("AuthorizationService", () => {
       // Patient 456 is admitted to orthopaedics
       fga.addTuple({ user: "ward:orthopaedics", relation: "admitted_to", object: "patient:456" });
 
-      const result = await authz.check("user:alice", "viewer", "patient:456");
+      const result = await authz.check("user:alice", "viewer", "patient:456", TENANT);
       expect(result).toBe(false);
     });
 
     it("derives can_discharge from clinician relation", async () => {
       fga.addTuple({ user: "user:dr-smith", relation: "clinician", object: "patient:123" });
 
-      expect(await authz.check("user:dr-smith", "can_discharge", "patient:123")).toBe(true);
+      expect(await authz.check("user:dr-smith", "can_discharge", "patient:123", TENANT)).toBe(true);
       // Non-clinician cannot discharge
-      expect(await authz.check("user:alice", "can_discharge", "patient:123")).toBe(false);
+      expect(await authz.check("user:alice", "can_discharge", "patient:123", TENANT)).toBe(false);
     });
 
     it("wraps OpenFGA errors in AuthorizationError", async () => {
@@ -256,7 +259,7 @@ describe("AuthorizationService", () => {
       };
       const failAuthz = new AuthorizationService(failClient);
 
-      await expect(failAuthz.check("user:x", "viewer", "patient:1"))
+      await expect(failAuthz.check("user:x", "viewer", "patient:1", TENANT))
         .rejects.toThrow(AuthorizationError);
     });
   });
@@ -272,7 +275,7 @@ describe("AuthorizationService", () => {
       // One patient on orthopaedics (Alice should NOT see)
       fga.addTuple({ user: "ward:orthopaedics", relation: "admitted_to", object: "patient:4" });
 
-      const visible = await authz.listObjects("user:alice", "viewer", "patient");
+      const visible = await authz.listObjects("user:alice", "viewer", "patient", TENANT);
 
       expect(visible).toHaveLength(3);
       expect(visible).toContain("patient:1");
@@ -284,7 +287,7 @@ describe("AuthorizationService", () => {
     it("returns empty when user has no ward assignment", async () => {
       fga.addTuple({ user: "ward:cardiology", relation: "admitted_to", object: "patient:1" });
 
-      const visible = await authz.listObjects("user:bob", "viewer", "patient");
+      const visible = await authz.listObjects("user:bob", "viewer", "patient", TENANT);
       expect(visible).toHaveLength(0);
     });
 
@@ -296,24 +299,24 @@ describe("AuthorizationService", () => {
         fga.addTuple({ user: "ward:a", relation: "admitted_to", object: `patient:${i}` });
       }
 
-      const visible = await authz.listObjects("user:alice", "viewer", "patient");
+      const visible = await authz.listObjects("user:alice", "viewer", "patient", TENANT);
       expect(visible).toHaveLength(50);
     });
   });
 
   describe("writeRelationship() / deleteRelationship()", () => {
     it("writes a relationship that is then checkable", async () => {
-      await authz.writeRelationship("user:alice", "assigned", "ward:cardiology");
+      await authz.writeRelationship("user:alice", "assigned", "ward:cardiology", TENANT);
 
-      const result = await authz.check("user:alice", "viewer", "ward:cardiology");
+      const result = await authz.check("user:alice", "viewer", "ward:cardiology", TENANT);
       expect(result).toBe(true);
     });
 
     it("deletes a relationship that is then no longer checkable", async () => {
-      await authz.writeRelationship("user:alice", "assigned", "ward:cardiology");
-      await authz.deleteRelationship("user:alice", "assigned", "ward:cardiology");
+      await authz.writeRelationship("user:alice", "assigned", "ward:cardiology", TENANT);
+      await authz.deleteRelationship("user:alice", "assigned", "ward:cardiology", TENANT);
 
-      const result = await authz.check("user:alice", "viewer", "ward:cardiology");
+      const result = await authz.check("user:alice", "viewer", "ward:cardiology", TENANT);
       expect(result).toBe(false);
     });
   });
@@ -331,14 +334,14 @@ describe("AuthorizationService", () => {
       fga.addTuple({ user: "ward:orthopaedics", relation: "admitted_to", object: "patient:o1" });
 
       // Alice sees only cardiology patients
-      const alicePatients = await authz.listObjects("user:alice", "viewer", "patient");
+      const alicePatients = await authz.listObjects("user:alice", "viewer", "patient", TENANT);
       expect(alicePatients).toHaveLength(2);
       expect(alicePatients).toContain("patient:c1");
       expect(alicePatients).toContain("patient:c2");
       expect(alicePatients).not.toContain("patient:o1");
 
       // Bob sees only orthopaedics patients
-      const bobPatients = await authz.listObjects("user:bob", "viewer", "patient");
+      const bobPatients = await authz.listObjects("user:bob", "viewer", "patient", TENANT);
       expect(bobPatients).toHaveLength(1);
       expect(bobPatients).toContain("patient:o1");
     });
@@ -348,14 +351,14 @@ describe("AuthorizationService", () => {
       fga.addTuple({ user: "ward:cardiology", relation: "admitted_to", object: "patient:1" });
 
       // Alice can see patient:1
-      expect(await authz.check("user:alice", "viewer", "patient:1")).toBe(true);
+      expect(await authz.check("user:alice", "viewer", "patient:1", TENANT)).toBe(true);
 
       // Transfer: remove from cardiology, add to orthopaedics
       fga.removeTuple({ user: "ward:cardiology", relation: "admitted_to", object: "patient:1" });
       fga.addTuple({ user: "ward:orthopaedics", relation: "admitted_to", object: "patient:1" });
 
       // Alice can no longer see patient:1
-      expect(await authz.check("user:alice", "viewer", "patient:1")).toBe(false);
+      expect(await authz.check("user:alice", "viewer", "patient:1", TENANT)).toBe(false);
     });
   });
 

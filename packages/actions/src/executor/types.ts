@@ -184,11 +184,15 @@ export interface AffectedObject {
  * Writes/deletes OpenFGA relationship tuples. Structurally matches
  * `AuthorizationService` (`writeRelationship`/`deleteRelationship`), so the
  * service instance can be injected directly. Tuple shape: (user, relation,
- * resource) — e.g. `("ward:W", "admitted_to", "patient:P")`.
+ * resource, tenantId) — e.g. `("ward:W", "admitted_to", "patient:P", "t1")`.
+ *
+ * `tenantId` is required: each tenant has its own OpenFGA store, and object ids
+ * are unique only per tenant, so a tuple must land in the store of the tenant
+ * whose link produced it.
  */
 export interface RelationshipWriter {
-  writeRelationship(user: string, relation: string, resource: string): Promise<void>;
-  deleteRelationship(user: string, relation: string, resource: string): Promise<void>;
+  writeRelationship(user: string, relation: string, resource: string, tenantId: string): Promise<void>;
+  deleteRelationship(user: string, relation: string, resource: string, tenantId: string): Promise<void>;
 }
 
 /**

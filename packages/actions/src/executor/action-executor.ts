@@ -500,7 +500,7 @@ export class ActionExecutor {
             );
             // Mint/remove the graph-derived ReBAC tuple for this link, so
             // `... from <link>` rules resolve without out-of-band provisioning.
-            await this.syncLinkTuple(affected.type, affected.changeType, fromId, toId);
+            await this.syncLinkTuple(affected.type, affected.changeType, fromId, toId, reqCtx.tenantId);
           } else {
             // Use publishObjectChange for object effects
             await this.config.eventPublisher.publishObjectChange(
@@ -1139,6 +1139,7 @@ export class ActionExecutor {
     changeType: 'created' | 'updated' | 'deleted',
     fromId: string,
     toId: string,
+    tenantId: string,
   ): Promise<void> {
     const writer = this.config.relationshipWriter;
     const mapping = this.config.linkTupleMap?.get(linkType);
@@ -1149,9 +1150,9 @@ export class ActionExecutor {
     const resource = `${mapping.fromType}:${fromId}`;
     try {
       if (changeType === 'created') {
-        await writer.writeRelationship(user, mapping.relation, resource);
+        await writer.writeRelationship(user, mapping.relation, resource, tenantId);
       } else {
-        await writer.deleteRelationship(user, mapping.relation, resource);
+        await writer.deleteRelationship(user, mapping.relation, resource, tenantId);
       }
     } catch (err) {
       logger.warn({ err, linkType, relation: mapping.relation }, 'Failed to sync ReBAC tuple for link');

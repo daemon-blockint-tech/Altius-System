@@ -574,6 +574,13 @@ function parseDeleteObject(
 
 // ─── Side effects ───
 
+/**
+ * Side-effect types the executor can dispatch (side-effect-executor.ts).
+ * Any other value throws "Unknown side-effect type" at runtime — silently,
+ * under the default LOG_AND_CONTINUE policy — so reject it here at load time.
+ */
+const VALID_SIDE_EFFECT_TYPES = new Set(['webhook', 'event']);
+
 function parseSideEffects(
   raw: unknown,
   errors: ManifestIssue[],
@@ -620,6 +627,16 @@ function parseSideEffects(
         severity: 'error',
         code: 'MISSING_FIELD',
         message: `${path}.type is required.`,
+        path: `${path}.type`,
+      });
+      continue;
+    }
+
+    if (!VALID_SIDE_EFFECT_TYPES.has(item['type'])) {
+      errors.push({
+        severity: 'error',
+        code: 'UNSUPPORTED_VALUE',
+        message: `${path}.type must be one of: ${[...VALID_SIDE_EFFECT_TYPES].join(', ')}. Got "${item['type']}".`,
         path: `${path}.type`,
       });
       continue;

@@ -662,6 +662,26 @@ sideEffects:
       expect(result.valid).toBe(false);
       expect(result.errors.some(e => e.path === 'sideEffects[0].name')).toBe(true);
     });
+
+    it('rejects side effect with unknown type', () => {
+      // The executor only handles 'webhook' and 'event'; any other type
+      // throws "Unknown side-effect type" at runtime, which under the
+      // default LOG_AND_CONTINUE policy is swallowed with no log or metric.
+      // Validating at parse time surfaces the typo at load/boot instead of
+      // silently losing the side effect post-commit.
+      const yaml = `
+action: TestAction
+version: 1
+sideEffects:
+  - name: badSideEffect
+    type: email
+    config:
+      to: "someone@example.com"
+`;
+      const result = parseActionManifest(yaml);
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.code === 'UNSUPPORTED_VALUE' && e.path === 'sideEffects[0].type')).toBe(true);
+    });
   });
 
   // -----------------------------------------------------------------------
