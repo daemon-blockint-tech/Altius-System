@@ -752,6 +752,27 @@ export function generateGraphQLSchema(schema: ParsedSchema, options?: GraphQLSch
       `  search${obj.name}s(query: String!, fields: [String!], filter: ${obj.name}Filter, first: Int, after: String): SearchResult_${obj.name}!`,
     );
   }
+  // Interface-typed queries — the only polymorphic entry point in the schema.
+  //
+  // Interfaces were emitted as SDL and ObjectTypes carried their `implements`
+  // clauses, but nothing in the schema ever RETURNED an interface, so the
+  // generated `__resolveType` resolvers could never fire and a caller had no way
+  // to ask "every Locatable" without knowing the concrete types up front.
+  //
+  // One field per interface that something implements. Deliberately no filter
+  // argument: a shared filter input would have to be the intersection of every
+  // implementor's fields, which is a separate design question.
+  const objectQueryFieldNames = new Set(schema.objectTypes.map(o => `${lowerFirst(o.name)}s`));
+  for (const iface of schema.interfaces) {
+    const implementors = schema.objectTypes.filter(o => o.interfaces.includes(iface.name));
+    if (implementors.length === 0) continue;
+    const fieldName = `${lowerFirst(iface.name)}s`;
+    // An ObjectType plural query already owning this name would make the SDL
+    // invalid through a duplicate field rather than fail loudly at generation.
+    if (objectQueryFieldNames.has(fieldName)) continue;
+    queryFields.push(`  ${fieldName}(first: Int): [${iface.name}!]!`);
+  }
+
   queryFields.push('  availableTools(filter: ToolFilter): [ToolDescriptor!]!');
   queryFields.push('  objectSet(id: ID!): ObjectSet');
   queryFields.push('  objectSets(objectType: String): [ObjectSet!]!');

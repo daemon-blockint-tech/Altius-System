@@ -23,7 +23,7 @@ import type { ActionActor, ActionContext, ActionManifest } from '@altius/actions
 import type { RedactionResult } from '@altius/security';
 import { PubSub } from 'graphql-subscriptions';
 import type { ApiDependencies, ResolverContext, PaginationArgs } from './types.js';
-import { DEFAULT_CONSENT_PURPOSE, DEFAULT_CONSENT_SUBJECT_TYPES, isConsentSubjectType } from './types.js';
+import { DEFAULT_CONSENT_PURPOSE, DEFAULT_CONSENT_SUBJECT_TYPES, DEFAULT_PAGE_SIZE, isConsentSubjectType } from './types.js';
 import { resolvePagination, buildConnection, decodeCursor } from './pagination.js';
 import { paginateWithConsent } from '../consent-pagination.js';
 import { createAltiusError, wrapError } from './errors.js';
@@ -443,6 +443,47 @@ export function generateResolvers(
   for (const iface of schema.interfaces) {
     resolvers[iface.name] = {
       __resolveType: (parent: Record<string, unknown>) => parent.__typename as string | undefined,
+    };
+  }
+
+  // Interface-typed list resolvers — what makes the __resolveType above
+  // reachable. Until now nothing in the schema returned an interface, so those
+  // resolvers were unreachable code and a caller could not ask for "every
+  // Locatable" without naming each concrete type itself.
+  //
+  // Each one delegates to the implementors' existing plural resolvers rather
+  // than querying storage directly. That is deliberate: authorization, field
+  // redaction and consent all live in that path, and a second read path is a
+  // second place for them to drift apart.
+  for (const iface of schema.interfaces) {
+    const implementors = schema.objectTypes.filter(o => o.interfaces.includes(iface.name));
+    if (implementors.length === 0) continue;
+
+    const fieldName = `${lowerFirst(iface.name)}s`;
+    // Codegen skips the SDL field when an ObjectType plural already owns the
+    // name; skip the resolver on the same condition so the two stay in step.
+    if (resolvers['Query']![fieldName]) continue;
+
+    resolvers['Query']![fieldName] = async (
+      parent: unknown,
+      args: { first?: number },
+      ctx: ResolverContext,
+    ) => {
+      const limit = args.first ?? DEFAULT_PAGE_SIZE;
+      const results: Record<string, unknown>[] = [];
+
+      for (const impl of implementors) {
+        const delegate = resolvers['Query']![`${lowerFirst(impl.name)}s`];
+        if (typeof delegate !== 'function') continue;
+        const connection = await delegate(parent, { first: limit }, ctx) as {
+          edges?: { node: Record<string, unknown> }[];
+        };
+        for (const edge of connection.edges ?? []) results.push(edge.node);
+      }
+
+      // `first` bounds the whole result, not each implementor — asking for 10
+      // Locatables must not return 10 per type.
+      return results.slice(0, limit);
     };
   }
 
