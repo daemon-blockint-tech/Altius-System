@@ -92,6 +92,13 @@ export interface ApiDependencies {
    * Absent/undefined is treated as enabled (back-compat for tests/spec dumps).
    */
   cdmEnabled?: boolean;
+  /**
+   * LLM client for AIP/generation endpoints (POST /api/v1/llm/generate,
+   * POST /api/v1/llm/embed, GraphQL generate/embed mutations). When absent,
+   * the endpoints return a "not configured" error. Deployments inject a
+   * provider-specific client (OpenAI, Anthropic, local model).
+   */
+  llmClient?: LLMClient;
 }
 
 /**

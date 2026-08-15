@@ -82,3 +82,5 @@ export type { Queryable } from './transactions/index.js';
 // ─── Retry ───
 export { withRetry } from './retry.js';
 export type { RetryOptions } from './retry.js';
+
+export { PostgresLineageStore } from './lineage/postgres-lineage-store.js';

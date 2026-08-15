@@ -34,6 +34,7 @@ export function mapErrorToHttpStatus(category: ErrorCategory): number {
     quota: 429,
     timeout: 504,
     system: 500,
+    unsupported: 503,
   };
   return mapping[category] ?? 500;
 }
@@ -113,7 +114,15 @@ function extractErrorCode(err: unknown): ErrorCode {
   return 'INTERNAL_ERROR';
 }
 
-function mapCodeToCategory(code: ErrorCode): ErrorCategory {
+/**
+ * Which HTTP family an Altius error code belongs to.
+ *
+ * Exported because the action route needs it too: the pipeline reports some
+ * failures in-band (in `result.errors`) rather than by throwing, and those
+ * still owe the caller a real status — a stale `If-Match` is a 412 whether the
+ * refusal arrived as an exception or as a result field.
+ */
+export function mapCodeToCategory(code: ErrorCode): ErrorCategory {
   const mapping: Record<string, ErrorCategory> = {
     VALIDATION_ERROR: 'validation',
     INVALID_FILTER: 'validation',
@@ -132,6 +141,7 @@ function mapCodeToCategory(code: ErrorCode): ErrorCategory {
     INTERNAL_ERROR: 'system',
     PROVIDER_ERROR: 'system',
     OPERATION_TIMEOUT: 'timeout',
+    LLM_NOT_CONFIGURED: 'unsupported',
   };
   return mapping[code] ?? 'system';
 }

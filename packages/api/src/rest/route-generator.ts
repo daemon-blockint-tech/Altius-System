@@ -23,8 +23,9 @@ import type { RedactionResult } from '@altius/security';
 import type { ApiDependencies, ResolverContext } from '../graphql/types.js';
 import { DEFAULT_CONSENT_PURPOSE, DEFAULT_CONSENT_SUBJECT_TYPES, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, isConsentSubjectType } from '../graphql/types.js';
 import type { RestRequest, RestResponse, RestRoute } from './types.js';
-import { createRestErrorResponse, wrapErrorToRest } from './errors.js';
+import { createRestErrorResponse, wrapErrorToRest, mapCodeToCategory, mapErrorToHttpStatus } from './errors.js';
 import { invokeFunction } from '../functions/invoke-function.js';
+import { generateLlmRoutes } from './llm-routes.js';
 import { lowerFirst, toSnakeCase } from '../utils.js';
 import { paginateWithConsent } from '../consent-pagination.js';
 import { collectRawRecords } from '../cdm/router.js';
@@ -280,6 +281,9 @@ export function generateRestRoutes(
 
   // Per-object action applicability
   routes.push(generateApplicableActionsRoute(schema, deps));
+
+  // LLM routes (generate + embed)
+  routes.push(...generateLlmRoutes(deps));
 
   return routes;
 }
@@ -1056,10 +1060,40 @@ function generateAggregateRoute(
         const groupBy = body['groupBy'] as string[] | undefined;
         const rawBuckets = body['buckets'] as Array<{ field: string; interval: string; alias?: string }> | undefined;
 
-        // Field-level authorization: reject aggregation over redacted fields
-        // Check aggregate fields, groupBy, buckets, orderBy, and filter predicates
         const userFilter = body['filter'] as FilterExpression | undefined;
         const orderBy = body['orderBy'] as { field: string; direction: 'asc' | 'desc' }[] | undefined;
+
+        // A field name the schema does not have must be refused here, because
+        // the two providers disagree on what to do with it: Postgres builds
+        // SUM("no_such_column") and raises, while the memory provider finds
+        // nothing and returns a null group — a silent wrong answer. @computed
+        // fields land here too: they are query-time values with no column, so
+        // aggregating one is not supported and should say so rather than
+        // depend on which backend is configured.
+        const aggregatable = new Set(
+          obj.fields
+            .filter(f => !f.directives.some(d => d.kind === 'link' || d.kind === 'computed'))
+            .map(f => f.name),
+        );
+        const namedFields = [
+          ...rawFields.filter(f => f.field !== '*').map(f => f.field),
+          ...(groupBy ?? []),
+          ...(rawBuckets ?? []).map(b => b.field),
+          ...(orderBy ?? []).map(o => o.field),
+        ];
+        const unknown = namedFields.filter(f => !f.startsWith('_') && !aggregatable.has(f));
+        if (unknown.length > 0) {
+          return createRestErrorResponse({
+            code: 'VALIDATION_ERROR',
+            category: 'validation',
+            message: `Cannot aggregate on ${unknown.join(', ')}: not an aggregatable field of ${typeName}. Computed and link fields have no stored value to aggregate.`,
+            retryable: false,
+            traceId: requestContext.traceId,
+          });
+        }
+
+        // Field-level authorization: reject aggregation over redacted fields
+        // Check aggregate fields, groupBy, buckets, orderBy, and filter predicates
         const visibleFields = deps.authorizationService.getVisibleFields(user.id, user.roles, typeName);
         if (visibleFields) {
           const allRequestedFields = [
@@ -1336,8 +1370,22 @@ function generateActionRoute(
           { dryRun: req.query['dryRun'] === 'true' },
         );
 
+        // A refused write must answer with its HTTP status, not 200-with-a-body.
+        // The route accepts `If-Match`, so a stale assertion owes the caller a
+        // 412: that is the whole point of a conditional request, and a client
+        // acting on the status alone would otherwise record the write as
+        // applied. Only precondition/conflict failures are mapped — the other
+        // in-band failure codes have always answered 200 and changing them is
+        // a contract decision, not this fix.
+        const refusal = result.success
+          ? undefined
+          : result.errors.find(e => {
+              const category = mapCodeToCategory(e.code);
+              return category === 'precondition' || category === 'conflict';
+            });
+
         return {
-          status: 200,
+          status: refusal ? mapErrorToHttpStatus(mapCodeToCategory(refusal.code)) : 200,
           body: {
             data: {
               success: result.success,

@@ -622,6 +622,9 @@ export function generateResolvers(
   // Consent record resolver (v0.2.0 A2).
   generateConsentResolvers(resolvers, deps);
 
+  // LLM generate + embed resolvers (Section AIP).
+  generateLlmResolvers(resolvers, deps);
+
   return { resolvers, pubsub };
 }
 
@@ -1802,6 +1805,79 @@ function generateRelationshipResolvers(resolvers: ResolverMap, deps: ApiDependen
 
   resolvers['Mutation']!['grantRelationship'] = run('grant');
   resolvers['Mutation']!['revokeRelationship'] = run('revoke');
+}
+
+// ─── LLM resolvers (Section AIP) ───
+
+function generateLlmResolvers(resolvers: ResolverMap, deps: ApiDependencies): void {
+  // generate(input: GenerateInput!): GenerateResult!
+  resolvers['Mutation']!['generate'] = async (
+    _parent: unknown,
+    args: { input: { prompt: string; model?: string; temperature?: number; maxTokens?: number; systemPrompt?: string; stop?: string[] } },
+    ctx: ResolverContext,
+  ) => {
+    try {
+      if (!deps.llmClient || !deps.llmClient.isConfigured()) {
+        throw createAltiusError({
+          code: 'LLM_NOT_CONFIGURED',
+          category: 'unsupported',
+          message: 'No LLM provider is configured. Set LLM_PROVIDER and associated credentials.',
+          retryable: false,
+          traceId: ctx.requestContext.traceId,
+        });
+      }
+
+      const result = await deps.llmClient.complete(ctx.requestContext, args.input.prompt, {
+        model: args.input.model,
+        temperature: args.input.temperature,
+        maxTokens: args.input.maxTokens,
+        systemPrompt: args.input.systemPrompt,
+        stop: args.input.stop,
+      });
+
+      return {
+        text: result.text,
+        model: result.model,
+        promptTokens: result.promptTokens,
+        completionTokens: result.completionTokens,
+        totalTokens: result.totalTokens,
+        finishReason: result.finishReason,
+      };
+    } catch (err) {
+      throw wrapError(err, ctx.requestContext.traceId);
+    }
+  };
+
+  // embed(input: EmbedInput!): EmbedResult!
+  resolvers['Mutation']!['embed'] = async (
+    _parent: unknown,
+    args: { input: { text: string; model?: string } },
+    ctx: ResolverContext,
+  ) => {
+    try {
+      if (!deps.llmClient || !deps.llmClient.isConfigured()) {
+        throw createAltiusError({
+          code: 'LLM_NOT_CONFIGURED',
+          category: 'unsupported',
+          message: 'No LLM provider is configured. Set LLM_PROVIDER and associated credentials.',
+          retryable: false,
+          traceId: ctx.requestContext.traceId,
+        });
+      }
+
+      const result = await deps.llmClient.embed(ctx.requestContext, args.input.text, {
+        model: args.input.model,
+      });
+
+      return {
+        vector: result.vector,
+        model: result.model,
+        dimensions: result.dimensions,
+      };
+    } catch (err) {
+      throw wrapError(err, ctx.requestContext.traceId);
+    }
+  };
 }
 
 /**

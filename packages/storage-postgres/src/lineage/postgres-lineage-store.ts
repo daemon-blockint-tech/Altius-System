@@ -18,7 +18,18 @@
 
 import type { Pool } from 'pg';
 import type { FieldProvenance, DateTime } from '@altius/spi';
-import type { LineageStore, LineageQueryOptions } from '@altius/engine';
+
+/**
+ * Structurally satisfies `LineageStore` from @altius/engine without importing
+ * it: storage sits BELOW the engine, so depending upward would invert the
+ * layering. (FieldProvenance already lives in @altius/spi; LineageStore
+ * arguably belongs there too, which would remove the duplication — that is a
+ * contract move, not a fix, so it is left alone here.)
+ */
+export interface LineageQueryOptions {
+  includeLineage?: boolean;
+  limit?: number;
+}
 
 /** Rows are ordered newest-first; without a cap a hot field returns unboundedly. */
 const DEFAULT_LIMIT = 100;
@@ -54,7 +65,7 @@ function clampLimit(options?: LineageQueryOptions): number {
   return Math.min(requested, MAX_LIMIT);
 }
 
-export class PostgresLineageStore implements LineageStore {
+export class PostgresLineageStore {
   private readonly pool: Pool;
 
   constructor(pool: Pool) {

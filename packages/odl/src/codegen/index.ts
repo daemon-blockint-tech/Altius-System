@@ -533,6 +533,37 @@ function generateSharedTypes(): string {
     '  summary: BulkSummary',
     '  errors: [BulkItemError!]',
     '}',
+    '',
+    '# ─── LLM / AIP (Section AIP) ───',
+    '',
+    'input GenerateInput {',
+    '  prompt: String!',
+    '  model: String',
+    '  temperature: Float',
+    '  maxTokens: Int',
+    '  systemPrompt: String',
+    '  stop: [String!]',
+    '}',
+    '',
+    'type GenerateResult {',
+    '  text: String!',
+    '  model: String!',
+    '  promptTokens: Int!',
+    '  completionTokens: Int!',
+    '  totalTokens: Int!',
+    '  finishReason: String!',
+    '}',
+    '',
+    'input EmbedInput {',
+    '  text: String!',
+    '  model: String',
+    '}',
+    '',
+    'type EmbedResult {',
+    '  vector: [Float!]!',
+    '  model: String!',
+    '  dimensions: Int!',
+    '}',
   ].join('\n');
 }
 
@@ -848,6 +879,9 @@ export function generateGraphQLSchema(schema: ParsedSchema, options?: GraphQLSch
   mutationFields.push('  revokeRelationship(input: RelationshipInput!): RelationshipResult!');
   // Consent record (v0.2.0 A2) — mirror REST /api/v1/consent.
   mutationFields.push('  recordConsent(input: ConsentInput!): ConsentResult!');
+  // LLM generate + embed (Section AIP) — mirror REST /api/v1/llm/*.
+  mutationFields.push('  generate(input: GenerateInput!): GenerateResult!');
+  mutationFields.push('  embed(input: EmbedInput!): EmbedResult!');
   // TODO: submitBulkAction mutation deferred — requires BulkActionJob resolver
   // and async job tracking infrastructure. Re-add when bulk action pipeline is built.
   if (mutationFields.length > 0) {

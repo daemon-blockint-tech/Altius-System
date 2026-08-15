@@ -40,9 +40,9 @@ import { GraphQLError } from 'graphql';
 import { expressMiddleware } from '@apollo/server/express4';
 import { ApolloServerPluginDrainHttpServer } from '@apollo/server/plugin/drainHttpServer';
 import { MemoryStorageProvider } from '@altius/storage-memory';
-import { PostgresStorageProvider, PostgresAuditStore, PostgresConsentStore, PostgresSchemaRegistry, PostgresObjectSetStore } from '@altius/storage-postgres';
+import { PostgresStorageProvider, PostgresLineageStore, PostgresAuditStore, PostgresConsentStore, PostgresSchemaRegistry, PostgresObjectSetStore } from '@altius/storage-postgres';
 import {
-  ObjectManager,
+  ObjectManager, LineageRecorder,
   LinkManager,
   EngineEventEmitter,
   InMemoryObjectSetStore,
@@ -51,6 +51,7 @@ import {
   IsolatedNodeFunctionRuntime,
   CelFunctionRuntime,
   ComputedFieldEvaluator,
+  NoOpLLMClient,
 } from '@altius/engine';
 import { ActionExecutor, CelClient, SideEffectExecutor } from '@altius/actions';
 import type { SecurityLayer, CelEvaluator, EventBus as SideEffectEventBus, HttpClient as SideEffectHttpClient, LinkTupleMap } from '@altius/actions';
@@ -367,12 +368,27 @@ async function main(): Promise<void> {
     functionExecutor,
   });
 
+  // Field provenance: who last wrote each field. ObjectManager has always
+  // called a LineageRecorder on create and update, but production never
+  // supplied one, so lineage.field_provenance was created by the DDL and
+  // stayed empty. Sync conflict resolution reads this to decide whether an
+  // incoming source value may overwrite an action's edit; with no producer,
+  // both declarable strategies have no input and sync clobbers user edits.
+  //
+  // Postgres only: the in-memory provider has no provenance table, and a
+  // recorder writing nowhere is worse than none — it would make the strategy
+  // look enforced. Without a recorder the sync path stays refused (sync-boot).
+  const lineageRecorder = storage instanceof PostgresStorageProvider
+    ? new LineageRecorder({ store: new PostgresLineageStore(storage.pool) })
+    : undefined;
+
   const objectManager = new ObjectManager({
     storage,
     schema,
     eventEmitter: emitter,
     celEvaluator: cel,
     computedFieldEvaluator,
+    lineageRecorder,
   });
   const linkManager = new LinkManager({ storage, schema, eventEmitter: emitter });
 
@@ -811,6 +827,7 @@ async function main(): Promise<void> {
     consentPurposes,
     ...(consentSubjectTypes ? { consentSubjectTypes } : {}),
     cdmEnabled,
+    llmClient: new NoOpLLMClient(),
   };
 
   // ── Express + HTTP Server ──
