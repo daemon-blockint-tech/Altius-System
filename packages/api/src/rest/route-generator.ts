@@ -287,6 +287,8 @@ function generateObjectRoutes(
     generateAggregateRoute(obj, plural, fgaType, deps),
     generateSearchRoute(obj, plural, fgaType, deps),
     generateGetByIdRoute(obj, plural, fgaType, deps),
+    generateUpdateRoute(obj, plural, fgaType, deps),
+    generateDeleteRoute(obj, plural, fgaType, deps),
     generateLinksRoute(plural, fgaType, deps),
     generateHistoryRoute(obj, plural, fgaType, deps),
   ];
@@ -639,6 +641,193 @@ function generateGetByIdRoute(
         return {
           status: 200,
           body: { data: restObj },
+        };
+      } catch (err) {
+        return wrapErrorToRest(err, ctx.requestContext.traceId);
+      }
+    },
+  };
+}
+
+/**
+ * Parse an `If-Match` header value into a numeric expected version.
+ * Returns `undefined` when the header is absent. Returns `NaN` when the
+ * header is present but not a valid integer — callers should return 400.
+ */
+function parseIfMatchHeader(req: RestRequest): number | undefined {
+  const raw = req.headers?.['if-match'];
+  if (raw === undefined || raw === null || raw === '') return undefined;
+  const trimmed = raw.trim().replace(/^["']|["']$/g, '');
+  const version = parseInt(trimmed, 10);
+  return version;
+}
+
+/**
+ * PUT /api/v1/{plural}/:id — update an object.
+ *
+ * Accepts an optional `If-Match: <version>` header. When present, the
+ * version is forwarded as `expectedVersion` to `ObjectManager.update`,
+ * enabling optimistic concurrency. A stale version yields
+ * `VERSION_CONFLICT` → `412 Precondition Failed`.
+ */
+function generateUpdateRoute(
+  obj: ObjectType,
+  plural: string,
+  fgaType: string,
+  deps: ApiDependencies,
+): RestRoute {
+  return {
+    method: 'PUT',
+    pattern: `/api/v1/${plural}/:id`,
+    handler: async (req: RestRequest, ctx: ResolverContext): Promise<RestResponse> => {
+      try {
+        const { user, requestContext } = ctx;
+        const typeName = obj.name;
+        const id = req.params['id']!;
+
+        // Parse If-Match header
+        const ifMatch = parseIfMatchHeader(req);
+        if (ifMatch !== undefined && Number.isNaN(ifMatch)) {
+          return createRestErrorResponse({
+            code: 'VALIDATION_ERROR',
+            category: 'validation',
+            message: 'If-Match header must be an integer version number',
+            retryable: false,
+            traceId: requestContext.traceId,
+          });
+        }
+
+        // Authorize
+        const allowed = await deps.authorizationService.check(
+          `user:${user.id}`,
+          'editor',
+          `${fgaType}:${id}`,
+        );
+        if (!allowed) {
+          return createRestErrorResponse({
+            code: 'FORBIDDEN',
+            category: 'authorization',
+            message: `Access denied to update ${typeName} ${id}`,
+            retryable: false,
+            traceId: requestContext.traceId,
+          });
+        }
+
+        const properties = (req.body as Record<string, unknown>) ?? {};
+
+        const updated = await deps.objectManager.update(
+          typeName,
+          id,
+          properties,
+          requestContext,
+          undefined,
+          ifMatch,
+        );
+
+        let restObj = objectToRest(updated, obj);
+
+        // Field-level redaction
+        const redacted = deps.authorizationService.redactFields(
+          user.id,
+          user.roles,
+          typeName,
+          restObj,
+        );
+        restObj = redacted.data as Record<string, unknown>;
+        restObj._redactedFields = redacted._redactedFields.length > 0 ? redacted._redactedFields : null;
+
+        return {
+          status: 200,
+          body: { data: restObj },
+        };
+      } catch (err) {
+        return wrapErrorToRest(err, ctx.requestContext.traceId);
+      }
+    },
+  };
+}
+
+/**
+ * DELETE /api/v1/{plural}/:id — delete an object (soft by default).
+ *
+ * Accepts an optional `If-Match: <version>` header. Since the SPI
+ * `deleteObject` signature does not accept `expectedVersion`, this
+ * handler does a fetch-then-compare: the object is loaded, its
+ * `_version` is compared to the If-Match value, and a mismatch yields
+ * `412 Precondition Failed`.
+ */
+function generateDeleteRoute(
+  obj: ObjectType,
+  plural: string,
+  fgaType: string,
+  deps: ApiDependencies,
+): RestRoute {
+  return {
+    method: 'DELETE',
+    pattern: `/api/v1/${plural}/:id`,
+    handler: async (req: RestRequest, ctx: ResolverContext): Promise<RestResponse> => {
+      try {
+        const { user, requestContext } = ctx;
+        const typeName = obj.name;
+        const id = req.params['id']!;
+
+        // Parse If-Match header
+        const ifMatch = parseIfMatchHeader(req);
+        if (ifMatch !== undefined && Number.isNaN(ifMatch)) {
+          return createRestErrorResponse({
+            code: 'VALIDATION_ERROR',
+            category: 'validation',
+            message: 'If-Match header must be an integer version number',
+            retryable: false,
+            traceId: requestContext.traceId,
+          });
+        }
+
+        // Authorize
+        const allowed = await deps.authorizationService.check(
+          `user:${user.id}`,
+          'editor',
+          `${fgaType}:${id}`,
+        );
+        if (!allowed) {
+          return createRestErrorResponse({
+            code: 'FORBIDDEN',
+            category: 'authorization',
+            message: `Access denied to delete ${typeName} ${id}`,
+            retryable: false,
+            traceId: requestContext.traceId,
+          });
+        }
+
+        // Fetch-then-check for If-Match (SPI deleteObject has no expectedVersion)
+        if (ifMatch !== undefined) {
+          const existing = await deps.objectManager.get(typeName, id, requestContext);
+          if (!existing) {
+            return createRestErrorResponse({
+              code: 'OBJECT_NOT_FOUND',
+              category: 'not_found',
+              message: `${typeName} ${id} not found`,
+              retryable: false,
+              traceId: requestContext.traceId,
+            });
+          }
+          if (existing._version !== ifMatch) {
+            return createRestErrorResponse({
+              code: 'VERSION_CONFLICT',
+              category: 'precondition',
+              message: `Version mismatch: expected ${ifMatch}, found ${existing._version}`,
+              retryable: false,
+              traceId: requestContext.traceId,
+            });
+          }
+        }
+
+        const mode = (req.query['mode'] as string | undefined) === 'hard' ? 'hard' : 'soft';
+        await deps.objectManager.delete(typeName, id, mode, requestContext);
+
+        return {
+          status: 204,
+          body: {},
         };
       } catch (err) {
         return wrapErrorToRest(err, ctx.requestContext.traceId);

@@ -10,3 +10,8 @@ export {
   type NodeRuntimeHelpers,
   CelFunctionRuntime,
 } from './function-executor.js';
+
+export {
+  IsolatedNodeFunctionRuntime,
+  type IsolatedNodeRuntimeConfig,
+} from './isolated-node-runtime.js';

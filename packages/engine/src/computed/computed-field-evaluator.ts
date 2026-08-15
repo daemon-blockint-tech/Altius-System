@@ -6,11 +6,15 @@
  *
  * Built-in functions:
  * - countLinks: counts active links of a given type in a given direction.
+ * - lookupField: reads a scalar from the first linked object.
+ * - sumLinks / avgLinks / minLinks / maxLinks: aggregate a numeric field
+ *   across every linked object.
  */
 
 import type {
   StorageProvider,
   RequestContext,
+  OntologyLink,
 } from '@altius/spi';
 import type {
   ParsedSchema,
@@ -38,6 +42,10 @@ export type ComputeFunction = (
 const BUILT_IN_FUNCTIONS: Record<string, ComputeFunction> = {
   countLinks,
   lookupField,
+  sumLinks: aggregateLinks('sum'),
+  avgLinks: aggregateLinks('avg'),
+  minLinks: aggregateLinks('min'),
+  maxLinks: aggregateLinks('max'),
 };
 
 /**
@@ -119,10 +127,86 @@ async function lookupField(
   if (result.items.length === 0) return null;
 
   const link = result.items[0]!;
-  const targetId = direction === 'outbound' ? link._toId : link._fromId;
-  const target = await context.storage.getObject(context.ctx, link._toType, targetId);
+  const target = await loadLinkTarget(link, direction, context);
   if (!target) return null;
   return target[field] ?? null;
+}
+
+/**
+ * Resolve the object at the far end of a link.
+ *
+ * Both the id and the type must come from the same end: an inbound traversal
+ * reads `_fromId`, so it must also read `_fromType`. Taking the id from one end
+ * and the type from the other looks up a real id in the wrong type's table and
+ * silently returns null.
+ */
+async function loadLinkTarget(
+  link: OntologyLink,
+  direction: 'inbound' | 'outbound',
+  context: ComputeContext,
+): Promise<Record<string, unknown> | null> {
+  const targetId = direction === 'outbound' ? link._toId : link._fromId;
+  const targetType = direction === 'outbound' ? link._toType : link._fromType;
+  const target = await context.storage.getObject(context.ctx, targetType, targetId);
+  return (target as Record<string, unknown> | null) ?? null;
+}
+
+/**
+ * Aggregate a numeric field across every object linked to this one.
+ *
+ * Args (from @computed directive):
+ *   - linkType: string — the link type to traverse
+ *   - field: string — the numeric field to aggregate on the linked objects
+ *   - direction: 'INBOUND' | 'OUTBOUND' (defaults to 'OUTBOUND')
+ *
+ * Example ODL:
+ *   totalDose: Float @computed(fn: "sumLinks", args: { linkType: "Prescribed", field: "dose" })
+ *
+ * Missing values (null/undefined) are skipped rather than counted as zero —
+ * an unrecorded reading is not a reading of nothing. A present but
+ * non-numeric value is a data or schema error and throws rather than being
+ * silently coerced. `sum` over no values is 0; `avg`/`min`/`max` are null.
+ */
+type NumericAggregate = 'sum' | 'avg' | 'min' | 'max';
+
+function aggregateLinks(op: NumericAggregate): ComputeFunction {
+  return async (args, context) => {
+    const label = `${op}Links`;
+    if (!args || typeof args !== 'object' || Array.isArray(args)) {
+      throw new Error(`${label} requires args with { linkType: string, field: string }`);
+    }
+    const argsObj = args as Record<string, DirectiveArgValue>;
+    const linkType = argsObj.linkType;
+    const field = argsObj.field;
+    if (typeof linkType !== 'string' || typeof field !== 'string') {
+      throw new Error(`${label} requires args.linkType and args.field to be strings`);
+    }
+    const direction = typeof argsObj.direction === 'string'
+      ? (argsObj.direction.toLowerCase() as 'inbound' | 'outbound')
+      : 'outbound';
+
+    const links = await context.storage.getLinks(context.ctx, context.objectId, linkType, direction);
+
+    const values: number[] = [];
+    for (const link of links.items) {
+      const target = await loadLinkTarget(link, direction, context);
+      if (!target) continue;
+      const raw = target[field];
+      if (raw === null || raw === undefined) continue;
+      if (typeof raw !== 'number' || Number.isNaN(raw)) {
+        throw new Error(
+          `${label}: ${link._toType}.${field} is ${JSON.stringify(raw)}, which is not a number`,
+        );
+      }
+      values.push(raw);
+    }
+
+    if (op === 'sum') return values.reduce((a, b) => a + b, 0);
+    if (values.length === 0) return null;
+    if (op === 'avg') return values.reduce((a, b) => a + b, 0) / values.length;
+    if (op === 'min') return Math.min(...values);
+    return Math.max(...values);
+  };
 }
 
 /** Configuration for ComputedFieldEvaluator. */

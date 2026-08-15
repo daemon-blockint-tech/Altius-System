@@ -433,6 +433,10 @@ export function generateResolvers(
     generateSubscriptionResolvers(obj, resolvers, pubsub);
     // Type-level resolvers for @link fields (nested relationship traversal).
     generateLinkFieldResolvers(obj, schema, resolvers, deps);
+    // Generic update/delete mutations with optional expectedVersion input
+    // for client-facing optimistic concurrency (#5).
+    generateUpdateMutationResolver(obj, resolvers, deps);
+    generateDeleteMutationResolver(obj, resolvers, deps);
   }
 
   // Interface `__resolveType` resolvers. Object types resolve by name — the
@@ -840,6 +844,146 @@ function buildAuthFilter(
     value: allowedIds,
   };
   return userFilter ? { and: [idFilter, userFilter] } : idFilter;
+}
+
+// ─── Generic update/delete mutation resolvers (#5 — client-facing optimistic concurrency) ───
+
+/**
+ * Generate `updateFoo(id: ID!, input: UpdateFooInput!, expectedVersion: Int): Foo!`
+ * for each ObjectType. The optional `expectedVersion` is forwarded to
+ * `ObjectManager.update`, enabling client-facing optimistic concurrency.
+ * A stale version raises `VERSION_CONFLICT` from the storage layer, which
+ * `wrapError` maps to a GraphQL error with `code: VERSION_CONFLICT`.
+ */
+function generateUpdateMutationResolver(
+  obj: ObjectType,
+  resolvers: ResolverMap,
+  deps: ApiDependencies,
+): void {
+  const typeName = obj.name;
+  const fgaType = toSnakeCase(typeName);
+
+  resolvers['Mutation']![`update${typeName}`] = async (
+    _parent: unknown,
+    args: { id: string; input: Record<string, unknown>; expectedVersion?: number },
+    ctx: ResolverContext,
+  ) => {
+    try {
+      const { user, requestContext } = ctx;
+      const id = args.id;
+
+      // Authorize
+      const allowed = await deps.authorizationService.check(
+        `user:${user.id}`,
+        'editor',
+        `${fgaType}:${id}`,
+      );
+      if (!allowed) {
+        throw createAltiusError({
+          code: 'FORBIDDEN',
+          category: 'authorization',
+          message: `Access denied to update ${typeName} ${id}`,
+          retryable: false,
+          traceId: requestContext.traceId,
+        });
+      }
+
+      const updated = await deps.objectManager.update(
+        typeName,
+        id,
+        args.input,
+        requestContext,
+        undefined,
+        args.expectedVersion,
+      );
+
+      let shaped = objectToGraphQL(updated, obj);
+
+      // Field-level redaction
+      const redacted = deps.authorizationService.redactFields(
+        user.id,
+        user.roles,
+        typeName,
+        shaped,
+      );
+      shaped = redacted.data as Record<string, unknown>;
+      shaped['_redactedFields'] = redacted._redactedFields.length > 0 ? redacted._redactedFields : null;
+
+      return shaped;
+    } catch (err) {
+      throw wrapError(err, ctx.requestContext.traceId);
+    }
+  };
+}
+
+/**
+ * Generate `deleteFoo(id: ID!, expectedVersion: Int): Boolean!`
+ * for each ObjectType. Since the SPI `deleteObject` does not accept
+ * `expectedVersion`, this resolver does a fetch-then-compare when
+ * `expectedVersion` is provided.
+ */
+function generateDeleteMutationResolver(
+  obj: ObjectType,
+  resolvers: ResolverMap,
+  deps: ApiDependencies,
+): void {
+  const typeName = obj.name;
+  const fgaType = toSnakeCase(typeName);
+
+  resolvers['Mutation']![`delete${typeName}`] = async (
+    _parent: unknown,
+    args: { id: string; expectedVersion?: number },
+    ctx: ResolverContext,
+  ) => {
+    try {
+      const { user, requestContext } = ctx;
+      const id = args.id;
+
+      // Authorize
+      const allowed = await deps.authorizationService.check(
+        `user:${user.id}`,
+        'editor',
+        `${fgaType}:${id}`,
+      );
+      if (!allowed) {
+        throw createAltiusError({
+          code: 'FORBIDDEN',
+          category: 'authorization',
+          message: `Access denied to delete ${typeName} ${id}`,
+          retryable: false,
+          traceId: requestContext.traceId,
+        });
+      }
+
+      // Fetch-then-check for expectedVersion (SPI deleteObject has no expectedVersion)
+      if (args.expectedVersion !== undefined && args.expectedVersion !== null) {
+        const existing = await deps.objectManager.get(typeName, id, requestContext);
+        if (!existing) {
+          throw createAltiusError({
+            code: 'OBJECT_NOT_FOUND',
+            category: 'not_found',
+            message: `${typeName} ${id} not found`,
+            retryable: false,
+            traceId: requestContext.traceId,
+          });
+        }
+        if (existing._version !== args.expectedVersion) {
+          throw createAltiusError({
+            code: 'VERSION_CONFLICT',
+            category: 'precondition',
+            message: `Version mismatch: expected ${args.expectedVersion}, found ${existing._version}`,
+            retryable: false,
+            traceId: requestContext.traceId,
+          });
+        }
+      }
+
+      await deps.objectManager.delete(typeName, id, 'soft', requestContext);
+      return true;
+    } catch (err) {
+      throw wrapError(err, ctx.requestContext.traceId);
+    }
+  };
 }
 
 // ─── Aggregate resolvers ───
