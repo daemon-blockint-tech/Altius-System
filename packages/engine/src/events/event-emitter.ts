@@ -194,7 +194,7 @@ export class EngineEventEmitter {
   private async emitEvent(
     type: CloudEventType,
     subject: string,
-    _ctx: RequestContext,
+    ctx: RequestContext,
     data: ObjectEventData | LinkEventData,
   ): Promise<void> {
     const event: CloudEvent<ObjectEventData | LinkEventData> = {
@@ -205,6 +205,10 @@ export class EngineEventEmitter {
       subject,
       time: new Date().toISOString() as DateTime,
       datacontenttype: 'application/json',
+      // The topic is derived from the object type alone and the bus is shared
+      // by every tenant, so this is what lets a consumer tell whose change it
+      // is looking at. Dropping it here is a cross-tenant leak downstream.
+      tenantid: ctx.tenantId,
       data,
     };
     await this.bus.publish(event);

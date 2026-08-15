@@ -183,6 +183,7 @@ function createMockDeps(schema: ParsedSchema): ApiDependencies {
     auditWriter: undefined,
     storage: {
       getObjectAtVersion: vi.fn(),
+      getObjectHistory: vi.fn(),
     } as unknown as ApiDependencies['storage'],
   };
 }
@@ -505,16 +506,18 @@ describe('REST API', () => {
   describe('GET /api/v1/patients/:id/history', () => {
     it('returns version history', async () => {
       const deps = createMockDeps(parsed);
-      const getAtVersionMock = deps.storage.getObjectAtVersion as ReturnType<typeof vi.fn>;
 
       // Current object has version 3
       const getMock = deps.objectManager.get as ReturnType<typeof vi.fn>;
       getMock.mockResolvedValue(createPatientObject('p-1', { _version: 3 }));
 
-      getAtVersionMock
-        .mockResolvedValueOnce(createPatientObject('p-1', { _version: 1, _updatedAt: '2025-01-01T00:00:00Z' }))
-        .mockResolvedValueOnce(createPatientObject('p-1', { _version: 2, _updatedAt: '2025-01-02T00:00:00Z' }))
-        .mockResolvedValueOnce(createPatientObject('p-1', { _version: 3, _updatedAt: '2025-01-03T00:00:00Z' }));
+      // Batch history fetch returns all versions in one call
+      const getHistoryMock = deps.storage.getObjectHistory as ReturnType<typeof vi.fn>;
+      getHistoryMock.mockResolvedValue([
+        createPatientObject('p-1', { _version: 1, _updatedAt: '2025-01-01T00:00:00Z' }),
+        createPatientObject('p-1', { _version: 2, _updatedAt: '2025-01-02T00:00:00Z' }),
+        createPatientObject('p-1', { _version: 3, _updatedAt: '2025-01-03T00:00:00Z' }),
+      ]);
 
       const routes = generateRestRoutes(parsed, deps);
       const route = findRoute(routes, 'GET', '/api/v1/patients/:id/history')!;
@@ -530,6 +533,8 @@ describe('REST API', () => {
       expect(body.data).toHaveLength(3);
       expect(body.data[0]._version).toBe(1);
       expect(body.data[2]._version).toBe(3);
+      // Verify batch fetch (single call, not N+1)
+      expect(getHistoryMock).toHaveBeenCalledTimes(1);
     });
   });
 

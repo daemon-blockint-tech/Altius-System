@@ -83,13 +83,21 @@ beforeEach(async () => {
 // 7.3 — Consent
 // ---------------------------------------------------------------------------
 
+/** The exemption's ReBAC check resolves a per-tenant FGA store; an absent tenant denies. */
+const TENANT = 'nhs-trust-1';
+
 describe('Section 7.3: Consent', () => {
   describe('Direct care exemption', () => {
     it('GIVEN direct care exemption is active and clinician has care relationship, WHEN query for DIRECT_CARE, THEN all permitted fields visible', async () => {
+      // The tenant is load-bearing here: the direct-care exemption is decided by
+      // a ReBAC check, and that check runs against the tenant's own OpenFGA
+      // store. Omit it and the exemption cannot apply, so this asserts the
+      // exemption path rather than a fall-through to explicit consent records.
       const decision = await consentService.checkConsent(
         'patient:patient-1',
         DataPurpose.DIRECT_CARE,
         'user:dr-smith',
+        TENANT,
       );
 
       expect(decision.allowed).toBe(true);
@@ -102,6 +110,7 @@ describe('Section 7.3: Consent', () => {
         'patient:patient-1',
         DataPurpose.DIRECT_CARE,
         'user:dr-smith',
+        TENANT,
       );
 
       expect(result._consentRestricted).toBe(false);

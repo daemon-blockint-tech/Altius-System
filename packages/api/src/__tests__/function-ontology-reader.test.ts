@@ -136,3 +136,99 @@ describe('function ontology reader', () => {
     await expect(reader.getObject('Ghost', 'x')).rejects.toThrow(/Unknown object type "Ghost"/);
   });
 });
+
+// ─── applyAction: changes go through the governed pipeline ───
+
+const ODL_WITH_ACTION = `
+type Patient @objectType {
+  id: ID! @primary
+  name: String!
+}
+
+type AdmitPatient @actionType {
+  patientId: Patient! @param
+  wardId: ID! @param
+}
+
+type Admit @function(runtime: "cel", entry: "1", requiredRoles: "clinician") {
+  patientId: ID! @param
+}
+`;
+
+const schemaWithAction = parseOdl(ODL_WITH_ACTION);
+const admitFn = schemaWithAction.functionTypes.find(f => f.name === 'Admit')!;
+
+function depsWithActions(execute: ReturnType<typeof vi.fn>, manifest: unknown = { action: 'AdmitPatient' }) {
+  const captured: { ontology?: { applyAction?(n: string, p: Record<string, unknown>): Promise<unknown> } } = {};
+  const deps = {
+    schema: schemaWithAction,
+    functionExecutor: {
+      execute: vi.fn(async (_n: string, _i: Record<string, unknown>, opts?: typeof captured) => {
+        if (opts?.ontology) captured.ontology = opts.ontology;
+        return { result: 1, logs: [], durationMs: 1 };
+      }),
+    },
+    auditWriter: { write: vi.fn().mockResolvedValue(undefined) },
+    objectManager: { get: vi.fn() },
+    authorizationService: {
+      check: vi.fn(async () => true),
+      redactFields: (_u: string, _r: string[], _t: string, o: Record<string, unknown>) => ({ data: o, _redactedFields: [] }),
+    },
+    manifestRegistry: { get: vi.fn(() => manifest) },
+    actionExecutor: { execute },
+  } as unknown as ApiDependencies;
+  return { deps, captured };
+}
+
+async function actionReader(deps: ApiDependencies, captured: { ontology?: { applyAction?(n: string, p: Record<string, unknown>): Promise<unknown> } }) {
+  await invokeFunction(admitFn, deps, ctx, { patientId: 'p-1' });
+  return captured.ontology!;
+}
+
+describe('function ontology edits go through the action pipeline', () => {
+  it('runs the action as the invoking user, not a service account', async () => {
+    const execute = vi.fn(async () => ({ success: true, actionId: 'act-1', errors: [], affectedObjects: [] }));
+    const { deps, captured } = depsWithActions(execute);
+    const reader = await actionReader(deps, captured);
+
+    await reader.applyAction!('AdmitPatient', { patientId: 'p-1', wardId: 'w-1' });
+
+    const [, params, actor] = execute.mock.calls[0]!;
+    expect(params).toEqual({ patientId: 'p-1', wardId: 'w-1' });
+    expect(actor).toEqual({ id: 'u1', type: 'user', roles: ['clinician'] });
+  });
+
+  it('derives the consent subject exactly as the HTTP action route does', async () => {
+    const execute = vi.fn(async () => ({ success: true, actionId: 'act-1', errors: [], affectedObjects: [] }));
+    const { deps, captured } = depsWithActions(execute);
+    const reader = await actionReader(deps, captured);
+
+    await reader.applyAction!('AdmitPatient', { patientId: 'p-1', wardId: 'w-1' });
+
+    // Without this, calling an action from a function would skip the consent
+    // stage that calling it over HTTP applies.
+    const actionCtx = execute.mock.calls[0]![3] as { consentSubjectId?: string };
+    expect(actionCtx.consentSubjectId).toBe('p-1');
+  });
+
+  it('throws when the action is refused, so pack code cannot read it as applied', async () => {
+    const execute = vi.fn(async () => ({
+      success: false, actionId: 'act-1', affectedObjects: [],
+      errors: [{ code: 'FORBIDDEN', message: 'not permitted' }],
+    }));
+    const { deps, captured } = depsWithActions(execute);
+    const reader = await actionReader(deps, captured);
+
+    await expect(reader.applyAction!('AdmitPatient', { patientId: 'p-1' }))
+      .rejects.toThrow(/failed: not permitted/);
+  });
+
+  it('refuses an action that is not declared', async () => {
+    const execute = vi.fn();
+    const { deps, captured } = depsWithActions(execute, undefined);
+    const reader = await actionReader(deps, captured);
+
+    await expect(reader.applyAction!('Ghost', {})).rejects.toThrow(/Unknown action "Ghost"/);
+    expect(execute).not.toHaveBeenCalled();
+  });
+});

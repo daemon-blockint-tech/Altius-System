@@ -21,6 +21,7 @@ const ctx = {
 
 const EVENT: ChangeEvent = {
   changeType: 'UPDATED',
+  tenantId: 't-1',
   object: { id: 'p-1', _type: 'Patient' },
   previousValues: null,
   causedBy: null,

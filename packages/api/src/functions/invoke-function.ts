@@ -10,11 +10,16 @@
 
 import type { FunctionType } from '@altius/odl';
 
-import type { FunctionOntologyReader } from '@altius/engine';
+import type { FunctionOntologyAccess } from '@altius/engine';
+import type { ActionActor, ActionContext } from '@altius/actions';
 import type { DataPurpose } from '@altius/spi';
 
 import type { ApiDependencies, ResolverContext } from '../graphql/types.js';
-import { DEFAULT_CONSENT_PURPOSE, isConsentSubjectType } from '../graphql/types.js';
+import {
+  DEFAULT_CONSENT_PURPOSE,
+  DEFAULT_CONSENT_SUBJECT_TYPES,
+  isConsentSubjectType,
+} from '../graphql/types.js';
 import { objectToGraphQL } from '../graphql/resolver-generator.js';
 import { createAltiusError } from '../graphql/errors.js';
 import { toSnakeCase } from '../utils.js';
@@ -69,7 +74,7 @@ async function audit(
  * function computing over silently-nulled fields yields a wrong answer that
  * looks like a right one.
  */
-function ontologyReaderFor(deps: ApiDependencies, ctx: ResolverContext): FunctionOntologyReader {
+function ontologyReaderFor(deps: ApiDependencies, ctx: ResolverContext): FunctionOntologyAccess {
   return {
     async getObject(objectType: string, id: string): Promise<Record<string, unknown> | null> {
       const obj = deps.schema.objectTypes.find(o => o.name === objectType);
@@ -112,6 +117,49 @@ function ontologyReaderFor(deps: ApiDependencies, ctx: ResolverContext): Functio
       }
 
       return data;
+    },
+
+    async applyAction(actionName: string, params: Record<string, unknown>): Promise<unknown> {
+      if (!deps.actionExecutor || !deps.manifestRegistry) {
+        throw new Error('This deployment has no action pipeline configured, so functions cannot change the ontology');
+      }
+      const manifest = deps.manifestRegistry.get(actionName);
+      if (!manifest) {
+        throw new Error(`Unknown action "${actionName}"`);
+      }
+
+      const actor: ActionActor = { id: ctx.user.id, type: 'user', roles: ctx.user.roles };
+
+      // Same consent-subject derivation the REST action route performs: an
+      // @param typed as a consent-subject type becomes the subject. Omitting it
+      // here would make invoking an action from a function a way to skip the
+      // consent stage that invoking it over HTTP applies.
+      const action = deps.schema.actionTypes.find(a => a.name === actionName);
+      const subjectTypes = deps.consentSubjectTypes ?? DEFAULT_CONSENT_SUBJECT_TYPES;
+      const subjectParam = action?.fields.find(
+        f => f.directives.some(d => d.kind === 'param') && subjectTypes.includes(f.type.name),
+      );
+      const consentSubjectId = subjectParam ? String(params[subjectParam.name] ?? '') : undefined;
+
+      const actionCtx: ActionContext = {
+        requestContext: ctx.requestContext,
+        ...(consentSubjectId
+          ? { consentPurpose: DEFAULT_CONSENT_PURPOSE as DataPurpose, consentSubjectId }
+          : {}),
+      };
+
+      const result = await deps.actionExecutor.execute(manifest, params, actor, actionCtx, deps.schema);
+      if (!result.success) {
+        // Surfaced as a throw so pack code cannot mistake a refused action for
+        // an applied one by forgetting to inspect the result.
+        const reason = result.errors.map(e => e.message).join('; ') || 'action was refused';
+        throw new Error(`Action "${actionName}" failed: ${reason}`);
+      }
+      return {
+        success: result.success,
+        actionId: result.actionId,
+        affectedObjects: result.affectedObjects,
+      };
     },
   };
 }

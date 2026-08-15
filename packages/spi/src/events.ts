@@ -13,6 +13,17 @@ export interface CloudEvent<T = unknown> {
   subject?: string;
   time: DateTime;
   datacontenttype?: string;
+  /**
+   * Owning tenant, as a CloudEvents extension attribute (hence the lowercase
+   * name — the spec restricts extension names to lowercase alphanumerics).
+   *
+   * Required, not optional, and deliberately so: the bus is one topic for the
+   * whole deployment, so an event that loses its tenant on the way out cannot
+   * be routed safely at the other end. Making it required means a publisher
+   * that forgets it is a compile error rather than an event that consumers
+   * must then decide what to do with.
+   */
+  tenantid: string;
   data?: T;
 }
 

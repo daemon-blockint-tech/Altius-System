@@ -103,6 +103,23 @@ effects:
       status: "DISPENSED"
 `;
 
+/** Same action, but gated on the target's stored state — what a forged param subverts. */
+const GATED_DISPENSE_YAML = `
+action: DispenseMedication
+version: 1
+reversible: false
+
+preconditions:
+  - expr: "prescription.status == 'PENDING'"
+    error: "Prescription already dispensed"
+
+effects:
+  - type: updateObject
+    target: "prescription"
+    set:
+      status: "DISPENSED"
+`;
+
 function createAllowAllSecurity(): SecurityLayer {
   return { async checkPermission() { return { allowed: true }; } };
 }
@@ -175,6 +192,44 @@ describe('effect value and param typing', () => {
     // Nothing reached storage.
     const untouched = await storage.getObject(REQ_CTX, 'Prescription', prescription._id);
     expect(untouched!['status']).toBe('PENDING');
+  });
+
+  it('refuses an object-typed param handed a literal instead of an id', async () => {
+    // An object param is a REFERENCE. Step 4 only loads from storage when the
+    // value is a string; anything else fell through to "scalar pass-through",
+    // so a caller could substitute a fabricated object for a stored one and
+    // preconditions would then be evaluated against caller-controlled data
+    // instead of the record. Reachable wherever the body is untyped — the REST
+    // action route and MCP both forward what the caller sent.
+    const seen: Record<string, unknown>[] = [];
+    const recordingCel: CelEvaluator = {
+      async evaluate(_expression, variables) {
+        seen.push(variables);
+        return { value: true };
+      },
+    };
+    const gated = new ActionExecutor({
+      storage,
+      security: createAllowAllSecurity(),
+      cel: recordingCel,
+    });
+    const { manifest } = parseActionManifest(GATED_DISPENSE_YAML);
+
+    const result = await gated.execute(
+      manifest!,
+      // No such prescription is stored; the caller asserts its state outright.
+      { prescription: { _id: 'forged', status: 'PENDING' }, count: 1 },
+      ACTOR,
+      ACTION_CTX,
+      SCHEMA,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.errors[0]!.code).toBe('INVALID_PARAM_TYPE');
+    expect(result.errors[0]!.message).toContain('prescription');
+
+    // The point of the fix: the forged object never reaches the precondition.
+    expect(seen).toHaveLength(0);
   });
 
   it('rejects an enum param whose value is not a declared member', async () => {

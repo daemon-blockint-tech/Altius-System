@@ -5,6 +5,7 @@ import type {
   OidcAuthenticator,
   ConsentService,
   AuditWriter,
+  AuditStore,
 } from '@altius/security';
 import type { ParsedSchema } from '@altius/odl';
 import type { RequestContext, StorageProvider } from '@altius/spi';
@@ -30,6 +31,12 @@ export interface ApiDependencies {
   authenticator: OidcAuthenticator;
   consentService?: ConsentService;
   auditWriter?: AuditWriter;
+  /**
+   * Read-side audit store. When present, the REST /api/v1/audit route queries
+   * it with the caller's tenantId enforced — a deployment without audit reads
+   * simply omits the dependency and the route is not registered.
+   */
+  auditStore?: AuditStore;
   storage: StorageProvider;
   manifestRegistry?: ManifestRegistry;
   objectSetManager?: ObjectSetManager;
@@ -57,6 +64,13 @@ export interface ApiDependencies {
    * (env CONSENT_RECORDER_ROLES). Absent → generic default (`admin`).
    */
   consentRecorderRoles?: readonly string[];
+  /**
+   * Roles allowed to read the audit trail over HTTP.
+   *
+   * Unset falls back to DEFAULT_AUDIT_READER_ROLES; an empty array denies
+   * everyone. See rest/audit-routes.ts.
+   */
+  auditReaderRoles?: readonly string[];
   /**
    * Allowed consent-purpose vocabulary for this deployment (env CONSENT_PURPOSES).
    * `DataPurpose` is an open string type; this is the set accepted when recording

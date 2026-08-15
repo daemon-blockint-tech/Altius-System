@@ -17,6 +17,7 @@ import { registerMultiTenancyTests } from './categories/multi-tenancy.js';
 import { registerLineageTests } from './categories/lineage.js';
 import { registerAggregationTests } from './categories/aggregation.js';
 import { registerSearchTests } from './categories/search.js';
+import { registerConstraintTests } from './categories/constraints.js';
 
 export type ProviderFactory = () => StorageProvider | Promise<StorageProvider>;
 
@@ -37,4 +38,5 @@ export function runConformanceSuite(name: string, factory: ProviderFactory): voi
   registerLineageTests(name, factory);
   registerAggregationTests(name, factory);
   registerSearchTests(name, factory);
+  registerConstraintTests(name, factory);
 }

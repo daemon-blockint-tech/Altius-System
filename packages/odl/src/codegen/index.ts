@@ -135,6 +135,11 @@ function generateObjectType(obj: ObjectType): string {
   lines.push(`  _redactedFields: [String!]`);
   lines.push(`  _consentRestricted: Boolean`);
 
+  // Edit history — returns all stored versions of this object, oldest first.
+  // Each entry is the same type, so callers can render a diff timeline.
+  lines.push(`  """All stored versions of this object, oldest first."""`);
+  lines.push(`  history: [${obj.name}!]`);
+
   lines.push('}');
   return lines.join('\n');
 }

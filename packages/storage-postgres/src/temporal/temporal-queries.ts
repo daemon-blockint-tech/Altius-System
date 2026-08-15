@@ -92,6 +92,27 @@ export async function getObjectAtVersion(
 }
 
 /**
+ * Fetch all stored versions of an object in a single query, ordered by
+ * version ascending. Replaces the N+1 loop of getObjectAtVersion calls.
+ */
+export async function getObjectHistory(
+  pool: Pool,
+  ctx: RequestContext,
+  type: string,
+  id: string,
+  schema = 'public',
+  tx?: PgTransaction,
+): Promise<OntologyObject[]> {
+  const q = resolveQueryable(pool, tx);
+  const table = historyTableName(type, schema);
+
+  const sql = `SELECT * FROM ${table} WHERE "_tenant_id" = $1 AND "_id" = $2 ORDER BY "_version" ASC`;
+  const result = await q.query(sql, [ctx.tenantId, id]);
+
+  return result.rows.map((row) => historyRowToObject(row as Record<string, unknown>));
+}
+
+/**
  * Get the state of an object at a specific point in time.
  *
  * Queries the history table for the most recent version whose object timestamp

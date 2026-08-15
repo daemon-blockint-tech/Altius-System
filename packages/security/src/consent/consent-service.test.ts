@@ -121,6 +121,13 @@ const PATIENTS: PatientRecord[] = [
 // Tests — Section 7.3 Consent Management
 // ---------------------------------------------------------------------------
 
+/**
+ * Exemption paths run a ReBAC check, which is per-tenant. Matches the tenant
+ * MemoryConsentStore defaults to, so opt-out records and consent checks in
+ * these tests refer to the same tenant.
+ */
+const TENANT = "default";
+
 describe("ConsentService", () => {
   let fga: ReturnType<typeof createInMemoryFgaClient>;
   let authz: AuthorizationService;
@@ -152,6 +159,7 @@ describe("ConsentService", () => {
         "patient:1",
         DataPurpose.DIRECT_CARE,
         "user:dr-smith",
+        TENANT,
       );
 
       expect(decision.allowed).toBe(true);
@@ -185,6 +193,7 @@ describe("ConsentService", () => {
         "patient:1",
         DataPurpose.DIRECT_CARE,
         "user:dr-smith",
+        TENANT,
       );
 
       // Exemption does not apply; falls through to explicit consent check → denied
@@ -204,6 +213,7 @@ describe("ConsentService", () => {
         "patient:1",
         DataPurpose.DIRECT_CARE,
         "user:dr-smith",
+        TENANT,
       );
 
       // No exemption, no explicit consent → denied
@@ -220,13 +230,13 @@ describe("ConsentService", () => {
       fga.addTuple({ user: "ward:cardiology", relation: "admitted_to", object: "patient:1" });
 
       // Exemption fires for the configured purpose...
-      const ok = await custom.checkConsent("patient:1", "SERVICE_OPERATION", "user:agent-1");
+      const ok = await custom.checkConsent("patient:1", "SERVICE_OPERATION", "user:agent-1", TENANT);
       expect(ok.allowed).toBe(true);
       expect(ok.purpose).toBe("SERVICE_OPERATION");
       expect(ok.basis).toBe("legitimate_interest");
 
       // ...but NOT for DIRECT_CARE when that is not the configured exemption purpose.
-      const denied = await custom.checkConsent("patient:1", DataPurpose.DIRECT_CARE, "user:agent-1");
+      const denied = await custom.checkConsent("patient:1", DataPurpose.DIRECT_CARE, "user:agent-1", TENANT);
       expect(denied.allowed).toBe(false);
     });
 
@@ -239,9 +249,9 @@ describe("ConsentService", () => {
         subjectType: "customer",
       });
       const spy = vi.spyOn(authz, "check").mockResolvedValue(false);
-      await custom.checkConsent("cust-1", DataPurpose.DIRECT_CARE, "agent-1");
+      await custom.checkConsent("cust-1", DataPurpose.DIRECT_CARE, "agent-1", TENANT);
       // 3rd arg (the FGA object/subject) uses the configured type prefix.
-      expect(spy).toHaveBeenCalledWith("user:agent-1", "viewer", "customer:cust-1");
+      expect(spy).toHaveBeenCalledWith("user:agent-1", "viewer", "customer:cust-1", TENANT);
       spy.mockRestore();
     });
   });
@@ -438,6 +448,7 @@ describe("ConsentService", () => {
         (p) => p.id,
         DataPurpose.DIRECT_CARE,
         "user:dr-smith",
+        TENANT,
       );
 
       // All 5 patients visible — direct care exemption
@@ -522,7 +533,7 @@ describe("ConsentService", () => {
       fga.addTuple({ user: "ward:cardiology", relation: "admitted_to", object: "patient:1" });
 
       await expect(
-        consent.guardAction("patient:1", DataPurpose.DIRECT_CARE, "user:dr-smith"),
+        consent.guardAction("patient:1", DataPurpose.DIRECT_CARE, "user:dr-smith", TENANT),
       ).resolves.toBeUndefined();
     });
 
@@ -552,6 +563,7 @@ describe("ConsentService", () => {
         "patient:1",
         DataPurpose.DIRECT_CARE,
         "user:dr-smith",
+        TENANT,
       );
 
       // THEN all permitted fields are visible (direct care exemption applies)

@@ -27,7 +27,7 @@ import type {
   FunctionRuntime,
   FunctionRuntimeContext,
   FunctionLogEntry,
-  FunctionOntologyReader,
+  FunctionOntologyAccess,
 } from './function-executor.js';
 
 const WORKER_URL = new URL('../../function-worker.js', import.meta.url);
@@ -137,7 +137,7 @@ export class IsolatedNodeFunctionRuntime implements FunctionRuntime {
 
   private async serveOntology(
     child: ChildProcess,
-    ontology: FunctionOntologyReader | undefined,
+    ontology: FunctionOntologyAccess | undefined,
     msg: { id: number; op: string; args: unknown[] },
   ): Promise<void> {
     let reply: Record<string, unknown>;
@@ -147,11 +147,21 @@ export class IsolatedNodeFunctionRuntime implements FunctionRuntime {
           'no ontology reader is configured for this runtime, so functions cannot read objects',
         );
       }
-      if (msg.op !== 'getObject') {
+      let value: unknown;
+      if (msg.op === 'getObject') {
+        const [objectType, id] = msg.args as [string, string];
+        value = await ontology.getObject(objectType, id);
+      } else if (msg.op === 'applyAction') {
+        if (!ontology.applyAction) {
+          throw new Error(
+            'this deployment offers no applyAction path, so functions cannot change the ontology',
+          );
+        }
+        const [actionName, params] = msg.args as [string, Record<string, unknown>];
+        value = await ontology.applyAction(actionName, params);
+      } else {
         throw new Error(`unsupported ontology operation "${msg.op}"`);
       }
-      const [objectType, id] = msg.args as [string, string];
-      const value = await ontology.getObject(objectType, id);
       reply = { type: 'ontology-result', id: msg.id, ok: true, value: value ?? null };
     } catch (err) {
       reply = {

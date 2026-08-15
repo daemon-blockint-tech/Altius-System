@@ -116,6 +116,20 @@ function checkParamType(
     return undefined;
   }
 
+  // An object-typed param is a REFERENCE, so it must arrive as an id string.
+  // Step 4 only loads from storage when the value is a string; anything else
+  // used to fall through to scalar pass-through, which let a caller substitute
+  // a fabricated object for the stored one — preconditions would then be
+  // evaluated against caller-controlled data rather than the record. The REST
+  // action route and MCP both forward the caller's body untyped, so this is
+  // the only place that catches it for every surface.
+  if (schema.objectTypes.some((ot) => ot.name === typeName)) {
+    if (typeof value !== 'string') {
+      return `Parameter "${field.name}" must be the id of a ${typeName}, got ${Array.isArray(value) ? 'array' : typeof value}`;
+    }
+    return undefined;
+  }
+
   const check = PARAM_TYPE_CHECKS[typeName];
   if (check && !check(value)) {
     return `Parameter "${field.name}" has invalid type. Expected ${typeName}, got ${typeof value}`;
@@ -626,9 +640,10 @@ export class ActionExecutor {
       // Type-check the value against the declared ODL type. Without this a
       // String param accepts a number and an enum param accepts any string;
       // the mismatch only surfaces later as a storage or CEL error naming
-      // neither the param nor the expected type. Object-typed params carry an
-      // id string and are resolved (and existence-checked) in step 4, so they
-      // are deliberately not covered here.
+      // neither the param nor the expected type. Object-typed params are
+      // checked to be id STRINGS here; step 4 then resolves them from storage.
+      // Existence is not asserted here — a missing id resolves to null and
+      // fails at the effect that needs it.
       const typeError = checkParamType(field, value, schema);
       if (typeError) {
         errors.push({

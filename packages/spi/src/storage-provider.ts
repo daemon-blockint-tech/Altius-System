@@ -61,6 +61,12 @@ export interface StorageProvider {
   // ─── Versioning ───
   getObjectAtVersion(ctx: RequestContext, type: string, id: string, version: number): Promise<OntologyObject | null>;
   getObjectAtTime(ctx: RequestContext, type: string, id: string, timestamp: DateTime): Promise<OntologyObject | null>;
+  /**
+   * Fetch all stored versions of an object in a single round trip, ordered by
+   * version ascending. Replaces the N+1 loop of getObjectAtVersion calls that
+   * the history route used to make.
+   */
+  getObjectHistory(ctx: RequestContext, type: string, id: string): Promise<OntologyObject[]>;
 
   // ─── Indices ───
   ensureIndex(ctx: RequestContext, type: string, index: IndexDefinition): Promise<void>;

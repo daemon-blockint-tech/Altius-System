@@ -22,6 +22,7 @@ import type {
   BulkMutationRequest,
   BulkMutationResult,
   ObjectPage,
+  ObjectTypeDefinition,
   LinkPage,
   MigrationResult,
   HealthStatus,
@@ -254,6 +255,8 @@ export class MemoryStorageProvider implements StorageProvider {
   private _currentSchemaVersion = 0;
   /** idempotencyKey -> BulkMutationResult */
   private _idempotencyCache = new Map<string, BulkMutationResult>();
+  /** objectType -> IndexDefinition[] (schema-declared plus ensureIndex) */
+  private _indexes = new Map<string, IndexDefinition[]>();
 
   // ─── Internal helpers (exposed for Transaction rollback) ───
 
@@ -306,6 +309,71 @@ export class MemoryStorageProvider implements StorageProvider {
     return schema.linkTypes.find((lt) => lt.name === linkType);
   }
 
+  private _getObjectTypeDef(objectType: string): ObjectTypeDefinition | undefined {
+    const schema = this._schemas.get(this._currentSchemaVersion);
+    if (!schema) return undefined;
+    return schema.objectTypes.find((ot) => ot.name === objectType);
+  }
+
+  private _registerIndex(objectType: string, index: IndexDefinition): void {
+    const existing = this._indexes.get(objectType) ?? [];
+    this._indexes.set(objectType, [...existing.filter((i) => i.field !== index.field), { ...index }]);
+  }
+
+  /**
+   * Enforce what Postgres carries as column DDL: `required: true` becomes a
+   * NOT NULL column and a unique IndexDefinition becomes a UNIQUE index, so
+   * the store itself refuses the write. Without this the engine's
+   * check-then-write is the only guard and loses every race.
+   *
+   * @param candidate - the object as it would be stored after the write
+   * @param selfId - id of the object being updated, excluded from uniqueness
+   */
+  private _enforceObjectConstraints(
+    ctx: RequestContext,
+    type: string,
+    candidate: Record<string, unknown>,
+    selfId?: string,
+  ): void {
+    const def = this._getObjectTypeDef(type);
+    if (!def) return; // No schema applied — no constraint to enforce
+
+    for (const prop of def.properties) {
+      if (!prop.required) continue;
+      const value = candidate[prop.name];
+      // An explicit null always violates NOT NULL; an absent value only does
+      // so when the column has no DEFAULT to fall back on.
+      if (value === null || (value === undefined && prop.defaultValue === undefined)) {
+        throw new Error(`Required property '${prop.name}' is missing on ${type}`);
+      }
+    }
+
+    for (const index of this._indexes.get(type) ?? []) {
+      if (!index.unique) continue;
+      const value = candidate[index.field];
+      if (value === undefined || value === null) continue; // NULLs never collide in a unique index
+      for (const other of this._objects.values()) {
+        if (other._type !== type || other._tenantId !== ctx.tenantId) continue;
+        if (other._id === selfId) continue;
+        // Soft-deleted rows still occupy the index in Postgres.
+        if ((other as Record<string, unknown>)[index.field] === value) {
+          throw new Error(`Unique constraint violation: ${type}.${index.field} = ${String(value)}`);
+        }
+      }
+    }
+  }
+
+  /** Postgres refuses a link whose endpoint is missing or soft-deleted. */
+  private _assertEndpointLive(ctx: RequestContext, objectType: string, id: string, role: 'source' | 'target'): void {
+    const obj = this._getObjectInternal(ctx, objectType, id);
+    if (!obj) {
+      throw new Error(`Referential integrity: ${role} object ${objectType}:${id} does not exist`);
+    }
+    if (obj._deletedAt) {
+      throw new Error(`Referential integrity: ${role} object ${objectType}:${id} is soft-deleted`);
+    }
+  }
+
   private _enforceCardinality(ctx: RequestContext, linkType: string, fromId: string, toId: string): void {
     const def = this._getLinkTypeDef(linkType);
     if (!def) return; // No schema constraint
@@ -343,6 +411,7 @@ export class MemoryStorageProvider implements StorageProvider {
   // ─── Internal mutation methods (used by provider + transaction) ───
 
   /** @internal */ _doCreateObject(ctx: RequestContext, type: string, properties: Record<string, unknown>): OntologyObject {
+    this._enforceObjectConstraints(ctx, type, properties);
     const id = genId();
     const timestamp = now();
     const obj: OntologyObject = {
@@ -374,6 +443,7 @@ export class MemoryStorageProvider implements StorageProvider {
       err.code = 'VERSION_CONFLICT';
       throw err;
     }
+    this._enforceObjectConstraints(ctx, type, { ...existing, ...properties }, id);
     const updated: OntologyObject = {
       ...existing,
       ...properties,
@@ -426,13 +496,18 @@ export class MemoryStorageProvider implements StorageProvider {
     toId: string,
     properties?: Record<string, unknown>,
   ): OntologyLink {
+    // Resolve fromType/toType from link type definition or default to 'unknown'
+    const def = this._getLinkTypeDef(type);
+    // Referential integrity before cardinality, matching the Postgres order.
+    if (def) {
+      this._assertEndpointLive(ctx, def.fromType, fromId, 'source');
+      this._assertEndpointLive(ctx, def.toType, toId, 'target');
+    }
     this._enforceCardinality(ctx, type, fromId, toId);
     // Honour engine-provided ID (UUIDv7) per SPI contract, fall back to genId
     const engineId = properties?._engineLinkId;
     const id = typeof engineId === 'string' ? engineId : genId();
     const timestamp = now();
-    // Resolve fromType/toType from link type definition or default to 'unknown'
-    const def = this._getLinkTypeDef(type);
     // Strip _engineLinkId from user-facing properties
     const { _engineLinkId: _, ...userProps } = properties ?? {};
     const link: OntologyLink = {
@@ -455,8 +530,8 @@ export class MemoryStorageProvider implements StorageProvider {
   /** @internal */ _doUpdateLink(ctx: RequestContext, type: string, linkId: string, properties: Record<string, unknown>, expectedVersion?: number): OntologyLink {
     const key = `${type}:${linkId}`;
     const existing = this._links.get(key);
-    if (!existing || existing._tenantId !== ctx.tenantId) {
-      throw new Error(`Link ${type}:${linkId} not found`);
+    if (!existing || existing._tenantId !== ctx.tenantId || existing._deletedAt) {
+      throw new Error(`Link ${type}:${linkId} not found or is deleted`);
     }
     if (expectedVersion !== undefined && existing._version !== expectedVersion) {
       const err = new Error(`Link ${type}:${linkId} has version ${existing._version}, expected ${expectedVersion}`) as Error & { code: string };
@@ -481,17 +556,23 @@ export class MemoryStorageProvider implements StorageProvider {
     return updated;
   }
 
-  // TODO: Memory provider hard-deletes links (removes from map) while Postgres
-  // provider soft-deletes (sets _deleted_at). This means traverse() with
-  // includeDeleted:true will find soft-deleted links in Postgres but not in
-  // memory. Align by implementing soft-delete semantics here if needed.
+  /**
+   * Soft delete, as in Postgres: the record stays with _deletedAt set so
+   * getLinks/traverse with includeDeleted still see it.
+   */
   /** @internal */ _doDeleteLink(ctx: RequestContext, type: string, linkId: string): void {
     const key = `${type}:${linkId}`;
     const existing = this._links.get(key);
-    if (!existing || existing._tenantId !== ctx.tenantId) {
-      throw new Error(`Link ${type}:${linkId} not found`);
+    if (!existing || existing._tenantId !== ctx.tenantId || existing._deletedAt) {
+      throw new Error(`Link ${type}:${linkId} not found or already deleted`);
     }
-    this._links.delete(key);
+    const timestamp = now();
+    this._links.set(key, {
+      ...existing,
+      _deletedAt: timestamp,
+      _updatedAt: timestamp,
+      _version: existing._version + 1,
+    });
   }
 
   // ─── Schema ───
@@ -500,6 +581,13 @@ export class MemoryStorageProvider implements StorageProvider {
     const fromVersion = this._currentSchemaVersion;
     this._currentSchemaVersion = schema.version;
     this._schemas.set(schema.version, clone(schema));
+    // Postgres emits index DDL alongside the table, so schema-declared indexes
+    // are live from applySchema onwards without an ensureIndex call.
+    for (const objectType of schema.objectTypes) {
+      for (const index of objectType.indexes ?? []) {
+        this._registerIndex(objectType.name, index);
+      }
+    }
     return {
       success: true,
       fromVersion,
@@ -998,6 +1086,16 @@ export class MemoryStorageProvider implements StorageProvider {
     return snapshot ? clone(snapshot) : null;
   }
 
+  async getObjectHistory(ctx: RequestContext, type: string, id: string): Promise<OntologyObject[]> {
+    const key = `${type}:${id}`;
+    const history = this._versionHistory.get(key);
+    if (!history) return [];
+    return history
+      .filter((h) => h._tenantId === ctx.tenantId)
+      .sort((a, b) => (a._version ?? 0) - (b._version ?? 0))
+      .map((h) => clone(h));
+  }
+
   async getObjectAtTime(ctx: RequestContext, type: string, id: string, timestamp: DateTime): Promise<OntologyObject | null> {
     const key = `${type}:${id}`;
     const history = this._versionHistory.get(key);
@@ -1018,16 +1116,33 @@ export class MemoryStorageProvider implements StorageProvider {
 
   // ─── Indices ───
 
-  async ensureIndex(_ctx: RequestContext, _type: string, _index: IndexDefinition): Promise<void> {
-    // No-op for in-memory provider; indices don't affect correctness
+  async ensureIndex(ctx: RequestContext, type: string, index: IndexDefinition): Promise<void> {
+    // Postgres builds a real index here, so a unique index over data that
+    // already contains duplicates fails instead of being silently accepted.
+    if (index.unique) {
+      const seen = new Set<unknown>();
+      for (const obj of this._objects.values()) {
+        if (obj._type !== type || obj._tenantId !== ctx.tenantId) continue;
+        const value = (obj as Record<string, unknown>)[index.field];
+        if (value === undefined || value === null) continue;
+        if (seen.has(value)) {
+          throw new Error(`Cannot create unique index on ${type}.${index.field}: duplicate value ${String(value)}`);
+        }
+        seen.add(value);
+      }
+    }
+    this._registerIndex(type, index);
   }
 
-  async dropIndex(_ctx: RequestContext, _type: string, _field: string): Promise<void> {
-    // No-op for in-memory provider
+  async dropIndex(_ctx: RequestContext, type: string, field: string): Promise<void> {
+    const existing = this._indexes.get(type);
+    if (existing) {
+      this._indexes.set(type, existing.filter((i) => i.field !== field));
+    }
   }
 
-  async listIndexes(_ctx: RequestContext, _type: string): Promise<IndexDefinition[]> {
-    return [];
+  async listIndexes(_ctx: RequestContext, type: string): Promise<IndexDefinition[]> {
+    return (this._indexes.get(type) ?? []).map((i) => ({ ...i }));
   }
 
   // ─── Health ───

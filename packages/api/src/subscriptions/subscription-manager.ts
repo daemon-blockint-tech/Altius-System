@@ -19,6 +19,12 @@ import { logger } from '../logger.js';
 /** A change event delivered to GraphQL subscribers. */
 export interface ChangeEvent {
   changeType: 'CREATED' | 'UPDATED' | 'DELETED';
+  /**
+   * Tenant the change happened in. Carried on the payload because the topic is
+   * derived from the object type alone, so every tenant's events share it —
+   * this is the only thing that distinguishes them before delivery.
+   */
+  tenantId: string;
   object: { id: string; _type: string };
   previousValues: Record<string, { old: unknown; new: unknown }> | null;
   causedBy: { actionType: string | null; actionId: string | null } | null;
@@ -69,6 +75,7 @@ export function mapObjectEvent(
 
   const changeEvent: ChangeEvent = {
     changeType,
+    tenantId: event.tenantid,
     object: { id: data.objectId, _type: data.objectType },
     previousValues: data.changes ?? null,
     causedBy: data.causedBy
@@ -111,6 +118,7 @@ export function mapLinkEvent(
     topic: type ? `${lowerFirst(type)}Changed` : id,
     changeEvent: {
       changeType: 'UPDATED',
+      tenantId: event.tenantid,
       object: { id, _type: type ?? 'unknown' },
       previousValues: null,
       causedBy: data.causedBy
@@ -297,6 +305,12 @@ export function createIdFilteredSubscription(
         // Fail closed: deny events when authorization context is unavailable
         if (!authzService || !userId || !tenantId) return false;
 
+        // The bus is one topic per object type shared by every tenant, so this
+        // is the boundary — not the FGA check below, which runs against the
+        // subscriber's OWN store and therefore approves another tenant's event
+        // whenever the two tenants happen to share an object id.
+        if (!event.tenantId || event.tenantId !== tenantId) return false;
+
         // Authorize: check viewer access on the specific object
         const fgaType = toSnakeCase(event.object._type);
         const allowed = await authzService.check(
@@ -351,6 +365,12 @@ export function createFilteredSubscription(
 
         // Fail closed: deny events when authorization context is unavailable
         if (!authzService || !userId || !tenantId) return false;
+
+        // The bus is one topic per object type shared by every tenant, so this
+        // is the boundary — not the FGA check below, which runs against the
+        // subscriber's OWN store and therefore approves another tenant's event
+        // whenever the two tenants happen to share an object id.
+        if (!event.tenantId || event.tenantId !== tenantId) return false;
 
         // Authorize: check viewer access on the specific object
         const fgaType = toSnakeCase(event.object._type);

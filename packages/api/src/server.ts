@@ -59,6 +59,7 @@ import type { OpenFgaClientInterface, FgaClientResolver } from '@altius/security
 import type { StorageProvider, RequestContext } from '@altius/spi';
 import { createGraphQLServer, buildResolverContext } from './graphql/index.js';
 import { generateRestRoutes, generateOpenApiSpec } from './rest/index.js';
+import { generateAuditRoutes } from './rest/audit-routes.js';
 import { readPlatformVersion } from './version.js';
 import { createFhirRouter } from './fhir/index.js';
 import { createCdmRouter } from './cdm/index.js';
@@ -548,6 +549,9 @@ async function main(): Promise<void> {
   };
   const granterRoles = parseRoles(process.env['RELATIONSHIP_GRANTER_ROLES']) ?? ['admin'];
   const consentRecorderRoles = parseRoles(process.env['CONSENT_RECORDER_ROLES']) ?? ['admin'];
+  // Audit reads expose before/after object snapshots, so they are gated like
+  // the other administrative surfaces rather than left open to any caller.
+  const auditReaderRoles = parseRoles(process.env['AUDIT_READER_ROLES']) ?? ['admin'];
 
   // Deployment-defined consent-purpose vocabulary (env CONSENT_PURPOSES). Unset →
   // the consent router falls back to the standard NHS/UK-IG preset (back-compat).
@@ -798,9 +802,11 @@ async function main(): Promise<void> {
     objectSetManager,
     functionExecutor,
     auditWriter: securityAuditWriter,
+    auditStore,
     grantAllowlist,
     granterRoles,
     consentRecorderRoles,
+    auditReaderRoles,
     consentPurposes,
     ...(consentSubjectTypes ? { consentSubjectTypes } : {}),
     cdmEnabled,
@@ -1060,6 +1066,7 @@ async function main(): Promise<void> {
   // ── REST at /api/v1/* ──
   const restRoutes = [
     ...generateRestRoutes(schema, deps),
+    ...generateAuditRoutes(deps),
     ...generateRelationshipRoutes(deps, grantAllowlist),
     ...generateConsentRoutes(deps),
   ];

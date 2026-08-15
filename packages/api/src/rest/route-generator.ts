@@ -972,20 +972,12 @@ function generateHistoryRoute(
           });
         }
 
-        const currentVersion = (current._version as number) ?? 1;
-        const versions: OntologyObject[] = [];
-
-        for (let v = 1; v <= currentVersion; v++) {
-          const versionObj = await deps.storage.getObjectAtVersion(
-            requestContext,
-            typeName,
-            id,
-            v,
-          );
-          if (versionObj) {
-            versions.push(versionObj);
-          }
-        }
+        // Batch fetch all versions in a single query instead of N+1
+        const versions = await deps.storage.getObjectHistory(
+          requestContext,
+          typeName,
+          id,
+        );
 
         // Field-level redaction on each version, preserving version metadata
         const redacted = deps.authorizationService.redactFieldsBatch(

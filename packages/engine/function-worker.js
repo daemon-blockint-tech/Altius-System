@@ -47,6 +47,9 @@ function callHost(op, args) {
 
 const ontology = {
   getObject: (type, id) => callHost('getObject', [type, id]),
+  // Not a write: the parent runs a declared action through the governed
+  // pipeline. Pack code never touches storage.
+  applyAction: (actionName, params) => callHost('applyAction', [actionName, params ?? {}]),
 };
 
 process.on('message', (msg) => {

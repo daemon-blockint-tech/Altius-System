@@ -47,12 +47,24 @@ export interface FunctionExecutionResult {
  * The ontology surface a function may reach.
  *
  * Deliberately narrow: every method is performed by the host under the
- * invoking user's identity, so a function can read exactly what its caller
+ * invoking user's identity, so a function can do exactly what its caller
  * could and nothing more. Widen it one operation at a time, not by handing
  * pack code a storage handle.
  */
-export interface FunctionOntologyReader {
+export interface FunctionOntologyAccess {
   getObject(objectType: string, id: string): Promise<Record<string, unknown> | null>;
+  /**
+   * Run a declared ActionType on the caller's behalf.
+   *
+   * Functions get no write handle. A change goes through the same
+   * ActionExecutor the REST and GraphQL surfaces use, so validation,
+   * authorization, preconditions, side-effects, audit and events all still
+   * run — a function gains no privilege its caller lacks.
+   *
+   * Optional: a deployment may offer reads without writes, in which case the
+   * runtime refuses the call rather than silently doing nothing.
+   */
+  applyAction?(actionName: string, params: Record<string, unknown>): Promise<unknown>;
 }
 
 export interface FunctionRuntimeContext {
@@ -67,7 +79,7 @@ export interface FunctionRuntimeContext {
   /** Logger sink for runtimes that capture logs. */
   log: (level: FunctionLogEntry['level'], message: string) => void;
   /** Authorized ontology reads, performed by the host. Absent means none. */
-  ontology?: FunctionOntologyReader;
+  ontology?: FunctionOntologyAccess;
 }
 
 /**
@@ -206,7 +218,7 @@ export interface FunctionExecutorConfig {
    * Absent means functions cannot read objects — which is fail-closed, not a
    * silent null the pack author would read as "not found".
    */
-  ontology?: FunctionOntologyReader;
+  ontology?: FunctionOntologyAccess;
 }
 
 /**
@@ -222,7 +234,7 @@ export class FunctionExecutor {
   private readonly celEvaluator?: CelEvaluator;
   private readonly packDir?: string;
   private readonly packDirByFunction: Record<string, string>;
-  private readonly ontology?: FunctionOntologyReader;
+  private readonly ontology?: FunctionOntologyAccess;
 
   constructor(config: FunctionExecutorConfig) {
     this.schema = config.schema;
@@ -269,7 +281,7 @@ export class FunctionExecutor {
        * hand whoever's identity happened to be wired at boot to every later
        * caller.
        */
-      ontology?: FunctionOntologyReader;
+      ontology?: FunctionOntologyAccess;
     },
   ): Promise<FunctionExecutionResult> {
     const fn = this.getFunction(name);

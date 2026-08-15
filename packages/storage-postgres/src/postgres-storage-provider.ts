@@ -62,6 +62,7 @@ import {
 import { traverse as pgTraverse } from './links/index.js';
 import {
   getObjectAtVersion as pgGetObjectAtVersion,
+  getObjectHistory as pgGetObjectHistory,
   getObjectAtTime as pgGetObjectAtTime,
 } from './temporal/index.js';
 import { PgTransaction } from './transactions/index.js';
@@ -532,6 +533,10 @@ export class PostgresStorageProvider implements StorageProvider {
 
   async getObjectAtVersion(ctx: RequestContext, type: string, id: string, version: number): Promise<OntologyObject | null> {
     return withRetry(() => pgGetObjectAtVersion(this._pool, ctx, type, id, version, this._dataSchema));
+  }
+
+  async getObjectHistory(ctx: RequestContext, type: string, id: string): Promise<OntologyObject[]> {
+    return withRetry(() => pgGetObjectHistory(this._pool, ctx, type, id, this._dataSchema));
   }
 
   async getObjectAtTime(ctx: RequestContext, type: string, id: string, timestamp: DateTime): Promise<OntologyObject | null> {

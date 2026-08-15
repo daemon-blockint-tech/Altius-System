@@ -151,6 +151,50 @@ export function registerLinkTests(name: string, factory: ProviderFactory): void 
       });
     });
 
+    // ─── Delete Link: soft-delete semantics ───
+    // deleteLink is a soft delete: the row stays, with _deletedAt set. A
+    // provider that removes the record instead answers every includeDeleted
+    // query differently, so a suite green against it can still be wrong in
+    // production.
+
+    describe('deleteLink soft-delete', () => {
+      it('deleted link still returned by getLinks with includeDeleted', async () => {
+        const link = await provider.createLink(tenantA, 'AssignedTo', patientId1, teamId1);
+        await provider.deleteLink(tenantA, 'AssignedTo', link._id);
+        const page = await provider.getLinks(tenantA, patientId1, 'AssignedTo', 'outbound', { includeDeleted: true });
+        expect(page.items.map(l => l._id)).toEqual([link._id]);
+        expect(page.items[0]!._deletedAt).toBeTruthy();
+      });
+
+      it('deleted link still traversable with includeDeleted', async () => {
+        const link = await provider.createLink(tenantA, 'AssignedTo', patientId1, teamId1);
+        await provider.deleteLink(tenantA, 'AssignedTo', link._id);
+        const result = await provider.traverse(
+          tenantA,
+          patientId1,
+          { steps: [{ linkType: 'AssignedTo', direction: 'outbound' }] },
+          { includeDeleted: true },
+        );
+        expect(result.edges.map(e => e._id)).toEqual([link._id]);
+      });
+
+      it('deleting an already-deleted link throws', async () => {
+        const link = await provider.createLink(tenantA, 'AssignedTo', patientId1, teamId1);
+        await provider.deleteLink(tenantA, 'AssignedTo', link._id);
+        await expect(
+          provider.deleteLink(tenantA, 'AssignedTo', link._id),
+        ).rejects.toThrow();
+      });
+
+      it('updating a deleted link throws', async () => {
+        const link = await provider.createLink(tenantA, 'AssignedTo', patientId1, teamId1);
+        await provider.deleteLink(tenantA, 'AssignedTo', link._id);
+        await expect(
+          provider.updateLink(tenantA, 'AssignedTo', link._id, { role: 'zombie' }),
+        ).rejects.toThrow();
+      });
+    });
+
     // ─── Get Links Direction ───
 
     describe('getLinks direction', () => {
@@ -307,6 +351,42 @@ export function registerLinkTests(name: string, factory: ProviderFactory): void 
     // ─── Referential Integrity ───
 
     describe('referential integrity', () => {
+      // Both endpoints must exist and be live at create time. The engine checks
+      // this too, but non-atomically — the store is the only guard that holds
+      // when two writers race, and callers below the engine have no guard at all.
+
+      it('rejects a link whose source object does not exist', async () => {
+        await expect(
+          provider.createLink(tenantA, 'AssignedTo', 'no-such-patient', teamId1),
+        ).rejects.toThrow(/[Rr]eferential integrity/);
+      });
+
+      it('rejects a link whose target object does not exist', async () => {
+        await expect(
+          provider.createLink(tenantA, 'AssignedTo', patientId1, 'no-such-team'),
+        ).rejects.toThrow(/[Rr]eferential integrity/);
+      });
+
+      it('rejects a link to a soft-deleted target', async () => {
+        await provider.deleteObject(tenantA, 'CareTeam', teamId2, 'soft');
+        await expect(
+          provider.createLink(tenantA, 'AssignedTo', patientId1, teamId2),
+        ).rejects.toThrow(/[Rr]eferential integrity/);
+      });
+
+      it('rejects a link from a soft-deleted source', async () => {
+        await provider.deleteObject(tenantA, 'Patient', patientId2, 'soft');
+        await expect(
+          provider.createLink(tenantA, 'AssignedTo', patientId2, teamId1),
+        ).rejects.toThrow(/[Rr]eferential integrity/);
+      });
+
+      it('rejects a link whose endpoints belong to another tenant', async () => {
+        await expect(
+          provider.createLink(tenantB, 'AssignedTo', patientId1, teamId1),
+        ).rejects.toThrow(/[Rr]eferential integrity/);
+      });
+
       it('link _fromType and _toType set from schema', async () => {
         const link = await provider.createLink(tenantA, 'AssignedTo', patientId1, teamId1);
         expect(link._fromType).toBe('Patient');

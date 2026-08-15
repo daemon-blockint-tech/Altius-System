@@ -138,6 +138,7 @@ describe('Section 7.2: Permissions', () => {
         'user:nurse-alice',
         'viewer',
         'patient',
+        reqCtx.tenantId,
       );
 
       // visiblePatients returns full object identifiers like "patient:<id>"
@@ -160,10 +161,13 @@ describe('Section 7.2: Permissions', () => {
       const authzService = new AuthorizationService(fgaClient);
 
       // Check if Alice has viewer permission on patient-2
+      // The tenant is load-bearing: without it the store cannot be resolved and
+      // every check denies, so this assertion would pass for the wrong reason.
       const canView = await authzService.check(
         'user:nurse-alice',
         'viewer',
         `patient:${patient2Id}`,
+        reqCtx.tenantId,
       );
 
       expect(canView).toBe(false);

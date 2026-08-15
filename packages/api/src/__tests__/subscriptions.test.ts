@@ -80,6 +80,7 @@ function createObjectUpdatedEvent(
 ): CloudEvent<ObjectEventData> {
   return {
     specversion: '1.0',
+    tenantid: 'tenant-1',
     id: `evt-${Date.now()}`,
     source: 'altius://engine/ontology',
     type: 'altius.object.updated',
@@ -103,6 +104,7 @@ function createObjectCreatedEvent(
 ): CloudEvent<ObjectEventData> {
   return {
     specversion: '1.0',
+    tenantid: 'tenant-1',
     id: `evt-${Date.now()}`,
     source: 'altius://engine/ontology',
     type: 'altius.object.created',
@@ -128,6 +130,7 @@ function createLinkCreatedEvent(
 ): CloudEvent<LinkEventData> {
   return {
     specversion: '1.0',
+    tenantid: 'tenant-1',
     id: `evt-${Date.now()}`,
     source: 'altius://engine/ontology',
     type: 'altius.link.created',
@@ -231,6 +234,7 @@ describe('CloudEvent to ChangeEvent mapping', () => {
   it('maps object.deleted to DELETED ChangeEvent', () => {
     const event: CloudEvent<ObjectEventData> = {
       specversion: '1.0',
+      tenantid: 'tenant-1',
       id: 'evt-del',
       source: 'altius://engine/ontology',
       type: 'altius.object.deleted',
@@ -252,6 +256,7 @@ describe('CloudEvent to ChangeEvent mapping', () => {
   it('returns null for unknown event types', () => {
     const event: CloudEvent<ObjectEventData> = {
       specversion: '1.0',
+      tenantid: 'tenant-1',
       id: 'evt-unknown',
       source: 'altius://engine/ontology',
       type: 'altius.action.completed',
@@ -294,6 +299,7 @@ describe('CloudEvent to ChangeEvent mapping', () => {
   it('returns null for non-link event types', () => {
     const event: CloudEvent<LinkEventData> = {
       specversion: '1.0',
+      tenantid: 'tenant-1',
       id: 'evt-nope',
       source: 'altius://engine/ontology',
       type: 'altius.object.updated',
@@ -504,6 +510,7 @@ describe('ID-filtered subscriptions', () => {
     void pubsub.publish('patientChanged', {
       patientChanged: {
         changeType: 'UPDATED',
+        tenantId: 'tenant-1',
         object: { id: 'p-1', _type: 'Patient' },
         previousValues: null,
         causedBy: null,
@@ -532,6 +539,7 @@ describe('ID-filtered subscriptions', () => {
     await pubsub.publish('patientChanged', {
       patientChanged: {
         changeType: 'UPDATED',
+        tenantId: 'tenant-1',
         object: { id: 'p-2', _type: 'Patient' }, // Different ID
         previousValues: null,
         causedBy: null,
@@ -546,6 +554,7 @@ describe('ID-filtered subscriptions', () => {
     await pubsub.publish('patientChanged', {
       patientChanged: {
         changeType: 'UPDATED',
+        tenantId: 'tenant-1',
         object: { id: 'p-1', _type: 'Patient' }, // Matching ID
         previousValues: null,
         causedBy: null,
@@ -577,6 +586,7 @@ describe('ID-filtered subscriptions', () => {
     await pubsub.publish('patientChanged', {
       patientChanged: {
         changeType: 'UPDATED',
+        tenantId: 'tenant-1',
         object: { id: 'p-1', _type: 'Patient' },
         previousValues: null,
         causedBy: null,
@@ -593,6 +603,7 @@ describe('ID-filtered subscriptions', () => {
     await pubsub.publish('patientChanged', {
       patientChanged: {
         changeType: 'UPDATED',
+        tenantId: 'tenant-1',
         object: { id: 'p-1', _type: 'Patient' },
         previousValues: null,
         causedBy: null,
@@ -660,6 +671,7 @@ describe('Subscription auth fail-closed', () => {
     await pubsub.publish('patientChanged', {
       patientChanged: {
         changeType: 'UPDATED',
+        tenantId: 'tenant-1',
         object: { id: 'p-1', _type: 'Patient' },
         previousValues: null,
         causedBy: null,
@@ -700,6 +712,7 @@ describe('Subscription auth fail-closed', () => {
     await pubsub.publish('patientChanged', {
       patientChanged: {
         changeType: 'UPDATED',
+        tenantId: 'tenant-1',
         object: { id: 'p-1', _type: 'Patient' },
         previousValues: null,
         causedBy: null,
@@ -730,6 +743,7 @@ describe('Subscription auth fail-closed', () => {
     await pubsub.publish('patientChanged', {
       patientChanged: {
         changeType: 'CREATED',
+        tenantId: 'tenant-1',
         object: { id: 'p-1', _type: 'Patient' },
         previousValues: null,
         causedBy: null,
@@ -761,6 +775,7 @@ describe('Subscription auth fail-closed', () => {
     await pubsub.publish('patientChanged', {
       patientChanged: {
         changeType: 'CREATED',
+        tenantId: 'tenant-1',
         object: { id: 'p-1', _type: 'Patient' },
         previousValues: null,
         causedBy: null,
@@ -795,6 +810,7 @@ describe('Filtered subscriptions (foosChanged)', () => {
     void pubsub.publish('patientChanged', {
       patientChanged: {
         changeType: 'CREATED',
+        tenantId: 'tenant-1',
         object: { id: 'p-1', _type: 'Patient' },
         previousValues: null,
         causedBy: null,
@@ -821,6 +837,7 @@ describe('Filtered subscriptions (foosChanged)', () => {
     await pubsub.publish('patientChanged', {
       patientChanged: {
         changeType: 'UPDATED',
+        tenantId: 'tenant-1',
         object: { id: 'p-1', _type: 'Patient' },
         previousValues: null,
         causedBy: null,
@@ -835,6 +852,7 @@ describe('Filtered subscriptions (foosChanged)', () => {
     await pubsub.publish('patientChanged', {
       patientChanged: {
         changeType: 'DELETED',
+        tenantId: 'tenant-1',
         object: { id: 'p-2', _type: 'Patient' },
         previousValues: null,
         causedBy: null,
@@ -922,6 +940,7 @@ describe('Resolver generation with subscriptions', () => {
     await pubsub.publish('patientChanged', {
       patientChanged: {
         changeType: 'UPDATED',
+        tenantId: 'tenant-1',
         object: { id: 'p-2', _type: 'Patient' },
         previousValues: null,
         causedBy: null,
@@ -935,6 +954,7 @@ describe('Resolver generation with subscriptions', () => {
     await pubsub.publish('patientChanged', {
       patientChanged: {
         changeType: 'UPDATED',
+        tenantId: 'tenant-1',
         object: { id: 'p-1', _type: 'Patient' },
         previousValues: null,
         causedBy: null,

@@ -408,6 +408,87 @@ function generateLinkFieldResolvers(
   resolvers[obj.name] = typeResolvers;
 }
 
+/**
+ * Generate the `history` field resolver for an object type.
+ *
+ * Returns all stored versions of the parent object, oldest first, using the
+ * batch `getObjectHistory` SPI method (one query) instead of the N+1 loop the
+ * REST route used to make. Each version is shaped, redacted, and consent-
+ * filtered exactly like the single-object get path — the history timeline
+ * shows the caller the same fields they could see at the time.
+ */
+function generateHistoryFieldResolver(
+  obj: ObjectType,
+  resolvers: ResolverMap,
+  deps: ApiDependencies,
+): void {
+  const typeResolvers: Record<string, ResolverValue> = resolvers[obj.name] ?? {};
+  const primaryName = obj.fields.find(isPrimaryField)?.name ?? 'id';
+  const fgaType = toSnakeCase(obj.name);
+
+  typeResolvers['history'] = async (
+    parent: Record<string, unknown>,
+    _args: unknown,
+    ctx: ResolverContext,
+  ) => {
+    try {
+      const id = parent[primaryName] as string | undefined;
+      if (!id) return [];
+      const { user, requestContext } = ctx;
+
+      // Authorize — the caller must have view access to the object itself.
+      // Without this, history would bypass the FGA check that gates every
+      // other read of this object.
+      const allowed = await deps.authorizationService.check(
+        `user:${user.id}`,
+        'viewer',
+        `${fgaType}:${id}`,
+        user.tenantId,
+      );
+      if (!allowed) return [];
+
+      const versions = await deps.storage.getObjectHistory(
+        requestContext,
+        obj.name,
+        id,
+      );
+
+      const redacted = deps.authorizationService.redactFieldsBatch(
+        user.id,
+        user.roles,
+        obj.name,
+        versions.map((v) => objectToGraphQL(v, obj)),
+      );
+
+      let items = redacted.map((r: RedactionResult<Record<string, unknown>>) => {
+        const data = r.data as Record<string, unknown>;
+        data._redactedFields = r._redactedFields.length > 0 ? r._redactedFields : null;
+        data._consentRestricted = false;
+        return data;
+      });
+
+      // Consent filtering — parity with the REST history route.
+      if (deps.consentService && isConsentSubjectType(obj.name, deps.consentSubjectTypes)) {
+        const getPrimaryId = (item: Record<string, unknown>) => String(item._id ?? '');
+        const consentResult = await deps.consentService.filterList(
+          items,
+          getPrimaryId,
+          DEFAULT_CONSENT_PURPOSE as DataPurpose,
+          user.id,
+          requestContext.tenantId,
+        );
+        items = consentResult.edges;
+      }
+
+      return items;
+    } catch (err) {
+      throw wrapError(err, ctx.requestContext.traceId);
+    }
+  };
+
+  resolvers[obj.name] = typeResolvers;
+}
+
 // ─── Resolver map type ───
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -442,6 +523,8 @@ export function generateResolvers(
     generateSubscriptionResolvers(obj, resolvers, pubsub);
     // Type-level resolvers for @link fields (nested relationship traversal).
     generateLinkFieldResolvers(obj, schema, resolvers, deps);
+    // `history` field resolver — batch version fetch with redaction + consent.
+    generateHistoryFieldResolver(obj, resolvers, deps);
     // Generic update/delete mutations with optional expectedVersion input
     // for client-facing optimistic concurrency (#5).
     generateUpdateMutationResolver(obj, resolvers, deps);

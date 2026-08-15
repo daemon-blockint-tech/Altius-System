@@ -59,6 +59,7 @@ const { logger: mockLogger } = await import('../logger.js') as unknown as { logg
 function makeEvent(overrides?: Partial<CloudEvent>): CloudEvent {
   return {
     specversion: '1.0',
+    tenantid: 'tenant-1',
     id: 'evt-1',
     source: 'test',
     type: 'object.created',

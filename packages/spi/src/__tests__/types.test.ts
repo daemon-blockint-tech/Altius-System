@@ -128,6 +128,7 @@ describe('@altius/spi type exports', () => {
   it('can construct a CloudEvent', () => {
     const event: CloudEvent<{ objectType: string }> = {
       specversion: '1.0',
+      tenantid: 'tenant-1',
       id: 'evt-1',
       source: 'altius://instance-1/ontology',
       type: 'altius.object.created',
