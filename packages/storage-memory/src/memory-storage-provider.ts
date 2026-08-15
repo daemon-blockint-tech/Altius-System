@@ -762,6 +762,15 @@ export class MemoryStorageProvider implements StorageProvider {
         throw new Error(`Invalid aggregate function: ${aggField.fn}`);
       }
     }
+    // Same for bucket intervals: bucketDate falls through to day-granularity
+    // for anything it does not recognise, so without this an unsupported
+    // interval is a silent wrong answer here while Postgres rejects it.
+    const ALLOWED_BUCKET_INTERVALS = new Set(['day', 'week', 'month', 'year']);
+    for (const bucket of query.buckets ?? []) {
+      if (!ALLOWED_BUCKET_INTERVALS.has(bucket.interval)) {
+        throw new Error(`Invalid bucket interval: ${bucket.interval}`);
+      }
+    }
     // 1. Collect matching objects (tenant-scoped, non-deleted)
     const maps = this._getEffectiveMaps(ctx);
     let items = Array.from(maps.objects.values()).filter((obj) => {

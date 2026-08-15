@@ -145,4 +145,27 @@ describe('MemoryStorageProvider aggregate with date bucketing', () => {
     expect(result.groups).toHaveLength(0);
     expect(result.totalGroups).toBe(0);
   });
+
+  // Parity with Postgres, which allowlists the interval before interpolating
+  // it into date_trunc(). Without this the memory provider truncates to day
+  // granularity for anything it does not recognise, so the same query returns
+  // a plausible wrong answer here and an error there.
+  it('rejects an unsupported bucket interval instead of silently using day', async () => {
+    await expect(
+      storage.aggregateObjects(CTX, 'Transaction', {
+        fields: [{ field: '*', fn: 'count', alias: 'cnt' }],
+        buckets: [{ field: 'timestamp', interval: 'hour' as never }],
+      }),
+    ).rejects.toThrow(/Invalid bucket interval/);
+  });
+
+  it('rejects an unsupported bucket interval even with zero matching rows', async () => {
+    await expect(
+      storage.aggregateObjects(CTX, 'Transaction', {
+        fields: [{ field: '*', fn: 'count', alias: 'cnt' }],
+        buckets: [{ field: 'timestamp', interval: 'hour' as never }],
+        filter: { field: 'amount', operator: 'gt', value: 10000 },
+      }),
+    ).rejects.toThrow(/Invalid bucket interval/);
+  });
 });

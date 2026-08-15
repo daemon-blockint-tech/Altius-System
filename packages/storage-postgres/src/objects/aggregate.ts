@@ -53,9 +53,24 @@ export async function aggregateObjects(
   // Date bucket columns — date_trunc produces a timestamptz at the bucket
   // boundary, which becomes a group key. The alias is the key name in the
   // result (defaults to the field name).
+  //
+  // The interval is interpolated as a raw SQL string literal, so it is
+  // allowlisted for the same reason ALLOWED_FNS exists below: `BucketInterval`
+  // is erased at runtime and callers reach this with a plain cast (the REST
+  // aggregate route does `b.interval.toLowerCase() as BucketInterval` over an
+  // untrusted body), so an unchecked value closes the quote and injects
+  // arbitrary SELECT expressions — which no WHERE-clause authz, redaction or
+  // consent control can constrain. Only these four are listed because they are
+  // what the SDL enum offers and what the memory provider implements; widening
+  // the set here would silently diverge the two providers.
+  const ALLOWED_BUCKET_INTERVALS = new Set(['day', 'week', 'month', 'year']);
+
   const bucketAliases: { alias: string; field: string }[] = [];
   if (query.buckets && query.buckets.length > 0) {
     for (const bucket of query.buckets) {
+      if (!ALLOWED_BUCKET_INTERVALS.has(bucket.interval)) {
+        throw new Error(`Invalid bucket interval: ${bucket.interval}`);
+      }
       const col = fieldCol(bucket.field);
       const aliasName = bucket.alias ?? bucket.field;
       const aliasIdent = pgIdent(snakeCase(aliasName));
