@@ -268,9 +268,10 @@ function parseOrderBy(
 /**
  * Parse pagination from query params.
  */
-function parsePagination(query: Record<string, string | string[] | undefined>): { offset: number; limit: number } {
+function parsePagination(query: Record<string, string | string[] | undefined>): { offset: number; limit: number; after?: string } {
   const limitStr = typeof query['limit'] === 'string' ? query['limit'] : undefined;
   const offsetStr = typeof query['offset'] === 'string' ? query['offset'] : undefined;
+  const afterStr = typeof query['after'] === 'string' ? query['after'] : undefined;
 
   const limit = Math.max(0, Math.min(
     limitStr ? parseInt(limitStr, 10) || DEFAULT_PAGE_SIZE : DEFAULT_PAGE_SIZE,
@@ -278,7 +279,11 @@ function parsePagination(query: Record<string, string | string[] | undefined>): 
   ));
   const offset = Math.max(0, offsetStr ? parseInt(offsetStr, 10) || 0 : 0);
 
-  return { offset, limit };
+  // `after` is returned alongside offset/limit; callers decide whether to
+  // forward it. The link route does (cursor pagination), the object list
+  // routes do not (they predate the cursor contract and stay offset-only
+  // to keep the change minimal).
+  return afterStr ? { offset, limit, after: afterStr } : { offset, limit };
 }
 
 // ─── Auth helpers ───
@@ -1056,14 +1061,14 @@ function generateLinksRoute(
           });
         }
 
-        const { offset, limit } = parsePagination(req.query);
+        const { offset, limit, after } = parsePagination(req.query);
         const direction = (req.query['direction'] as string) || 'outbound';
 
         const linkPage = await deps.linkManager.getLinks(
           id,
           linkType,
           direction as 'inbound' | 'outbound',
-          { limit, offset },
+          after ? { limit, offset, after } : { limit, offset },
           requestContext,
         );
 
@@ -1086,6 +1091,10 @@ function generateLinksRoute(
               offset,
               hasNextPage: linkPage.hasNextPage,
               hasPreviousPage: offset > 0,
+              // Opaque cursor the client passes back as ?after= to fetch the
+              // next page. Absent when there is no next page — same contract
+              // as the GraphQL Connection.endCursor / LinkPage.cursor.
+              cursor: linkPage.cursor ?? null,
             },
           },
         };

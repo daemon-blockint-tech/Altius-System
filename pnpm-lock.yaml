@@ -335,6 +335,9 @@ importers:
       '@types/node':
         specifier: ^22.0.0
         version: 22.19.10
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.4(@types/node@22.19.10)(tsx@4.21.0)(yaml@2.8.2)
 
   packages/security:
     dependencies:

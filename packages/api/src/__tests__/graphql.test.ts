@@ -1022,18 +1022,22 @@ describe('GraphQL link field resolvers', () => {
     const parsed = parseOdl(LINKED_ODL);
     const deps = createMockDeps(parsed);
     deps.linkManager = {
-      getLinks: vi.fn().mockResolvedValue({ items: [makeLink('p-1', 'w-1')], totalCount: 1 }),
+      getLinks: vi.fn().mockResolvedValue({ items: [makeLink('p-1', 'w-1')], totalCount: 1, hasNextPage: false }),
     } as unknown as ApiDependencies['linkManager'];
     const { resolvers } = generateResolvers(parsed, deps);
     const ctx = createResolverContext(deps);
 
-    const admissions = await (resolvers['Patient']!['admissions'] as (...a: unknown[]) => Promise<Record<string, unknown>[]>)(
+    const result = await (resolvers['Patient']!['admissions'] as (...a: unknown[]) => Promise<Record<string, unknown>>)(
       { id: 'p-1' }, {}, ctx,
     );
-    expect(Array.isArray(admissions)).toBe(true);
-    expect(admissions).toHaveLength(1);
-    expect(admissions[0]!.id).toBe('lk-1');
-    expect(admissions[0]!.reason).toBe('chest pain');
+    // List link fields return a Relay Connection, not a bare array.
+    expect(result).toHaveProperty('edges');
+    expect(result).toHaveProperty('pageInfo');
+    expect(result).toHaveProperty('totalCount');
+    const edges = (result as { edges: { node: Record<string, unknown> }[] }).edges;
+    expect(edges).toHaveLength(1);
+    expect(edges[0]!.node.id).toBe('lk-1');
+    expect(edges[0]!.node.reason).toBe('chest pain');
     // link records do not require an object fetch
     expect(deps.objectManager.get).not.toHaveBeenCalled();
   });
@@ -1042,7 +1046,7 @@ describe('GraphQL link field resolvers', () => {
     const parsed = parseOdl(LINKED_ODL);
     const deps = createMockDeps(parsed);
     deps.linkManager = {
-      getLinks: vi.fn().mockResolvedValue({ items: [makeLink('p-1', 'w-1'), makeLink('p-2', 'w-1')], totalCount: 2 }),
+      getLinks: vi.fn().mockResolvedValue({ items: [makeLink('p-1', 'w-1'), makeLink('p-2', 'w-1')], totalCount: 2, hasNextPage: false }),
     } as unknown as ApiDependencies['linkManager'];
     (deps.objectManager.get as ReturnType<typeof vi.fn>).mockImplementation(
       (_type: string, id: string) => Promise.resolve({ _id: id, _type: 'Patient', name: `Patient ${id}` }),
@@ -1050,11 +1054,13 @@ describe('GraphQL link field resolvers', () => {
     const { resolvers } = generateResolvers(parsed, deps);
     const ctx = createResolverContext(deps);
 
-    const patients = await (resolvers['Ward']!['patients'] as (...a: unknown[]) => Promise<Record<string, unknown>[]>)(
+    const result = await (resolvers['Ward']!['patients'] as (...a: unknown[]) => Promise<Record<string, unknown>>)(
       { id: 'w-1' }, {}, ctx,
     );
+    // List link fields return a Relay Connection.
+    const edges = (result as { edges: { node: Record<string, unknown> }[] }).edges;
     // inbound traversal looks up by _fromId
-    expect(patients.map((p) => p.id).sort()).toEqual(['p-1', 'p-2']);
+    expect(edges.map((e) => e.node.id).sort()).toEqual(['p-1', 'p-2']);
     expect(deps.linkManager.getLinks).toHaveBeenCalledWith(
       'w-1', 'AdmittedTo', 'inbound', expect.anything(), expect.anything(),
     );
@@ -1161,10 +1167,10 @@ describe('GraphQL link resolver authorization + history', () => {
     );
     const { resolvers } = generateResolvers(parsed, deps);
 
-    const patients = await (resolvers['Ward']!['patients'] as (...a: unknown[]) => Promise<Record<string, unknown>[]>)(
+    const patients = await (resolvers['Ward']!['patients'] as (...a: unknown[]) => Promise<{ edges: { node: Record<string, unknown> }[] }>)(
       { id: 'w-1' }, {}, createResolverContext(deps),
     );
-    expect(patients.map((p) => p.id)).toEqual(['p-1']); // p-2 dropped by per-target check
+    expect(patients.edges.map((e) => e.node.id)).toEqual(['p-1']); // p-2 dropped by per-target check
   });
 
   it('requests soft-deleted links for @link(history: true) fields', async () => {

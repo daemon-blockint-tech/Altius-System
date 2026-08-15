@@ -47,7 +47,12 @@ export interface ComplexityAnalysis {
 }
 
 const DEFAULT_CONFIG: ComplexityConfig = {
-  maxDepth: 10,
+  // List link fields now return Relay Connections (edges > node), adding 2
+  // depth levels per nested list link field. The old limit of 10 rejected
+  // queries that were previously valid (e.g. two nested list link fields
+  // gained +4 depth). 14 preserves the same effective traversal depth while
+  // accommodating the structural wrapper.
+  maxDepth: 14,
   maxBreadth: 50,
   maxCost: 1000,
   defaultFieldCost: 1,

@@ -16,7 +16,7 @@
  */
 
 import type { ParsedSchema, ObjectType, ActionType, FunctionType, FieldDefinition, LinkType, LinkDirective } from '@altius/odl';
-import { DataPurpose } from '@altius/spi';
+import { DataPurpose, MAX_LINK_QUERY_LIMIT } from '@altius/spi';
 import type { OntologyObject, OntologyLink, FilterExpression, AggregateQuery, AggregateField, AggregateFunction, BucketInterval, SearchQuery, ErrorCategory, RequestContext } from '@altius/spi';
 import { ToolRegistry } from '@altius/actions';
 import type { ActionActor, ActionContext, ActionManifest } from '@altius/actions';
@@ -323,29 +323,44 @@ function generateLinkFieldResolvers(
     ) => {
       try {
         const parentId = parent[primaryName] as string | undefined;
-        if (!parentId) return isList ? [] : null;
+        if (!parentId) return isList ? { edges: [], pageInfo: { hasNextPage: false, hasPreviousPage: false, startCursor: null, endCursor: null }, totalCount: 0 } : null;
         const { user, requestContext } = ctx;
 
         // Client-supplied pagination for list link fields. Without this,
         // links with >1000 rows were silently truncated — no pagination,
         // no filter, no way for the client to know.
-        const limit = isList
-          ? (typeof args?.first === 'number' && args.first > 0 ? args.first : DEFAULT_PAGE_SIZE)
-          : 1;
-        const after = isList ? args?.after : undefined;
+        //
+        // The cursor is decoded here (not in the provider) so the resolver
+        // and buildConnection share the same offset. The provider receives
+        // a plain offset — it does not need to know the cursor format.
+        let offset = 0;
+        let limit: number;
+        if (isList) {
+          if (args?.after) {
+            offset = decodeCursor(args.after) + 1;
+          }
+          // Cap at MAX_LINK_QUERY_LIMIT (the SPI bound). A request beyond
+          // that is rejected by the provider; clamping here would silently
+          // answer a different question than the caller asked.
+          limit = typeof args?.first === 'number' && args.first > 0
+            ? Math.min(args.first, MAX_LINK_QUERY_LIMIT)
+            : DEFAULT_PAGE_SIZE;
+        } else {
+          limit = 1;
+        }
 
         const page = await deps.linkManager.getLinks(
           parentId,
           link.type,
           direction,
-          { limit, offset: 0, includeDeleted, after },
+          { limit, offset, includeDeleted },
           requestContext,
         );
         const links = page.items;
 
         // Link-record fields (e.g. admissions): return the links themselves.
         if (returnsLinkRecords) {
-          if (!linkTypeDef) return isList ? [] : null;
+          if (!linkTypeDef) return isList ? { edges: [], pageInfo: { hasNextPage: false, hasPreviousPage: false, startCursor: null, endCursor: null }, totalCount: 0 } : null;
           const mapped = deps.authorizationService
             .redactFieldsBatch(
               user.id,
@@ -354,11 +369,14 @@ function generateLinkFieldResolvers(
               links.map((l) => linkToGraphQL(l, linkTypeDef)),
             )
             .map((r: RedactionResult<Record<string, unknown>>) => r.data as Record<string, unknown>);
-          return isList ? mapped : (mapped[0] ?? null);
+          if (isList) {
+            return buildConnection(mapped, page.totalCount, offset);
+          }
+          return mapped[0] ?? null;
         }
 
         // Target-object fields (e.g. currentWard): resolve the linked objects.
-        if (!targetObjectType) return isList ? [] : null;
+        if (!targetObjectType) return isList ? { edges: [], pageInfo: { hasNextPage: false, hasPreviousPage: false, startCursor: null, endCursor: null }, totalCount: 0 } : null;
         const targets: Record<string, unknown>[] = [];
         const seen = new Set<string>();
         for (const l of links) {
@@ -410,7 +428,10 @@ function generateLinkFieldResolvers(
           targets.push(gqlObj);
           if (!isList) break;
         }
-        return isList ? targets : (targets[0] ?? null);
+        if (isList) {
+          return buildConnection(targets, page.totalCount, offset);
+        }
+        return targets[0] ?? null;
       } catch (err) {
         throw wrapError(err, ctx.requestContext.traceId);
       }

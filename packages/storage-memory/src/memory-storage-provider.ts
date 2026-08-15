@@ -38,7 +38,7 @@ import type {
   SearchHit,
 } from '@altius/spi';
 import type { BucketInterval } from '@altius/spi';
-import { MAX_LINK_QUERY_LIMIT, DEFAULT_LINK_QUERY_LIMIT } from '@altius/spi';
+import { MAX_LINK_QUERY_LIMIT, DEFAULT_LINK_QUERY_LIMIT, encodePageCursor, decodePageCursor } from '@altius/spi';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -1082,24 +1082,45 @@ export class MemoryStorageProvider implements StorageProvider {
     });
 
     const totalCount = items.length;
-    const offset = options?.offset ?? 0;
-    // Same bound and same default as the Postgres provider. This defaulted to
-    // "every link" while Postgres defaulted to 100 and clamped at 1000, so an
-    // unbounded caller got a different page size per backend; and an
-    // over-large limit was silently shrunk there while being honoured here.
-    if (options?.limit !== undefined && options.limit > MAX_LINK_QUERY_LIMIT) {
-      throw new Error(
-        `Requested link page limit ${options.limit} exceeds the maximum of ${MAX_LINK_QUERY_LIMIT}. ` +
-        `Request ${MAX_LINK_QUERY_LIMIT} or fewer and page with offset.`,
-      );
+    // `after` cursor takes precedence over `offset` — a cursor is the
+    // stable, opaque way to page; `offset` is a lower-level escape hatch.
+    // The cursor encodes the starting offset of the next page, so decoding
+    // gives the offset directly (no +1 needed).
+    let offset = options?.offset ?? 0;
+    if (options?.after) {
+      offset = decodePageCursor(options.after);
+    }
+    // Validate limit — reject anything that is not a non-negative integer up
+    // to the maximum. A negative limit is a client error; a non-integer limit
+    // is nonsensical; in Postgres `LIMIT -1` meant *no limit*, silently
+    // bypassing the DoS bound.
+    if (options?.limit !== undefined) {
+      if (!Number.isInteger(options.limit) || options.limit < 0) {
+        throw new Error(
+          `Requested link page limit ${options.limit} is not a non-negative integer.`,
+        );
+      }
+      if (options.limit > MAX_LINK_QUERY_LIMIT) {
+        throw new Error(
+          `Requested link page limit ${options.limit} exceeds the maximum of ${MAX_LINK_QUERY_LIMIT}. ` +
+          `Request ${MAX_LINK_QUERY_LIMIT} or fewer and page with offset.`,
+        );
+      }
     }
     const limit = options?.limit ?? DEFAULT_LINK_QUERY_LIMIT;
     items = items.slice(offset, offset + limit);
 
+    const hasNextPage = offset + limit < totalCount;
+    // Opaque cursor the caller passes back as `after` to get the next page.
+    // Only present when there IS a next page — an absent cursor means "done",
+    // matching the ObjectPage contract.
+    const cursor = hasNextPage ? encodePageCursor(offset + limit) : undefined;
+
     return {
       items: items.map((i) => clone(i)),
       totalCount,
-      hasNextPage: offset + limit < totalCount,
+      hasNextPage,
+      cursor,
     };
   }
 

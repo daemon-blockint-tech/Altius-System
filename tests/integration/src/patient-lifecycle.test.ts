@@ -69,7 +69,7 @@ const GET_PATIENT_LINKS = `
       currentWard { id }
       currentBed { id }
       consultant { id }
-      admissions { id }
+      admissions { edges { node { id } } }
     }
   }
 `;
@@ -123,7 +123,7 @@ describe.skipIf(!dockerAvailable)('Patient Lifecycle E2E', () => {
           currentWard: { id: string } | null;
           currentBed: { id: string } | null;
           consultant: { id: string } | null;
-          admissions: Array<{ id: string }>;
+          admissions: { edges: { node: { id: string } }[] };
         };
       }>(GET_PATIENT_LINKS, { id: data.patients.doe.id });
 
@@ -132,7 +132,7 @@ describe.skipIf(!dockerAvailable)('Patient Lifecycle E2E', () => {
       expect(result.data?.patient.currentWard?.id).toBe(data.wards.general.id);
       expect(result.data?.patient.currentBed?.id).toBe(data.beds.a1.id);
       expect(result.data?.patient.consultant?.id).toBe(data.consultants.smith.id);
-      expect(result.data?.patient.admissions.length).toBeGreaterThanOrEqual(1);
+      expect(result.data?.patient.admissions.edges.length).toBeGreaterThanOrEqual(1);
 
       // And the REST traversal endpoint agrees.
       const links = await restGet<RestListResponse>(

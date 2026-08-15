@@ -182,6 +182,73 @@ export const MAX_LINK_QUERY_LIMIT = 1000;
 /** Link page size when the caller does not ask for one. */
 export const DEFAULT_LINK_QUERY_LIMIT = 100;
 
+// ─── Cursor encoding ───
+
+const B64_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+
+/**
+ * Encode a page offset into an opaque cursor string.
+ *
+ * The format is base64(`cursor:<offset>`), matching the convention used by
+ * the GraphQL pagination layer. Providers and the API layer share the same
+ * encoding so a cursor returned by one can be consumed by the other without
+ * translation.
+ *
+ * Implemented in pure JS so the SPI package stays free of a Node or DOM
+ * type dependency (`Buffer`/`btoa` are not in the ES2022 lib).
+ */
+export function encodePageCursor(offset: number): string {
+  const str = `cursor:${offset}`;
+  let result = '';
+  for (let i = 0; i < str.length; i += 3) {
+    const a = str.charCodeAt(i) << 16;
+    const b = (i + 1 < str.length ? str.charCodeAt(i + 1) : 0) << 8;
+    const c = i + 2 < str.length ? str.charCodeAt(i + 2) : 0;
+    const triplet = a | b | c;
+    result += B64_CHARS[(triplet >> 18) & 0x3f];
+    result += B64_CHARS[(triplet >> 12) & 0x3f];
+    result += i + 1 < str.length ? B64_CHARS[(triplet >> 6) & 0x3f] : '=';
+    result += i + 2 < str.length ? B64_CHARS[triplet & 0x3f] : '=';
+  }
+  return result;
+}
+
+/**
+ * Decode a cursor string back to a page offset.
+ *
+ * Throws on invalid format — a malformed cursor is a client error, not a
+ * silent reset to page zero.
+ */
+export function decodePageCursor(cursor: string): number {
+  let result = '';
+  for (let i = 0; i < cursor.length; i += 4) {
+    const a = B64_CHARS.indexOf(cursor[i]!);
+    const b = B64_CHARS.indexOf(cursor[i + 1]!);
+    const c = cursor[i + 2] === '=' ? -1 : B64_CHARS.indexOf(cursor[i + 2]!);
+    const d = cursor[i + 3] === '=' ? -1 : B64_CHARS.indexOf(cursor[i + 3]!);
+    if (a < 0 || b < 0) throw new Error(`Invalid cursor format: ${cursor}`);
+    const triplet = (a << 18) | (b << 12) | ((c >= 0 ? c : 0) << 6) | (d >= 0 ? d : 0);
+    result += String.fromCharCode((triplet >> 16) & 0xff);
+    if (c >= 0) result += String.fromCharCode((triplet >> 8) & 0xff);
+    if (d >= 0) result += String.fromCharCode(triplet & 0xff);
+  }
+  const match = result.match(/^cursor:(\d+)$/);
+  if (!match || !match[1]) {
+    throw new Error(`Invalid cursor format: ${cursor}`);
+  }
+  const offset = parseInt(match[1], 10);
+  // A hostile or stale cursor could encode an enormous offset, producing a
+  // SQL `OFFSET N` that forces Postgres to scan-and-discard N rows. Cap at
+  // a sane absolute ceiling — no real link collection is expected to exceed
+  // this, and a cursor beyond it is either crafted or from a different
+  // dataset entirely.
+  const MAX_CURSOR_OFFSET = 1_000_000;
+  if (offset > MAX_CURSOR_OFFSET) {
+    throw new Error(`Cursor offset ${offset} exceeds the maximum of ${MAX_CURSOR_OFFSET}.`);
+  }
+  return offset;
+}
+
 export interface TraversalResult {
   nodes: OntologyObject[];
   edges: OntologyLink[];

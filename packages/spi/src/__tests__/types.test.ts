@@ -10,6 +10,8 @@ import { describe, it, expect } from 'vitest';
 import {
   DataPurpose,
   STANDARD_DATA_PURPOSES,
+  encodePageCursor,
+  decodePageCursor,
   type ConsentRecord,
   type DateTime,
   type Duration,
@@ -290,5 +292,39 @@ describe('@altius/spi type exports', () => {
     const dur: Duration = 'P30D';
     expect(typeof dt).toBe('string');
     expect(typeof dur).toBe('string');
+  });
+});
+
+// ─── Cursor encoding/decoding ───
+
+describe('encodePageCursor / decodePageCursor', () => {
+  it('round-trips an offset', () => {
+    const cursor = encodePageCursor(42);
+    expect(decodePageCursor(cursor)).toBe(42);
+  });
+
+  it('round-trips offset 0', () => {
+    const cursor = encodePageCursor(0);
+    expect(decodePageCursor(cursor)).toBe(0);
+  });
+
+  it('produces standard base64 of cursor:N', () => {
+    // encodePageCursor(10) should be base64('cursor:10')
+    expect(encodePageCursor(10)).toBe('Y3Vyc29yOjEw');
+  });
+
+  it('throws on a malformed cursor', () => {
+    expect(() => decodePageCursor('not-a-valid-cursor')).toThrow(/Invalid cursor format/);
+  });
+
+  it('throws on a cursor that decodes to a non-cursor: prefix', () => {
+    // base64('hello:world') — valid base64 but wrong prefix
+    expect(() => decodePageCursor('aGVsbG86d29ybGQ=')).toThrow(/Invalid cursor format/);
+  });
+
+  it('rejects a cursor encoding an offset beyond the safety ceiling', () => {
+    // A hostile cursor encoding cursor:9999999 would produce a huge SQL OFFSET.
+    const hostile = encodePageCursor(9_999_999);
+    expect(() => decodePageCursor(hostile)).toThrow(/exceeds the maximum/);
   });
 });

@@ -130,11 +130,12 @@ function generateObjectType(obj: ObjectType): string {
 
   for (const field of obj.fields) {
     const gqlType = fieldToGqlType(field);
-    // List link fields accept pagination arguments so callers can page
-    // through large collections instead of being silently truncated at 1000.
+    // List link fields return a Relay Connection with pagination arguments
+    // so callers can page through large collections instead of being silently
+    // truncated. Single-valued link fields stay as plain object references.
     const link = linkDirectiveOf(field);
     if (link && field.type.isList) {
-      lines.push(`  ${field.name}(first: Int, after: String): ${gqlType}`);
+      lines.push(`  ${field.name}(first: Int, after: String): ${field.type.name}Connection!`);
     } else {
       lines.push(`  ${field.name}: ${gqlType}`);
     }
@@ -788,8 +789,10 @@ export function generateGraphQLSchema(schema: ParsedSchema, options?: GraphQLSch
   }
 
   // 7. LinkType types (junction/edge types referenced by ObjectType link fields)
+  //    Plus Connection types for link-record list fields (e.g. admissions).
   for (const link of schema.linkTypes) {
     sections.push(generateLinkType(link));
+    sections.push(generateConnection(link.name));
   }
 
   // 8. Action input/result types

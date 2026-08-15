@@ -12,12 +12,13 @@
     }
   },
   "scripts": {
-    "generate": "odl generate sdk ../../domain-packs/nhs-acute/schema -o .",
-    "prebuild": "odl generate sdk ../../domain-packs/nhs-acute/schema -o .",
-    "pretypecheck": "odl generate sdk ../../domain-packs/nhs-acute/schema -o .",
+    "generate": "odl generate sdk ../../domain-packs/core/schema ../../domain-packs/nhs-acute/schema ../../domain-packs/aml/schema ../../domain-packs/supply-chain/schema -o .",
+    "prebuild": "odl generate sdk ../../domain-packs/core/schema ../../domain-packs/nhs-acute/schema ../../domain-packs/aml/schema ../../domain-packs/supply-chain/schema -o .",
+    "pretypecheck": "odl generate sdk ../../domain-packs/core/schema ../../domain-packs/nhs-acute/schema ../../domain-packs/aml/schema ../../domain-packs/supply-chain/schema -o .",
+    "pretest": "odl generate sdk ../../domain-packs/core/schema ../../domain-packs/nhs-acute/schema ../../domain-packs/aml/schema ../../domain-packs/supply-chain/schema -o .",
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
-    "test": "echo \"no tests yet\"",
+    "test": "vitest run",
     "clean": "rm -rf dist"
   },
   "files": [
@@ -26,6 +27,7 @@
   "license": "Apache-2.0",
   "devDependencies": {
     "@altius/odl": "workspace:*",
-    "@types/node": "^22.0.0"
+    "@types/node": "^22.0.0",
+    "vitest": "^3.0.0"
   }
 }

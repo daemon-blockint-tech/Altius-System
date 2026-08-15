@@ -8,7 +8,7 @@
  * is the divergence tests/spi-conformance exists to prevent.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { MAX_LINK_QUERY_LIMIT, DEFAULT_LINK_QUERY_LIMIT } from '@altius/spi';
+import { MAX_LINK_QUERY_LIMIT, DEFAULT_LINK_QUERY_LIMIT, decodePageCursor } from '@altius/spi';
 import type { RequestContext, OntologySchema } from '@altius/spi';
 import { MemoryStorageProvider } from '../memory-storage-provider.js';
 
@@ -63,5 +63,56 @@ describe('MemoryStorageProvider getLinks paging bounds', () => {
       CTX, wardId(), 'HasBed', 'outbound', { limit: MAX_LINK_QUERY_LIMIT },
     );
     expect(page.items).toHaveLength(DEFAULT_LINK_QUERY_LIMIT + 25);
+  });
+
+  it('refuses a negative limit', async () => {
+    await expect(
+      storage.getLinks(CTX, wardId(), 'HasBed', 'outbound', { limit: -1 }),
+    ).rejects.toThrow(/not a non-negative integer/);
+  });
+
+  it('refuses a non-integer limit', async () => {
+    await expect(
+      storage.getLinks(CTX, wardId(), 'HasBed', 'outbound', { limit: 1.5 }),
+    ).rejects.toThrow(/not a non-negative integer/);
+  });
+
+  it('returns a cursor when there is a next page', async () => {
+    const page = await storage.getLinks(CTX, wardId(), 'HasBed', 'outbound', { limit: 10 });
+    expect(page.hasNextPage).toBe(true);
+    expect(page.cursor).toBeDefined();
+    // The cursor encodes the offset of the next page
+    expect(decodePageCursor(page.cursor!)).toBe(10);
+  });
+
+  it('does not return a cursor when there is no next page', async () => {
+    const page = await storage.getLinks(
+      CTX, wardId(), 'HasBed', 'outbound', { limit: DEFAULT_LINK_QUERY_LIMIT + 25 },
+    );
+    expect(page.hasNextPage).toBe(false);
+    expect(page.cursor).toBeUndefined();
+  });
+
+  it('pages forward using the after cursor', async () => {
+    const firstPage = await storage.getLinks(CTX, wardId(), 'HasBed', 'outbound', { limit: 10 });
+    expect(firstPage.items).toHaveLength(10);
+    expect(firstPage.cursor).toBeDefined();
+
+    const secondPage = await storage.getLinks(
+      CTX, wardId(), 'HasBed', 'outbound', { limit: 10, after: firstPage.cursor },
+    );
+    // The second page starts where the first left off — no overlap
+    const firstIds = new Set(firstPage.items.map(l => l._id));
+    const secondIds = secondPage.items.map(l => l._id);
+    for (const id of secondIds) {
+      expect(firstIds.has(id)).toBe(false);
+    }
+    expect(secondPage.items).toHaveLength(10);
+  });
+
+  it('throws on an invalid cursor format', async () => {
+    await expect(
+      storage.getLinks(CTX, wardId(), 'HasBed', 'outbound', { after: 'not-a-valid-cursor' }),
+    ).rejects.toThrow(/Invalid cursor format/);
   });
 });

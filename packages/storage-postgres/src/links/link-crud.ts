@@ -18,7 +18,7 @@ import type {
   DateTime,
   LinkTypeDefinition,
 } from '@altius/spi';
-import { MAX_LINK_QUERY_LIMIT, DEFAULT_LINK_QUERY_LIMIT } from '@altius/spi';
+import { MAX_LINK_QUERY_LIMIT, DEFAULT_LINK_QUERY_LIMIT, encodePageCursor, decodePageCursor } from '@altius/spi';
 import { createLogger } from '@altius/observability';
 
 const logger = createLogger('storage-postgres');
@@ -504,14 +504,28 @@ export async function getLinks(
   // began forwarding the client's `first`, a request for 5000 came back with
   // 1000 rows and no indication the other 4000 existed. The bound stays; only
   // the silence goes.
-  if (options?.limit !== undefined && options.limit > MAX_LINK_QUERY_LIMIT) {
-    throw new Error(
-      `Requested link page limit ${options.limit} exceeds the maximum of ${MAX_LINK_QUERY_LIMIT}. ` +
-      `Request ${MAX_LINK_QUERY_LIMIT} or fewer and page with offset.`,
-    );
+  if (options?.limit !== undefined) {
+    if (!Number.isInteger(options.limit) || options.limit < 0) {
+      throw new Error(
+        `Requested link page limit ${options.limit} is not a non-negative integer.`,
+      );
+    }
+    if (options.limit > MAX_LINK_QUERY_LIMIT) {
+      throw new Error(
+        `Requested link page limit ${options.limit} exceeds the maximum of ${MAX_LINK_QUERY_LIMIT}. ` +
+        `Request ${MAX_LINK_QUERY_LIMIT} or fewer and page with offset.`,
+      );
+    }
   }
   const limit = options?.limit ?? DEFAULT_LINK_QUERY_LIMIT;
-  const offset = options?.offset ?? 0;
+  // `after` cursor takes precedence over `offset` — a cursor is the stable,
+  // opaque way to page; `offset` is a lower-level escape hatch. The cursor
+  // encodes the starting offset of the next page, so decoding gives the
+  // offset directly (no +1 needed).
+  let offset = options?.offset ?? 0;
+  if (options?.after) {
+    offset = decodePageCursor(options.after);
+  }
   const paginationParams = [...params, limit, offset];
   const limitParam = `$${params.length + 1}`;
   const offsetParam = `$${params.length + 2}`;
@@ -523,9 +537,15 @@ export async function getLinks(
     (row) => rowToLink(row),
   );
 
+  const hasNextPage = offset + limit < totalCount;
+  // Opaque cursor the caller passes back as `after` to get the next page.
+  // Only present when there IS a next page — an absent cursor means "done".
+  const cursor = hasNextPage ? encodePageCursor(offset + limit) : undefined;
+
   return {
     items,
     totalCount,
-    hasNextPage: offset + limit < totalCount,
+    hasNextPage,
+    cursor,
   };
 }

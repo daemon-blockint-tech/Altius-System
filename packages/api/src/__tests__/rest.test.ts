@@ -500,6 +500,45 @@ describe('REST API', () => {
       expect(res.status).toBe(200);
       expect(body.data).toHaveLength(1);
       expect(body.data[0]._toId).toBe('w-1');
+      // No next page → cursor is null, not omitted, so the contract is explicit.
+      expect(body.pagination.cursor).toBeNull();
+    });
+
+    it('forwards the after cursor to linkManager.getLinks and returns the next cursor', async () => {
+      const deps = createMockDeps(parsed);
+      const getLinksMock = deps.linkManager.getLinks as ReturnType<typeof vi.fn>;
+      const linkPage: LinkPage = {
+        items: [
+          {
+            _tenantId: 'tenant-1', _type: 'AdmittedTo', _id: 'link-2',
+            _fromType: 'Patient', _fromId: 'p-1', _toType: 'Ward', _toId: 'w-2',
+            _version: 1, _createdAt: '2025-01-01T00:00:00Z', _updatedAt: '2025-01-01T00:00:00Z',
+          },
+        ],
+        totalCount: 5,
+        hasNextPage: true,
+        cursor: 'Y3Vyc29yOjE=',
+      };
+      getLinksMock.mockResolvedValue(linkPage);
+
+      const routes = generateRestRoutes(parsed, deps);
+      const route = findRoute(routes, 'GET', '/api/v1/patients/:id/links/:linkType')!;
+
+      const req = createMockRequest({
+        params: { id: 'p-1', linkType: 'AdmittedTo' },
+        query: { after: 'Y3Vyc29yOjA=' },
+      });
+      const ctx = createResolverContext(deps);
+      const res = await route.handler(req, ctx);
+      const body = res.body as AnyBody;
+
+      expect(res.status).toBe(200);
+      // The cursor was forwarded to the provider, not silently dropped.
+      const options = getLinksMock.mock.calls[0]![3] as { after?: string };
+      expect(options.after).toBe('Y3Vyc29yOjA=');
+      // The next cursor is returned so the client can page forward.
+      expect(body.pagination.cursor).toBe('Y3Vyc29yOjE=');
+      expect(body.pagination.hasNextPage).toBe(true);
     });
   });
 

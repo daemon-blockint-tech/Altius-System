@@ -198,7 +198,7 @@ describe('QueryComplexityAnalyzer', () => {
   });
 
   it('rejects deeply nested queries', () => {
-    // Depth > 3: query > patient > ward > beds > number (depth=5)
+    // Depth > 3: query > patient > ward > beds > edges > node > number (depth=7)
     const query = `
       query {
         patient(id: "p-1") {
@@ -206,7 +206,11 @@ describe('QueryComplexityAnalyzer', () => {
           ward {
             name
             beds {
-              number
+              edges {
+                node {
+                  number
+                }
+              }
             }
           }
         }
@@ -217,6 +221,37 @@ describe('QueryComplexityAnalyzer', () => {
     expect(result.valid).toBe(false);
     expect(result.violations.some(v => v.includes('depth'))).toBe(true);
     expect(result.depth).toBeGreaterThan(3);
+  });
+
+  it('accepts nested Connection queries that were valid before the edges>node wrapper', () => {
+    // Default config (maxDepth: 14). Two nested list link fields each add
+    // edges>node (+2 depth). This query was depth 5 before Connections and
+    // is depth 9 now — it must still be accepted.
+    const defaultAnalyzer = new QueryComplexityAnalyzer();
+    const query = `
+      query {
+        patient(id: "p-1") {
+          ward {
+            beds {
+              edges {
+                node {
+                  equipment {
+                    edges {
+                      node {
+                        name
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    `;
+    const result = defaultAnalyzer.analyze(query);
+    expect(result.depth).toBe(9);
+    expect(result.valid).toBe(true);
   });
 
   it('rejects queries exceeding breadth limit', () => {

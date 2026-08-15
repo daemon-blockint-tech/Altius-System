@@ -254,12 +254,15 @@ generate
   });
 
 generate
-  .command('sdk <path>')
-  .description('Generate TypeScript SDK package source from ODL.')
+  .command('sdk <paths...>')
+  .description('Generate TypeScript SDK package source from ODL. Accepts one or more schema directories/files; multiple inputs are merged so the SDK matches the server\'s multi-pack schema.')
   .requiredOption('-o, --output <dir>', 'Output directory for SDK package files')
-  .action((filePath: string, opts: { output: string }) => {
+  .action((filePaths: string[], opts: { output: string }) => {
     try {
-      const source = readOdlSource(filePath);
+      // Concatenate all inputs — a single directory behaves identically to
+      // the previous single-path form; multiple directories merge every pack
+      // the server serves, so the generated SDK is not missing core types.
+      const source = filePaths.map(p => readOdlSource(p)).join('\n\n');
       const schema = parseOdl(source);
       const output = generateSdk(schema);
 

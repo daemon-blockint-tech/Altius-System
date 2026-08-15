@@ -5,15 +5,22 @@
  * with no client-supplied arguments. A link with more than 1000 rows was
  * silently truncated — no pagination, no filter, no way for the client to know.
  *
- * These tests verify that list link fields accept `first`/`after` arguments in
- * the SDL and that the resolver forwards them to linkManager.getLinks.
+ * These tests verify that:
+ *   - List link fields accept `first`/`after` arguments in the SDL
+ *   - List link fields return a Relay Connection (edges/pageInfo/totalCount)
+ *   - The resolver forwards `first`/`after` to linkManager.getLinks
+ *   - The `after` cursor is decoded and used to compute the offset
+ *   - hasNextPage and endCursor are populated so a client can page
+ *   - Single-valued link fields stay as plain object references
  */
 
 import { describe, it, expect, vi } from 'vitest';
 import { parseOdl, generateGraphQLSchema } from '@altius/odl';
 import type { ParsedSchema } from '@altius/odl';
 import type { OntologyLink } from '@altius/spi';
+import { encodePageCursor, MAX_LINK_QUERY_LIMIT } from '@altius/spi';
 import { generateResolvers } from '../graphql/resolver-generator.js';
+import { encodeCursor } from '../graphql/pagination.js';
 import type { ApiDependencies, AuthenticatedUserInfo, ResolverContext } from '../graphql/types.js';
 
 // ─── ODL fixture with a list link field ───
@@ -122,6 +129,13 @@ function createCtx(deps: ApiDependencies): ResolverContext {
   };
 }
 
+/** Type helper for Connection-shaped resolver results. */
+interface ConnectionResult {
+  edges: { node: Record<string, unknown>; cursor: string }[];
+  pageInfo: { hasNextPage: boolean; hasPreviousPage: boolean; startCursor: string | null; endCursor: string | null };
+  totalCount: number;
+}
+
 // ════════════════════════════════════════════════════════════════════
 
 describe('GraphQL @link list field pagination', () => {
@@ -131,6 +145,17 @@ describe('GraphQL @link list field pagination', () => {
     const sdl = generateGraphQLSchema(schema);
     // The beds field should accept pagination arguments
     expect(sdl).toMatch(/beds\s*\(\s*first:\s*Int.*after:\s*String/);
+  });
+
+  it('emits a Connection return type for list link fields in the SDL', () => {
+    const sdl = generateGraphQLSchema(schema);
+    // The beds field should return BedConnection, not [Bed]
+    expect(sdl).toMatch(/beds\s*\(.*\):\s*BedConnection!/);
+    // BedConnection must have edges, pageInfo, totalCount
+    expect(sdl).toMatch(/type BedConnection\s*\{/);
+    expect(sdl).toMatch(/BedConnection[\s\S]*edges:\s*\[BedEdge!\]!/);
+    expect(sdl).toMatch(/BedConnection[\s\S]*pageInfo:\s*PageInfo!/);
+    expect(sdl).toMatch(/BedConnection[\s\S]*totalCount:\s*Int!/);
   });
 
   it('does not emit pagination arguments on single-valued link fields', () => {
@@ -154,11 +179,11 @@ type HasBed @linkType(from: "Ward", to: "Bed", cardinality: ONE_TO_ONE) {
 `;
     const singleSchema = parseOdl(singleLinkOdl);
     const sdl = generateGraphQLSchema(singleSchema);
-    // Single-valued: no pagination args
+    // Single-valued: no pagination args, no Connection type
     expect(sdl).not.toMatch(/bed\s*\(\s*first/);
   });
 
-  it('forwards first/after to linkManager.getLinks', async () => {
+  it('forwards first as limit and decodes after to offset in getLinks', async () => {
     const links = [
       createLink('l-1', 'ward-1', 'bed-1'),
       createLink('l-2', 'ward-1', 'bed-2'),
@@ -177,14 +202,18 @@ type HasBed @linkType(from: "Ward", to: "Bed", cardinality: ONE_TO_ONE) {
       ctx: ResolverContext,
     ) => Promise<unknown>;
 
-    await bedsResolver({ id: 'ward-1' }, { first: 50, after: 'cursor-1' }, createCtx(deps));
+    // The cursor encodes item index 0, so +1 = offset 1
+    const validCursor = encodeCursor(0);
+    await bedsResolver({ id: 'ward-1' }, { first: 50, after: validCursor }, createCtx(deps));
 
     expect(getLinks).toHaveBeenCalledTimes(1);
-    const callArgs = getLinks.mock.calls[0]!;
-    // The 4th argument is the options object
+    const callArgs = getLinks.mock.calls[0] as unknown as unknown[];
     const options = callArgs[3] as { limit: number; offset: number; after?: string };
     expect(options.limit).toBe(50);
-    expect(options.after).toBe('cursor-1');
+    // The resolver decodes the cursor to an offset; the provider receives
+    // a plain offset, not the raw cursor.
+    expect(options.offset).toBe(1);
+    expect(options.after).toBeUndefined();
   });
 
   it('defaults to a reasonable limit when no args are provided', async () => {
@@ -205,14 +234,142 @@ type HasBed @linkType(from: "Ward", to: "Bed", cardinality: ONE_TO_ONE) {
 
     await bedsResolver({ id: 'ward-1' }, {}, createCtx(deps));
 
-    const callArgs = getLinks.mock.calls[0]!;
+    const callArgs = getLinks.mock.calls[0] as unknown as unknown[];
     const options = callArgs[3] as { limit: number };
     // Default should be the platform default page size, not a hardcoded 1000
     expect(options.limit).toBeLessThanOrEqual(100);
     expect(options.limit).toBeGreaterThan(0);
   });
 
-  it('allows a client to request more than 1000 items', async () => {
+  it('returns a Connection with edges, pageInfo, and totalCount', async () => {
+    const links = [
+      createLink('l-1', 'ward-1', 'bed-1'),
+      createLink('l-2', 'ward-1', 'bed-2'),
+    ];
+    const getLinks = vi.fn(async () => ({
+      items: links,
+      totalCount: 2,
+      hasNextPage: false,
+    }));
+    const deps = createMockDeps(schema, links, getLinks);
+    const { resolvers } = generateResolvers(schema, deps);
+    const wardResolvers = resolvers['Ward'] as Record<string, unknown>;
+    const bedsResolver = wardResolvers['beds'] as (
+      parent: Record<string, unknown>,
+      args: unknown,
+      ctx: ResolverContext,
+    ) => Promise<ConnectionResult>;
+
+    const result = await bedsResolver({ id: 'ward-1' }, {}, createCtx(deps));
+
+    // Must be a Connection, not a bare array
+    expect(Array.isArray(result)).toBe(false);
+    expect(result).toHaveProperty('edges');
+    expect(result).toHaveProperty('pageInfo');
+    expect(result).toHaveProperty('totalCount');
+    expect(result.totalCount).toBe(2);
+    expect(result.edges).toHaveLength(2);
+    // Each edge has a node and a cursor
+    expect(result.edges[0]).toHaveProperty('node');
+    expect(result.edges[0]).toHaveProperty('cursor');
+  });
+
+  it('populates hasNextPage and endCursor so a client can page forward', async () => {
+    // Simulate a provider that returns the first page of a larger set.
+    const pageLinks = [
+      createLink('l-1', 'ward-1', 'bed-1'),
+      createLink('l-2', 'ward-1', 'bed-2'),
+    ];
+    const getLinks = vi.fn(async () => ({
+      items: pageLinks,
+      totalCount: 10,
+      hasNextPage: true,
+      cursor: encodePageCursor(2),
+    }));
+    const deps = createMockDeps(schema, pageLinks, getLinks);
+    const { resolvers } = generateResolvers(schema, deps);
+    const wardResolvers = resolvers['Ward'] as Record<string, unknown>;
+    const bedsResolver = wardResolvers['beds'] as (
+      parent: Record<string, unknown>,
+      args: unknown,
+      ctx: ResolverContext,
+    ) => Promise<ConnectionResult>;
+
+    const result = await bedsResolver({ id: 'ward-1' }, { first: 2 }, createCtx(deps));
+
+    expect(result.pageInfo.hasNextPage).toBe(true);
+    expect(result.pageInfo.endCursor).not.toBeNull();
+    // The endCursor encodes the offset of the last item in this page
+    expect(result.pageInfo.endCursor).toBe(result.edges[1]!.cursor);
+  });
+
+  it('decodes the after cursor to compute the offset for the next page', async () => {
+    // The client passes the endCursor from the previous page. The endCursor
+    // from buildConnection encodes the index of the last item on the page.
+    // encodeCursor(1) = item index 1, so +1 = offset 2 for the next page.
+    const afterCursor = encodeCursor(1);
+    const pageLinks = [
+      createLink('l-3', 'ward-1', 'bed-3'),
+      createLink('l-4', 'ward-1', 'bed-4'),
+    ];
+    const getLinks = vi.fn(async () => ({
+      items: pageLinks,
+      totalCount: 10,
+      hasNextPage: true,
+      cursor: encodePageCursor(4),
+    }));
+    const deps = createMockDeps(schema, pageLinks, getLinks);
+    const { resolvers } = generateResolvers(schema, deps);
+    const wardResolvers = resolvers['Ward'] as Record<string, unknown>;
+    const bedsResolver = wardResolvers['beds'] as (
+      parent: Record<string, unknown>,
+      args: unknown,
+      ctx: ResolverContext,
+    ) => Promise<ConnectionResult>;
+
+    const result = await bedsResolver(
+      { id: 'ward-1' },
+      { first: 2, after: afterCursor },
+      createCtx(deps),
+    );
+
+    // The resolver decoded the cursor to offset 2 and passed it to the provider
+    const callArgs = getLinks.mock.calls[0] as unknown as unknown[];
+    const options = callArgs[3] as { offset: number; after?: string };
+    expect(options.offset).toBe(2);
+    expect(options.after).toBeUndefined();
+
+    // hasPreviousPage is true because we are on page 2+
+    expect(result.pageInfo.hasPreviousPage).toBe(true);
+    expect(result.edges).toHaveLength(2);
+  });
+
+  it('returns an empty Connection when the parent has no links', async () => {
+    const getLinks = vi.fn(async () => ({
+      items: [],
+      totalCount: 0,
+      hasNextPage: false,
+    }));
+    const deps = createMockDeps(schema, [], getLinks);
+    const { resolvers } = generateResolvers(schema, deps);
+    const wardResolvers = resolvers['Ward'] as Record<string, unknown>;
+    const bedsResolver = wardResolvers['beds'] as (
+      parent: Record<string, unknown>,
+      args: unknown,
+      ctx: ResolverContext,
+    ) => Promise<ConnectionResult>;
+
+    const result = await bedsResolver({ id: 'ward-1' }, {}, createCtx(deps));
+
+    expect(result.edges).toHaveLength(0);
+    expect(result.totalCount).toBe(0);
+    expect(result.pageInfo.hasNextPage).toBe(false);
+    expect(result.pageInfo.endCursor).toBeNull();
+  });
+
+  it('caps limit at MAX_LINK_QUERY_LIMIT instead of forwarding oversized requests', async () => {
+    // The resolver caps at MAX_LINK_QUERY_LIMIT so the provider never sees
+    // an oversized request. The client pages with cursors instead.
     const links = Array.from({ length: 5 }, (_, i) =>
       createLink(`l-${i}`, 'ward-1', `bed-${i}`),
     );
@@ -232,9 +389,8 @@ type HasBed @linkType(from: "Ward", to: "Bed", cardinality: ONE_TO_ONE) {
 
     await bedsResolver({ id: 'ward-1' }, { first: 5000 }, createCtx(deps));
 
-    const callArgs = getLinks.mock.calls[0]!;
+    const callArgs = getLinks.mock.calls[0] as unknown as unknown[];
     const options = callArgs[3] as { limit: number };
-    // The client asked for 5000 — the resolver must not silently cap at 1000
-    expect(options.limit).toBe(5000);
+    expect(options.limit).toBe(MAX_LINK_QUERY_LIMIT);
   });
 });
