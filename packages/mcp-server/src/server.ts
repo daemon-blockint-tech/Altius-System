@@ -25,6 +25,8 @@ import {
   type JsonRpcResponse,
   type McpInitializeResult,
   type McpToolsListResult,
+  type McpDiscoverResult,
+  SERVER_INFO_META_KEY,
   type McpCallToolResult,
   parseJsonRpcRequest,
   jsonRpcResult,
@@ -150,10 +152,51 @@ async function dispatchMethod(
 
   switch (request.method) {
     case 'initialize': {
+      // Answer with the version we support, whatever was asked for. This is
+      // the negotiation the 2025-03-26 lifecycle spec requires:
+      //
+      //   "If the server supports the requested protocol version, it MUST
+      //    respond with the same version. Otherwise, the server MUST respond
+      //    with another protocol version it supports."
+      //
+      // and it leaves the decision with the client: "If the client does not
+      // support the version in the server's response, it SHOULD disconnect."
+      //
+      // Erroring instead looks stricter but is the more damaging option. A
+      // client on 2026-07-28 — the revision that removed this handshake — is
+      // specified to fall back to `initialize` when it reaches a server at or
+      // before 2025-11-25, and that fallback works only if we answer with a
+      // version. Rejecting turns a client that would have negotiated down into
+      // one that cannot connect at all.
       const result: McpInitializeResult = {
         protocolVersion: MCP_PROTOCOL_VERSION,
         capabilities: { tools: {} },
         serverInfo: { name: serverName, version: serverVersion },
+      };
+      return jsonRpcResult(id, result);
+    }
+
+    case 'server/discover': {
+      // Required of every server by 2026-07-28. Implemented here while the
+      // server still speaks only the legacy 2025-03-26 handshake, because the
+      // value is exactly in answering honestly: a modern client that probes
+      // gets a definite "this server speaks 2025-03-26" instead of the
+      // ambiguous failure the spec's compatibility matrix describes for a
+      // modern client meeting a legacy server.
+      //
+      // Kept behind the same bearer auth as every other method. Discovery
+      // reveals server identity and capabilities, and nothing in the spec
+      // requires it to be unauthenticated.
+      const result: McpDiscoverResult = {
+        resultType: 'complete',
+        supportedVersions: [MCP_PROTOCOL_VERSION],
+        capabilities: { tools: {} },
+        _meta: { [SERVER_INFO_META_KEY]: { name: serverName, version: serverVersion } },
+        // Supported versions and the tool capability change only on deploy.
+        ttlMs: 3_600_000,
+        // Identity and capability list are the same for every caller; the tool
+        // list itself is authorization-scoped and is not returned here.
+        cacheScope: 'public',
       };
       return jsonRpcResult(id, result);
     }

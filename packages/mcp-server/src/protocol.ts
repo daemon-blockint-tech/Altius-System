@@ -76,6 +76,45 @@ export interface McpToolsListResult {
 }
 
 /**
+ * `_meta` key carrying server identity, per the 2026-07-28 naming rules.
+ *
+ * Self-reported and unverified: the spec says clients SHOULD NOT change
+ * behaviour on it or use it for security decisions. It is for display and
+ * debugging.
+ */
+export const SERVER_INFO_META_KEY = 'io.modelcontextprotocol/serverInfo';
+
+/**
+ * `server/discover` result.
+ *
+ * Introduced by 2026-07-28, which requires every server to implement the RPC
+ * so a client can learn supported versions, capabilities and identity in one
+ * request before committing to a revision.
+ *
+ * This server speaks only the legacy 2025-03-26 handshake, and answering
+ * honestly is precisely the point: without `server/discover` a modern client
+ * meeting a legacy server gets an ambiguous failure — the spec's compatibility
+ * matrix notes the server "may reject the request with an implementation-
+ * defined error, stay silent, or even process an era-ambiguous method under
+ * legacy semantics". Advertising `supportedVersions: ['2025-03-26']` turns
+ * that into a deterministic answer the client can surface to a user.
+ *
+ * Reference: https://modelcontextprotocol.io/specification/2026-07-28/server/discover
+ */
+export interface McpDiscoverResult {
+  /** Required on every 2026-07-28 result; 'complete' for an ordinary result. */
+  resultType: 'complete';
+  /** Versions the client may choose from for subsequent requests. */
+  supportedVersions: string[];
+  capabilities: { tools: Record<string, never> };
+  _meta: { [SERVER_INFO_META_KEY]: { name: string; version: string } };
+  /** Freshness hint in milliseconds. */
+  ttlMs: number;
+  /** Whether shared intermediaries may cache the response. */
+  cacheScope: 'public' | 'private';
+}
+
+/**
  * Build a JSON-RPC error response.
  */
 export function jsonRpcError(

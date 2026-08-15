@@ -517,3 +517,107 @@ describe('MCP server', () => {
     });
   });
 });
+
+describe('protocol version handling', () => {
+  it('answers an unsupported version with the version it does support, not an error', async () => {
+    const { deps } = createMockDeps();
+    const handler = createMcpServer({ deps, isDev: false });
+
+    const res = await handler({
+      method: 'POST',
+      headers: { authorization: 'Bearer valid-token' },
+      body: {
+        jsonrpc: '2.0', id: 1, method: 'initialize',
+        // A client on the revision that removed the handshake entirely. It is
+        // specified to fall back to `initialize` against a server at or before
+        // 2025-11-25, and that fallback needs a version back to negotiate on.
+        params: { protocolVersion: '2026-07-28' },
+      },
+    });
+
+    // 2025-03-26 lifecycle: "Otherwise, the server MUST respond with another
+    // protocol version it supports." Whether that is acceptable is the
+    // client's call — "If the client does not support the version in the
+    // server's response, it SHOULD disconnect." Erroring here would deny a
+    // 2026-era client the downgrade the spec promises it.
+    const body = res.body as {
+      result?: { protocolVersion: string };
+      error?: { code: number };
+    };
+    expect(body.error).toBeUndefined();
+    expect(body.result?.protocolVersion).toBe('2025-03-26');
+  });
+
+  it('answers server/discover with the era it actually speaks', async () => {
+    const { deps } = createMockDeps();
+    const handler = createMcpServer({ deps, isDev: false });
+
+    const res = await handler({
+      method: 'POST',
+      headers: { authorization: 'Bearer valid-token' },
+      body: { jsonrpc: '2.0', id: 'discover-1', method: 'server/discover' },
+    });
+
+    const body = res.body as {
+      result?: {
+        resultType: string;
+        supportedVersions: string[];
+        capabilities: Record<string, unknown>;
+        _meta: Record<string, { name: string; version: string }>;
+      };
+      error?: unknown;
+    };
+
+    expect(body.error).toBeUndefined();
+    expect(body.result?.resultType).toBe('complete');
+    // Honest, not aspirational: claiming 2026-07-28 here would invite a client
+    // to send per-request _meta this server does not read.
+    expect(body.result?.supportedVersions).toEqual(['2025-03-26']);
+    expect(body.result?.capabilities).toHaveProperty('tools');
+    expect(body.result?._meta['io.modelcontextprotocol/serverInfo']).toMatchObject({
+      name: expect.any(String),
+      version: expect.any(String),
+    });
+  });
+
+  it('requires auth for server/discover, like every other method', async () => {
+    const { deps } = createMockDeps();
+    const handler = createMcpServer({ deps, isDev: false });
+
+    const res = await handler({
+      method: 'POST',
+      headers: {},
+      body: { jsonrpc: '2.0', id: 'discover-1', method: 'server/discover' },
+    });
+
+    expect(res.status).toBe(401);
+  });
+
+  it('serves server/discover without a prior initialize', async () => {
+    const { deps } = createMockDeps();
+    const handler = createMcpServer({ deps, isDev: false });
+
+    // The whole point of a discovery probe is to precede everything else.
+    const res = await handler({
+      method: 'POST',
+      headers: { authorization: 'Bearer valid-token' },
+      body: { jsonrpc: '2.0', id: 1, method: 'server/discover' },
+    });
+
+    expect((res.body as { result?: unknown }).result).toBeDefined();
+  });
+
+  it('accepts the version it does implement', async () => {
+    const { deps } = createMockDeps();
+    const handler = createMcpServer({ deps, isDev: false });
+
+    const res = await handler({
+      method: 'POST',
+      headers: { authorization: 'Bearer valid-token' },
+      body: { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-03-26' } },
+    });
+
+    const body = res.body as { result?: { protocolVersion: string } };
+    expect(body.result?.protocolVersion).toBe('2025-03-26');
+  });
+});
