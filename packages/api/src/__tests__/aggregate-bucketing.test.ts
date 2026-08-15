@@ -94,7 +94,7 @@ describe('Aggregate date bucketing over HTTP', () => {
       buckets: [{ field: 'timestamp', interval: 'MONTH' }],
     }, createCtx(deps));
 
-    const call = (deps.objectManager.aggregate as ReturnType<typeof vi.fn>).mock.calls[0];
+    const call = (deps.objectManager.aggregate as ReturnType<typeof vi.fn>).mock.calls[0]!;
     const query = call[1];
     expect(query.buckets).toEqual([{ field: 'timestamp', interval: 'month', alias: undefined }]);
   });
@@ -119,7 +119,7 @@ describe('Aggregate date bucketing over HTTP', () => {
 
     await route.handler(req, createCtx(deps));
 
-    const call = (deps.objectManager.aggregate as ReturnType<typeof vi.fn>).mock.calls[0];
+    const call = (deps.objectManager.aggregate as ReturnType<typeof vi.fn>).mock.calls[0]!;
     const query = call[1];
     expect(query.buckets).toEqual([{ field: 'timestamp', interval: 'month', alias: undefined }]);
   });
