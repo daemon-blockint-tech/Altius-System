@@ -180,10 +180,32 @@ export async function getObject(
   const q = resolveQueryable(pool, tx);
   const table = tableName(type, schema);
   const sql = `SELECT * FROM ${table} WHERE "_tenant_id" = $1 AND "_id" = $2`;
-  const result = await q.query(sql, [ctx.tenantId, id]);
+
+  let result;
+  try {
+    result = await q.query(sql, [ctx.tenantId, id]);
+  } catch (err) {
+    // An unknown ObjectType has no table, so Postgres raises undefined_table
+    // (42P01). Reading an object of a type that does not exist is "not found",
+    // the same answer the memory provider gives — and letting the raw message
+    // ("relation \"public.foo\" does not exist") escape would leak the storage
+    // engine's vocabulary through the SPI to every caller above it.
+    if (isUndefinedTable(err)) return null;
+    throw err;
+  }
 
   if (result.rows.length === 0) return null;
   return rowToObject(result.rows[0] as Record<string, unknown>);
+}
+
+/** Postgres undefined_table (42P01): the type has no backing table. */
+function isUndefinedTable(err: unknown): boolean {
+  return typeof err === 'object' && err !== null && (err as { code?: string }).code === '42P01';
+}
+
+/** Postgres undefined_column (42703): the filter names a property that does not exist. */
+function isUndefinedColumn(err: unknown): boolean {
+  return typeof err === 'object' && err !== null && (err as { code?: string }).code === '42703';
 }
 
 /**
@@ -365,7 +387,25 @@ export async function queryObjects(
 
   // Count query for totalCount
   const countSql = `SELECT COUNT(*) AS cnt FROM ${table} WHERE ${whereClause}`;
-  const countResult = await q.query(countSql, allParams);
+  let countResult;
+  try {
+    countResult = await q.query(countSql, allParams);
+  } catch (err) {
+    // A filter naming a property that does not exist raises undefined_column
+    // (42703); an unknown ObjectType raises undefined_table (42P01). Both are
+    // answered with an empty page, matching the memory provider — and keeping
+    // Postgres's own error text ('column "nonexistent" does not exist') from
+    // escaping through the SPI to callers that know nothing about SQL.
+    //
+    // Note this makes a typo'd filter field return "no matches" rather than an
+    // error. That is the conformance suite's contract, not a preference; if it
+    // should fail loudly instead, that is a contract change to make in the
+    // suite and both providers together.
+    if (isUndefinedColumn(err) || isUndefinedTable(err)) {
+      return { items: [], totalCount: 0, hasNextPage: false };
+    }
+    throw err;
+  }
   const totalCount = parseInt(String((countResult.rows[0] as Record<string, unknown>)['cnt']), 10);
 
   // Order by

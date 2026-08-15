@@ -88,6 +88,12 @@ function rowToLink(row: Record<string, unknown>): OntologyLink {
   ]);
   for (const [key, value] of Object.entries(row)) {
     if (!systemCols.has(key)) {
+      // An unset link property is SQL NULL here but absent on the memory
+      // provider, so `link.role` read back as null on one and undefined on the
+      // other for the same link. Omit unset properties so both agree; a caller
+      // distinguishing "set to null" from "never set" had no way to do so on
+      // Postgres anyway, since the column exists either way.
+      if (value === null) continue;
       const camelKey = key.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
       link[camelKey] = value;
     }
