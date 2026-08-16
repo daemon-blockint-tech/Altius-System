@@ -6,14 +6,10 @@ RUN corepack enable && corepack prepare pnpm@9.15.4 --activate
 WORKDIR /app
 
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json turbo.json tsconfig.json tsconfig.build.json ./
-COPY packages/*/package.json packages/
-COPY domain-packs/*/package.json domain-packs/
-
-RUN pnpm install --frozen-lockfile
-
 COPY packages/ packages/
 COPY domain-packs/ domain-packs/
 
+RUN pnpm install --frozen-lockfile
 RUN pnpm turbo build --filter=@altius/actions...
 
 FROM node:20-alpine

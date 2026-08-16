@@ -75,12 +75,25 @@ export interface McpServerDependencies {
    */
   rateLimiter?: McpRateLimiter;
   /**
+   * Invokes a declared @function on behalf of the caller.
+   *
+   * Injected rather than imported: the governed entry point lives in
+   * @altius/api, which depends on this package, so calling it directly would
+   * be a cycle. The adapter must route through that same entry point — a
+   * FunctionType runs pack-authored code, and a second invocation path would
+   * be a way around the requiredRoles gate and the audit record that the REST
+   * and GraphQL surfaces both enforce.
+   *
+   * Absent means functions are simply not advertised as tools.
+   */
+  /**
    * Mandatory marking policy. Absent means no markings are configured.
    *
-   * An agent reads at machine rate, so a mandatory control that is enforced
-   * on the human surfaces and not here is not enforced at all.
+   * An agent reads at machine rate, so a mandatory control enforced on the
+   * human surfaces and not here is not enforced at all.
    */
   markingPolicy?: McpMarkingPolicy;
+  functionInvoker?: McpFunctionInvoker;
   /**
    * Audit sink for read tools.
    *
@@ -104,13 +117,6 @@ export interface McpServerDependencies {
    * are absent on /mcp while present on every other surface.
    */
   objectManager?: ObjectManager;
-  /**
-   * Invokes declared FunctionTypes. When provided, one `function_<Name>` tool
-   * is offered per FunctionType and dispatched through it (role-gated + audited
-   * like REST/GraphQL). Without it, functions are invisible to agents — the
-   * pre-existing behaviour, not a silent downgrade.
-   */
-  functionInvoker?: McpFunctionInvoker;
 }
 
 /**
