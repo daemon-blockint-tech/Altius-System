@@ -1295,6 +1295,7 @@ async function main(): Promise<void> {
         rateLimiter,
         consentPurpose: DEFAULT_CONSENT_PURPOSE as string,
         objectManager,
+        auditWriter: securityAuditWriter,
       },
       isDev,
     });

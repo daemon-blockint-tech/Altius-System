@@ -221,6 +221,34 @@ describe('read auditing — GraphQL resolvers', () => {
     expect(rec?.operation.objectId).toBe('p-1');
   });
 
+  it('audits an aggregate as a query', async () => {
+    const d = deps(true) as unknown as Record<string, unknown>;
+    (d['objectManager'] as Record<string, unknown>)['aggregate'] =
+      async () => ({ groups: [], totalGroups: 0 });
+    const { resolvers } = generateResolvers(schema as never, d as never);
+    await (resolvers['Query']!['patientAggregate'] as ReadResolver)(
+      {}, { fields: [{ fn: 'count', field: 'name' }] }, context(),
+    );
+
+    const [rec] = await records();
+    expect(rec?.operation.type).toBe('query');
+    expect(rec?.operation.objectType).toBe('Patient');
+  });
+
+  it('audits a traverse, naming the start object', async () => {
+    const d = deps(true) as unknown as Record<string, unknown>;
+    d['linkManager'] = { traverse: async () => ({ nodes: [], edges: [], totalCount: 0 }) };
+    (d['storage'] as unknown) = { traverse: async () => ({ nodes: [], edges: [], totalCount: 0 }) };
+    const { resolvers } = generateResolvers(schema as never, d as never);
+    await (resolvers['Query']!['traversePatient'] as ReadResolver)(
+      {}, { startId: 'p-1', steps: [] }, context(),
+    );
+
+    const [rec] = await records();
+    expect(rec?.operation.type).toBe('query');
+    expect(rec?.operation.objectId).toBe('p-1');
+  });
+
   it('audits a list read as a query', async () => {
     const { resolvers } = generateResolvers(schema as never, deps(true));
     await (resolvers['Query']!['patients'] as ReadResolver)({}, {}, context());

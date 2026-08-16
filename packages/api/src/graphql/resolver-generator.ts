@@ -1390,7 +1390,14 @@ function generateAggregateResolver(
         offset: args.offset,
       };
 
-      return deps.objectManager.aggregate(typeName, query, requestContext);
+      const aggregated = await deps.objectManager.aggregate(typeName, query, requestContext);
+
+      await writeReadAudit(deps.auditWriter, ctx, {
+        type: 'query', objectType: typeName,
+        query: `query ${lowerFirst(typeName)}Aggregate`, result: 'success',
+      });
+
+      return aggregated;
     } catch (err) {
       throw wrapError(err, ctx.requestContext.traceId);
     }
@@ -2426,6 +2433,13 @@ function generateTraverseResolver(
         nodes.push({ id: node._id, type: node._type, properties: redacted.data as Record<string, unknown> });
         visibleIds.add(node._id);
       }
+
+      await writeReadAudit(deps.auditWriter, ctx, {
+        // The start object is named by the caller, so it is the record read;
+        // the neighbourhood reached is the query.
+        type: 'query', objectType: typeName, objectId: args.startId,
+        query: `query traverse${typeName}`, result: 'success',
+      });
 
       return {
         nodes,
