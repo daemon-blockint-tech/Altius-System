@@ -39,10 +39,16 @@ const tracer = getTracer("security", "consent");
  * const decision = await consent.checkConsent("patient:123", DataPurpose.DIRECT_CARE, "user:dr-smith", "tenant-1");
  * ```
  */
+/**
+ * Closes every live subscription about a subject. Returns how many it closed.
+ */
+export type SubscriptionTerminator = (tenantId: string, subjectId: string) => number;
+
 export class ConsentService implements ConsentManager {
   private readonly store: ConsentStore;
   private readonly authz: AuthorizationService;
   private readonly config: ConsentManagerConfig;
+  private subscriptionTerminator?: SubscriptionTerminator;
 
   constructor(
     store: ConsentStore,
@@ -52,6 +58,20 @@ export class ConsentService implements ConsentManager {
     this.store = store;
     this.authz = authz;
     this.config = config;
+  }
+
+  /**
+   * Supply the hook that closes live subscriptions on revocation.
+   *
+   * Injected after construction rather than taken in the constructor because
+   * the subscription layer is built later in boot and depends on this service
+   * — wiring it the other way would be a cycle. Without it revocation still
+   * takes effect (every read and every delivered event re-checks consent);
+   * the client simply is not told, and the reported count is 0 because that
+   * is what actually happened.
+   */
+  setSubscriptionTerminator(terminator: SubscriptionTerminator): void {
+    this.subscriptionTerminator = terminator;
   }
 
   /**
@@ -166,12 +186,27 @@ export class ConsentService implements ConsentManager {
   ): Promise<RevocationResult> {
     return withSpan(tracer, "consent.revoke", {}, async () => {
       await this.recordConsent(subjectId, purpose, "DENY", reason, tenantId);
+      // Close the subject's live streams. The DENY above is already binding —
+      // every read path and every subscription delivery re-checks consent —
+      // so this is what makes the revocation visible to a connected client
+      // instead of leaving it on a socket that will never speak again.
+      let subscriptionsTerminated = 0;
+      if (this.subscriptionTerminator && tenantId) {
+        try {
+          subscriptionsTerminated = this.subscriptionTerminator(tenantId, subjectId);
+        } catch {
+          // A failure to close a socket must not undo a recorded revocation.
+          subscriptionsTerminated = 0;
+        }
+      }
       return {
         subjectId,
         purpose,
         revokedAt: new Date().toISOString(),
+        // Requests already in flight are not tracked anywhere in the platform,
+        // so this is 0 because that is what is known — not because none exist.
         activeSessions: 0,
-        subscriptionsTerminated: 0,
+        subscriptionsTerminated,
       };
     });
   }

@@ -67,7 +67,7 @@ import { createFhirRouter } from './fhir/index.js';
 import { createCdmRouter } from './cdm/index.js';
 import { generateRelationshipRoutes, buildGrantAllowlist } from './relationships/router.js';
 import { generateConsentRoutes, assertConsentConfig } from './consent/router.js';
-import { InMemorySubscribableEventBus, SubscriptionManager } from './subscriptions/index.js';
+import { InMemorySubscribableEventBus, SubscriptionManager, SubscriptionRegistry } from './subscriptions/index.js';
 import type { SubscribableEventBus } from './subscriptions/index.js';
 import { RedpandaEventBus } from './events/index.js';
 import type { ApiDependencies, ResolverContext } from './graphql/types.js';
@@ -855,6 +855,15 @@ async function main(): Promise<void> {
     path: '/graphql',
     maxPayload: 64 * 1024, // 64 KB — GraphQL subscription payloads are small
   });
+  const subscriptionRegistry = new SubscriptionRegistry();
+  deps.subscriptionRegistry = subscriptionRegistry;
+  // Close a subject's live streams when their consent is revoked. Injected
+  // here rather than at ConsentService construction because the subscription
+  // layer is built later in boot and depends on the consent service.
+  consentService?.setSubscriptionTerminator(
+    (tenantId, subjectId) => subscriptionRegistry.terminateForSubject(tenantId, subjectId),
+  );
+
   const subscriptionManager = new SubscriptionManager({
     pubsub,
     eventBus,

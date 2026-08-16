@@ -5,14 +5,20 @@ import { resolveDefaultConsentPurpose } from '../graphql/types.js';
 
 function mockDeps(withConsent = true, recorderRoles?: readonly string[], consentPurposes?: readonly string[]) {
   const recordConsent = vi.fn().mockResolvedValue(undefined);
+  // A DENY is a revocation, not just a record: it must also close the
+  // subject's live subscriptions, so it routes through revokeConsent.
+  const revokeConsent = vi.fn().mockResolvedValue({
+    subjectId: 'p-1', purpose: 'RESEARCH', revokedAt: '2026-08-16T00:00:00Z',
+    activeSessions: 0, subscriptionsTerminated: 2,
+  });
   const auditWrite = vi.fn().mockResolvedValue(undefined);
   const deps = {
-    consentService: withConsent ? { recordConsent } : undefined,
+    consentService: withConsent ? { recordConsent, revokeConsent } : undefined,
     auditWriter: { write: auditWrite },
     ...(recorderRoles ? { consentRecorderRoles: recorderRoles } : {}),
     ...(consentPurposes ? { consentPurposes } : {}),
   } as unknown as ApiDependencies;
-  return { deps, recordConsent, auditWrite };
+  return { deps, recordConsent, revokeConsent, auditWrite };
 }
 
 const ADMIN = { id: 'u1', roles: ['admin'] };
@@ -33,12 +39,16 @@ describe('applyConsentRecord', () => {
     }));
   });
 
-  it('passes through purpose, DENY decision and evidence', async () => {
+  it('routes a DENY through revokeConsent and reports the streams it closed', async () => {
     const r = await applyConsentRecord(
       d.deps, { subject: 'p-1', purpose: 'RESEARCH', decision: 'deny', evidence: 'verbal' }, ADMIN, 'default', 't1',
     );
     expect(r.ok).toBe(true);
-    expect(d.recordConsent).toHaveBeenCalledWith('p-1', 'RESEARCH', 'DENY', 'verbal', 'default');
+    // revokeConsent writes the same DENY record AND tears down live streams;
+    // recordConsent alone would leave a connected client on a silent socket.
+    expect(d.revokeConsent).toHaveBeenCalledWith('p-1', 'RESEARCH', 'verbal', 'default');
+    expect(d.recordConsent).not.toHaveBeenCalled();
+    expect(r.data).toMatchObject({ decision: 'DENY', subscriptionsTerminated: 2 });
   });
 
   it('denies a non-recorder role (403) and audits the denial', async () => {

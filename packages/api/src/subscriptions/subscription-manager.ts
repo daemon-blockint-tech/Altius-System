@@ -11,6 +11,7 @@ import type { CloudEvent } from '@altius/spi';
 import type { ObjectEventData, LinkEventData } from '@altius/engine';
 import type { EventBus } from '@altius/engine';
 import type { AuthenticatedUserInfo, ResolverContext } from '../graphql/types.js';
+import { DEFAULT_CONSENT_PURPOSE, isConsentSubjectType } from '../graphql/types.js';
 import { lowerFirst, toSnakeCase } from '../utils.js';
 import { logger } from '../logger.js';
 
@@ -267,13 +268,103 @@ export class SubscriptionManager {
 
 // ─── Subscription resolver helpers ───
 
+/** A live subscription the registry can close. */
+interface ActiveSubscription {
+  tenantId: string;
+  /**
+   * The consent subject this stream is about, or null for a type-level
+   * subscription that is about no single subject.
+   */
+  subjectId: string | null;
+  terminate: () => void;
+}
+
 /**
- * Create a subscription resolver that filters by object ID.
+ * Tracks live subscriptions so consent revocation can close the ones that are
+ * about the revoking subject.
  *
- * Used for `fooChanged(id: ID!)` subscriptions.
+ * Only id-filtered subscriptions carry a subject, so only those are closed.
+ * A type-level stream (`patientsChanged`) is about every patient, and closing
+ * it would cut off a subscriber's access to unrelated subjects; its events for
+ * the revoking subject are already withheld by the per-event consent gate, so
+ * nothing of theirs flows either way. Closing the id-filtered stream on top of
+ * that is what makes the revocation observable to the client rather than
+ * leaving it hanging on a socket that will never speak again.
+ */
+export class SubscriptionRegistry {
+  private readonly active = new Set<ActiveSubscription>();
+
+  /** Register a live subscription; returns the function that deregisters it. */
+  register(sub: ActiveSubscription): () => void {
+    this.active.add(sub);
+    return () => { this.active.delete(sub); };
+  }
+
+  /** Close every subject-scoped subscription for this subject. Returns the count. */
+  terminateForSubject(tenantId: string, subjectId: string): number {
+    let closed = 0;
+    for (const sub of [...this.active]) {
+      if (sub.tenantId !== tenantId || sub.subjectId !== subjectId) continue;
+      try {
+        sub.terminate();
+      } catch (err) {
+        logger.warn({ err, subjectId }, 'Failed to terminate subscription on consent revocation');
+      }
+      this.active.delete(sub);
+      closed += 1;
+    }
+    return closed;
+  }
+
+  /** Number of live subscriptions — for tests and diagnostics. */
+  get size(): number {
+    return this.active.size;
+  }
+}
+
+/**
+ * Whether a subscriber may be told about this event at all.
  *
- * Authorization: Each emitted event is checked against FGA — subscribers
- * only receive events for objects they have `viewer` access to.
+ * Consent is enforced on every read surface — REST, GraphQL, FHIR, CDM, MCP —
+ * and was absent here, so a subject who had denied consent could still have
+ * their changes streamed to a subscriber, complete with previous values. The
+ * push surface has to apply the same gate the pull surfaces do, or it is a
+ * way around them.
+ *
+ * A restricted event is DROPPED, not blanked. On a single-object read the
+ * caller already named the record, so an emptied shell tells them nothing
+ * new; here the mere arrival of an event discloses that the record exists and
+ * just changed.
+ *
+ * Fails closed: if a consent service is configured and the check throws, the
+ * event is withheld rather than delivered unchecked.
+ */
+async function passesConsent(event: ChangeEvent, ctx: ResolverContext): Promise<boolean> {
+  const consentService = ctx?.deps?.consentService;
+  if (!consentService) return true;
+  if (!isConsentSubjectType(event.object._type, ctx?.deps?.consentSubjectTypes)) return true;
+
+  const userId = ctx?.user?.id;
+  const tenantId = ctx?.user?.tenantId;
+  if (!userId || !tenantId) return false;
+
+  try {
+    const result = await consentService.checkSingleObject(
+      { _id: event.object.id },
+      event.object.id,
+      DEFAULT_CONSENT_PURPOSE,
+      userId,
+      tenantId,
+    );
+    return !result._consentRestricted;
+  } catch (err) {
+    logger.error({ err, objectType: event.object._type }, 'Subscription consent check failed — withholding event');
+    return false;
+  }
+}
+
+/**
+ * Create a subscription resolver for a single object by id.
  */
 export function createIdFilteredSubscription(
   pubsub: PubSub,
@@ -296,7 +387,7 @@ export function createIdFilteredSubscription(
       // subscription with no tenant has no store to check against.
       const tenantId = ctx?.user?.tenantId;
 
-      return filterAsyncIteratorAsync(baseIterator, async (payload: unknown) => {
+      const stream = filterAsyncIteratorAsync(baseIterator, async (payload: unknown) => {
         const p = payload as Record<string, unknown>;
         const event = p[topic] as ChangeEvent | undefined;
         if (!event) return false;
@@ -321,6 +412,9 @@ export function createIdFilteredSubscription(
         );
         if (!allowed) return false;
 
+        // Consent gate — same purpose and semantics as every pull surface.
+        if (!(await passesConsent(event, ctx))) return false;
+
         // Redact previousValues for fields the subscriber cannot see.
         // Without this, a @sensitive field leaks on the subscription surface
         // to a caller who would see it null on every read path.
@@ -333,6 +427,27 @@ export function createIdFilteredSubscription(
         (p as Record<string, unknown>)[topic] = redacted;
         return true;
       });
+
+      // Register so a consent revocation for this subject can close the
+      // stream rather than leave the client holding a socket that has gone
+      // permanently silent.
+      const registry = ctx?.deps?.subscriptionRegistry;
+      if (registry && tenantId) {
+        const deregister = registry.register({
+          tenantId,
+          subjectId: args.id,
+          terminate: () => { void stream.return?.(undefined); },
+        });
+        const originalReturn = stream.return?.bind(stream);
+        stream.return = async (value?: unknown) => {
+          deregister();
+          return originalReturn
+            ? await originalReturn(value)
+            : { done: true, value: undefined as never };
+        };
+      }
+
+      return stream;
     },
   };
 }
@@ -392,6 +507,9 @@ export function createFilteredSubscription(
           tenantId,
         );
         if (!allowed) return false;
+
+        // Consent gate — same purpose and semantics as every pull surface.
+        if (!(await passesConsent(event, ctx))) return false;
 
         // Redact previousValues for fields the subscriber cannot see.
         const redacted = redactPreviousValues(
