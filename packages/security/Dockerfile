@@ -5,19 +5,23 @@ RUN corepack enable && corepack prepare pnpm@9.15.4 --activate
 
 WORKDIR /app
 
-COPY package.json pnpm-workspace.yaml pnpm-lock.yaml turbo.json tsconfig.json tsconfig.build.json ./
-COPY packages/ packages/
-COPY domain-packs/ domain-packs/
-COPY tests/ tests/
-COPY tools/ tools/
+# Copy lockfile and workspace config first for dependency caching
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json turbo.json tsconfig.json tsconfig.build.json ./
+
+# Copy only package.json files and proto (excluded: .ts, .turbo, tests, tools sources)
+COPY packages/*/package.json packages/
+COPY domain-packs/*/package.json domain-packs/
 
 RUN pnpm install --frozen-lockfile
+
+# Copy source after dependencies resolve (source changes don't invalidate dep layer)
+COPY packages/ packages/
+COPY domain-packs/ domain-packs/
+
 RUN pnpm turbo build --filter=@altius/security...
 
 FROM node:20-alpine
 
-# Apply OS security patches newer than the pinned base digest
-# (openssl libcrypto3/libssl3 CVE-2026-45447, fixed in 3.5.7-r0).
 RUN apk upgrade --no-cache libcrypto3 libssl3
 
 ARG GIT_REVISION=unknown
@@ -27,16 +31,13 @@ RUN corepack enable && corepack prepare pnpm@9.15.4 --activate
 
 WORKDIR /app
 
-COPY --from=builder /app/package.json /app/pnpm-workspace.yaml /app/pnpm-lock.yaml ./
+COPY --from=builder /app/pnpm-lock.yaml /app/pnpm-workspace.yaml /app/package.json /app/turbo.json ./
 COPY --from=builder /app/packages/ packages/
 COPY --from=builder /app/domain-packs/ domain-packs/
-COPY --from=builder /app/tests/ tests/
-COPY --from=builder /app/tools/ tools/
 
-RUN pnpm install --frozen-lockfile --prod \
-    && rm -rf /root/.cache/node/corepack \
-              /usr/local/lib/node_modules/npm \
-              /usr/local/bin/npm /usr/local/bin/npx
+RUN pnpm install --frozen-lockfile --prod && \
+    pnpm store prune && \
+    rm -rf /root/.cache/node/corepack /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 
 USER node
 

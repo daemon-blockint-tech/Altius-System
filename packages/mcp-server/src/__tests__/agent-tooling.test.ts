@@ -27,12 +27,12 @@ extend schema @namespace(name: "test", version: "0.1.0")
 type Ward @objectType { id: ID! @primary  name: String }
 
 type ScoreRisk @function(runtime: "node", entry: "score.js", requiredRoles: "clinician") {
-  wardId: String!
-  weight: Int
+  wardId: String! @param
+  weight: Int @param
 }
 
 type AdminOnly @function(runtime: "node", entry: "admin.js", requiredRoles: "admin") {
-  input: String!
+  input: String! @param
 }
 `);
 
@@ -46,7 +46,7 @@ function caller(roles: string[]): McpCaller {
 function makeDeps(over: Partial<McpServerDependencies> = {}): McpServerDependencies {
   return {
     schema,
-    functionInvoker: vi.fn(async () => ({ score: 42 })),
+    functionInvoker: { invoke: vi.fn(async () => ({ result: { score: 42 } })) },
     authorizationService: {
       listObjects: async () => ['w-1'],
       check: async () => true,
@@ -86,12 +86,14 @@ describe('FunctionTypes as MCP tools', () => {
     const deps = makeDeps();
     await invokeTool('function_ScoreRisk', { wardId: 'w-1' }, caller(['clinician']), deps);
 
-    expect(deps.functionInvoker).toHaveBeenCalledWith('ScoreRisk', { wardId: 'w-1' }, expect.anything());
+    expect(deps.functionInvoker!.invoke).toHaveBeenCalledWith(
+      expect.objectContaining({ functionName: 'ScoreRisk', args: { wardId: 'w-1' } }),
+    );
   });
 
   it('returns a denial as isError content, not a protocol error', async () => {
     const deps = makeDeps({
-      functionInvoker: vi.fn(async () => { throw new Error('requires one of: admin'); }),
+      functionInvoker: { invoke: vi.fn(async () => { throw new Error('requires one of: admin'); }) },
     } as unknown as Partial<McpServerDependencies>);
 
     const res = await invokeTool('function_AdminOnly', { input: 'x' }, caller(['clinician']), deps);

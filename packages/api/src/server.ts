@@ -63,7 +63,6 @@ import { createGraphQLServer, buildResolverContext } from './graphql/index.js';
 import { generateRestRoutes, generateOpenApiSpec, auditRead } from './rest/index.js';
 import { writeReadAuditFor } from './rest/audit-read.js';
 import { isTypeVisible, missingMarkings } from './markings/enforce.js';
-import { invokeFunction } from './functions/invoke-function.js';
 import { generateAuditRoutes } from './rest/audit-routes.js';
 import { generateTraverseRoutes } from './rest/traverse-route.js';
 import { readPlatformVersion } from './version.js';
@@ -200,7 +199,6 @@ async function main(): Promise<void> {
   const {
     parsed: schema, spiSchema, packs, packInfos, manifestRegistry, functionPackDirs,
     fieldPermissions, markingConfig, permissionOverrides, connectorManifests, seedManifests,
-    fieldPermissions, permissionOverrides, connectorManifests, seedManifests,
     automationManifests,
   } = await loadDomainPacks(undefined, packNames);
   logger.info(
@@ -1427,16 +1425,6 @@ async function main(): Promise<void> {
               },
             }
           : {}),
-        // Route agent function calls through the SAME governed entry point
-        // REST and GraphQL use. A FunctionType runs pack-authored code, so a
-        // second invocation path would be a way around the requiredRoles gate
-        // and the audit record both other surfaces enforce.
-        functionInvoker: async (functionName, input, caller) => {
-          const fn = schema.functionTypes.find(f => f.name === functionName);
-          if (!fn) throw new Error(`Unknown function: ${functionName}`);
-          const result = await invokeFunction(fn, deps, buildResolverContext(caller.user, deps), input);
-          return result;
-        },
       },
       isDev,
     });

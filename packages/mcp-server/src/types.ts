@@ -82,19 +82,6 @@ export interface McpServerDependencies {
    */
   markingPolicy?: McpMarkingPolicy;
   /**
-   * Invokes a declared @function on behalf of the caller.
-   *
-   * Injected rather than imported: the governed entry point lives in
-   * @altius/api, which depends on this package, so calling it directly would
-   * be a cycle. The adapter must route through that same entry point — a
-   * FunctionType runs pack-authored code, and a second invocation path would
-   * be a way around the requiredRoles gate and the audit record that the REST
-   * and GraphQL surfaces both enforce.
-   *
-   * Absent means functions are simply not advertised as tools.
-   */
-  functionInvoker?: McpFunctionInvoker;
-  /**
    * Audit sink for read tools.
    *
    * MCP is the third read surface, and an agent reading a record is exactly
@@ -152,13 +139,6 @@ export interface McpMarkingPolicy {
   requiredFor(objectType: string): readonly string[];
   check(held: readonly string[], required: readonly string[]): { allowed: boolean };
 }
-
-/** Invokes a FunctionType under the caller's identity and governance. */
-export type McpFunctionInvoker = (
-  functionName: string,
-  input: Record<string, unknown>,
-  caller: McpCaller,
-) => Promise<unknown>;
 
 export interface McpCaller {
   user: AuthenticatedUser;

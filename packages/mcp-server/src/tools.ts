@@ -8,7 +8,6 @@
  */
 
 import type { ActionType, ObjectType, FunctionType, FieldDefinition } from '@altius/odl';
-import type { FunctionType, ActionType, ObjectType, FieldDefinition } from '@altius/odl';
 import { actionPermissionRelation } from '@altius/odl';
 import type { ActionActor, ActionContext, ActionResult } from '@altius/actions';
 import type { FilterExpression, OntologyObject, TraversalStep } from '@altius/spi';
@@ -90,8 +89,11 @@ export function buildToolList(deps: McpServerDependencies): McpTool[] {
 
 /**
  * Build an MCP tool descriptor for a FunctionType (name `function_<Name>`).
- * The inputSchema is derived from the function's @param fields, mirroring
- * buildActionTool.
+ *
+ * Inputs come from the function's @param fields, matching what
+ * generateFunctionInputType already emits for GraphQL — the two surfaces must
+ * advertise the same shape or an agent and a human disagree about what the
+ * function takes.
  */
 function buildFunctionTool(fnType: FunctionType): McpTool {
   const properties: Record<string, unknown> = {};
@@ -100,18 +102,7 @@ function buildFunctionTool(fnType: FunctionType): McpTool {
   for (const field of fnType.fields) {
     const isParam = field.directives.some((d) => d.kind === 'param');
     if (!isParam) continue;
- * Build an MCP tool descriptor for a FunctionType.
- *
- * Named `function_<Name>` so it cannot collide with an ActionType of the same
- * name — the two are separate namespaces in ODL and a bare name would make
- * dispatch ambiguous.
- */
-function buildFunctionTool(fn: FunctionType): McpTool {
-  const properties: Record<string, unknown> = {};
-  const required: string[] = [];
 
-  for (const field of fn.fields) {
-    // A function's inputs are its plain fields; @param is an action concept.
     properties[field.name] = fieldToJsonSchema(field);
     if (field.type.nonNull) required.push(field.name);
   }
@@ -119,8 +110,6 @@ function buildFunctionTool(fn: FunctionType): McpTool {
   return {
     name: `function_${fnType.name}`,
     description: fnType.description ?? `Invoke the ${fnType.name} function`,
-    name: `function_${fn.name}`,
-    description: fn.description ?? `Invoke the ${fn.name} function`,
     inputSchema: {
       type: 'object',
       properties,
@@ -382,15 +371,6 @@ export async function invokeTool(
     return invokeActionTool(actionType, args, caller, deps);
   }
 
-  // Function tool: name matches function_<Name>
-  if (toolName.startsWith('function_') && deps.functionInvoker) {
-    const fnName = toolName.slice('function_'.length);
-    const fn = deps.schema.functionTypes.find((f) => f.name === fnName);
-    if (fn) {
-      return invokeFunctionTool(fnName, args, caller, deps);
-    }
-  }
-
   // Read tool: name matches search_<Type>
   if (toolName.startsWith('search_')) {
     const typeName = toolName.slice('search_'.length);
@@ -444,12 +424,27 @@ async function invokeFunctionTool(
   deps: McpServerDependencies,
 ): Promise<McpCallToolResult> {
   const params = (args && typeof args === 'object' ? args : {}) as Record<string, unknown>;
-  const outcome = await deps.functionInvoker!.invoke({
-    functionName: fnType.name,
-    args: params,
-    user: caller.user,
-    requestContext: caller.requestContext,
-  });
+
+  // A throw from the invoker — an authorization denial is the common one —
+  // would reach the dispatcher's catch and be reported as INTERNAL_ERROR. A
+  // refusal is not an internal error, and an agent that sees one has no way
+  // to tell "you may not do this" from "the platform is broken". Returned as
+  // isError content instead, matching the action and read tools.
+  let outcome: Awaited<ReturnType<NonNullable<McpServerDependencies['functionInvoker']>['invoke']>>;
+  try {
+    outcome = await deps.functionInvoker!.invoke({
+      functionName: fnType.name,
+      args: params,
+      user: caller.user,
+      requestContext: caller.requestContext,
+    });
+  } catch (err) {
+    return {
+      content: [{ type: 'text', text: JSON.stringify({ error: err instanceof Error ? err.message : String(err) }) }],
+      isError: true,
+    };
+  }
+
   if (!outcome.ok) {
     return {
       content: [{ type: 'text', text: JSON.stringify({ error: outcome.error, ...(outcome.code ? { code: outcome.code } : {}) }) }],
@@ -496,32 +491,6 @@ async function auditMcpRead(
     });
   } catch {
     /* best-effort */
-  }
-}
-
-/**
- * Invoke a FunctionType through the host's governed entry point.
- *
- * Errors are returned as isError content rather than a JSON-RPC error, the
- * same shape the action tool uses, so an agent sees the reason and can
- * recover instead of the whole call failing at the protocol layer.
- */
-async function invokeFunctionTool(
-  fnName: string,
-  args: unknown,
-  caller: McpCaller,
-  deps: McpServerDependencies,
-): Promise<McpCallToolResult> {
-  const input = (args && typeof args === 'object' ? args : {}) as Record<string, unknown>;
-  try {
-    const result = await deps.functionInvoker!(fnName, input, caller);
-    return { content: [{ type: 'text', text: JSON.stringify(result) }], isError: false };
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return {
-      content: [{ type: 'text', text: JSON.stringify({ error: message }) }],
-      isError: true,
-    };
   }
 }
 
