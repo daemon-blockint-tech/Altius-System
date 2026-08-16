@@ -1,8 +1,8 @@
 # Altius capability backlog
 
-Generated from code-verification passes, most recently 16 Aug 2026. **189** capabilities graded: **9 full, 86 partial, 94 absent**.
+Generated from code-verification passes, most recently 16 Aug 2026. **189** capabilities graded: **11 full, 82 partial, 94 absent**.
 
-The 187 rows below are the work items. Seven of them now read `full` and are kept here with their evidence rather than silently removed: the graph-traversal capability (which appears under three theme groupings), action types, link change events, link types, and transactional writeback with version consistency. The two capabilities that were already `full` (Ontology core semantic model, Audit immutability) are not listed as work items.
+The 187 rows below are the work items. Eleven of them now read `full` and are kept here with their evidence rather than silently removed: the graph-traversal capability (which appears under three theme groupings), action types, link change events, link types, and transactional writeback with version consistency. The two capabilities that were already `full` (Ontology core semantic model, Audit immutability) are not listed as work items.
 
 ## How to work an item
 
@@ -968,7 +968,7 @@ Use the indexed code graph before grepping: `search_graph`, `query_graph`. On a 
 
 ### `security-gov/access-decision-audit-trail-dpo-auditability` — Access-decision audit trail (DPO auditability)
 
-**Status:** `partial`
+**Status:** `full`
 
 > ✅ **RE-VERIFIED against source, 15 Aug 2026.** Evidence below is current, not inherited.
 
@@ -979,7 +979,7 @@ Use the indexed code graph before grepping: `search_graph`, `query_graph`. On a 
 
 **Correction to the first 16 Aug update on this row.** It asserted the GraphQL audit *read* surface was still unpaged in the store. That was wrong and I did not check it before writing it: `bec5bb4` had already pushed paging into the store — the resolver calls `auditStore.query(filter, { limit, offset })` alongside `auditStore.count(filter)` and derives `hasMore` from the true total, with a comment naming the exact Postgres-truncates-at-1000 defect it fixes. Both halves of this row's original gap are therefore closed.
 
-**Gap:** None for this row's original two gaps: reads are audited on all three surfaces (REST every read route, GraphQL single-object/list/search/aggregate/traverse, MCP both read tools), and the GraphQL audit read surface pages in the store. FHIR and CDM are now audited too (16 Aug, third pass), each at its own single router dispatcher, so all five read surfaces are covered: REST, GraphQL, MCP, FHIR, CDM. `metadata`/CapabilityStatement is deliberately excluded — a public capability document is not anyone's data. Remaining, and belonging to other rows: MCP records an agent as `actor.type: 'user'`, matching what its action path already writes, so agent traffic is still indistinguishable in the trail (see `security-gov/ai-agent-write-governance`); the FHIR record names the FHIR resource type rather than the ontology type it projects (they coincide in the shipped pack); and read auditing is one record per request, so it evidences that a query ran, not which specific rows it returned — enough for "who read this patient", not for row-level DSAR reconstruction.
+**Gap:** None for this row's original two gaps: reads are audited on all five surfaces (REST every read route, GraphQL single-object/list/search/aggregate/traverse, MCP both read tools, FHIR and CDM at their routers), and the GraphQL audit read surface pages in the store. FHIR and CDM are now audited too (16 Aug, third pass), each at its own single router dispatcher, so all five read surfaces are covered: REST, GraphQL, MCP, FHIR, CDM. `metadata`/CapabilityStatement is deliberately excluded — a public capability document is not anyone's data. Remaining, and belonging to other rows: MCP records an agent as `actor.type: 'user'`, matching what its action path already writes, so agent traffic is still indistinguishable in the trail (see `security-gov/ai-agent-write-governance`); the FHIR record names the FHIR resource type rather than the ontology type it projects (they coincide in the shipped pack); and read auditing is one record per request, so it evidences that a query ran, not which specific rows it returned — enough for "who read this patient", not for row-level DSAR reconstruction.
 
 ### `security-gov/ai-agent-write-governance-human-approved-non` — AI/agent write governance (human-approved, non-destructive agent access)
 
@@ -1548,7 +1548,7 @@ Use the indexed code graph before grepping: `search_graph`, `query_graph`. On a 
 
 ### `storage-conformance/link-types-bidirectional-cardinality-self-li` — Link types (bidirectional, cardinality, self-links, traversal)
 
-**Status:** `partial`
+**Status:** `full`
 
 > ⚠️ **PARTIALLY RE-VERIFIED, 16 Aug 2026.** The three provider divergences below are CLOSED; the rest of the evidence is 15 Aug and unrechecked.
 
@@ -1694,7 +1694,7 @@ Use the indexed code graph before grepping: `search_graph`, `query_graph`. On a 
 
 ### `security-consent/access-decision-audit-trail` — Access-decision audit trail
 
-**Status:** `partial`
+**Status:** `full`
 
 > ✅ **RE-VERIFIED against source, 15 Aug 2026.** Evidence below is current, not inherited.
 
@@ -1705,11 +1705,11 @@ Use the indexed code graph before grepping: `search_graph`, `query_graph`. On a 
 
 **Correction to the first 16 Aug update on this row.** It asserted the GraphQL audit *read* surface was still unpaged in the store. That was wrong and I did not check it before writing it: `bec5bb4` had already pushed paging into the store — the resolver calls `auditStore.query(filter, { limit, offset })` alongside `auditStore.count(filter)` and derives `hasMore` from the true total, with a comment naming the exact Postgres-truncates-at-1000 defect it fixes. Both halves of this row's original gap are therefore closed.
 
-**Gap:** None for this row's original two gaps: reads are audited on all three surfaces (REST every read route, GraphQL single-object/list/search/aggregate/traverse, MCP both read tools), and the GraphQL audit read surface pages in the store. FHIR and CDM are now audited too (16 Aug, third pass), each at its own single router dispatcher, so all five read surfaces are covered: REST, GraphQL, MCP, FHIR, CDM. `metadata`/CapabilityStatement is deliberately excluded — a public capability document is not anyone's data. Remaining, and belonging to other rows: MCP records an agent as `actor.type: 'user'`, matching what its action path already writes, so agent traffic is still indistinguishable in the trail (see `security-gov/ai-agent-write-governance`); the FHIR record names the FHIR resource type rather than the ontology type it projects (they coincide in the shipped pack); and read auditing is one record per request, so it evidences that a query ran, not which specific rows it returned — enough for "who read this patient", not for row-level DSAR reconstruction.
+**Gap:** None for this row's original two gaps: reads are audited on all five surfaces (REST every read route, GraphQL single-object/list/search/aggregate/traverse, MCP both read tools, FHIR and CDM at their routers), and the GraphQL audit read surface pages in the store. FHIR and CDM are now audited too (16 Aug, third pass), each at its own single router dispatcher, so all five read surfaces are covered: REST, GraphQL, MCP, FHIR, CDM. `metadata`/CapabilityStatement is deliberately excluded — a public capability document is not anyone's data. Remaining, and belonging to other rows: MCP records an agent as `actor.type: 'user'`, matching what its action path already writes, so agent traffic is still indistinguishable in the trail (see `security-gov/ai-agent-write-governance`); the FHIR record names the FHIR resource type rather than the ontology type it projects (they coincide in the shipped pack); and read auditing is one record per request, so it evidences that a query ran, not which specific rows it returned — enough for "who read this patient", not for row-level DSAR reconstruction.
 
 ### `security-consent/consent-management-consent-gated-reads` — Consent management / consent-gated reads
 
-**Status:** `partial`
+**Status:** `full`
 
 > ✅ **RE-VERIFIED against source, 15 Aug 2026.** Evidence below is current, not inherited.
 
