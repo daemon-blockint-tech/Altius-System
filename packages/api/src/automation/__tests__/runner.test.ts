@@ -222,7 +222,11 @@ type DischargePatient @actionType { patientId: Patient @param }
       storage: makeStorage(null),
       logger: noopLogger,
       consentSubjectTypes: ['Patient'],
-      consentPurpose: 'DIRECT_CARE',
+      // Deliberately NOT one of the five NHS preset keys. DataPurpose is an
+      // open type, so `KYC` is as valid as `DIRECT_CARE` — and it is the case
+      // the old `configured in DataPurpose` test silently swallowed. A preset
+      // key here passes whether the runner is right or wrong.
+      consentPurpose: 'KYC',
     });
 
     await runner.runScheduled(auto);
@@ -230,6 +234,10 @@ type DischargePatient @actionType { patientId: Patient @param }
     const call = executor.execute.mock.calls[0] as unknown[];
     const ctx = call[3] as { consentSubjectId?: string; consentPurpose?: string };
     expect(ctx.consentSubjectId).toBe('p-1');
-    expect(ctx.consentPurpose).toBeDefined();
+    // The configured purpose, not the platform default. Asserting only
+    // toBeDefined() here passed while the runner substituted DIRECT_CARE,
+    // which is the whole defect: the action ran under a purpose the subject
+    // was never asked about.
+    expect(ctx.consentPurpose).toBe('KYC');
   });
 });

@@ -11,23 +11,21 @@ import type { ActionType, ObjectType, FunctionType, FieldDefinition } from '@alt
 import { actionPermissionRelation } from '@altius/odl';
 import type { ActionActor, ActionContext, ActionResult } from '@altius/actions';
 import type { FilterExpression, OntologyObject, TraversalStep } from '@altius/spi';
-import { DataPurpose } from '@altius/spi';
+import { resolveConsentPurpose as resolveSpiConsentPurpose } from '@altius/spi';
+import type { DataPurpose } from '@altius/spi';
 import type { McpTool, McpCallToolResult } from './protocol.js';
 import type { McpServerDependencies, McpCaller } from './types.js';
 
 /** Default consent subject types (mirrors ApiDependencies default). */
 const DEFAULT_CONSENT_SUBJECT_TYPES: readonly string[] = ['Patient'];
 
-/** Default consent purpose when the deployment does not configure one. */
-const DEFAULT_CONSENT_PURPOSE: DataPurpose = DataPurpose.DIRECT_CARE;
-
 /** Resolve the consent purpose from deps, falling back to the default. */
 function resolveConsentPurpose(deps: McpServerDependencies): DataPurpose {
-  const configured = deps.consentPurpose;
-  if (configured && configured in DataPurpose) {
-    return configured as DataPurpose;
-  }
-  return DEFAULT_CONSENT_PURPOSE;
+  // Any non-empty string is a purpose (DataPurpose is open). This used to test
+  // `configured in DataPurpose`, which checks the five-key NHS preset, so a
+  // deployment-defined purpose was silently swapped for DIRECT_CARE and an
+  // agent's read was consent-checked under a purpose nobody configured.
+  return resolveSpiConsentPurpose(deps.consentPurpose);
 }
 
 /** Max objects a `search_<Type>` tool returns in one call. */
@@ -74,14 +72,6 @@ export function buildToolList(deps: McpServerDependencies): McpTool[] {
   for (const objType of deps.schema.objectTypes) {
     tools.push(buildSearchTool(objType));
     tools.push(buildTraverseTool(objType));
-  }
-
-  // Function tools — one function_<Name> per FunctionType, only when an
-  // invoker is wired (otherwise there is nothing to dispatch to).
-  if (deps.functionInvoker) {
-    for (const fnType of deps.schema.functionTypes) {
-      tools.push(buildFunctionTool(fnType));
-    }
   }
 
   return tools;
