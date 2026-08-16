@@ -449,6 +449,35 @@ rollback:
   onSideEffectFailure: ROLLBACK_ALL
 `;
 
+// Action that deletes a patient under ROLLBACK_ALL. When the side effect
+// fails, the compensating transaction must RESTORE the soft-deleted object
+// (not just skip it). Before the restoreObject SPI op, the 'deleted' branch
+// was a no-op comment, leaving the object soft-deleted after a failed action.
+const DELETE_PATIENT_ROLLBACK_YAML = `
+action: DischargePatient
+version: 1
+reversible: false
+
+params:
+  - name: patient
+    type: Patient
+    required: true
+
+effects:
+  - type: deleteObject
+    target: "patient"
+    mode: "soft"
+
+sideEffects:
+  - name: emitDeletionEvent
+    type: event
+    config:
+      type: "nhs.acute.patient.deleted"
+
+rollback:
+  onSideEffectFailure: ROLLBACK_ALL
+`;
+
 // Minimal action exercising the recordConsent effect with an opt-out CEL
 // condition (consent-on-register is default-on unless the caller opts out).
 const RECORD_CONSENT_YAML = `
@@ -1742,6 +1771,48 @@ effects:
       expect(result.success).toBe(true);
       const after = await storage.getObject(REQ_CTX, 'Patient', patient._id);
       expect(after?.['status']).toBe('ACTIVE');
+    });
+
+    it('restores a soft-deleted object during ROLLBACK_ALL compensation', async () => {
+      // Before the restoreObject SPI op, the 'deleted' branch in the
+      // compensating transaction was a no-op — the object stayed soft-deleted
+      // after a failed action. Now the executor calls restoreObject to clear
+      // _deleted_at and make the object visible again.
+      const failingSideEffectHandler: SideEffectHandler = {
+        async execute() {
+          return { success: false, error: 'downstream broker unavailable' };
+        },
+      };
+      const rollbackExecutor = new ActionExecutor({
+        storage,
+        security: createAllowAllSecurity(),
+        cel: createMockCelEvaluator(),
+        auditWriter,
+        sideEffectHandler: failingSideEffectHandler,
+      });
+
+      // Precondition: the fixture patient exists and is not deleted.
+      const before = await storage.getObject(REQ_CTX, 'Patient', patient._id);
+      expect(before).not.toBeNull();
+      expect(before?.['_deletedAt']).toBeUndefined();
+
+      const { manifest } = parseActionManifest(DELETE_PATIENT_ROLLBACK_YAML);
+      const result = await rollbackExecutor.execute(
+        manifest!,
+        { patient: patient._id },
+        ACTOR,
+        ACTION_CTX,
+        NHS_SCHEMA,
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.errors?.[0]?.code).toBe('SIDE_EFFECT_FAILURE');
+
+      // The soft-deleted object must be restored — visible again via getObject
+      // (which excludes soft-deleted rows by default).
+      const after = await storage.getObject(REQ_CTX, 'Patient', patient._id);
+      expect(after).not.toBeNull();
+      expect(after?.['_deletedAt']).toBeUndefined();
     });
   });
 

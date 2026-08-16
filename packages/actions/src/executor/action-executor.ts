@@ -541,11 +541,12 @@ export class ActionExecutor {
                       // and they would cause column-mapping errors in Postgres.
                       const userProps = stripSystemFields(before);
                       await compensatingTxn.updateObject(affected.type, affected.id, userProps);
+                    } else if (affected.changeType === 'deleted' && before) {
+                      // Undo object delete by restoring the soft-deleted row.
+                      // The SPI restoreObject operation clears _deleted_at and
+                      // advances _version, making the object visible again.
+                      await compensatingTxn.restoreObject(affected.type, affected.id);
                     }
-                    // 'deleted' object rollbacks are best-effort; restoring a
-                    // soft-deleted row needs a dedicated SPI restore op (the
-                    // update path filters _deleted_at IS NULL). The before-state
-                    // is captured so a future restore op can use it.
                   }
                 }
                 await compensatingTxn.commit();

@@ -270,6 +270,14 @@ class MemoryTransaction implements Transaction {
     }
   }
 
+  async restoreObject(type: string, id: string): Promise<OntologyObject> {
+    this.assertOpen();
+    const key = `${type}:${id}`;
+    const restored = this._provider._doRestoreObject(this._ctx, type, id, this._maps);
+    this._changedObjectKeys.add(key);
+    return clone(restored);
+  }
+
   async createLink(type: string, fromId: string, toId: string, properties?: Record<string, unknown>): Promise<OntologyLink> {
     this.assertOpen();
     const link = this._provider._doCreateLink(this._ctx, type, fromId, toId, properties, this._maps);
@@ -593,6 +601,28 @@ export class MemoryStorageProvider implements StorageProvider {
     return updated;
   }
 
+  /** @internal */ _doRestoreObject(ctx: RequestContext, type: string, id: string, maps?: MemMaps): OntologyObject {
+    const m = maps ?? { objects: this._objects, links: this._links, versionHistory: this._versionHistory };
+    const key = `${type}:${id}`;
+    const existing = m.objects.get(key);
+    if (!existing || existing._tenantId !== ctx.tenantId) {
+      throw new Error(`Object ${type}:${id} not found`);
+    }
+    if (!existing._deletedAt) {
+      throw new Error(`Object ${type}:${id} is not deleted`);
+    }
+    const updated: OntologyObject = {
+      ...existing,
+      _deletedAt: undefined as unknown as DateTime,
+      _version: existing._version + 1,
+      _updatedAt: now(),
+      _actorId: ctx.actorId,
+    };
+    m.objects.set(key, updated);
+    this._pushVersionHistory(key, updated, m.versionHistory);
+    return updated;
+  }
+
   /** @internal */ _doHardDeleteObject(ctx: RequestContext, type: string, id: string, maps?: MemMaps): void {
     const m = maps ?? { objects: this._objects, links: this._links, versionHistory: this._versionHistory };
     const key = `${type}:${id}`;
@@ -751,6 +781,10 @@ export class MemoryStorageProvider implements StorageProvider {
     } else {
       this._doHardDeleteObject(ctx, type, id);
     }
+  }
+
+  async restoreObject(ctx: RequestContext, type: string, id: string): Promise<OntologyObject> {
+    return clone(this._doRestoreObject(ctx, type, id));
   }
 
   async queryObjects(ctx: RequestContext, type: string, filter: FilterExpression, options?: QueryOptions): Promise<ObjectPage> {

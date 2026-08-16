@@ -48,6 +48,7 @@ import {
   updateObject as pgUpdateObject,
   softDeleteObject as pgSoftDeleteObject,
   hardDeleteObject as pgHardDeleteObject,
+  restoreObject as pgRestoreObject,
   queryObjects as pgQueryObjects,
   aggregateObjects as pgAggregateObjects,
   searchObjects as pgSearchObjects,
@@ -128,6 +129,10 @@ class PgSpiTransaction implements Transaction {
     } else {
       await pgHardDeleteObject(this._pool, this._ctx, type, id, this._schema, this._tx);
     }
+  }
+
+  async restoreObject(type: string, id: string): Promise<OntologyObject> {
+    return pgRestoreObject(this._pool, this._ctx, type, id, this._schema, this._tx);
   }
 
   async createLink(type: string, fromId: string, toId: string, properties?: Record<string, unknown>): Promise<OntologyLink> {
@@ -396,6 +401,10 @@ export class PostgresStorageProvider implements StorageProvider {
     } else {
       await pgHardDeleteObject(this._pool, ctx, type, id, this._dataSchema);
     }
+  }
+
+  async restoreObject(ctx: RequestContext, type: string, id: string): Promise<OntologyObject> {
+    return pgRestoreObject(this._pool, ctx, type, id, this._dataSchema);
   }
 
   async queryObjects(ctx: RequestContext, type: string, filter: FilterExpression, options?: QueryOptions): Promise<ObjectPage> {

@@ -42,6 +42,7 @@ export interface StorageProvider {
   getObject(ctx: RequestContext, type: string, id: string): Promise<OntologyObject | null>;
   updateObject(ctx: RequestContext, type: string, id: string, properties: Record<string, unknown>, expectedVersion?: number): Promise<OntologyObject>;
   deleteObject(ctx: RequestContext, type: string, id: string, mode: 'soft' | 'hard'): Promise<void>;
+  restoreObject(ctx: RequestContext, type: string, id: string): Promise<OntologyObject>;
   queryObjects(ctx: RequestContext, type: string, filter: FilterExpression, options?: QueryOptions): Promise<ObjectPage>;
   aggregateObjects(ctx: RequestContext, type: string, query: AggregateQuery): Promise<AggregateResult>;
   searchObjects(ctx: RequestContext, type: string, query: SearchQuery): Promise<SearchResult>;

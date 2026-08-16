@@ -4,6 +4,7 @@ export {
   updateObject,
   softDeleteObject,
   hardDeleteObject,
+  restoreObject,
   queryObjects,
 } from './object-crud.js';
 

@@ -324,6 +324,36 @@ export async function softDeleteObject(
 }
 
 /**
+ * Restore a soft-deleted object: SET _deleted_at = NULL, advance _version.
+ * Throws if the object is not soft-deleted (either not found or already live).
+ */
+export async function restoreObject(
+  pool: Pool,
+  ctx: RequestContext,
+  type: string,
+  id: string,
+  schema = 'public',
+  tx?: PgTransaction,
+): Promise<OntologyObject> {
+  const q = resolveQueryable(pool, tx);
+  const table = tableName(type, schema);
+  const timestamp = now();
+
+  const sql = `UPDATE ${table} SET "_deleted_at" = NULL, "_version" = "_version" + 1, "_updated_at" = $1, "_actor_id" = $4 WHERE "_tenant_id" = $2 AND "_id" = $3 AND "_deleted_at" IS NOT NULL RETURNING *`;
+
+  const result = await q.query(sql, [timestamp, ctx.tenantId, id, ctx.actorId ?? null]);
+  if (result.rows.length === 0) {
+    throw new Error(`Object ${type}:${id} not found or not deleted`);
+  }
+
+  const row = result.rows[0] as Record<string, unknown>;
+  const restored = rowToObject(row);
+  // Insert history snapshot for the restore event
+  await insertHistory(q, type, row, schema);
+  return restored;
+}
+
+/**
  * Hard-delete: DELETE from type table, history, and AGE vertex + edges.
  */
 export async function hardDeleteObject(
