@@ -92,7 +92,7 @@ export function generateObjectTableDDL(objectType: ObjectTypeDefinition, schema 
  */
 function propertyColumn(prop: PropertyDefinition): string {
   const colName = pgIdent(snakeCase(prop.name));
-  const colType = pgType(prop.type);
+  const colType = pgType(prop.type, prop.isList === true);
   const notNull = prop.required ? ' NOT NULL' : '';
   const defaultVal = prop.defaultValue !== undefined
     ? ` DEFAULT ${pgLiteral(prop.defaultValue)}`

@@ -417,5 +417,35 @@ export function registerCrudTests(name: string, factory: ProviderFactory): void 
         expect(result.accepted).toBe(1);
       });
     });
+
+    // ─── List-typed scalar properties ───
+
+    describe('list-typed scalar properties', () => {
+      it('round-trips an array', async () => {
+        const created = await provider.createObject(tenantA, 'CareTeam', {
+          name: 'Cardio', tags: ['urgent', 'ward-3'],
+        });
+
+        expect(created['tags']).toEqual(['urgent', 'ward-3']);
+
+        const fetched = await provider.getObject(tenantA, 'CareTeam', created._id);
+        expect(fetched?.['tags']).toEqual(['urgent', 'ward-3']);
+      });
+
+      it('round-trips an empty array as an empty array, not null', async () => {
+        const created = await provider.createObject(tenantA, 'CareTeam', { name: 'Empty', tags: [] });
+        const fetched = await provider.getObject(tenantA, 'CareTeam', created._id);
+
+        expect(fetched?.['tags']).toEqual([]);
+      });
+
+      it('updates the whole list', async () => {
+        const created = await provider.createObject(tenantA, 'CareTeam', { name: 'X', tags: ['a'] });
+        const updated = await provider.updateObject(tenantA, 'CareTeam', created._id, { tags: ['b', 'c'] });
+
+        expect(updated['tags']).toEqual(['b', 'c']);
+      });
+    });
+
   });
 }

@@ -59,8 +59,12 @@ const PG_BY_LOWER: Record<string, string> = {
  * Matching is case-insensitive. Unknown types default to TEXT (enum types,
  * custom scalars).
  */
-export function pgType(odlType: string): string {
-  return ODL_TO_PG[odlType] ?? PG_BY_LOWER[odlType.toLowerCase()] ?? 'TEXT';
+export function pgType(odlType: string, isList = false): string {
+  const base = ODL_TO_PG[odlType] ?? PG_BY_LOWER[odlType.toLowerCase()] ?? 'TEXT';
+  // A list property becomes a Postgres array of the element type, so the value
+  // round-trips as the array it was written as. Flattening it to the scalar
+  // type silently stored only what the driver could coerce.
+  return isList ? `${base}[]` : base;
 }
 
 /**

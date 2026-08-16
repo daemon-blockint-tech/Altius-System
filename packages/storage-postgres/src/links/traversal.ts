@@ -1,7 +1,7 @@
 /**
  * Graph traversal using Apache AGE Cypher queries.
  *
- * Translates TraversalPath steps into Cypher MATCH patterns,
+ * Translates TraversalPath steps into SQL JOINs over the link tables,
  * then falls back to SQL-based traversal when AGE is unavailable.
  *
  * Every traversal:

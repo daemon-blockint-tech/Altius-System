@@ -76,7 +76,7 @@ export function generateLinkTableDDL(linkType: LinkTypeDefinition, schema = 'pub
 
 function propertyColumn(prop: PropertyDefinition): string {
   const colName = pgIdent(snakeCase(prop.name));
-  const colType = pgType(prop.type);
+  const colType = pgType(prop.type, prop.isList === true);
   const notNull = prop.required ? ' NOT NULL' : '';
   return `${colName} ${colType}${notNull}`;
 }
