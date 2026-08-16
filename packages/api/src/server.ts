@@ -70,6 +70,7 @@ import { generateConsentRoutes, assertConsentConfig } from './consent/router.js'
 import { InMemorySubscribableEventBus, SubscriptionManager, SubscriptionRegistry } from './subscriptions/index.js';
 import type { SubscribableEventBus } from './subscriptions/index.js';
 import { RedpandaEventBus } from './events/index.js';
+import { AutomationRunner } from './automation/index.js';
 import type { ApiDependencies, ResolverContext } from './graphql/types.js';
 import { DEFAULT_CONSENT_PURPOSE } from './graphql/types.js';
 import type { RestRequest } from './rest/types.js';
@@ -202,6 +203,7 @@ async function main(): Promise<void> {
   const {
     parsed: schema, spiSchema, packs, packInfos, manifestRegistry, functionPackDirs,
     fieldPermissions, permissionOverrides, connectorManifests, seedManifests,
+    automationManifests,
   } = await loadDomainPacks(undefined, packNames);
   logger.info(
     `Schema: loaded ${packs.length} domain pack(s) — ` +
@@ -779,6 +781,25 @@ async function main(): Promise<void> {
     linkTupleMap,
   });
 
+  // ── Operational automation ──
+  // Declared in pack YAML; runs governed actions on object-change events or a
+  // fixed schedule, through the same ActionExecutor under a declared actor.
+  let automationRunner: AutomationRunner | null = null;
+  if (automationManifests.length > 0) {
+    automationRunner = new AutomationRunner({
+      automations: automationManifests,
+      subscribe: (handler) => eventBus.subscribe(handler),
+      manifestRegistry,
+      executor: actionExecutor,
+      schema,
+      cel,
+      storage,
+      logger,
+    });
+    automationRunner.start();
+    logger.info(`Automation: ${automationManifests.length} automation(s) active`);
+  }
+
   // ── Object Sets ──
   // Persistent (durable across restarts, shared across pods) when backed by
   // PostgreSQL; in-memory otherwise.
@@ -946,6 +967,7 @@ async function main(): Promise<void> {
     async serverWillStart() {
       return {
         async drainServer() {
+          automationRunner?.stop();
           subscriptionManager.stop();
           await wsCleanup.dispose();
         },
@@ -1393,6 +1415,7 @@ async function main(): Promise<void> {
     } catch (err) {
       logger.warn({ err: err instanceof Error ? err.message : 'unknown' }, 'Sync scheduler stop error');
     }
+    automationRunner?.stop();
     subscriptionManager.stop();
     await apolloServer.stop();
     if (cel instanceof CelClient) {

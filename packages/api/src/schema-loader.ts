@@ -26,6 +26,8 @@ import type { ActionManifest, ManifestIssue } from '@altius/actions';
 import type { OntologySchema, ObjectTypeDefinition, LinkTypeDefinition, PropertyDefinition, IndexDefinition } from '@altius/spi';
 import type { FieldPermissionConfig } from '@altius/security';
 import type { ManifestRegistry } from './graphql/types.js';
+import { parseAutomationManifest } from './automation/index.js';
+import type { AutomationManifest } from './automation/index.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -40,6 +42,7 @@ interface PackManifest {
   schema?: string[];
   actions?: string[];
   connectors?: string[];
+  automations?: string[];
   permissions?: string[];
   seed?: string[];
   /**
@@ -131,6 +134,8 @@ export interface LoadedSchema {
   connectorManifests: ConnectorManifest[];
   /** Seed manifests from pack seed/*.yaml files. */
   seedManifests: SeedManifest[];
+  /** Automation manifests from pack automations/*.yaml files. */
+  automationManifests: AutomationManifest[];
   /**
    * Manifest/schema drift found at boot. Warnings, never fatal — see
    * crossReferenceManifests.
@@ -408,6 +413,30 @@ function loadPackConnectors(
       config,
       packName: manifest.name,
     });
+  }
+}
+
+/**
+ * Load automation YAML manifests from a domain pack.
+ * Reads each file listed in pack.yaml automations: and returns parsed manifests.
+ * A malformed automation throws — it must fail loudly rather than never fire.
+ */
+function loadPackAutomations(
+  packDir: string,
+  manifest: PackManifest,
+  automations: AutomationManifest[],
+): void {
+  const files = manifest.automations ?? [];
+  for (const file of files) {
+    const filePath = resolve(packDir, file);
+    if (!existsSync(filePath)) {
+      logger.warn(`Schema loader: automation file '${file}' not found in ${packDir}, skipping`);
+      continue;
+    }
+    const parsed = parseYaml(readFileSync(filePath, 'utf-8'));
+    const automation = parseAutomationManifest(parsed);
+    automation.packName = manifest.name;
+    automations.push(automation);
   }
 }
 
@@ -946,6 +975,7 @@ export async function loadDomainPacks(
   const permissionOverrides: string[] = [];
   const connectorManifests: ConnectorManifest[] = [];
   const seedManifests: SeedManifest[] = [];
+  const automationManifests: AutomationManifest[] = [];
 
   for (const name of names) {
     const packDir = packMap.get(name)!;
@@ -989,6 +1019,9 @@ export async function loadDomainPacks(
 
     // Load connector manifests
     loadPackConnectors(packDir, manifest, connectorManifests);
+
+    // Load automation manifests
+    loadPackAutomations(packDir, manifest, automationManifests);
 
     // Load seed manifests
     loadPackSeeds(packDir, manifest, seedManifests);
@@ -1067,6 +1100,7 @@ export async function loadDomainPacks(
     permissionOverrides,
     connectorManifests,
     seedManifests,
+    automationManifests,
     manifestIssues,
   };
 }
