@@ -93,6 +93,7 @@ export function App(): ReactNode {
         load={({ first, after }) =>
           client.patient.list(undefined, after === undefined ? { first } : { first, after })
         }
+        subscribe={onChange => client.patient.onAnyChange(() => onChange())}
       />
     </main>
   );

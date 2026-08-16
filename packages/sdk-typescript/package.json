@@ -12,10 +12,10 @@
     }
   },
   "scripts": {
-    "generate": "odl generate sdk ../../domain-packs/core/schema ../../domain-packs/nhs-acute/schema ../../domain-packs/aml/schema ../../domain-packs/supply-chain/schema -o .",
-    "prebuild": "odl generate sdk ../../domain-packs/core/schema ../../domain-packs/nhs-acute/schema ../../domain-packs/aml/schema ../../domain-packs/supply-chain/schema -o .",
-    "pretypecheck": "odl generate sdk ../../domain-packs/core/schema ../../domain-packs/nhs-acute/schema ../../domain-packs/aml/schema ../../domain-packs/supply-chain/schema -o .",
-    "pretest": "odl generate sdk ../../domain-packs/core/schema ../../domain-packs/nhs-acute/schema ../../domain-packs/aml/schema ../../domain-packs/supply-chain/schema -o .",
+    "generate": "node ../odl/dist/cli/index.js generate sdk ../../domain-packs/core/schema ../../domain-packs/nhs-acute/schema ../../domain-packs/aml/schema ../../domain-packs/supply-chain/schema -o .",
+    "prebuild": "pnpm run generate",
+    "pretypecheck": "pnpm run generate",
+    "pretest": "pnpm run generate",
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",

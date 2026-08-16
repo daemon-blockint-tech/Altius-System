@@ -75,6 +75,18 @@ const SCALAR_TYPE_MAP: Record<string, string> = {
   JSON: 'object',
 };
 
+/**
+ * JSON Schema `format` for the scalars that have one.
+ *
+ * `type: 'string'` alone tells a form generator nothing about a Date, so it
+ * renders a text box and the value is only rejected later — by the provider, in
+ * a message that names a column rather than the field the user typed into.
+ */
+const SCALAR_FORMAT_MAP: Record<string, string> = {
+  Date: 'date',
+  DateTime: 'date-time',
+};
+
 // ---------------------------------------------------------------------------
 // ToolRegistry
 // ---------------------------------------------------------------------------
@@ -264,23 +276,57 @@ export class ToolRegistry {
       schema.description = field.description;
     }
 
-    const baseType = SCALAR_TYPE_MAP[field.type.name];
+    const element = this.typeNameToJsonSchema(field.type.name);
 
     if (field.type.isList) {
       schema.type = 'array';
-      schema.items = baseType
-        ? { type: baseType }
-        : { type: 'string', description: `Reference to ${field.type.name}` };
-    } else if (baseType) {
-      schema.type = baseType;
-    } else {
-      // Object type reference -> string ID
-      schema.type = 'string';
-      schema.description = (schema.description ? schema.description + '. ' : '') +
-        `ID reference to ${field.type.name}`;
+      schema.items = element;
+      return schema;
+    }
+
+    // Merge the element schema onto the field schema, keeping the field's own
+    // description as the lead when it has one.
+    const { description: elementDescription, ...rest } = element;
+    Object.assign(schema, rest);
+    if (elementDescription) {
+      schema.description = schema.description
+        ? `${schema.description}. ${elementDescription}`
+        : elementDescription;
     }
 
     return schema;
+  }
+
+  /**
+   * Map one ODL type name onto its JSON Schema form.
+   *
+   * Shared by the scalar and the list-element path: an enum inside a list is
+   * still an enum, and handling it in only one of the two branches is how a
+   * `[PatientStatus!]!` param silently became an array of free text.
+   */
+  private typeNameToJsonSchema(typeName: string): JsonSchema {
+    const scalar = SCALAR_TYPE_MAP[typeName];
+    if (scalar) {
+      const schema: JsonSchema = { type: scalar };
+      // Without a format, a generated form renders a free-text box for a date
+      // and the value only fails at the storage layer, if at all. These are the
+      // standard JSON Schema formats every form generator already understands.
+      const format = SCALAR_FORMAT_MAP[typeName];
+      if (format) schema.format = format;
+      return schema;
+    }
+
+    // An enum is a closed set the caller must pick from, and the schema is the
+    // only place a client can learn the members. Emitting it as a bare string
+    // (worse, as an "ID reference") turns a dropdown into free text and makes
+    // every invalid value a round trip to the server to discover.
+    const enumDef = this.schema.enums.find(e => e.name === typeName);
+    if (enumDef) {
+      return { type: 'string', enum: enumDef.values.map(v => v.name) };
+    }
+
+    // Object type reference -> string ID.
+    return { type: 'string', description: `ID reference to ${typeName}` };
   }
 
   /**
