@@ -52,8 +52,20 @@ export interface OpenFGAModel {
 
 // ─── Helpers ───
 
-/** Convert PascalCase to snake_case. */
-function toSnakeCase(s: string): string {
+/**
+ * Convert PascalCase to snake_case.
+ *
+ * Exported because this is not a formatting helper — it is the function that
+ * NAMES THE TYPES IN THE GENERATED FGA MODEL (see `generateOpenFGAModel`), so
+ * every runtime that builds an FGA object string must produce the identical
+ * name or it checks a type the model does not declare. Three copies existed;
+ * mcp-server's used `replace(/([A-Z])/g, '_$1')`, which agrees on `CarePlan`
+ * and disagrees on every acronym — `GPPractice` became `g_p_practice` where
+ * the model declares `gp_practice`. No bundled pack has such a name today, so
+ * it was latent; the day one does, the MCP read tools deny that type and
+ * nothing else does.
+ */
+export function toSnakeCase(s: string): string {
   return s
     .replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2')
     .replace(/([a-z\d])([A-Z])/g, '$1_$2')
@@ -90,6 +102,49 @@ export function actionPermissionRelation(
   )?.permission;
   if (declared) return declared;
   return actionToPermissionName(action.name, '', objectTypeNames);
+}
+
+/** How an action is ReBAC-authorized: a relation on the object a @param names. */
+export interface ActionAuthzMapping {
+  /** FGA relation checked on the target object (e.g. `can_admit`). */
+  relation: string;
+  /** FGA object type, snake_case — the name the generated model declares. */
+  objectType: string;
+  /** The action @param holding the target object's id. */
+  objectIdParam: string;
+}
+
+/**
+ * Derive how one ActionType is ReBAC-authorized, or `undefined` when it has no
+ * ObjectType `@param` to check a relation against (a creation action such as
+ * RegisterPatient — those are gated by their manifest's CEL preconditions).
+ *
+ * ONE derivation, because two independent ones drift and this repo has already
+ * paid for it: the generator strips words matching ObjectType names, so adding
+ * a `Transfer` ObjectType silently renamed TransferWard's relation from
+ * `can_transfer` to `can_transfer_ward` while a hand-rolled copy still checked
+ * the old name. The API's authorization adapter and the MCP tool-scoping path
+ * both need this answer and each had grown its own copy.
+ */
+export function deriveActionAuthzMapping(
+  action: {
+    name: string;
+    fields: readonly { name: string; type: { name: string }; directives: readonly { kind: string }[] }[];
+    directives: readonly { kind: string; permission?: string }[];
+  },
+  objectTypeNames: Set<string>,
+): ActionAuthzMapping | undefined {
+  // The first ObjectType-typed @param is the authorization target.
+  const objectParam = action.fields.find(
+    (f) => f.directives.some((d) => d.kind === 'param') && objectTypeNames.has(f.type.name),
+  );
+  if (!objectParam) return undefined;
+
+  return {
+    relation: actionPermissionRelation(action, objectTypeNames),
+    objectType: toSnakeCase(objectParam.type.name),
+    objectIdParam: objectParam.name,
+  };
 }
 
 function actionToPermissionName(

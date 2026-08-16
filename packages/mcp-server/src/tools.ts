@@ -8,7 +8,7 @@
  */
 
 import type { ActionType, ObjectType, FunctionType, FieldDefinition } from '@altius/odl';
-import { actionPermissionRelation } from '@altius/odl';
+import { deriveActionAuthzMapping, toSnakeCase } from '@altius/odl';
 import type { ActionActor, ActionContext, ActionResult } from '@altius/actions';
 import type { FilterExpression, OntologyObject, TraversalStep } from '@altius/spi';
 import { resolveConsentPurpose as resolveSpiConsentPurpose } from '@altius/spi';
@@ -152,8 +152,11 @@ export async function scopeToolList(
   const actionAllowed = new Map<string, boolean>();
   await Promise.all(
     deps.schema.actionTypes.map(async (action) => {
-      const target = getActionTargetTypeName(action, objectTypeNames);
-      if (!target) {
+      // Same derivation the API's authorization adapter applies at execution
+      // time. Sharing it is the point: a second copy here would decide what to
+      // advertise from a relation the executor does not check.
+      const mapping = deriveActionAuthzMapping(action, objectTypeNames);
+      if (!mapping) {
         // No ObjectType parameter means no object to check a relation against.
         // Keep advertising it; the executor still applies its own controls.
         actionAllowed.set(action.name, true);
@@ -162,16 +165,33 @@ export async function scopeToolList(
       try {
         const ids = await deps.authorizationService.listObjects(
           `user:${caller.user.id}`,
-          actionPermissionRelation(action, objectTypeNames),
-          toSnakeCase(target),
+          mapping.relation,
+          mapping.objectType,
           caller.user.tenantId,
         );
+        // An empty set hides the tool. That is right when the caller simply
+        // holds the relation on nothing — and indistinguishable from a
+        // MISCONFIGURED model, because listObjects swallows an undefined
+        // relation and returns [] rather than throwing. So say which relation
+        // came back empty: a whole pack's tools vanishing from discovery is
+        // otherwise silent, and the catch below never fires for that case.
+        if (ids.length === 0) {
+          deps.logger?.warn(
+            { action: action.name, relation: mapping.relation, objectType: mapping.objectType },
+            'MCP tools/list: hiding an action tool — the caller holds this relation on no object. ' +
+              'If this is unexpected, check the relation exists in the deployed OpenFGA model.',
+          );
+        }
         actionAllowed.set(action.name, ids.length > 0);
-      } catch {
+      } catch (err) {
         // Fail OPEN for discovery only. A listObjects outage must not silently
         // empty an agent's toolbox and make the platform look broken; the
         // executor still refuses the call if the caller truly lacks the
         // relation, so nothing is authorized by this fallback.
+        deps.logger?.warn(
+          { err, action: action.name, relation: mapping.relation },
+          'MCP tools/list: authorization lookup failed — advertising the tool anyway',
+        );
         actionAllowed.set(action.name, true);
       }
     }),
@@ -182,18 +202,6 @@ export async function scopeToolList(
     if (actionAllowed.has(tool.name)) return actionAllowed.get(tool.name) === true;
     return true; // search_/traverse_ — FGA-scoped at read time
   });
-}
-
-/** The ObjectType an action targets, via its first ObjectType-typed @param. */
-function getActionTargetTypeName(
-  action: ActionType,
-  objectTypeNames: ReadonlySet<string>,
-): string | undefined {
-  for (const field of action.fields) {
-    if (!field.directives.some((d) => d.kind === 'param')) continue;
-    if (objectTypeNames.has(field.type.name)) return field.type.name;
-  }
-  return undefined;
 }
 
 /**
@@ -668,9 +676,9 @@ function parseSearchArgs(args: unknown): ParsedSearchArgs {
  * Convert PascalCase to snake_case for FGA type names.
  * Mirrors packages/api/src/utils.ts toSnakeCase.
  */
-function toSnakeCase(s: string): string {
-  return s.replace(/([A-Z])/g, '_$1').toLowerCase().replace(/^_/, '');
-}
+// toSnakeCase now comes from @altius/odl — see the import at the top of this
+// file. The copy that used to live here used a different algorithm and
+// disagreed with the generated model on every acronym.
 
 // ─── Traversal tool ───
 

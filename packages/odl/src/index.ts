@@ -14,10 +14,13 @@ export { InMemorySchemaRegistry } from './registry/index.js';
 export {
   generateOpenFGASchema,
   actionPermissionRelation,
+  deriveActionAuthzMapping,
+  toSnakeCase,
   generateOpenFGAModel,
   renderOpenFGADSL,
   mergeOpenFGAOverrides,
 } from './codegen/openfga.js';
+export type { ActionAuthzMapping } from './codegen/openfga.js';
 export { generateSdk } from './codegen/sdk.js';
 
 export type { SdkOutput } from './codegen/sdk.js';
