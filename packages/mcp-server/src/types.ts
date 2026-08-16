@@ -110,13 +110,6 @@ export interface McpServerDependencies {
    * are absent on /mcp while present on every other surface.
    */
   objectManager?: ObjectManager;
-  /**
-   * Invokes declared FunctionTypes. When provided, one `function_<Name>` tool
-   * is offered per FunctionType and dispatched through it (role-gated + audited
-   * like REST/GraphQL). Without it, functions are invisible to agents — the
-   * pre-existing behaviour, not a silent downgrade.
-   */
-  functionInvoker?: McpFunctionInvoker;
 }
 
 /**
@@ -136,13 +129,6 @@ export interface McpServerConfig {
  * Resolved caller identity + request context, produced by the auth layer
  * from the bearer token. Passed to tool handlers.
  */
-/** Invokes a FunctionType under the caller's identity and governance. */
-export type McpFunctionInvoker = (
-  functionName: string,
-  input: Record<string, unknown>,
-  caller: McpCaller,
-) => Promise<unknown>;
-
 export interface McpCaller {
   user: AuthenticatedUser;
   requestContext: RequestContext;

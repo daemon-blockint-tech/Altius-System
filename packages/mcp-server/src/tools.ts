@@ -8,7 +8,6 @@
  */
 
 import type { ActionType, ObjectType, FunctionType, FieldDefinition } from '@altius/odl';
-import type { FunctionType, ActionType, ObjectType, FieldDefinition } from '@altius/odl';
 import { actionPermissionRelation } from '@altius/odl';
 import type { ActionActor, ActionContext, ActionResult } from '@altius/actions';
 import type { FilterExpression, OntologyObject, TraversalStep } from '@altius/spi';
@@ -89,36 +88,28 @@ export function buildToolList(deps: McpServerDependencies): McpTool[] {
 }
 
 /**
- * Build an MCP tool descriptor for a FunctionType (name `function_<Name>`).
- * The inputSchema is derived from the function's @param fields, mirroring
- * buildActionTool.
- */
-function buildFunctionTool(fnType: FunctionType): McpTool {
-  const properties: Record<string, unknown> = {};
-  const required: string[] = [];
-
-  for (const field of fnType.fields) {
-    const isParam = field.directives.some((d) => d.kind === 'param');
-    if (!isParam) continue;
  * Build an MCP tool descriptor for a FunctionType.
  *
  * Named `function_<Name>` so it cannot collide with an ActionType of the same
  * name — the two are separate namespaces in ODL and a bare name would make
  * dispatch ambiguous.
+ *
+ * Inputs are the `@param` fields, exactly what `generateFunctionInputType`
+ * puts in `${Name}FunctionInput`. Advertising every plain field instead would
+ * hand an agent a schema the published SDL does not have, and the argument it
+ * then sends reaches `functionExecutor` unvalidated by any surface.
  */
 function buildFunctionTool(fn: FunctionType): McpTool {
   const properties: Record<string, unknown> = {};
   const required: string[] = [];
 
   for (const field of fn.fields) {
-    // A function's inputs are its plain fields; @param is an action concept.
+    if (!field.directives.some((d) => d.kind === 'param')) continue;
     properties[field.name] = fieldToJsonSchema(field);
     if (field.type.nonNull) required.push(field.name);
   }
 
   return {
-    name: `function_${fnType.name}`,
-    description: fnType.description ?? `Invoke the ${fnType.name} function`,
     name: `function_${fn.name}`,
     description: fn.description ?? `Invoke the ${fn.name} function`,
     inputSchema: {
@@ -342,7 +333,7 @@ export async function invokeTool(
     const fnName = toolName.slice('function_'.length);
     const fn = deps.schema.functionTypes.find((f) => f.name === fnName);
     if (fn) {
-      return invokeFunctionTool(fnName, args, caller, deps);
+      return invokeFunctionTool(fn, args, caller, deps);
     }
   }
 
@@ -368,50 +359,11 @@ export async function invokeTool(
     }
   }
 
-  // Function tool: name matches function_<Name>
-  if (toolName.startsWith('function_') && deps.functionInvoker) {
-    const fnName = toolName.slice('function_'.length);
-    const fnType = deps.schema.functionTypes.find((f) => f.name === fnName);
-    if (fnType) {
-      return invokeFunctionTool(fnType, args, caller, deps);
-    }
-  }
-
   // Unknown tool — protocol error surfaced as isError content (not a JSON-RPC
   // error) so the agent sees the message and can recover.
   return {
     content: [{ type: 'text', text: JSON.stringify({ error: `Unknown tool: ${toolName}` }) }],
     isError: true,
-  };
-}
-
-/**
- * Invoke a FunctionType through the injected governed invoker. Authorization
- * (requiredRoles) and audit live in that path — shared with REST and GraphQL —
- * so this only marshals the arguments and shapes the result/error.
- */
-async function invokeFunctionTool(
-  fnType: FunctionType,
-  args: unknown,
-  caller: McpCaller,
-  deps: McpServerDependencies,
-): Promise<McpCallToolResult> {
-  const params = (args && typeof args === 'object' ? args : {}) as Record<string, unknown>;
-  const outcome = await deps.functionInvoker!.invoke({
-    functionName: fnType.name,
-    args: params,
-    user: caller.user,
-    requestContext: caller.requestContext,
-  });
-  if (!outcome.ok) {
-    return {
-      content: [{ type: 'text', text: JSON.stringify({ error: outcome.error, ...(outcome.code ? { code: outcome.code } : {}) }) }],
-      isError: true,
-    };
-  }
-  return {
-    content: [{ type: 'text', text: JSON.stringify(outcome.result ?? null) }],
-    isError: false,
   };
 }
 
@@ -453,29 +405,41 @@ async function auditMcpRead(
 }
 
 /**
- * Invoke a FunctionType through the host's governed entry point.
+ * Invoke a FunctionType through the injected governed invoker. Authorization
+ * (requiredRoles) and audit live in that path — shared with REST and GraphQL —
+ * so this only marshals the arguments and shapes the result/error.
  *
- * Errors are returned as isError content rather than a JSON-RPC error, the
- * same shape the action tool uses, so an agent sees the reason and can
- * recover instead of the whole call failing at the protocol layer.
+ * The caller's `requestContext` is handed over rather than letting the adapter
+ * mint a fresh one, so the function's audit record carries the same traceId as
+ * the MCP request that caused it (the action tool already does this).
+ *
+ * A refusal comes back as isError content rather than a JSON-RPC error, the
+ * same shape the action tool uses, so an agent sees the reason and can recover
+ * instead of the whole call failing at the protocol layer.
  */
 async function invokeFunctionTool(
-  fnName: string,
+  fnType: FunctionType,
   args: unknown,
   caller: McpCaller,
   deps: McpServerDependencies,
 ): Promise<McpCallToolResult> {
-  const input = (args && typeof args === 'object' ? args : {}) as Record<string, unknown>;
-  try {
-    const result = await deps.functionInvoker!(fnName, input, caller);
-    return { content: [{ type: 'text', text: JSON.stringify(result) }], isError: false };
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+  const params = (args && typeof args === 'object' ? args : {}) as Record<string, unknown>;
+  const outcome = await deps.functionInvoker!.invoke({
+    functionName: fnType.name,
+    args: params,
+    user: caller.user,
+    requestContext: caller.requestContext,
+  });
+  if (!outcome.ok) {
     return {
-      content: [{ type: 'text', text: JSON.stringify({ error: message }) }],
+      content: [{ type: 'text', text: JSON.stringify({ error: outcome.error, ...(outcome.code ? { code: outcome.code } : {}) }) }],
       isError: true,
     };
   }
+  return {
+    content: [{ type: 'text', text: JSON.stringify(outcome.result ?? null) }],
+    isError: false,
+  };
 }
 
 /**

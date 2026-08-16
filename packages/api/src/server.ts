@@ -73,7 +73,6 @@ import { InMemorySubscribableEventBus, SubscriptionManager, SubscriptionRegistry
 import type { SubscribableEventBus } from './subscriptions/index.js';
 import { RedpandaEventBus } from './events/index.js';
 import { AutomationRunner } from './automation/index.js';
-import { invokeFunction } from './functions/invoke-function.js';
 import type { ApiDependencies, ResolverContext } from './graphql/types.js';
 import { DEFAULT_CONSENT_PURPOSE } from './graphql/types.js';
 import type { RestRequest } from './rest/types.js';
@@ -1362,7 +1361,11 @@ async function main(): Promise<void> {
                       },
                       deps,
                     }, args);
-                    return { ok: true as const, result: r.result };
+                    // The whole invocation result, not just `result`: the SDL's
+                    // ${Name}FunctionResult carries logs and durationMs too, and
+                    // an agent debugging its own call needs them as much as a
+                    // GraphQL client does.
+                    return { ok: true as const, result: r };
                   } catch (err) {
                     const e = err as { code?: string; message?: string };
                     return { ok: false as const, error: e.message ?? 'Function invocation failed', ...(e.code ? { code: e.code } : {}) };
@@ -1371,16 +1374,6 @@ async function main(): Promise<void> {
               },
             }
           : {}),
-        // Route agent function calls through the SAME governed entry point
-        // REST and GraphQL use. A FunctionType runs pack-authored code, so a
-        // second invocation path would be a way around the requiredRoles gate
-        // and the audit record both other surfaces enforce.
-        functionInvoker: async (functionName, input, caller) => {
-          const fn = schema.functionTypes.find(f => f.name === functionName);
-          if (!fn) throw new Error(`Unknown function: ${functionName}`);
-          const result = await invokeFunction(fn, deps, buildResolverContext(caller.user, deps), input);
-          return result;
-        },
       },
       isDev,
     });
