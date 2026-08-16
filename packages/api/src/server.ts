@@ -12,6 +12,7 @@
  *   SEED_TENANT          — Tenant for domain-pack boot seeds (default: 'system', isolated from request tenants)
  *   SCHEMA_BREAKING_POLICY — 'warn' (default) records BREAKING schema changes and continues; 'block' fails boot without recording
  *   SYNC_SCHEDULER_ENABLED — 'true' starts the sync poll loop for POLLING/CDC/BATCH pack connectors (default: off)
+ *   AUTOMATION_ENABLED   — 'true' starts pack-declared automations (event + schedule); run on a SINGLE instance only (default: off)
  *   SYNC_TENANT          — Tenant for sync-ingested objects (default: SEED_TENANT, then 'system')
  *   OIDC_ISSUER          — OIDC provider issuer URL (matches Helm configmap)
  *   OIDC_CLIENT_ID       — OIDC client ID
@@ -71,6 +72,8 @@ import { generateConsentRoutes, assertConsentConfig } from './consent/router.js'
 import { InMemorySubscribableEventBus, SubscriptionManager, SubscriptionRegistry } from './subscriptions/index.js';
 import type { SubscribableEventBus } from './subscriptions/index.js';
 import { RedpandaEventBus } from './events/index.js';
+import { AutomationRunner } from './automation/index.js';
+import { invokeFunction } from './functions/invoke-function.js';
 import type { ApiDependencies, ResolverContext } from './graphql/types.js';
 import { DEFAULT_CONSENT_PURPOSE } from './graphql/types.js';
 import type { RestRequest } from './rest/types.js';
@@ -195,6 +198,7 @@ async function main(): Promise<void> {
   const {
     parsed: schema, spiSchema, packs, packInfos, manifestRegistry, functionPackDirs,
     fieldPermissions, permissionOverrides, connectorManifests, seedManifests,
+    automationManifests,
   } = await loadDomainPacks(undefined, packNames);
   logger.info(
     `Schema: loaded ${packs.length} domain pack(s) — ` +
@@ -776,6 +780,35 @@ async function main(): Promise<void> {
     linkTupleMap,
   });
 
+  // ── Operational automation ──
+  // Declared in pack YAML; runs governed actions on object-change events or a
+  // fixed schedule, through the same ActionExecutor under a declared actor.
+  // Gated by AUTOMATION_ENABLED (default off): event & schedule triggers must
+  // run on ONE instance, not every replica, or each object change fires the
+  // action once per pod. Run automation on a single-replica worker deployment.
+  let automationRunner: AutomationRunner | null = null;
+  if (automationManifests.length > 0 && process.env['AUTOMATION_ENABLED'] === 'true') {
+    automationRunner = new AutomationRunner({
+      automations: automationManifests,
+      subscribe: (handler) => eventBus.subscribe(handler),
+      manifestRegistry,
+      executor: actionExecutor,
+      schema,
+      cel,
+      storage,
+      logger,
+      ...(consentSubjectTypes ? { consentSubjectTypes } : {}),
+      consentPurpose: DEFAULT_CONSENT_PURPOSE as string,
+    });
+    automationRunner.start();
+    logger.info(`Automation: ${automationManifests.length} automation(s) active`);
+  } else if (automationManifests.length > 0) {
+    logger.info(
+      `Automation: ${automationManifests.length} manifest(s) loaded but AUTOMATION_ENABLED!='true' — not started. ` +
+      `Enable on a single instance (running on every replica would fire each trigger N times).`,
+    );
+  }
+
   // ── Object Sets ──
   // Persistent (durable across restarts, shared across pods) when backed by
   // PostgreSQL; in-memory otherwise.
@@ -943,6 +976,7 @@ async function main(): Promise<void> {
     async serverWillStart() {
       return {
         async drainServer() {
+          automationRunner?.stop();
           subscriptionManager.stop();
           await wsCleanup.dispose();
         },
@@ -1311,6 +1345,32 @@ async function main(): Promise<void> {
         consentPurpose: DEFAULT_CONSENT_PURPOSE as string,
         objectManager,
         auditWriter: securityAuditWriter,
+        // Expose declared FunctionTypes as function_<Name> MCP tools, dispatched
+        // through the same governed path (role check + audit) as REST/GraphQL.
+        ...(schema.functionTypes.length > 0
+          ? {
+              functionInvoker: {
+                invoke: async ({ functionName, args, user, requestContext }) => {
+                  const fn = schema.functionTypes.find((f) => f.name === functionName);
+                  if (!fn) return { ok: false as const, error: `Unknown function: ${functionName}` };
+                  try {
+                    const r = await invokeFunction(fn, deps, {
+                      requestContext,
+                      user: {
+                        id: user.id, name: user.name, email: user.email,
+                        roles: user.roles, groups: user.groups, tenantId: requestContext.tenantId,
+                      },
+                      deps,
+                    }, args);
+                    return { ok: true as const, result: r.result };
+                  } catch (err) {
+                    const e = err as { code?: string; message?: string };
+                    return { ok: false as const, error: e.message ?? 'Function invocation failed', ...(e.code ? { code: e.code } : {}) };
+                  }
+                },
+              },
+            }
+          : {}),
         // Route agent function calls through the SAME governed entry point
         // REST and GraphQL use. A FunctionType runs pack-authored code, so a
         // second invocation path would be a way around the requiredRoles gate
@@ -1400,6 +1460,7 @@ async function main(): Promise<void> {
     } catch (err) {
       logger.warn({ err: err instanceof Error ? err.message : 'unknown' }, 'Sync scheduler stop error');
     }
+    automationRunner?.stop();
     subscriptionManager.stop();
     await apolloServer.stop();
     if (cel instanceof CelClient) {

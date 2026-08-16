@@ -18,6 +18,7 @@ export type {
   OntologyLink,
   FilterExpression,
   FieldPredicate,
+  GeoBoundingBox,
   LogicalPredicate,
   TraversalPath,
   TraversalStep,

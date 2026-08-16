@@ -58,6 +58,34 @@ function isParam(field: FieldDefinition): boolean {
   return field.directives.some(d => d.kind === 'param');
 }
 
+/** Field-level `@display` metadata as an OpenAPI `x-altius-display` object, or undefined. */
+function fieldDisplay(field: FieldDefinition): Record<string, unknown> | undefined {
+  const d = field.directives.find(x => x.kind === 'display');
+  if (!d || d.kind !== 'display') return undefined;
+  const out: Record<string, unknown> = {};
+  if (d.label !== undefined) out['label'] = d.label;
+  if (d.group !== undefined) out['group'] = d.group;
+  if (d.order !== undefined) out['order'] = d.order;
+  if (d.renderHint !== undefined) out['renderHint'] = d.renderHint;
+  if (d.format !== undefined) out['format'] = d.format;
+  if (d.hidden !== undefined) out['hidden'] = d.hidden;
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+/** Type-level `@display` metadata as an OpenAPI `x-altius-display` object, or undefined. */
+function typeDisplay(obj: ObjectType): Record<string, unknown> | undefined {
+  const d = obj.directives.find(x => x.kind === 'display');
+  if (!d || d.kind !== 'display') return undefined;
+  const out: Record<string, unknown> = {};
+  if (d.label !== undefined) out['label'] = d.label;
+  if (d.pluralLabel !== undefined) out['pluralLabel'] = d.pluralLabel;
+  if (d.icon !== undefined) out['icon'] = d.icon;
+  if (d.color !== undefined) out['color'] = d.color;
+  if (d.titleProperty !== undefined) out['titleProperty'] = d.titleProperty;
+  if (d.statusProperty !== undefined) out['statusProperty'] = d.statusProperty;
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
 // ─── Schema helpers ───
 
 function objectSchema(obj: ObjectType): Record<string, unknown> {
@@ -66,8 +94,11 @@ function objectSchema(obj: ObjectType): Record<string, unknown> {
 
   for (const field of obj.fields) {
     if (isComputed(field) || isLink(field)) continue;
-    const key = isPrimary(field) ? field.name : field.name;
-    props[key] = odlTypeToJsonSchema(field.type.name, field.type.nonNull);
+    const key = field.name;
+    const propSchema = odlTypeToJsonSchema(field.type.name, field.type.nonNull);
+    const disp = fieldDisplay(field);
+    if (disp) propSchema['x-altius-display'] = disp;
+    props[key] = propSchema;
     if (field.type.nonNull) required.push(key);
   }
   // System fields
@@ -76,6 +107,8 @@ function objectSchema(obj: ObjectType): Record<string, unknown> {
 
   const schema: Record<string, unknown> = { type: 'object', properties: props };
   if (required.length > 0) schema['required'] = required;
+  const td = typeDisplay(obj);
+  if (td) schema['x-altius-display'] = td;
   return schema;
 }
 

@@ -88,6 +88,30 @@ export interface ImmutableDirective {
   kind: 'immutable';
 }
 
+/**
+ * Field-level presentation metadata (Ontology display layer).
+ *
+ * Purely declarative rendering hints consumed by clients; they never affect
+ * storage, validation, or authorization. Exposed on the OpenAPI document as an
+ * `x-altius-display` vendor extension so a UI can drive labels, grouping, and
+ * formatting without hard-coding them.
+ */
+export interface DisplayDirective {
+  kind: 'display';
+  /** Human-readable field label (defaults to the field name in a client). */
+  label?: string;
+  /** Grouping bucket for laying out related fields (e.g. "Pricing"). */
+  group?: string;
+  /** Ordinal within a type/group; lower sorts first. */
+  order?: number;
+  /** Renderer hint, e.g. "badge", "currency", "progress", "text". */
+  renderHint?: string;
+  /** Value format string, e.g. "0.00" or "YYYY-MM-DD". */
+  format?: string;
+  /** Hide from default views (a presentation default, not an access control). */
+  hidden?: boolean;
+}
+
 export type FieldDirective =
   | PrimaryDirective
   | UniqueDirective
@@ -102,7 +126,8 @@ export type FieldDirective =
   | DefaultDirective
   | DeprecatedDirective
   | TerminologyDirective
-  | SearchableDirective;
+  | SearchableDirective
+  | DisplayDirective;
 
 // ─── Type Directives ───
 
@@ -151,13 +176,38 @@ export interface TypeConstraintDirective {
   expr: string;
 }
 
+/**
+ * Type-level presentation metadata (Ontology display layer).
+ *
+ * Declarative rendering hints for an ObjectType, consumed by clients and
+ * surfaced on the OpenAPI document as an `x-altius-display` vendor extension.
+ * `titleProperty`/`statusProperty` name fields on the type (validated), letting
+ * a client pick a headline and a status field without platform code.
+ */
+export interface TypeDisplayDirective {
+  kind: 'display';
+  /** Singular human-readable name (e.g. "Purchase order"). */
+  label?: string;
+  /** Plural human-readable name (e.g. "Purchase orders"). */
+  pluralLabel?: string;
+  /** Icon token a client resolves to a glyph (e.g. "cube"). */
+  icon?: string;
+  /** Accent color token for the type (e.g. "blue" or a hex string). */
+  color?: string;
+  /** Field whose value is the object's title/headline. Must exist on the type. */
+  titleProperty?: string;
+  /** Field whose value represents the object's status. Must exist on the type. */
+  statusProperty?: string;
+}
+
 export type TypeDirective =
   | ObjectTypeDirective
   | LinkTypeDirective
   | ActionTypeDirective
   | FunctionDirective
   | DeprecatedDirective
-  | TypeConstraintDirective;
+  | TypeConstraintDirective
+  | TypeDisplayDirective;
 
 // ─── Field type reference ───
 
