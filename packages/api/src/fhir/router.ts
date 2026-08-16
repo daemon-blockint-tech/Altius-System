@@ -20,6 +20,7 @@
 import type { OntologyObject, FilterExpression, FieldPredicate } from '@altius/spi';
 import { DataPurpose } from '@altius/spi';
 import { writeReadAuditFor } from '../rest/audit-read.js';
+import { isTypeVisible } from '../markings/enforce.js';
 import type { ApiDependencies, AuthenticatedUserInfo } from '../graphql/types.js';
 import type {
   FhirResource,
@@ -90,6 +91,12 @@ export function createFhirRouter(config: FhirRouterConfig) {
         return handleCapabilityStatement(baseUrl);
 
       case 'Patient':
+        // Mandatory markings hide discovery, so a withheld resource type
+        // answers exactly like an unsupported one. A distinct denial would
+        // confirm the type exists — the disclosure the marking prevents.
+        if (!isTypeVisible(deps.markingPolicy, req.user, 'Patient')) {
+          return operationOutcome(404, 'not-found', `Resource type 'Patient' is not supported`);
+        }
         if (resourceId) {
           return handlePatientRead(deps, req, resourceId);
         }

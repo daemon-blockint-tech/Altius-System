@@ -1364,6 +1364,7 @@ async function main(): Promise<void> {
         consentPurpose: DEFAULT_CONSENT_PURPOSE as string,
         objectManager,
         auditWriter: securityAuditWriter,
+        ...(markingPolicy ? { markingPolicy } : {}),
         // Route agent function calls through the SAME governed entry point
         // REST and GraphQL use. A FunctionType runs pack-authored code, so a
         // second invocation path would be a way around the requiredRoles gate

@@ -78,3 +78,32 @@ describe('what the audit trail learns versus what the caller learns', () => {
     expect(missingMarkings(policy, user(['PII']), 'Patient')).toEqual([]);
   });
 });
+
+/**
+ * Every read surface, not just the two that were easy.
+ *
+ * A mandatory control enforced on REST and GraphQL but not on MCP, FHIR and
+ * CDM is not enforced: the agent surface reads at machine rate, and the
+ * clinical projections are what an integration actually calls. Each one
+ * withholds a marked type the same way — as if the type were not exposed —
+ * because a distinct denial confirms it exists.
+ */
+describe('enforcement covers every read surface', () => {
+  const marked = new MarkingPolicy({
+    markings: [{ name: 'PII' }],
+    byObjectType: { Patient: ['PII'] },
+  });
+
+  it('FHIR withholds a marked resource type', () => {
+    expect(isTypeVisible(marked, user([]), 'Patient')).toBe(false);
+    expect(isTypeVisible(marked, user(['PII']), 'Patient')).toBe(true);
+  });
+
+  it('CDM withholds a marked source type', () => {
+    expect(isTypeVisible(marked, user([]), 'Patient')).toBe(false);
+  });
+
+  it('leaves an unmarked type reachable on every surface', () => {
+    expect(isTypeVisible(marked, user([]), 'Ward')).toBe(true);
+  });
+});

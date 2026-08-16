@@ -108,6 +108,37 @@ function buildFunctionTool(fn: FunctionType): McpTool {
 }
 
 /**
+ * Whether this caller satisfies the mandatory markings on an ObjectType.
+ *
+ * Fail-closed: no markings held means every marked type is denied, and an
+ * unconfigured policy means there is nothing to enforce.
+ */
+function markingAllows(
+  deps: McpServerDependencies,
+  caller: McpCaller,
+  objectType: string,
+): boolean {
+  const policy = deps.markingPolicy;
+  if (!policy || policy.isEmpty) return true;
+  const required = policy.requiredFor(objectType);
+  if (required.length === 0) return true;
+  return policy.check(caller.user.markings ?? [], required).allowed;
+}
+
+/**
+ * The response for a tool a caller may not see.
+ *
+ * Deliberately identical to the unknown-tool response: a distinct "denied"
+ * would tell the agent the tool exists, which is what the marking hides.
+ */
+function unknownTool(toolName: string): McpCallToolResult {
+  return {
+    content: [{ type: 'text', text: JSON.stringify({ error: `Unknown tool: ${toolName}` }) }],
+    isError: true,
+  };
+}
+
+/**
  * Narrow the advertised tool list to what this caller could actually use.
  *
  * `tools/list` returned every tool to every authenticated caller, so a
@@ -138,6 +169,17 @@ export async function scopeToolList(
   deps: McpServerDependencies,
 ): Promise<McpTool[]> {
   const roles = caller.user.roles ?? [];
+
+  // Mandatory markings hide a type entirely, so its read tools must not be
+  // advertised either — listing search_Patient tells an agent Patient exists,
+  // which is the disclosure the marking prevents.
+  const hiddenTypes = new Set(
+    deps.markingPolicy && !deps.markingPolicy.isEmpty
+      ? deps.schema.objectTypes
+          .filter((o) => !markingAllows(deps, caller, o.name))
+          .map((o) => o.name)
+      : [],
+  );
 
   const allowedFunction = new Set(
     deps.schema.functionTypes
@@ -175,6 +217,9 @@ export async function scopeToolList(
   );
 
   return tools.filter((tool) => {
+    for (const hidden of hiddenTypes) {
+      if (tool.name === `search_${hidden}` || tool.name === `traverse_${hidden}`) return false;
+    }
     if (tool.name.startsWith('function_')) return allowedFunction.has(tool.name);
     if (actionAllowed.has(tool.name)) return actionAllowed.get(tool.name) === true;
     return true; // search_/traverse_ — FGA-scoped at read time
@@ -328,6 +373,7 @@ export async function invokeTool(
   if (toolName.startsWith('search_')) {
     const typeName = toolName.slice('search_'.length);
     const objType = deps.schema.objectTypes.find((o) => o.name === typeName);
+    if (objType && !markingAllows(deps, caller, typeName)) return unknownTool(toolName);
     if (objType) {
       const result = await invokeSearchTool(objType, args, caller, deps);
       await auditMcpRead(deps, caller, typeName, toolName, result.isError === true);
@@ -339,6 +385,7 @@ export async function invokeTool(
   if (toolName.startsWith('traverse_')) {
     const typeName = toolName.slice('traverse_'.length);
     const objType = deps.schema.objectTypes.find((o) => o.name === typeName);
+    if (objType && !markingAllows(deps, caller, typeName)) return unknownTool(toolName);
     if (objType) {
       const result = await invokeTraverseTool(objType, args, caller, deps);
       await auditMcpRead(deps, caller, typeName, toolName, result.isError === true);
