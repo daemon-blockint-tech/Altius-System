@@ -46,7 +46,6 @@ function caller(roles: string[]): McpCaller {
 function makeDeps(over: Partial<McpServerDependencies> = {}): McpServerDependencies {
   return {
     schema,
-    functionInvoker: { invoke: vi.fn(async () => ({ result: { score: 42 } })) },
     functionInvoker: { invoke: vi.fn(async () => ({ ok: true as const, result: { score: 42 } })) },
     authorizationService: {
       listObjects: async () => ['w-1'],

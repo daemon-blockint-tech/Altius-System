@@ -363,6 +363,15 @@ export async function invokeTool(
     return invokeActionTool(actionType, args, caller, deps);
   }
 
+  // Function tool: name matches function_<Name>
+  if (toolName.startsWith('function_') && deps.functionInvoker) {
+    const fnName = toolName.slice('function_'.length);
+    const fnType = deps.schema.functionTypes.find((f) => f.name === fnName);
+    if (fnType) {
+      return invokeFunctionTool(fnType, args, caller, deps);
+    }
+  }
+
   // Read tool: name matches search_<Type>
   if (toolName.startsWith('search_')) {
     const typeName = toolName.slice('search_'.length);
