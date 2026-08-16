@@ -35,6 +35,24 @@ export const DataPurpose = {
 /** The standard NHS/UK-IG purposes as an array (the back-compat default vocabulary). */
 export const STANDARD_DATA_PURPOSES: readonly string[] = Object.values(DataPurpose);
 
+/**
+ * Resolve a configured purpose, falling back to the NHS-preset default.
+ *
+ * Lives beside `DataPurpose` because every surface that accepts a configured
+ * purpose needs it and each one that reimplemented it got it wrong the same
+ * way: testing `configured in DataPurpose` checks membership of the five-key
+ * PRESET, not of the open type, so an AML deployment configuring `KYC` had it
+ * silently replaced by `DIRECT_CARE` — the action then ran under a purpose the
+ * subject was never asked about.
+ *
+ * Any non-empty string is a purpose. The deployment's vocabulary is validated
+ * once at boot against `CONSENT_PURPOSES`; re-deriving it per call site is what
+ * produced the bug.
+ */
+export function resolveConsentPurpose(configured: string | undefined): DataPurpose {
+  return configured && configured.trim() !== '' ? configured.trim() : DataPurpose.DIRECT_CARE;
+}
+
 export interface ConsentDecision {
   allowed: boolean;
   purpose: DataPurpose;

@@ -91,7 +91,7 @@ import {
 import type { ActionAuthzMapping } from './config.js';
 import { createActionEventPublisher } from './events/action-event-publisher.js';
 import { loadDomainPacks } from './schema-loader.js';
-import { generateOpenFGASchema, mergeOpenFGAOverrides, actionPermissionRelation, InMemorySchemaRegistry } from '@altius/odl';
+import { generateOpenFGASchema, mergeOpenFGAOverrides, deriveActionAuthzMapping, InMemorySchemaRegistry } from '@altius/odl';
 import type { SchemaRegistry } from '@altius/odl';
 import { recordSchemaVersion, BreakingSchemaChangeError } from './schema-registry-boot.js';
 import { SlidingWindowRateLimiter, RedisRateLimiter } from './governance/index.js';
@@ -1415,6 +1415,11 @@ async function main(): Promise<void> {
         objectManager,
         auditWriter: securityAuditWriter,
         ...(markingPolicy ? { markingPolicy } : {}),
+        // Wired, not left optional: tool scoping hides an action tool whenever
+        // the caller holds its relation on no object, and a relation missing
+        // from the deployed FGA model is indistinguishable from that. Without
+        // this the whole pack's tools vanish from discovery in silence.
+        logger,
         // Expose declared FunctionTypes as function_<Name> MCP tools, dispatched
         // through the same governed path (role check + audit) as REST/GraphQL.
         ...(schema.functionTypes.length > 0
@@ -1703,27 +1708,16 @@ function deriveActionAuthzMappings(
   const mappings = new Map<string, ActionAuthzMapping>();
   const objectTypeNames = new Set(schema.objectTypes.map(o => o.name));
 
-  // Relation names come from @altius/odl so the runtime checks exactly what
-  // the generated model declares. Deriving them independently here is what let
-  // the two drift (the generator strips words matching ObjectType names, so
-  // adding a `Transfer` ObjectType silently renamed TransferWard's relation from
-  // can_transfer to can_transfer_ward while this checked can_transfer).
-  const objectTypeNamesForPerm = new Set(schema.objectTypes.map(o => o.name));
+  // The whole derivation — relation name, target type, id param — comes from
+  // @altius/odl, so the runtime checks exactly what the generated model
+  // declares. Deriving any part of it independently is what let the two drift
+  // (the generator strips words matching ObjectType names, so adding a
+  // `Transfer` ObjectType silently renamed TransferWard's relation from
+  // can_transfer to can_transfer_ward while this checked can_transfer). The MCP
+  // tool-scoping path calls the same function for the same reason.
   for (const action of schema.actionTypes) {
-    const relation = actionPermissionRelation(action, objectTypeNamesForPerm);
-
-    // Find first @param field that references an ObjectType (the authorization target)
-    const paramFields = action.fields.filter(f =>
-      f.directives.some(d => d.kind === 'param'),
-    );
-    const objectParam = paramFields.find(f => objectTypeNames.has(f.type.name));
-    if (!objectParam) continue;
-
-    mappings.set(action.name, {
-      relation,
-      objectType: toSnakeCase(objectParam.type.name),
-      objectIdParam: objectParam.name,
-    });
+    const mapping = deriveActionAuthzMapping(action, objectTypeNames);
+    if (mapping) mappings.set(action.name, mapping);
   }
 
   return mappings;

@@ -43,6 +43,21 @@ describe('function_<Name> MCP tool', () => {
     expect(names).toContain('function_ScoreRisk');
   });
 
+  it('advertises every tool name exactly once', () => {
+    // Both sides of the PR #5 merge landed a function-registration loop at
+    // different offsets in buildToolList, so git combined them without ever
+    // raising a conflict and every FunctionType was advertised twice. MCP
+    // requires tool names to be unique within a tools/list result: a strict
+    // client rejects the whole response and the agent loses its toolbox.
+    //
+    // Every other assertion in this file and in agent-tooling.test.ts is
+    // membership-only (toContain / .find), which is exactly why a duplicate
+    // survived a green suite. This one counts.
+    const names = buildToolList(makeDeps({ invoke: vi.fn() })).map((t) => t.name);
+    const duplicated = names.filter((n, i) => names.indexOf(n) !== i);
+    expect(duplicated, `tools/list advertises duplicates: ${duplicated.join(', ')}`).toEqual([]);
+  });
+
   it('offers no function tools when no invoker is wired', () => {
     const names = buildToolList(makeDeps(undefined)).map((t) => t.name);
     expect(names).not.toContain('function_ScoreRisk');

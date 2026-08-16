@@ -187,14 +187,14 @@ export function createFgaClientRegistry(
  *
  * Example: AdmitPatient checks `can_admit` on `patient:<params.patient>`
  */
-export interface ActionAuthzMapping {
-  /** FGA relation to check (e.g., 'can_admit') */
-  relation: string;
-  /** FGA object type (e.g., 'patient') */
-  objectType: string;
-  /** Action parameter name that holds the object ID (e.g., 'patient') */
-  objectIdParam: string;
-}
+/**
+ * Re-exported from @altius/odl, where the derivation that produces it lives
+ * beside the generator that names the model's types. A local duplicate of the
+ * shape invites a local duplicate of the derivation, which is the drift this
+ * consolidation exists to end.
+ */
+import type { ActionAuthzMapping } from '@altius/odl';
+export type { ActionAuthzMapping };
 
 export function createSecurityLayer(
   authz: AuthorizationService,

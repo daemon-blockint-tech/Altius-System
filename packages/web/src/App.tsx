@@ -1,10 +1,14 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { ObjectTable } from './components/ObjectTable.js';
 import { createClient, readConfig } from './client.js';
+import { AuthSession } from './auth/session.js';
+import { beginLogin, completeLogin } from './auth/pkce.js';
+
+type AuthState = 'checking' | 'anonymous' | 'signed-in' | 'error';
 
 /**
- * Patient worklist — the first real view.
+ * Patient worklist.
  *
  * `load` is handed straight to the generated SDK method, so the table talks to
  * the same governed GraphQL surface as every other client: FGA-filtered,
@@ -12,7 +16,68 @@ import { createClient, readConfig } from './client.js';
  * its own, which is what keeps the permission model in one place.
  */
 export function App(): ReactNode {
-  const client = useMemo(() => createClient(readConfig(import.meta.env)), []);
+  const config = useMemo(() => readConfig(import.meta.env, window.location.origin), []);
+  const session = useMemo(
+    () => (config.oidc ? new AuthSession(config.oidc) : null),
+    [config.oidc],
+  );
+
+  // No OIDC configured means the dev stack, which serves anonymous callers.
+  const [authState, setAuthState] = useState<AuthState>(session ? 'checking' : 'anonymous');
+  const [authError, setAuthError] = useState<string | null>(null);
+  // React 18+ runs effects twice in StrictMode; exchanging a single-use code
+  // twice would fail the second time and look like a broken login.
+  const exchanged = useRef(false);
+
+  useEffect(() => {
+    if (!session || !config.oidc || exchanged.current) return;
+
+    const params = new URLSearchParams(window.location.search);
+    if (!params.has('code') && !params.has('error')) {
+      setAuthState('anonymous');
+      return;
+    }
+    exchanged.current = true;
+
+    completeLogin(config.oidc, params)
+      .then(tokens => {
+        session.adopt(tokens);
+        // Drop the code and state from the address bar so a reload does not
+        // retry a code that has already been spent.
+        window.history.replaceState({}, '', window.location.pathname);
+        setAuthState('signed-in');
+      })
+      .catch((err: unknown) => {
+        setAuthError(err instanceof Error ? err.message : String(err));
+        setAuthState('error');
+      });
+  }, [session, config.oidc]);
+
+  const client = useMemo(
+    () => createClient(config.endpoint, session && authState === 'signed-in' ? session.getAccessToken : null),
+    [config.endpoint, session, authState],
+  );
+
+  if (authState === 'checking') return <p>Signing in…</p>;
+
+  if (authState === 'error') {
+    return (
+      <div role="alert">
+        <p>Sign-in failed.</p>
+        <p>{authError}</p>
+        <button type="button" onClick={() => void startLogin()}>Try again</button>
+      </div>
+    );
+  }
+
+  if (session && authState === 'anonymous') {
+    return (
+      <main>
+        <h1>Altius</h1>
+        <button type="button" onClick={() => void startLogin()}>Sign in</button>
+      </main>
+    );
+  }
 
   return (
     <main>
@@ -25,8 +90,15 @@ export function App(): ReactNode {
           { key: 'status', header: 'Status' },
           { key: 'triageCategory', header: 'Triage' },
         ]}
-        load={({ first, after }) => client.patient.list(undefined, after === undefined ? { first } : { first, after })}
+        load={({ first, after }) =>
+          client.patient.list(undefined, after === undefined ? { first } : { first, after })
+        }
       />
     </main>
   );
+
+  async function startLogin(): Promise<void> {
+    if (!config.oidc) return;
+    window.location.assign(await beginLogin(config.oidc));
+  }
 }

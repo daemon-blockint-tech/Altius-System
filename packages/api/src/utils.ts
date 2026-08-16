@@ -56,10 +56,12 @@ export function lowerFirst(s: string): string {
   return s.charAt(0).toLowerCase() + s.slice(1);
 }
 
-/** Convert PascalCase to snake_case — must match FGA codegen convention. */
-export function toSnakeCase(s: string): string {
-  return s
-    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2')
-    .replace(/([a-z\d])([A-Z])/g, '$1_$2')
-    .toLowerCase();
-}
+/**
+ * Convert PascalCase to snake_case.
+ *
+ * Re-exported from @altius/odl rather than reimplemented: this names the types
+ * in the generated FGA model, so a second copy that drifts makes the runtime
+ * check a type the model does not declare. Kept exported here because nine
+ * files import it from this module.
+ */
+export { toSnakeCase } from '@altius/odl';

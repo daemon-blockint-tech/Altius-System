@@ -117,6 +117,22 @@ export interface McpServerDependencies {
    * are absent on /mcp while present on every other surface.
    */
   objectManager?: ObjectManager;
+  /**
+   * Structured warn sink. Shaped `(data, msg)` so a pino instance satisfies it
+   * directly — the two argument orders are easy to swap, and passing a logger
+   * whose signature is `(msg, data)` logs the message as the payload.
+   *
+   * Wired by the API gateway at construction. It is optional only so an
+   * embedder can omit it; this package must never SHIP an optional logger that
+   * the one production construction site forgets to set, which is exactly how
+   * every side-effect delivery failure went untraced until aa003ca.
+   */
+  logger?: McpLogger;
+}
+
+/** Minimal structured logger (pino-compatible argument order). */
+export interface McpLogger {
+  warn(data: Record<string, unknown>, msg: string): void;
 }
 
 /**

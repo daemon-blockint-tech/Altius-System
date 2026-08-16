@@ -73,9 +73,21 @@ export interface Subscription {
   unsubscribe(): void;
 }
 
+/**
+ * A token, or a function returning one.
+ *
+ * Access tokens expire (the shipped Keycloak realm uses an hour), so a
+ * client that captured a string at construction is dead after the first
+ * expiry with no seam to refresh through. A provider is consulted per
+ * request, and
+ * again each time the socket re-inits, so refreshing is up to the caller
+ * and the client never holds a stale credential.
+ */
+export type TokenProvider = () => string | Promise<string>;
+
 export interface AltiusConfig {
   endpoint: string;
-  token: string;
+  token: string | TokenProvider;
 }
 
 // ─── Enums ───
@@ -955,7 +967,7 @@ export type CancelOrderResult = ActionResult;
 
 export class Altius {
   private readonly endpoint: string;
-  private readonly token: string;
+  private readonly token: string | TokenProvider;
   private readonly wsSubscriptions = new Map<string, (payload: unknown) => void>();
   private wsSocket: WebSocket | null = null;
   private wsReady = false;
@@ -966,12 +978,18 @@ export class Altius {
     this.token = config.token;
   }
 
-  private authHeaders(): Record<string, string> {
+  /** Resolve the current token, calling the provider if one was supplied. */
+  private async resolveToken(): Promise<string> {
+    return typeof this.token === 'function' ? await this.token() : this.token;
+  }
+
+  private async authHeaders(): Promise<Record<string, string>> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
     };
-    if (this.token) {
-      headers['Authorization'] = `Bearer ${this.token}`;
+    const token = await this.resolveToken();
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
     }
     return headers;
   }
@@ -979,7 +997,7 @@ export class Altius {
   private async query<T>(query: string, variables?: Record<string, unknown>): Promise<T> {
     const response = await fetch(this.endpoint, {
       method: 'POST',
-      headers: this.authHeaders(),
+      headers: await this.authHeaders(),
       body: JSON.stringify({ query, variables }),
     });
     if (!response.ok) {
@@ -1001,7 +1019,7 @@ export class Altius {
     } }`;
     const response = await fetch(this.endpoint, {
       method: 'POST',
-      headers: this.authHeaders(),
+      headers: await this.authHeaders(),
       body: JSON.stringify({ query: mutation, variables: { input } }),
     });
     if (!response.ok) {
@@ -1021,11 +1039,19 @@ export class Altius {
     const wsUrl = this.endpoint
       .replace(/^http:/, 'ws:')
       .replace(/^https:/, 'wss:');
-    const socket = new WebSocket(wsUrl);
+    // graphql-ws requires the subprotocol on the handshake. Without it the
+    // server closes the socket with 4406 'Subprotocol not acceptable' before
+    // any message is exchanged, so every subscription silently never starts.
+    const socket = new WebSocket(wsUrl, 'graphql-transport-ws');
     this.wsSocket = socket;
     this.wsReady = false;
     socket.addEventListener('open', () => {
-      socket.send(JSON.stringify({ type: 'connection_init', payload: { Authorization: this.token ? `Bearer ${this.token}` : '' } }));
+      // Resolved at open time, not captured at construction: a reconnect
+      // after a refresh must present the NEW token, or the socket
+      // re-authenticates with a credential that has already expired.
+      void this.resolveToken().then((token) => {
+        socket.send(JSON.stringify({ type: 'connection_init', payload: { Authorization: token ? `Bearer ${token}` : '' } }));
+      });
     });
     socket.addEventListener('message', (event) => {
       const msg = JSON.parse(event.data as string) as { type: string; id?: string; payload?: unknown };
@@ -1050,22 +1076,48 @@ export class Altius {
     return socket;
   }
 
+  /**
+   * Subscribe to one object by id, or to the whole type when `id` is null.
+   *
+   * The type-level form passes the filter the server evaluates per
+   * subscriber against the hydrated, redacted object — so a live table needs
+   * ONE subscription, not one per visible row.
+   */
   private subscribe<T>(
     typeName: string,
-    id: string,
+    id: string | null,
+    fields: string,
     callback: (event: ChangeEvent<T>) => void,
+    filter?: Record<string, unknown>,
   ): Subscription {
-    const subId = `${typeName}:${id}:${Math.random().toString(36).slice(2)}`;
-    const field = `${typeName.charAt(0).toLowerCase() + typeName.slice(1)}Changed`;
-    const query = `subscription { ${field}(id: "${id}") {
-      changeType object { id }
-      previousValues causedBy timestamp
+    const subId = `${typeName}:${id ?? "*"}:${Math.random().toString(36).slice(2)}`;
+    const lower = typeName.charAt(0).toLowerCase() + typeName.slice(1);
+    const field = id === null ? `${lower}sChanged` : `${lower}Changed`;
+    // `causedBy` is a composite (ActionReference); selecting it bare is a
+    // GraphQL validation error, which the server reports as an `error`
+    // message that this client drops — the subscription then looks alive and
+    // delivers nothing. It needs an explicit subselection.
+    const args = id === null
+      ? (filter ? `(filter: $filter)` : "")
+      : `(id: "${id}")`;
+    const varDecl = id === null && filter ? "($filter: JSON)" : "";
+    const query = `subscription${varDecl} { ${field}${args} {
+      changeType object { ${fields} }
+      previousValues causedBy { actionType actionId } timestamp
     } }`;
     const sendSubscribe = () => {
       const socket = this.ensureWebSocket();
-      socket.send(JSON.stringify({ id: subId, type: 'subscribe', payload: { query } }));
-      this.wsSubscriptions.set(subId, (payload) => {
-        callback(payload as ChangeEvent<T>);
+      const payload = filter && id === null ? { query, variables: { filter } } : { query };
+      socket.send(JSON.stringify({ id: subId, type: 'subscribe', payload }));
+      this.wsSubscriptions.set(subId, (raw) => {
+        // graphql-ws `next` carries an ExecutionResult envelope, not the
+        // event itself. Handing the envelope to the callback would satisfy
+        // no declared type and break every consumer.
+        const data = (raw as { data?: Record<string, unknown> } | undefined)?.data;
+        const event = data?.[field];
+        if (event !== undefined && event !== null) {
+          callback(event as ChangeEvent<T>);
+        }
       });
     };
     if (this.wsReady) {
@@ -1093,7 +1145,10 @@ export class Altius {
         this.query<BedConnection>(`query($filter: BedFilter, $first: Int, $after: String) { beds(filter: $filter, first: $first, after: $after) { edges { node { id number type status } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after }),
 
       onChange: (id: string, callback: (event: ChangeEvent<Bed>) => void): Subscription =>
-        this.subscribe<Bed>('Bed', id, callback),
+        this.subscribe<Bed>('Bed', id, 'id number type status', callback),
+
+      onAnyChange: (callback: (event: ChangeEvent<Bed>) => void, filter?: BedFilter): Subscription =>
+        this.subscribe<Bed>('Bed', null, 'id number type status', callback, filter as Record<string, unknown> | undefined),
     };
   }
   get consultant() {
@@ -1105,7 +1160,10 @@ export class Altius {
         this.query<ConsultantConnection>(`query($filter: ConsultantFilter, $first: Int, $after: String) { consultants(filter: $filter, first: $first, after: $after) { edges { node { id gmcNumber name specialty } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after }),
 
       onChange: (id: string, callback: (event: ChangeEvent<Consultant>) => void): Subscription =>
-        this.subscribe<Consultant>('Consultant', id, callback),
+        this.subscribe<Consultant>('Consultant', id, 'id gmcNumber name specialty', callback),
+
+      onAnyChange: (callback: (event: ChangeEvent<Consultant>) => void, filter?: ConsultantFilter): Subscription =>
+        this.subscribe<Consultant>('Consultant', null, 'id gmcNumber name specialty', callback, filter as Record<string, unknown> | undefined),
     };
   }
   get dischargeRecord() {
@@ -1117,7 +1175,10 @@ export class Altius {
         this.query<DischargeRecordConnection>(`query($filter: DischargeRecordFilter, $first: Int, $after: String) { dischargeRecords(filter: $filter, first: $first, after: $after) { edges { node { id patient ward destination dischargeDate notes } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after }),
 
       onChange: (id: string, callback: (event: ChangeEvent<DischargeRecord>) => void): Subscription =>
-        this.subscribe<DischargeRecord>('DischargeRecord', id, callback),
+        this.subscribe<DischargeRecord>('DischargeRecord', id, 'id patient ward destination dischargeDate notes', callback),
+
+      onAnyChange: (callback: (event: ChangeEvent<DischargeRecord>) => void, filter?: DischargeRecordFilter): Subscription =>
+        this.subscribe<DischargeRecord>('DischargeRecord', null, 'id patient ward destination dischargeDate notes', callback, filter as Record<string, unknown> | undefined),
     };
   }
   get patient() {
@@ -1129,7 +1190,10 @@ export class Altius {
         this.query<PatientConnection>(`query($filter: PatientFilter, $first: Int, $after: String) { patients(filter: $filter, first: $first, after: $after) { edges { node { id nhsNumber name family given dateOfBirth status triageCategory presentingComplaint createdAt createdBy updatedAt updatedBy validFrom validTo } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after }),
 
       onChange: (id: string, callback: (event: ChangeEvent<Patient>) => void): Subscription =>
-        this.subscribe<Patient>('Patient', id, callback),
+        this.subscribe<Patient>('Patient', id, 'id nhsNumber name family given dateOfBirth status triageCategory presentingComplaint createdAt createdBy updatedAt updatedBy validFrom validTo', callback),
+
+      onAnyChange: (callback: (event: ChangeEvent<Patient>) => void, filter?: PatientFilter): Subscription =>
+        this.subscribe<Patient>('Patient', null, 'id nhsNumber name family given dateOfBirth status triageCategory presentingComplaint createdAt createdBy updatedAt updatedBy validFrom validTo', callback, filter as Record<string, unknown> | undefined),
     };
   }
   get staff() {
@@ -1141,7 +1205,10 @@ export class Altius {
         this.query<StaffConnection>(`query($filter: StaffFilter, $first: Int, $after: String) { staffs(filter: $filter, first: $first, after: $after) { edges { node { id staffId name role specialty } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after }),
 
       onChange: (id: string, callback: (event: ChangeEvent<Staff>) => void): Subscription =>
-        this.subscribe<Staff>('Staff', id, callback),
+        this.subscribe<Staff>('Staff', id, 'id staffId name role specialty', callback),
+
+      onAnyChange: (callback: (event: ChangeEvent<Staff>) => void, filter?: StaffFilter): Subscription =>
+        this.subscribe<Staff>('Staff', null, 'id staffId name role specialty', callback, filter as Record<string, unknown> | undefined),
     };
   }
   get transfer() {
@@ -1153,7 +1220,10 @@ export class Altius {
         this.query<TransferConnection>(`query($filter: TransferFilter, $first: Int, $after: String) { transfers(filter: $filter, first: $first, after: $after) { edges { node { id patient fromWard toWard transferDate reason } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after }),
 
       onChange: (id: string, callback: (event: ChangeEvent<Transfer>) => void): Subscription =>
-        this.subscribe<Transfer>('Transfer', id, callback),
+        this.subscribe<Transfer>('Transfer', id, 'id patient fromWard toWard transferDate reason', callback),
+
+      onAnyChange: (callback: (event: ChangeEvent<Transfer>) => void, filter?: TransferFilter): Subscription =>
+        this.subscribe<Transfer>('Transfer', null, 'id patient fromWard toWard transferDate reason', callback, filter as Record<string, unknown> | undefined),
     };
   }
   get ward() {
@@ -1165,7 +1235,10 @@ export class Altius {
         this.query<WardConnection>(`query($filter: WardFilter, $first: Int, $after: String) { wards(filter: $filter, first: $first, after: $after) { edges { node { id name specialty capacity location address } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after }),
 
       onChange: (id: string, callback: (event: ChangeEvent<Ward>) => void): Subscription =>
-        this.subscribe<Ward>('Ward', id, callback),
+        this.subscribe<Ward>('Ward', id, 'id name specialty capacity location address', callback),
+
+      onAnyChange: (callback: (event: ChangeEvent<Ward>) => void, filter?: WardFilter): Subscription =>
+        this.subscribe<Ward>('Ward', null, 'id name specialty capacity location address', callback, filter as Record<string, unknown> | undefined),
     };
   }
   get account() {
@@ -1177,7 +1250,10 @@ export class Altius {
         this.query<AccountConnection>(`query($filter: AccountFilter, $first: Int, $after: String) { accounts(filter: $filter, first: $first, after: $after) { edges { node { id accountNumber type status currency customer openDate lastActivityDate } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after }),
 
       onChange: (id: string, callback: (event: ChangeEvent<Account>) => void): Subscription =>
-        this.subscribe<Account>('Account', id, callback),
+        this.subscribe<Account>('Account', id, 'id accountNumber type status currency customer openDate lastActivityDate', callback),
+
+      onAnyChange: (callback: (event: ChangeEvent<Account>) => void, filter?: AccountFilter): Subscription =>
+        this.subscribe<Account>('Account', null, 'id accountNumber type status currency customer openDate lastActivityDate', callback, filter as Record<string, unknown> | undefined),
     };
   }
   get alert() {
@@ -1189,7 +1265,10 @@ export class Altius {
         this.query<AlertConnection>(`query($filter: AlertFilter, $first: Int, $after: String) { alerts(filter: $filter, first: $first, after: $after) { edges { node { id alertNumber severity status ruleName score narrative transaction customer assignedTo createdDate } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after }),
 
       onChange: (id: string, callback: (event: ChangeEvent<Alert>) => void): Subscription =>
-        this.subscribe<Alert>('Alert', id, callback),
+        this.subscribe<Alert>('Alert', id, 'id alertNumber severity status ruleName score narrative transaction customer assignedTo createdDate', callback),
+
+      onAnyChange: (callback: (event: ChangeEvent<Alert>) => void, filter?: AlertFilter): Subscription =>
+        this.subscribe<Alert>('Alert', null, 'id alertNumber severity status ruleName score narrative transaction customer assignedTo createdDate', callback, filter as Record<string, unknown> | undefined),
     };
   }
   get case() {
@@ -1201,7 +1280,10 @@ export class Altius {
         this.query<CaseConnection>(`query($filter: CaseFilter, $first: Int, $after: String) { cases(filter: $filter, first: $first, after: $after) { edges { node { id caseNumber status priority assignedAnalyst summary openDate closeDate } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after }),
 
       onChange: (id: string, callback: (event: ChangeEvent<Case>) => void): Subscription =>
-        this.subscribe<Case>('Case', id, callback),
+        this.subscribe<Case>('Case', id, 'id caseNumber status priority assignedAnalyst summary openDate closeDate', callback),
+
+      onAnyChange: (callback: (event: ChangeEvent<Case>) => void, filter?: CaseFilter): Subscription =>
+        this.subscribe<Case>('Case', null, 'id caseNumber status priority assignedAnalyst summary openDate closeDate', callback, filter as Record<string, unknown> | undefined),
     };
   }
   get customer() {
@@ -1213,7 +1295,10 @@ export class Altius {
         this.query<CustomerConnection>(`query($filter: CustomerFilter, $first: Int, $after: String) { customers(filter: $filter, first: $first, after: $after) { edges { node { id externalId name type riskLevel kycStatus kycExpiryDate country dateOfBirth taxId } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after }),
 
       onChange: (id: string, callback: (event: ChangeEvent<Customer>) => void): Subscription =>
-        this.subscribe<Customer>('Customer', id, callback),
+        this.subscribe<Customer>('Customer', id, 'id externalId name type riskLevel kycStatus kycExpiryDate country dateOfBirth taxId', callback),
+
+      onAnyChange: (callback: (event: ChangeEvent<Customer>) => void, filter?: CustomerFilter): Subscription =>
+        this.subscribe<Customer>('Customer', null, 'id externalId name type riskLevel kycStatus kycExpiryDate country dateOfBirth taxId', callback, filter as Record<string, unknown> | undefined),
     };
   }
   get suspiciousActivityReport() {
@@ -1225,7 +1310,10 @@ export class Altius {
         this.query<SuspiciousActivityReportConnection>(`query($filter: SuspiciousActivityReportFilter, $first: Int, $after: String) { suspiciousActivityReports(filter: $filter, first: $first, after: $after) { edges { node { id sarNumber status filingDate narrative amount reportingEntity caseRef } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after }),
 
       onChange: (id: string, callback: (event: ChangeEvent<SuspiciousActivityReport>) => void): Subscription =>
-        this.subscribe<SuspiciousActivityReport>('SuspiciousActivityReport', id, callback),
+        this.subscribe<SuspiciousActivityReport>('SuspiciousActivityReport', id, 'id sarNumber status filingDate narrative amount reportingEntity caseRef', callback),
+
+      onAnyChange: (callback: (event: ChangeEvent<SuspiciousActivityReport>) => void, filter?: SuspiciousActivityReportFilter): Subscription =>
+        this.subscribe<SuspiciousActivityReport>('SuspiciousActivityReport', null, 'id sarNumber status filingDate narrative amount reportingEntity caseRef', callback, filter as Record<string, unknown> | undefined),
     };
   }
   get transaction() {
@@ -1237,7 +1325,10 @@ export class Altius {
         this.query<TransactionConnection>(`query($filter: TransactionFilter, $first: Int, $after: String) { transactions(filter: $filter, first: $first, after: $after) { edges { node { id referenceId type status amount currency sourceAccount destinationAccount transactionDate description country } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after }),
 
       onChange: (id: string, callback: (event: ChangeEvent<Transaction>) => void): Subscription =>
-        this.subscribe<Transaction>('Transaction', id, callback),
+        this.subscribe<Transaction>('Transaction', id, 'id referenceId type status amount currency sourceAccount destinationAccount transactionDate description country', callback),
+
+      onAnyChange: (callback: (event: ChangeEvent<Transaction>) => void, filter?: TransactionFilter): Subscription =>
+        this.subscribe<Transaction>('Transaction', null, 'id referenceId type status amount currency sourceAccount destinationAccount transactionDate description country', callback, filter as Record<string, unknown> | undefined),
     };
   }
   get facility() {
@@ -1249,7 +1340,10 @@ export class Altius {
         this.query<FacilityConnection>(`query($filter: FacilityFilter, $first: Int, $after: String) { facilitys(filter: $filter, first: $first, after: $after) { edges { node { id name code type status location address country capacity } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after }),
 
       onChange: (id: string, callback: (event: ChangeEvent<Facility>) => void): Subscription =>
-        this.subscribe<Facility>('Facility', id, callback),
+        this.subscribe<Facility>('Facility', id, 'id name code type status location address country capacity', callback),
+
+      onAnyChange: (callback: (event: ChangeEvent<Facility>) => void, filter?: FacilityFilter): Subscription =>
+        this.subscribe<Facility>('Facility', null, 'id name code type status location address country capacity', callback, filter as Record<string, unknown> | undefined),
     };
   }
   get inventoryRecord() {
@@ -1261,7 +1355,10 @@ export class Altius {
         this.query<InventoryRecordConnection>(`query($filter: InventoryRecordFilter, $first: Int, $after: String) { inventoryRecords(filter: $filter, first: $first, after: $after) { edges { node { id quantity reservedQuantity stockLevel lastCountDate product facility } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after }),
 
       onChange: (id: string, callback: (event: ChangeEvent<InventoryRecord>) => void): Subscription =>
-        this.subscribe<InventoryRecord>('InventoryRecord', id, callback),
+        this.subscribe<InventoryRecord>('InventoryRecord', id, 'id quantity reservedQuantity stockLevel lastCountDate product facility', callback),
+
+      onAnyChange: (callback: (event: ChangeEvent<InventoryRecord>) => void, filter?: InventoryRecordFilter): Subscription =>
+        this.subscribe<InventoryRecord>('InventoryRecord', null, 'id quantity reservedQuantity stockLevel lastCountDate product facility', callback, filter as Record<string, unknown> | undefined),
     };
   }
   get product() {
@@ -1273,7 +1370,10 @@ export class Altius {
         this.query<ProductConnection>(`query($filter: ProductFilter, $first: Int, $after: String) { products(filter: $filter, first: $first, after: $after) { edges { node { id sku name category unitOfMeasure reorderPoint reorderQuantity } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after }),
 
       onChange: (id: string, callback: (event: ChangeEvent<Product>) => void): Subscription =>
-        this.subscribe<Product>('Product', id, callback),
+        this.subscribe<Product>('Product', id, 'id sku name category unitOfMeasure reorderPoint reorderQuantity', callback),
+
+      onAnyChange: (callback: (event: ChangeEvent<Product>) => void, filter?: ProductFilter): Subscription =>
+        this.subscribe<Product>('Product', null, 'id sku name category unitOfMeasure reorderPoint reorderQuantity', callback, filter as Record<string, unknown> | undefined),
     };
   }
   get purchaseOrder() {
@@ -1285,7 +1385,10 @@ export class Altius {
         this.query<PurchaseOrderConnection>(`query($filter: PurchaseOrderFilter, $first: Int, $after: String) { purchaseOrders(filter: $filter, first: $first, after: $after) { edges { node { id orderNumber status supplier product quantity unitCost currency requestedDeliveryDate notes } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after }),
 
       onChange: (id: string, callback: (event: ChangeEvent<PurchaseOrder>) => void): Subscription =>
-        this.subscribe<PurchaseOrder>('PurchaseOrder', id, callback),
+        this.subscribe<PurchaseOrder>('PurchaseOrder', id, 'id orderNumber status supplier product quantity unitCost currency requestedDeliveryDate notes', callback),
+
+      onAnyChange: (callback: (event: ChangeEvent<PurchaseOrder>) => void, filter?: PurchaseOrderFilter): Subscription =>
+        this.subscribe<PurchaseOrder>('PurchaseOrder', null, 'id orderNumber status supplier product quantity unitCost currency requestedDeliveryDate notes', callback, filter as Record<string, unknown> | undefined),
     };
   }
   get shipment() {
@@ -1297,7 +1400,10 @@ export class Altius {
         this.query<ShipmentConnection>(`query($filter: ShipmentFilter, $first: Int, $after: String) { shipments(filter: $filter, first: $first, after: $after) { edges { node { id trackingNumber status transportMode quantity departureDate estimatedArrival actualArrival order origin destination } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after }),
 
       onChange: (id: string, callback: (event: ChangeEvent<Shipment>) => void): Subscription =>
-        this.subscribe<Shipment>('Shipment', id, callback),
+        this.subscribe<Shipment>('Shipment', id, 'id trackingNumber status transportMode quantity departureDate estimatedArrival actualArrival order origin destination', callback),
+
+      onAnyChange: (callback: (event: ChangeEvent<Shipment>) => void, filter?: ShipmentFilter): Subscription =>
+        this.subscribe<Shipment>('Shipment', null, 'id trackingNumber status transportMode quantity departureDate estimatedArrival actualArrival order origin destination', callback, filter as Record<string, unknown> | undefined),
     };
   }
   get supplier() {
@@ -1309,7 +1415,10 @@ export class Altius {
         this.query<SupplierConnection>(`query($filter: SupplierFilter, $first: Int, $after: String) { suppliers(filter: $filter, first: $first, after: $after) { edges { node { id name code system display tier contactName contactEmail country leadTimeDays onTimeDeliveryRate } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after }),
 
       onChange: (id: string, callback: (event: ChangeEvent<Supplier>) => void): Subscription =>
-        this.subscribe<Supplier>('Supplier', id, callback),
+        this.subscribe<Supplier>('Supplier', id, 'id name code system display tier contactName contactEmail country leadTimeDays onTimeDeliveryRate', callback),
+
+      onAnyChange: (callback: (event: ChangeEvent<Supplier>) => void, filter?: SupplierFilter): Subscription =>
+        this.subscribe<Supplier>('Supplier', null, 'id name code system display tier contactName contactEmail country leadTimeDays onTimeDeliveryRate', callback, filter as Record<string, unknown> | undefined),
     };
   }
   get actions() {

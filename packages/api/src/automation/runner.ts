@@ -15,7 +15,7 @@
  * responsibility — a documented v1 limitation.
  */
 
-import { DataPurpose } from '@altius/spi';
+import { resolveConsentPurpose } from '@altius/spi';
 import type { CloudEvent, StorageProvider, RequestContext } from '@altius/spi';
 import type { ActionExecutor, ActionActor, ActionContext, CelEvaluator } from '@altius/actions';
 import type { ObjectEventData, EventCause } from '@altius/engine';
@@ -26,7 +26,6 @@ import { isFromExpression } from './types.js';
 
 /** Default consent subject types (mirrors ApiDependencies / MCP defaults). */
 const DEFAULT_CONSENT_SUBJECT_TYPES: readonly string[] = ['Patient'];
-const DEFAULT_CONSENT_PURPOSE: DataPurpose = DataPurpose.DIRECT_CARE;
 
 export interface AutomationLogger {
   info(msg: string): void;
@@ -202,8 +201,11 @@ export class AutomationRunner {
     if (!subjectParam) return {};
     const consentSubjectId = String(params[subjectParam.name] ?? '');
     if (!consentSubjectId) return {};
-    const configured = this.deps.consentPurpose;
-    const consentPurpose = configured && configured in DataPurpose ? (configured as DataPurpose) : DEFAULT_CONSENT_PURPOSE;
+    // Any non-empty string is a purpose (DataPurpose is open). Testing
+    // `configured in DataPurpose` checked the five-key NHS preset instead, so a
+    // deployment-defined purpose was silently swapped for DIRECT_CARE and the
+    // action ran under a purpose the subject was never asked about.
+    const consentPurpose = resolveConsentPurpose(this.deps.consentPurpose);
     return { consentPurpose, consentSubjectId };
   }
 

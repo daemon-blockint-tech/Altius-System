@@ -95,7 +95,7 @@ export type {
 export type { FieldProvenance, ProvenanceSource } from './provenance.js';
 
 // Consent (Section 7.3)
-export { DataPurpose, STANDARD_DATA_PURPOSES } from './consent.js';
+export { DataPurpose, STANDARD_DATA_PURPOSES, resolveConsentPurpose } from './consent.js';
 export type {
   ConsentDecision,
   ConsentManager,
