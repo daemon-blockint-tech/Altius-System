@@ -3,7 +3,7 @@ import { AutomationRunner } from '../runner.js';
 import type { AutomationManifest } from '../types.js';
 import type { ActionExecutor, ActionManifest, CelEvaluator } from '@altius/actions';
 import type { CloudEvent, StorageProvider } from '@altius/spi';
-import type { ParsedSchema } from '@altius/odl';
+import { parseOdl, type ParsedSchema } from '@altius/odl';
 
 const noopLogger = { info: () => {}, warn: () => {}, error: () => {} };
 
@@ -103,6 +103,13 @@ describe('AutomationRunner — event path', () => {
     expect(executor.execute).not.toHaveBeenCalled();
   });
 
+  it('still fires when a DIFFERENT actor whose id merely contains the automation id caused the event (exact-match, not substring)', async () => {
+    const executor = makeExecutor();
+    const runner = makeRunner([eventAutomation], executor, makeStorage({ _id: 'p1', status: 'DISCHARGED', bedId: 'b1' }));
+    await runner.onEvent(updatedEvent('user:svc-automation-2'));
+    expect(executor.execute).toHaveBeenCalledTimes(1);
+  });
+
   it('ignores events whose ObjectType or change kind do not match', async () => {
     const executor = makeExecutor();
     const runner = makeRunner([eventAutomation], executor, makeStorage({ status: 'DISCHARGED' }));
@@ -166,5 +173,63 @@ describe('AutomationRunner — schedule path', () => {
     await new Promise((r) => setTimeout(r, 0)); // let the async chain settle
     expect(executor.execute).toHaveBeenCalledTimes(1);
     runner.stop();
+  });
+});
+
+describe('AutomationRunner — hardening', () => {
+  it('skips a scheduled tick while the previous run is still in flight (non-overlap)', async () => {
+    const done = { success: true, actionId: '', errors: [], affectedObjects: [] };
+    let pending = true;
+    let resolveRun: (v: unknown) => void = () => {};
+    const executor = {
+      execute: vi.fn(() => (pending ? new Promise((r) => { resolveRun = r; }) : Promise.resolve(done))),
+    };
+    const scheduled: AutomationManifest = {
+      name: 'Slow', trigger: { type: 'schedule', intervalMs: 1000 },
+      action: { name: 'CleanBed', params: {} }, actor: { id: 'svc', roles: [] }, tenantId: 't1',
+    };
+    const runner = makeRunner([scheduled], executor as unknown as ReturnType<typeof makeExecutor>, makeStorage(null));
+
+    const first = runner.runScheduled(scheduled); // starts, in-flight, execute pending
+    await runner.runScheduled(scheduled);         // must skip while first is in flight
+    expect(executor.execute).toHaveBeenCalledTimes(1);
+
+    pending = false;
+    resolveRun(done);
+    await first;
+    await runner.runScheduled(scheduled);         // runs again once the previous finished
+    expect(executor.execute).toHaveBeenCalledTimes(2);
+  });
+
+  it('derives consent subject + purpose from an object-typed @param (consent parity)', async () => {
+    const consentSchema = parseOdl(`
+type Patient @objectType { id: ID! @primary }
+type DischargePatient @actionType { patientId: Patient @param }
+`);
+    const executor = makeExecutor();
+    const auto: AutomationManifest = {
+      name: 'AutoDischarge', trigger: { type: 'schedule', intervalMs: 1000 },
+      action: { name: 'DischargePatient', params: { patientId: 'p-1' } },
+      actor: { id: 'svc', roles: ['clinician'] }, tenantId: 't1',
+    };
+    const runner = new AutomationRunner({
+      automations: [auto],
+      subscribe: () => () => {},
+      manifestRegistry: { get: () => ({} as ActionManifest) },
+      executor: executor as unknown as ActionExecutor,
+      schema: consentSchema,
+      cel: makeCel(),
+      storage: makeStorage(null),
+      logger: noopLogger,
+      consentSubjectTypes: ['Patient'],
+      consentPurpose: 'DIRECT_CARE',
+    });
+
+    await runner.runScheduled(auto);
+
+    const call = executor.execute.mock.calls[0] as unknown[];
+    const ctx = call[3] as { consentSubjectId?: string; consentPurpose?: string };
+    expect(ctx.consentSubjectId).toBe('p-1');
+    expect(ctx.consentPurpose).toBeDefined();
   });
 });

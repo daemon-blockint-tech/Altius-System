@@ -12,6 +12,7 @@
  *   SEED_TENANT          — Tenant for domain-pack boot seeds (default: 'system', isolated from request tenants)
  *   SCHEMA_BREAKING_POLICY — 'warn' (default) records BREAKING schema changes and continues; 'block' fails boot without recording
  *   SYNC_SCHEDULER_ENABLED — 'true' starts the sync poll loop for POLLING/CDC/BATCH pack connectors (default: off)
+ *   AUTOMATION_ENABLED   — 'true' starts pack-declared automations (event + schedule); run on a SINGLE instance only (default: off)
  *   SYNC_TENANT          — Tenant for sync-ingested objects (default: SEED_TENANT, then 'system')
  *   OIDC_ISSUER          — OIDC provider issuer URL (matches Helm configmap)
  *   OIDC_CLIENT_ID       — OIDC client ID
@@ -776,8 +777,11 @@ async function main(): Promise<void> {
   // ── Operational automation ──
   // Declared in pack YAML; runs governed actions on object-change events or a
   // fixed schedule, through the same ActionExecutor under a declared actor.
+  // Gated by AUTOMATION_ENABLED (default off): event & schedule triggers must
+  // run on ONE instance, not every replica, or each object change fires the
+  // action once per pod. Run automation on a single-replica worker deployment.
   let automationRunner: AutomationRunner | null = null;
-  if (automationManifests.length > 0) {
+  if (automationManifests.length > 0 && process.env['AUTOMATION_ENABLED'] === 'true') {
     automationRunner = new AutomationRunner({
       automations: automationManifests,
       subscribe: (handler) => eventBus.subscribe(handler),
@@ -787,9 +791,16 @@ async function main(): Promise<void> {
       cel,
       storage,
       logger,
+      ...(consentSubjectTypes ? { consentSubjectTypes } : {}),
+      consentPurpose: DEFAULT_CONSENT_PURPOSE as string,
     });
     automationRunner.start();
     logger.info(`Automation: ${automationManifests.length} automation(s) active`);
+  } else if (automationManifests.length > 0) {
+    logger.info(
+      `Automation: ${automationManifests.length} manifest(s) loaded but AUTOMATION_ENABLED!='true' — not started. ` +
+      `Enable on a single instance (running on every replica would fire each trigger N times).`,
+    );
   }
 
   // ── Object Sets ──

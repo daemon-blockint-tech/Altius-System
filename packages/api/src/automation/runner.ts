@@ -15,13 +15,18 @@
  * responsibility — a documented v1 limitation.
  */
 
+import { DataPurpose } from '@altius/spi';
 import type { CloudEvent, StorageProvider, RequestContext } from '@altius/spi';
-import type { ActionExecutor, ActionActor, CelEvaluator } from '@altius/actions';
+import type { ActionExecutor, ActionActor, ActionContext, CelEvaluator } from '@altius/actions';
 import type { ObjectEventData, EventCause } from '@altius/engine';
 import type { ParsedSchema } from '@altius/odl';
 import type { ManifestRegistry } from '../graphql/types.js';
 import type { AutomationManifest, ChangeKind } from './types.js';
 import { isFromExpression } from './types.js';
+
+/** Default consent subject types (mirrors ApiDependencies / MCP defaults). */
+const DEFAULT_CONSENT_SUBJECT_TYPES: readonly string[] = ['Patient'];
+const DEFAULT_CONSENT_PURPOSE: DataPurpose = DataPurpose.DIRECT_CARE;
 
 export interface AutomationLogger {
   info(msg: string): void;
@@ -40,6 +45,11 @@ export interface AutomationRunnerDeps {
   cel: CelEvaluator;
   storage: StorageProvider;
   logger: AutomationLogger;
+  /** Consent subject ObjectTypes; an action @param of one of these types names
+   * the consent subject, matching the REST/GraphQL/MCP action paths. */
+  consentSubjectTypes?: readonly string[];
+  /** Consent purpose applied to automation-run actions (deployment default). */
+  consentPurpose?: string;
   /** Injectable timer (tests). Defaults to setInterval/clearInterval. */
   setTimer?: (fn: () => void, ms: number) => unknown;
   clearTimer?: (handle: unknown) => void;
@@ -54,6 +64,9 @@ const EVENT_TYPE_TO_KIND: Record<string, ChangeKind> = {
 export class AutomationRunner {
   private unsubscribe: (() => void) | null = null;
   private readonly timers: unknown[] = [];
+  /** Names of scheduled automations whose current run has not finished, so a
+   * slow action never overlaps itself on the next tick. */
+  private readonly inFlight = new Set<string>();
   private traceCounter = 0;
   private readonly setTimer: (fn: () => void, ms: number) => unknown;
   private readonly clearTimer: (handle: unknown) => void;
@@ -138,12 +151,20 @@ export class AutomationRunner {
 
   async runScheduled(auto: AutomationManifest): Promise<void> {
     if (!auto.tenantId) return; // enforced by the parser, guarded here too
+    // A run that outlives its interval must not overlap itself.
+    if (this.inFlight.has(auto.name)) {
+      this.deps.logger.warn(`Automation '${auto.name}' is still running; skipping this scheduled tick`);
+      return;
+    }
+    this.inFlight.add(auto.name);
     const ctx: RequestContext = { tenantId: auto.tenantId, actorId: auto.actor.id, traceId: this.nextTraceId() };
     const vars = { event: null, object: null, changes: {} };
     try {
       await this.execute(auto, vars, ctx);
     } catch (err) {
       this.deps.logger.error(`Automation '${auto.name}' failed: ${errMsg(err)}`);
+    } finally {
+      this.inFlight.delete(auto.name);
     }
   }
 
@@ -157,12 +178,33 @@ export class AutomationRunner {
     }
     const params = await this.buildParams(auto.action.params, vars);
     const actor: ActionActor = { id: auto.actor.id, type: 'system', roles: auto.actor.roles };
-    const result = await this.deps.executor.execute(manifest, params, actor, { requestContext: ctx }, this.deps.schema);
+    // Consent parity: an automation-run action goes through the same consent
+    // gate a human/agent caller does — derive the subject from an object-typed
+    // @param, exactly as the REST/GraphQL/MCP action paths do.
+    const actionCtx: ActionContext = { requestContext: ctx, ...this.consentFor(auto.action.name, params) };
+    const result = await this.deps.executor.execute(manifest, params, actor, actionCtx, this.deps.schema);
     if (!result.success) {
       this.deps.logger.warn(
         `Automation '${auto.name}' action '${auto.action.name}' did not succeed: ${result.errors.map((e) => e.code).join(', ')}`,
       );
     }
+  }
+
+  /** Derive `{ consentPurpose, consentSubjectId }` from the action's object-typed
+   * @param, or `{}` when the action has no consent subject. */
+  private consentFor(actionName: string, params: Record<string, unknown>): Partial<Pick<ActionContext, 'consentPurpose' | 'consentSubjectId'>> {
+    const actionDef = this.deps.schema.actionTypes.find((a) => a.name === actionName);
+    if (!actionDef) return {};
+    const subjectTypes = this.deps.consentSubjectTypes ?? DEFAULT_CONSENT_SUBJECT_TYPES;
+    const subjectParam = actionDef.fields.find(
+      (f) => f.directives.some((d) => d.kind === 'param') && subjectTypes.includes(f.type.name),
+    );
+    if (!subjectParam) return {};
+    const consentSubjectId = String(params[subjectParam.name] ?? '');
+    if (!consentSubjectId) return {};
+    const configured = this.deps.consentPurpose;
+    const consentPurpose = configured && configured in DataPurpose ? (configured as DataPurpose) : DEFAULT_CONSENT_PURPOSE;
+    return { consentPurpose, consentSubjectId };
   }
 
   async buildParams(mapping: Record<string, unknown>, vars: Record<string, unknown>): Promise<Record<string, unknown>> {
@@ -192,8 +234,17 @@ export class AutomationRunner {
     return r.value === true;
   }
 
+  /**
+   * True when an event was caused by this automation's own actor — the common
+   * self-loop where an automation edits the type it watches. Exact match on the
+   * actor string the emitter produces (`user:<id>`/`system:<id>` or the bare
+   * id), NOT a substring, so `svc` does not spuriously match `svc-2`.
+   * (Cross-automation cycles A→B→A remain the author's responsibility.)
+   */
   private wasCausedBy(cause: EventCause | undefined, actorId: string): boolean {
-    return typeof cause?.actor === 'string' && cause.actor.includes(actorId);
+    const a = cause?.actor;
+    if (typeof a !== 'string') return false;
+    return a === actorId || a === `user:${actorId}` || a === `system:${actorId}`;
   }
 
   private nextTraceId(): string {
