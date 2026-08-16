@@ -82,6 +82,17 @@ function fieldPredicateToSql(pred: FieldPredicate, offset: number): SqlFragment 
         return { text: `${col} IS NOT NULL`, params: [] };
       }
       return { text: `${col} IS NULL`, params: [] };
+    case 'within': {
+      // GeoPoint is stored as JSONB {lat,lng}; bounding-box containment without
+      // PostGIS by extracting the coordinates and range-checking each axis.
+      const box = pred.value as { minLat: number; minLng: number; maxLat: number; maxLng: number };
+      const lat = `(${col}->>'lat')::float8`;
+      const lng = `(${col}->>'lng')::float8`;
+      return {
+        text: `(${lat} BETWEEN $${offset} AND $${offset + 1} AND ${lng} BETWEEN $${offset + 2} AND $${offset + 3})`,
+        params: [box.minLat, box.maxLat, box.minLng, box.maxLng],
+      };
+    }
     default:
       return { text: 'TRUE', params: [] };
   }

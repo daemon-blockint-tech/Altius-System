@@ -358,6 +358,16 @@ function parseFieldDirective(d: DirectiveNode): FieldDirective | null {
       };
     case 'immutable':
       return { kind: 'immutable' };
+    case 'display':
+      return {
+        kind: 'display',
+        label: getStringArg(d, 'label'),
+        group: getStringArg(d, 'group'),
+        order: getFloatArg(d, 'order'),
+        renderHint: getStringArg(d, 'renderHint'),
+        format: getStringArg(d, 'format'),
+        hidden: getBooleanArg(d, 'hidden'),
+      };
     default:
       return null;
   }
@@ -405,6 +415,17 @@ function extractTypeDirectives(directives: readonly DirectiveNode[] | undefined)
         result.push({
           kind: 'constraint',
           expr: getStringArg(d, 'expr') ?? '',
+        });
+        break;
+      case 'display':
+        result.push({
+          kind: 'display',
+          label: getStringArg(d, 'label'),
+          pluralLabel: getStringArg(d, 'pluralLabel'),
+          icon: getStringArg(d, 'icon'),
+          color: getStringArg(d, 'color'),
+          titleProperty: getStringArg(d, 'titleProperty'),
+          statusProperty: getStringArg(d, 'statusProperty'),
         });
         break;
     }

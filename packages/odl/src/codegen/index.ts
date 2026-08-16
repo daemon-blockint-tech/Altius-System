@@ -232,6 +232,16 @@ function generateFilter(obj: ObjectType): string {
 }
 
 function generateScalarFilter(typeName: string): string {
+  // GeoPoint is a JSONB {lat,lng}; scalar comparison operators are meaningless.
+  // Expose spatial bounding-box containment plus presence instead.
+  if (typeName === 'GeoPoint') {
+    return [
+      'input GeoPointFilter {',
+      '  within: GeoBoundingBoxInput',
+      '  exists: Boolean',
+      '}',
+    ].join('\n');
+  }
   const ops = getFilterOps(typeName);
   const lines: string[] = [];
   lines.push(`input ${typeName}Filter {`);
@@ -240,6 +250,18 @@ function generateScalarFilter(typeName: string): string {
   }
   lines.push('}');
   return lines.join('\n');
+}
+
+/** Inclusive lat/lng bounding box input for the GeoPoint `within` filter. */
+function generateGeoBoundingBoxInput(): string {
+  return [
+    'input GeoBoundingBoxInput {',
+    '  minLat: Float!',
+    '  minLng: Float!',
+    '  maxLat: Float!',
+    '  maxLng: Float!',
+    '}',
+  ].join('\n');
 }
 
 function generateOrderBy(obj: ObjectType): string {
@@ -779,6 +801,10 @@ export function generateGraphQLSchema(schema: ParsedSchema, options?: GraphQLSch
   }
   for (const name of usedScalarFilters) {
     sections.push(generateScalarFilter(name));
+  }
+  // GeoPointFilter references GeoBoundingBoxInput; emit it once when geo is used.
+  if (usedScalarFilters.has('GeoPoint')) {
+    sections.push(generateGeoBoundingBoxInput());
   }
 
   // 5. Enum filter types

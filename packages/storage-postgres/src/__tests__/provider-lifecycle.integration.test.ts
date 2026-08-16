@@ -138,7 +138,7 @@ describeWithPg('PostgresStorageProvider lifecycle (integration)', () => {
       expect(caps.supportsTransactions).toBe(true);
       expect(caps.supportsTemporalQueries).toBe(true);
       expect(caps.supportsFullTextSearch).toBe(true);
-      expect(caps.supportsGeoQueries).toBe(false);
+      expect(caps.supportsGeoQueries).toBe(true);
       expect(caps.supportsGraphTraversal).toBe(true);
       expect(caps.supportsBulkMutations).toBe(true);
       expect(caps.maxTraversalDepth).toBe(10);

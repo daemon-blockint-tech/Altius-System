@@ -126,6 +126,17 @@ function evaluateFieldPredicate(obj: Record<string, unknown>, pred: FieldPredica
       return typeof val === 'string' && typeof pred.value === 'string' && val.startsWith(pred.value);
     case 'exists':
       return pred.value ? val !== undefined && val !== null : val === undefined || val === null;
+    case 'within': {
+      const box = pred.value as { minLat?: unknown; minLng?: unknown; maxLat?: unknown; maxLng?: unknown } | null | undefined;
+      if (!box || typeof val !== 'object' || val === null) return false;
+      const pt = val as { lat?: unknown; lng?: unknown };
+      if (typeof pt.lat !== 'number' || typeof pt.lng !== 'number') return false;
+      if (
+        typeof box.minLat !== 'number' || typeof box.maxLat !== 'number' ||
+        typeof box.minLng !== 'number' || typeof box.maxLng !== 'number'
+      ) return false;
+      return pt.lat >= box.minLat && pt.lat <= box.maxLat && pt.lng >= box.minLng && pt.lng <= box.maxLng;
+    }
     default:
       return false;
   }
@@ -1479,7 +1490,7 @@ export class MemoryStorageProvider implements StorageProvider {
       supportsTransactionIsolation: true,
       supportsTemporalQueries: true,
       supportsFullTextSearch: true,
-      supportsGeoQueries: false,
+      supportsGeoQueries: true,
       supportsGraphTraversal: true,
       supportsBulkMutations: true,
       supportsVectorSearch: false,
