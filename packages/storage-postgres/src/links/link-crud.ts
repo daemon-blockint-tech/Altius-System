@@ -22,6 +22,7 @@ import { MAX_LINK_QUERY_LIMIT, DEFAULT_LINK_QUERY_LIMIT, encodePageCursor, decod
 import { createLogger } from '@altius/observability';
 
 const logger = createLogger('storage-postgres');
+import { graphWritesEnabled } from '../graph-flag.js';
 import { snakeCase, pgIdent } from '../schema/type-mapping.js';
 import { PgTransaction, resolveQueryable } from '../transactions/index.js';
 import type { Queryable } from '../transactions/index.js';
@@ -109,7 +110,9 @@ function linkTableName(type: string, schema = 'public'): string {
 }
 
 /** AGE Cypher queries use the ag_catalog schema. */
-async function ageQuery(q: Queryable, cypher: string): Promise<void> {
+async function ageQuery(pool: Pool, q: Queryable, cypher: string): Promise<void> {
+  // Graph disabled for this deployment — no extension, so nothing to mirror.
+  if (!graphWritesEnabled(pool)) return;
   // See the twin in objects/object-crud.ts: catching the error does not undo the
   // transaction abort Postgres performs on any failed statement, so a swallowed
   // AGE failure turned the caller's COMMIT into a silent ROLLBACK. The savepoint
@@ -333,6 +336,7 @@ export async function createLink(
   const safeToId = sanitizeCypherValue(toId, 'toId');
   const safeLinkId = sanitizeCypherValue(id, 'linkId');
   await ageQuery(
+    pool,
     q,
     `MATCH (a:${safeFromType} {tenant_id: '${safeTenant}', id: '${safeFromId}'}), (b:${safeToType} {tenant_id: '${safeTenant}', id: '${safeToId}'}) CREATE (a)-[:${safeLinkType} {tenant_id: '${safeTenant}', id: '${safeLinkId}'}]->(b)`,
   );
@@ -455,6 +459,7 @@ export async function deleteLink(
   const safeDelTenant = sanitizeCypherValue(ctx.tenantId, 'tenantId');
   const safeDelId = sanitizeCypherValue(linkId, 'linkId');
   await ageQuery(
+    pool,
     q,
     `MATCH ()-[e:${safeDelType} {tenant_id: '${safeDelTenant}', id: '${safeDelId}'}]->() DELETE e`,
   );

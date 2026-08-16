@@ -72,6 +72,10 @@ if (PG_TEST_URL) {
       user: decodeURIComponent(url.username),
       password: decodeURIComponent(url.password),
       dataSchema,
+      // Lets the same suite run against a Postgres WITHOUT Apache AGE, which
+      // is what every managed service is. If any behaviour silently depended
+      // on the graph mirror, this run is where it surfaces.
+      enableGraph: process.env['PG_TEST_ENABLE_GRAPH'] !== 'false',
     });
     await provider.pool.query(`CREATE SCHEMA IF NOT EXISTS "${dataSchema}"`);
     live = { dataSchema, provider };

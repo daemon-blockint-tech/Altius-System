@@ -177,8 +177,17 @@ async function main(): Promise<void> {
   let storage: StorageProvider;
   if (process.env['POSTGRES_URL']) {
     const config = parsePostgresUrl(process.env['POSTGRES_URL']);
-    storage = new PostgresStorageProvider(config);
-    logger.info(`Storage: PostgreSQL @ ${config.host}:${config.port}/${config.database}`);
+    // Apache AGE is a write-only mirror nothing reads, but its CREATE
+    // EXTENSION runs inside the migration transaction, so schema application
+    // fails outright on a Postgres without the binary — which is every
+    // managed service. POSTGRES_ENABLE_GRAPH=false makes those a target.
+    // Opt-out, so an existing self-hosted deployment is unaffected.
+    const enableGraph = process.env['POSTGRES_ENABLE_GRAPH'] !== 'false';
+    storage = new PostgresStorageProvider({ ...config, enableGraph });
+    logger.info(
+      `Storage: PostgreSQL @ ${config.host}:${config.port}/${config.database}` +
+      (enableGraph ? '' : ' (AGE graph disabled)'),
+    );
   } else {
     storage = new MemoryStorageProvider();
     if (isDev) {

@@ -22,6 +22,7 @@ import { snakeCase, pgIdent, fieldCol } from '../schema/type-mapping.js';
 
 const logger = createLogger('storage-postgres');
 import { filterToSql } from './filter-to-sql.js';
+import { graphWritesEnabled } from '../graph-flag.js';
 import { PgTransaction, resolveQueryable } from '../transactions/index.js';
 
 // ---------------------------------------------------------------------------
@@ -169,7 +170,7 @@ export async function createObject(
   await insertHistory(q, type, row, schema);
 
   // Create AGE vertex
-  await createAgeVertex(q, type, ctx.tenantId, id);
+  await createAgeVertex(pool, q, type, ctx.tenantId, id);
 
   return obj;
 }
@@ -297,7 +298,7 @@ export async function updateObject(
   await insertHistory(q, type, row, schema);
 
   // Update AGE vertex
-  await updateAgeVertex(q, type, ctx.tenantId, id);
+  await updateAgeVertex(pool, q, type, ctx.tenantId, id);
 
   return obj;
 }
@@ -387,7 +388,7 @@ export async function hardDeleteObject(
 
   // If object existed, also clean up AGE vertex (and all connected edges)
   if (result.rowCount && result.rowCount > 0) {
-    await deleteAgeVertex(q, type, ctx.tenantId, id);
+    await deleteAgeVertex(pool, q, type, ctx.tenantId, id);
   }
 }
 
@@ -544,7 +545,9 @@ async function insertHistory(
  * AGE Cypher queries use the ag_catalog schema.
  * We set the search_path before executing Cypher.
  */
-async function ageQuery(q: Pool | import('pg').PoolClient, cypher: string): Promise<void> {
+async function ageQuery(pool: Pool, q: Pool | import('pg').PoolClient, cypher: string): Promise<void> {
+  // Graph disabled for this deployment — no extension, so nothing to mirror.
+  if (!graphWritesEnabled(pool)) return;
   // Catching the error is NOT enough inside a transaction. Postgres aborts the
   // whole transaction on any failed statement, so a swallowed AGE failure left
   // the caller's transaction poisoned: every later statement raised "current
@@ -591,6 +594,7 @@ async function ageQuery(q: Pool | import('pg').PoolClient, cypher: string): Prom
 }
 
 async function createAgeVertex(
+  pool: Pool,
   q: Pool | import('pg').PoolClient,
   type: string,
   tenantId: string,
@@ -600,12 +604,14 @@ async function createAgeVertex(
   const safeTenant = sanitizeCypherValue(tenantId, 'tenantId');
   const safeId = sanitizeCypherValue(id, 'id');
   await ageQuery(
+    pool,
     q,
     `CREATE (:${safeType} {tenant_id: '${safeTenant}', id: '${safeId}'})`,
   );
 }
 
 async function updateAgeVertex(
+  pool: Pool,
   q: Pool | import('pg').PoolClient,
   type: string,
   tenantId: string,
@@ -615,12 +621,14 @@ async function updateAgeVertex(
   const safeTenant = sanitizeCypherValue(tenantId, 'tenantId');
   const safeId = sanitizeCypherValue(id, 'id');
   await ageQuery(
+    pool,
     q,
     `MATCH (v:${safeType} {tenant_id: '${safeTenant}', id: '${safeId}'}) SET v.updated = true RETURN v`,
   );
 }
 
 async function deleteAgeVertex(
+  pool: Pool,
   q: Pool | import('pg').PoolClient,
   type: string,
   tenantId: string,
@@ -630,6 +638,7 @@ async function deleteAgeVertex(
   const safeTenant = sanitizeCypherValue(tenantId, 'tenantId');
   const safeId = sanitizeCypherValue(id, 'id');
   await ageQuery(
+    pool,
     q,
     `MATCH (v:${safeType} {tenant_id: '${safeTenant}', id: '${safeId}'}) DETACH DELETE v`,
   );
