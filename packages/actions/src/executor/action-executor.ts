@@ -20,6 +20,7 @@ import type {
   DataPurpose,
 } from '@altius/spi';
 import type { ParsedSchema, ActionType, FieldDefinition } from '@altius/odl';
+import { validateSchemaFields, validationError } from '@altius/engine';
 import { createLogger } from '@altius/observability';
 import type {
   ActionManifest,
@@ -214,6 +215,30 @@ function addIdAlias(obj: OntologyObject, primaryName?: string): OntologyObject {
 }
 
 /** Look up the declared @primary field name for an object type. */
+/**
+ * Refuse a write that would violate the schema, with a code the caller can act
+ * on.
+ *
+ * Thrown rather than returned so it lands in the effect-application catch,
+ * which preserves an error's own `code` across the transaction boundary and
+ * rolls the transaction back. Returning would flatten it to
+ * EFFECT_EXECUTION_ERROR and lose both the category and the per-field detail.
+ */
+function assertSchemaValid(
+  schema: ParsedSchema,
+  typeName: string,
+  properties: Record<string, unknown>,
+): void {
+  const failures = validateSchemaFields(schema, typeName, properties);
+  if (failures.length === 0) return;
+
+  const platformError = validationError(failures);
+  const err = new Error(platformError.message) as Error & { code: string; details?: unknown };
+  err.code = platformError.code;
+  err.details = platformError.details;
+  throw err;
+}
+
 function primaryFieldName(schema: ParsedSchema | undefined, typeName: string): string | undefined {
   if (!schema) return undefined;
   const ot = schema.objectTypes.find((o) => o.name === typeName);
@@ -968,6 +993,13 @@ export class ActionExecutor {
       ? priorVersion
       : typeof target._version === 'number' ? target._version : undefined;
 
+    // Validate the MERGED object, not the patch: an update that omits a
+    // required field is legitimate as long as the stored row still carries it.
+    // Checking `properties` alone would reject every partial update.
+    if (schema) {
+      assertSchemaValid(schema, target._type, { ...target, ...properties });
+    }
+
     const updated = await txn.updateObject(target._type, target._id, properties, expectedVersion);
 
     afterStates.set(beforeKey, { ...updated });
@@ -1137,6 +1169,14 @@ export class ActionExecutor {
           'create',
         ),
       );
+    }
+
+    // Validate before the write. The action pipeline writes straight to the
+    // storage transaction, so without this a missing required field surfaced
+    // as whatever the provider raised — EFFECT_EXECUTION_ERROR on memory, a
+    // raw 23502 on Postgres — for the same ODL and the same action.
+    if (schema) {
+      assertSchemaValid(schema, effect.objectType, properties);
     }
 
     const created = await txn.createObject(effect.objectType, properties);

@@ -586,21 +586,26 @@ export function createFilteredSubscription(
           ctx?.user?.roles ?? [],
         );
 
-        // Hydrate the changed object as THIS subscriber, after the tenant, FGA
-        // and consent gates have all passed. Two things depend on it: the SDL
-        // declares the full object type, so a client selecting a real property
-        // gets a value instead of an error; and a property-level filter has
-        // something to evaluate against.
-        const hydrated = await hydrateObject(delivered, ctx);
-        if (hydrated) delivered = { ...delivered, object: hydrated };
+        // A filter naming a real property cannot be evaluated against the
+        // {id,_type} stub the bus carries, so hydrate first — as THIS
+        // subscriber, and only after the tenant, FGA and consent gates have
+        // passed. Only when such a filter exists: the `${Type}ChangeEvent.object`
+        // field resolver already hydrates the delivered payload on demand, so
+        // hydrating unconditionally here would read every object twice.
+        const propertyFilterKeys = args.filter
+          ? Object.keys(args.filter).filter(k => k !== 'changeType' && args.filter?.[k] != null)
+          : [];
 
-        // Evaluate property filters against the REDACTED object, not the raw
-        // one. Filtering on values the subscriber cannot read would turn the
-        // filter into an oracle: subscribing with {ssn: "123-45-6789"} and
-        // watching whether events arrive reveals a field that reads back null
-        // on every pull surface.
-        if (args.filter && Object.keys(args.filter).length > 0) {
-          if (!matchesFilter(delivered, args.filter)) return false;
+        if (propertyFilterKeys.length > 0) {
+          const hydrated = await hydrateObject(delivered, ctx);
+          if (hydrated) delivered = { ...delivered, object: hydrated };
+
+          // Evaluate against the REDACTED object, not the raw one. Filtering on
+          // values the subscriber cannot read would turn the filter into an
+          // oracle: subscribing with {ssn: "123-45-6789"} and watching whether
+          // events arrive reveals a field that reads back null on every pull
+          // surface.
+          if (!matchesFilter(delivered, args.filter!)) return false;
         }
 
         (p as Record<string, unknown>)[topic] = delivered;

@@ -92,6 +92,9 @@ importers:
 
   packages/actions:
     dependencies:
+      '@altius/engine':
+        specifier: workspace:*
+        version: link:../engine
       '@altius/observability':
         specifier: workspace:*
         version: link:../observability

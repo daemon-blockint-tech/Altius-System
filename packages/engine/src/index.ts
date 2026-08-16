@@ -3,6 +3,7 @@ export {
   ObjectManager,
   type ObjectManagerConfig,
   validateObjectProperties,
+  validateSchemaFields,
   validationError,
   type ValidationFailure,
   type ValidationResult,
