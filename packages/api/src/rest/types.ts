@@ -44,4 +44,20 @@ export interface RestRoute {
   method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
   pattern: string;
   handler: (req: RestRequest, ctx: ResolverContext) => Promise<RestResponse>;
+  /**
+   * ObjectType this route reads or writes, when it has exactly one.
+   *
+   * Recorded on the audit record so a DPO can filter the trail by type. Absent
+   * on routes that are not per-type (audit, object-sets, consent).
+   */
+  objectType?: string;
+  /**
+   * Overrides how the dispatcher audits this route as a read.
+   *
+   * The default is derived from the method: GET is a read, everything else is
+   * not. Reads that must be expressed as POST because they carry a body —
+   * aggregate, traverse — set this explicitly, because auditing them by method
+   * alone would silently miss them.
+   */
+  readOperation?: 'read' | 'query';
 }

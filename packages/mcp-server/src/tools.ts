@@ -187,7 +187,9 @@ export async function invokeTool(
     const typeName = toolName.slice('search_'.length);
     const objType = deps.schema.objectTypes.find((o) => o.name === typeName);
     if (objType) {
-      return invokeSearchTool(objType, args, caller, deps);
+      const result = await invokeSearchTool(objType, args, caller, deps);
+      await auditMcpRead(deps, caller, typeName, toolName, result.isError === true);
+      return result;
     }
   }
 
@@ -196,7 +198,9 @@ export async function invokeTool(
     const typeName = toolName.slice('traverse_'.length);
     const objType = deps.schema.objectTypes.find((o) => o.name === typeName);
     if (objType) {
-      return invokeTraverseTool(objType, args, caller, deps);
+      const result = await invokeTraverseTool(objType, args, caller, deps);
+      await auditMcpRead(deps, caller, typeName, toolName, result.isError === true);
+      return result;
     }
   }
 
@@ -206,6 +210,43 @@ export async function invokeTool(
     content: [{ type: 'text', text: JSON.stringify({ error: `Unknown tool: ${toolName}` }) }],
     isError: true,
   };
+}
+
+/**
+ * Record an MCP read in the audit trail.
+ *
+ * Written at the dispatcher, where both read tools converge, for the same
+ * reason as the REST equivalent: a read tool added later is covered without
+ * anyone remembering to instrument it.
+ *
+ * The actor is recorded as `user`, matching what the MCP action path already
+ * writes. Distinguishing agent traffic from human traffic in the trail is a
+ * real gap, but it belongs to the whole MCP surface at once — recording reads
+ * as `agent` while the same caller's writes say `user` would make the trail
+ * harder to read, not easier.
+ *
+ * Best-effort: an agent's read must not fail because auditing did.
+ */
+async function auditMcpRead(
+  deps: McpServerDependencies,
+  caller: McpCaller,
+  objectType: string,
+  toolName: string,
+  isError: boolean,
+): Promise<void> {
+  if (!deps.auditWriter) return;
+  try {
+    await deps.auditWriter.write({
+      tenantId: caller.requestContext.tenantId,
+      actor: { type: 'user', id: caller.user.id, roles: caller.user.roles },
+      operation: { type: 'query', objectType },
+      // What was asked, never what came back.
+      detail: { result: isError ? 'denied' : 'success', query: `mcp ${toolName}` },
+      traceId: caller.requestContext.traceId,
+    });
+  } catch {
+    /* best-effort */
+  }
 }
 
 /**

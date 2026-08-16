@@ -5,7 +5,7 @@
 import type { ParsedSchema } from '@altius/odl';
 import type { StorageProvider, RequestContext } from '@altius/spi';
 import type { ActionExecutor, ActionManifest } from '@altius/actions';
-import type { AuthorizationService, OidcAuthenticator, AuthenticatedUser, ConsentService } from '@altius/security';
+import type { AuthorizationService, OidcAuthenticator, AuthenticatedUser, ConsentService, AuditWriter } from '@altius/security';
 import type { ObjectManager } from '@altius/engine';
 
 /**
@@ -52,6 +52,16 @@ export interface McpServerDependencies {
    * limiter, not the per-principal 200 req/min limit humans get.
    */
   rateLimiter?: McpRateLimiter;
+  /**
+   * Audit sink for read tools.
+   *
+   * MCP is the third read surface, and an agent reading a record is exactly
+   * the access a DPO is asked about — often more so than a human's, because
+   * an agent reads at machine rate. Optional so a deployment without an audit
+   * store still serves MCP; absent means the reads are unaudited, which is
+   * the pre-existing behaviour rather than a silent downgrade.
+   */
+  auditWriter?: AuditWriter;
   /**
    * Consent purpose for MCP read tools. Defaults to DIRECT_CARE when absent;
    * should mirror the deployment's DEFAULT_CONSENT_PURPOSE so an agent and a

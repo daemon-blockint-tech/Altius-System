@@ -68,6 +68,7 @@ import {
 } from './temporal/index.js';
 import { PgTransaction } from './transactions/index.js';
 import { withRetry } from './retry.js';
+import { disableGraphWrites } from './graph-flag.js';
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -87,6 +88,17 @@ export interface PostgresStorageConfig {
   ssl?: boolean | { rejectUnauthorized: boolean };
   /** Transaction isolation level. Default: 'READ COMMITTED'. */
   defaultIsolationLevel?: 'READ COMMITTED' | 'REPEATABLE READ' | 'SERIALIZABLE';
+  /**
+   * Whether to provision and write the Apache AGE graph mirror. Default: true.
+   *
+   * Set false to run on a Postgres without the AGE binary — every managed
+   * service (Supabase, RDS, Cloud SQL) among them. AGE is a write-only mirror:
+   * traversal runs through SQL JOINs and no query reads a Cypher result, so
+   * turning it off costs nothing today and is what makes those platforms a
+   * legitimate target. It is opt-out rather than opt-in so an existing
+   * self-hosted deployment keeps writing the graph it already has.
+   */
+  enableGraph?: boolean;
 }
 
 /**
@@ -184,6 +196,7 @@ export class PostgresStorageProvider implements StorageProvider {
   private static readonly IDEMPOTENCY_TTL_MS = 5 * 60_000; // 5 minutes
 
   private _defaultIsolationLevel: string;
+  private _enableGraph: boolean;
 
   constructor(config: PostgresStorageConfig) {
     this._pool = new Pool({
@@ -201,6 +214,9 @@ export class PostgresStorageProvider implements StorageProvider {
     } satisfies PoolConfig);
     this._dataSchema = config.dataSchema ?? 'public';
     this._defaultIsolationLevel = config.defaultIsolationLevel ?? 'READ COMMITTED';
+    // Opt-out, so an existing self-hosted deployment keeps its graph.
+    this._enableGraph = config.enableGraph ?? true;
+    if (!this._enableGraph) disableGraphWrites(this._pool);
 
     // Periodically evict expired idempotency cache entries
     this._idempotencyCacheTimer = setInterval(() => {
@@ -227,7 +243,7 @@ export class PostgresStorageProvider implements StorageProvider {
 
   async applySchema(_ctx: RequestContext, schema: OntologySchema): Promise<MigrationResult> {
     const fromVersion = this._currentSchemaVersion;
-    const ddl = generateDDL(schema, { dataSchema: this._dataSchema });
+    const ddl = generateDDL(schema, { dataSchema: this._dataSchema, includeGraph: this._enableGraph });
 
     // Ensure migration tracking table exists
     await this._pool.query(`

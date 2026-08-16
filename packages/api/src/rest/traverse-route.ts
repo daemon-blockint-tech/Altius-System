@@ -150,6 +150,11 @@ export function generateTraverseRoute(
 
   return {
     method: 'POST',
+    // A read expressed as POST because it carries a body — audited as a query.
+    // It returns objects of many types from one start object, so the audited
+    // objectType is the start type, not the types reached.
+    readOperation: 'query',
+    objectType: typeName,
     pattern: `/api/v1/${plural}/:id/traverse`,
     handler: async (req: RestRequest, ctx: ResolverContext): Promise<RestResponse> => {
       try {

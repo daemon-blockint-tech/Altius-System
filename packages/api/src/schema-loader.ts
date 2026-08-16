@@ -805,10 +805,17 @@ function convertObjectType(objType: ObjectType): ObjectTypeDefinition {
     // Skip @link virtual fields — resolved at query time
     if (field.directives.some(d => d.kind === 'link')) continue;
 
+    // Materialise @default. Without this the directive is parsed, validated,
+    // and dropped: Postgres emits NOT NULL with no DEFAULT and the memory
+    // provider's required-check has nothing to fall back on, so a field
+    // declared `String! @default(value: "DRAFT")` is REJECTED by both
+    // providers when an effect omits it — the opposite of what it declares.
+    const defaultDirective = field.directives.find(d => d.kind === 'default');
     properties.push({
       name: field.name,
       type: mapFieldType(field.type.name),
       required: field.type.nonNull,
+      ...(defaultDirective ? { defaultValue: defaultDirective.value } : {}),
     });
 
     // Extract index definitions from directives
@@ -855,7 +862,7 @@ function convertLinkType(linkType: LinkType): LinkTypeDefinition {
 /**
  * Convert a ParsedSchema to an OntologySchema suitable for storage.applySchema().
  */
-function toOntologySchema(parsed: ParsedSchema): OntologySchema {
+export function toOntologySchema(parsed: ParsedSchema): OntologySchema {
   return {
     version: 1,
     objectTypes: parsed.objectTypes.map(convertObjectType),

@@ -59,7 +59,7 @@ import { AuthorizationService, OidcAuthenticator, AuditWriter, MemoryAuditStore,
 import type { OpenFgaClientInterface, FgaClientResolver } from '@altius/security';
 import type { StorageProvider, RequestContext } from '@altius/spi';
 import { createGraphQLServer, buildResolverContext } from './graphql/index.js';
-import { generateRestRoutes, generateOpenApiSpec } from './rest/index.js';
+import { generateRestRoutes, generateOpenApiSpec, auditRead } from './rest/index.js';
 import { generateAuditRoutes } from './rest/audit-routes.js';
 import { generateTraverseRoutes } from './rest/traverse-route.js';
 import { readPlatformVersion } from './version.js';
@@ -67,7 +67,7 @@ import { createFhirRouter } from './fhir/index.js';
 import { createCdmRouter } from './cdm/index.js';
 import { generateRelationshipRoutes, buildGrantAllowlist } from './relationships/router.js';
 import { generateConsentRoutes, assertConsentConfig } from './consent/router.js';
-import { InMemorySubscribableEventBus, SubscriptionManager } from './subscriptions/index.js';
+import { InMemorySubscribableEventBus, SubscriptionManager, SubscriptionRegistry } from './subscriptions/index.js';
 import type { SubscribableEventBus } from './subscriptions/index.js';
 import { RedpandaEventBus } from './events/index.js';
 import type { ApiDependencies, ResolverContext } from './graphql/types.js';
@@ -177,8 +177,17 @@ async function main(): Promise<void> {
   let storage: StorageProvider;
   if (process.env['POSTGRES_URL']) {
     const config = parsePostgresUrl(process.env['POSTGRES_URL']);
-    storage = new PostgresStorageProvider(config);
-    logger.info(`Storage: PostgreSQL @ ${config.host}:${config.port}/${config.database}`);
+    // Apache AGE is a write-only mirror nothing reads, but its CREATE
+    // EXTENSION runs inside the migration transaction, so schema application
+    // fails outright on a Postgres without the binary — which is every
+    // managed service. POSTGRES_ENABLE_GRAPH=false makes those a target.
+    // Opt-out, so an existing self-hosted deployment is unaffected.
+    const enableGraph = process.env['POSTGRES_ENABLE_GRAPH'] !== 'false';
+    storage = new PostgresStorageProvider({ ...config, enableGraph });
+    logger.info(
+      `Storage: PostgreSQL @ ${config.host}:${config.port}/${config.database}` +
+      (enableGraph ? '' : ' (AGE graph disabled)'),
+    );
   } else {
     storage = new MemoryStorageProvider();
     if (isDev) {
@@ -855,6 +864,15 @@ async function main(): Promise<void> {
     path: '/graphql',
     maxPayload: 64 * 1024, // 64 KB — GraphQL subscription payloads are small
   });
+  const subscriptionRegistry = new SubscriptionRegistry();
+  deps.subscriptionRegistry = subscriptionRegistry;
+  // Close a subject's live streams when their consent is revoked. Injected
+  // here rather than at ConsentService construction because the subscription
+  // layer is built later in boot and depends on the consent service.
+  consentService?.setSubscriptionTerminator(
+    (tenantId, subjectId) => subscriptionRegistry.terminateForSubject(tenantId, subjectId),
+  );
+
   const subscriptionManager = new SubscriptionManager({
     pubsub,
     eventBus,
@@ -1135,6 +1153,7 @@ async function main(): Promise<void> {
         };
         const ctx: ResolverContext = buildResolverContext(user, deps);
         const result = await route.handler(restReq, ctx);
+        await auditRead(deps.auditWriter, route, restReq, ctx, result.status);
         // Apply optional response headers (e.g. Content-Type for export endpoints)
         if (result.headers) {
           for (const [key, value] of Object.entries(result.headers)) res.setHeader(key, value);
@@ -1294,6 +1313,7 @@ async function main(): Promise<void> {
         rateLimiter,
         consentPurpose: DEFAULT_CONSENT_PURPOSE as string,
         objectManager,
+        auditWriter: securityAuditWriter,
       },
       isDev,
     });

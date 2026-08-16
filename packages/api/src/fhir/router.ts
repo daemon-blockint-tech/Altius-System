@@ -19,6 +19,7 @@
 
 import type { OntologyObject, FilterExpression, FieldPredicate } from '@altius/spi';
 import { DataPurpose } from '@altius/spi';
+import { writeReadAuditFor } from '../rest/audit-read.js';
 import type { ApiDependencies, AuthenticatedUserInfo } from '../graphql/types.js';
 import type {
   FhirResource,
@@ -65,7 +66,7 @@ export interface FhirRouterConfig {
 export function createFhirRouter(config: FhirRouterConfig) {
   const { deps, baseUrl = '' } = config;
 
-  return async (req: FhirRequest): Promise<FhirResponse> => {
+  const handle = async (req: FhirRequest): Promise<FhirResponse> => {
     // Validate authenticated user exists (SEC-09, API-01)
     if (!req.user || !req.user.id || !req.user.tenantId) {
       return operationOutcome(401, 'login', 'Authentication required');
@@ -100,6 +101,35 @@ export function createFhirRouter(config: FhirRouterConfig) {
       default:
         return operationOutcome(404, 'not-found', `Resource type '${resourceType}' is not supported`);
     }
+  };
+
+  // Audit every FHIR data read at the one dispatcher, matching REST, GraphQL,
+  // MCP and CDM. `metadata` is skipped — a CapabilityStatement is a public
+  // capability document, not anyone's data.
+  //
+  // The recorded objectType is the FHIR resource name, not the ontology type
+  // it projects. They coincide for the shipped pack (Patient -> Patient) but
+  // need not in general; the `query` field names the surface so a DPO can
+  // tell a FHIR read from a REST one on the same record.
+  return async (req: FhirRequest): Promise<FhirResponse> => {
+    const res = await handle(req);
+    const segments = req.path.split('/').filter(Boolean);
+    const resourceType = segments[0];
+    const resourceId = segments[1];
+    if (req.user?.id && req.user.tenantId && resourceType && resourceType !== 'metadata') {
+      await writeReadAuditFor(
+        deps.auditWriter,
+        { id: req.user.id, roles: req.user.roles, tenantId: req.user.tenantId },
+        {
+          type: resourceId ? 'read' : 'query',
+          objectType: resourceType,
+          ...(resourceId ? { objectId: resourceId } : {}),
+          query: `fhir ${req.method} ${req.path}`,
+          result: res.status >= 500 ? 'error' : res.status >= 400 ? 'denied' : 'success',
+        },
+      );
+    }
+    return res;
   };
 }
 

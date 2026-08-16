@@ -1,5 +1,6 @@
 export {
   SubscriptionManager,
+  SubscriptionRegistry,
   InMemorySubscribableEventBus,
   createIdFilteredSubscription,
   createFilteredSubscription,

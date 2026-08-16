@@ -30,6 +30,13 @@ export interface ApiDependencies {
   authorizationService: AuthorizationService;
   authenticator: OidcAuthenticator;
   consentService?: ConsentService;
+  /**
+   * Live-subscription registry, so consent revocation can close the streams
+   * about the revoking subject. Absent means revocation still takes effect —
+   * the per-event consent gate withholds their events either way — but the
+   * client is not told.
+   */
+  subscriptionRegistry?: { register(sub: { tenantId: string; subjectId: string | null; terminate: () => void }): () => void; terminateForSubject(tenantId: string, subjectId: string): number };
   auditWriter?: AuditWriter;
   /**
    * Read-side audit store. When present, the REST /api/v1/audit route queries

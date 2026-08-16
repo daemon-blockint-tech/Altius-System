@@ -457,5 +457,82 @@ export function registerTemporalTests(name: string, factory: ProviderFactory): v
         expect(v5!.status).toBe('discharged');
       });
     });
+
+    // ─── As-of collection queries ───
+    //
+    // QueryOptions.asOfVersion and asOfTime were declared in the SPI and read
+    // by NEITHER provider — a whole-repo grep found them only at their two
+    // definition lines. An ignored as-of option is the dangerous kind of
+    // silent failure: you ask for last Tuesday and get today's rows, which
+    // look like real historical data.
+
+    describe('as-of queries', () => {
+      it('returns each object as it stood at the instant', async () => {
+        const obj = await provider.createObject(ctx, 'Patient', { name: 'Ann', status: 'new' });
+        await tick();
+        const cutoff = new Date().toISOString();
+        await tick();
+        await provider.updateObject(ctx, 'Patient', obj._id, { status: 'discharged' });
+
+        const asOf = await provider.queryObjects(ctx, 'Patient', { and: [] }, { asOfTime: cutoff });
+        const row = asOf.items.find(i => i._id === obj._id);
+
+        expect(row?.['status']).toBe('new');
+
+        // And the live query still shows the current value.
+        const now = await provider.queryObjects(ctx, 'Patient', { and: [] });
+        expect(now.items.find(i => i._id === obj._id)?.['status']).toBe('discharged');
+      });
+
+      it('evaluates the filter against the historical values, not current ones', async () => {
+        const obj = await provider.createObject(ctx, 'Patient', { name: 'Bob', status: 'new' });
+        await tick();
+        const cutoff = new Date().toISOString();
+        await tick();
+        await provider.updateObject(ctx, 'Patient', obj._id, { status: 'discharged' });
+
+        // Matches at the cutoff (was 'new') even though it is 'discharged' now.
+        const hit = await provider.queryObjects(
+          ctx, 'Patient', { field: 'status', operator: 'eq', value: 'new' }, { asOfTime: cutoff },
+        );
+        expect(hit.items.map(i => i._id)).toContain(obj._id);
+
+        // And does not match its current value at that instant.
+        const miss = await provider.queryObjects(
+          ctx, 'Patient', { field: 'status', operator: 'eq', value: 'discharged' }, { asOfTime: cutoff },
+        );
+        expect(miss.items.map(i => i._id)).not.toContain(obj._id);
+      });
+
+      it('omits an object that did not exist yet', async () => {
+        const cutoff = new Date().toISOString();
+        await tick();
+        const obj = await provider.createObject(ctx, 'Patient', { name: 'Later', status: 'new' });
+
+        const asOf = await provider.queryObjects(ctx, 'Patient', { and: [] }, { asOfTime: cutoff });
+
+        expect(asOf.items.map(i => i._id)).not.toContain(obj._id);
+      });
+
+      it('omits an object already deleted at the instant', async () => {
+        const obj = await provider.createObject(ctx, 'Patient', { name: 'Gone', status: 'new' });
+        await provider.deleteObject(ctx, 'Patient', obj._id, 'soft');
+        await tick();
+        const cutoff = new Date().toISOString();
+
+        const asOf = await provider.queryObjects(ctx, 'Patient', { and: [] }, { asOfTime: cutoff });
+
+        expect(asOf.items.map(i => i._id)).not.toContain(obj._id);
+      });
+
+      it('refuses asOfVersion on a collection query rather than ignoring it', async () => {
+        // Versions are per-object, so "every Patient at version 3" has no
+        // answer for a patient that only reached version 2. Both providers
+        // must refuse identically, not each invent a reading.
+        await expect(
+          provider.queryObjects(ctx, 'Patient', { and: [] }, { asOfVersion: 1 }),
+        ).rejects.toThrow(/asOfVersion/);
+      });
+    });
   });
 }

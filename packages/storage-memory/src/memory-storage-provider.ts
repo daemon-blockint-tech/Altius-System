@@ -456,6 +456,26 @@ export class MemoryStorageProvider implements StorageProvider {
    * @param candidate - the object as it would be stored after the write
    * @param selfId - id of the object being updated, excluded from uniqueness
    */
+  /**
+   * Fill in any declared default the caller omitted.
+   *
+   * Only absent values are filled: an explicit null is the caller saying
+   * "no value", which must still fail a NOT NULL check rather than be
+   * quietly replaced by the default.
+   */
+  private _applyDefaults(type: string, properties: Record<string, unknown>): Record<string, unknown> {
+    const def = this._getObjectTypeDef(type);
+    if (!def) return properties;
+    let out = properties;
+    for (const prop of def.properties) {
+      if (prop.defaultValue === undefined) continue;
+      if (out[prop.name] !== undefined) continue;
+      if (out === properties) out = { ...properties };
+      out[prop.name] = prop.defaultValue;
+    }
+    return out;
+  }
+
   private _enforceObjectConstraints(
     ctx: RequestContext,
     type: string,
@@ -540,6 +560,11 @@ export class MemoryStorageProvider implements StorageProvider {
 
   /** @internal */ _doCreateObject(ctx: RequestContext, type: string, properties: Record<string, unknown>, maps?: MemMaps): OntologyObject {
     const m = maps ?? { objects: this._objects, links: this._links, versionHistory: this._versionHistory };
+    // Apply declared defaults before validating. Postgres applies them in the
+    // column DEFAULT, so skipping the check without also filling the value
+    // would leave the same create storing "DRAFT" on one provider and nothing
+    // on the other — a divergence that only shows up on read.
+    properties = this._applyDefaults(type, properties);
     this._enforceObjectConstraints(ctx, type, properties, undefined, m.objects);
     const id = genId();
     const timestamp = now();
@@ -797,8 +822,25 @@ export class MemoryStorageProvider implements StorageProvider {
   }
 
   async queryObjects(ctx: RequestContext, type: string, filter: FilterExpression, options?: QueryOptions): Promise<ObjectPage> {
+    // `asOfVersion` is well defined for ONE object (getObjectAtVersion) and
+    // not for a set: versions are per-object, so "every Patient at version 3"
+    // has no answer for a patient that only ever reached version 2. Refuse it
+    // loudly rather than invent a reading — an as-of query that silently
+    // returns current rows looks exactly like real historical data.
+    if (options?.asOfVersion !== undefined) {
+      throw new Error(
+        'QueryOptions.asOfVersion is not supported on collection queries: version numbers are per-object. ' +
+        'Use getObjectAtVersion for a single object, or asOfTime for a set.',
+      );
+    }
+
     const maps = this._getEffectiveMaps(ctx);
-    let items = Array.from(maps.objects.values()).filter((obj) => {
+    const asOf = options?.asOfTime;
+    const candidates = asOf
+      ? this._objectsAsOf(ctx, type, asOf, maps)
+      : Array.from(maps.objects.values());
+
+    let items = candidates.filter((obj) => {
       if (obj._tenantId !== ctx.tenantId) return false;
       if (obj._type !== type) return false;
       if (!options?.includeDeleted && obj._deletedAt) return false;
@@ -833,6 +875,40 @@ export class MemoryStorageProvider implements StorageProvider {
       totalCount,
       hasNextPage: offset + limit < totalCount,
     };
+  }
+
+  /**
+   * Every object of a type as it stood at a point in time.
+   *
+   * One entry per object: its newest version whose `_updatedAt` is at or
+   * before the instant. An object created after the instant has no such
+   * version and is absent, which is correct — it did not exist yet. An object
+   * soft-deleted before the instant comes back carrying `_deletedAt`, so the
+   * caller's normal soft-delete filter drops it exactly as it would today.
+   *
+   * The filter is applied to the historical state by the caller, not to the
+   * current one: asking "which patients were DISCHARGED last Tuesday" has to
+   * evaluate the predicate against Tuesday's values, or the answer is a set
+   * of today's rows wearing old timestamps.
+   */
+  private _objectsAsOf(
+    ctx: RequestContext,
+    type: string,
+    asOfTime: DateTime,
+    maps: MemMaps,
+  ): OntologyObject[] {
+    const out: OntologyObject[] = [];
+    for (const [key, history] of maps.versionHistory) {
+      if (!key.startsWith(`${type}:`)) continue;
+      let best: OntologyObject | undefined;
+      for (const snapshot of history) {
+        if (snapshot._tenantId !== ctx.tenantId) continue;
+        if (snapshot._updatedAt > asOfTime) continue;
+        if (!best || snapshot._version > best._version) best = snapshot;
+      }
+      if (best) out.push(best);
+    }
+    return out;
   }
 
   async aggregateObjects(ctx: RequestContext, type: string, query: AggregateQuery): Promise<AggregateResult> {

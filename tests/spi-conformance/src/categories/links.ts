@@ -299,6 +299,71 @@ export function registerLinkTests(name: string, factory: ProviderFactory): void 
       });
     });
 
+    // ─── Self-links ───
+
+    describe('self-referential link types', () => {
+      // TeamLead is CareTeam -> CareTeam. The fixture existed but only a name
+      // assertion in the schema category ever touched it, so neither provider
+      // was exercised on the shape at all. Self-links are how a pack models
+      // hierarchy and threading (a reply to its parent, a team to its lead),
+      // and both endpoints living in the same table is exactly where a
+      // direction bug or a self-join mistake hides.
+
+      it('creates a link between two objects of the same type', async () => {
+        const link = await provider.createLink(tenantA, 'TeamLead', teamId1, teamId2);
+
+        expect(link._fromId).toBe(teamId1);
+        expect(link._toId).toBe(teamId2);
+      });
+
+      it('keeps direction straight — outbound and inbound are not symmetric', async () => {
+        await provider.createLink(tenantA, 'TeamLead', teamId1, teamId2);
+
+        const outFrom = await provider.getLinks(tenantA, teamId1, 'TeamLead', 'outbound');
+        const inFrom = await provider.getLinks(tenantA, teamId1, 'TeamLead', 'inbound');
+        const outTo = await provider.getLinks(tenantA, teamId2, 'TeamLead', 'outbound');
+        const inTo = await provider.getLinks(tenantA, teamId2, 'TeamLead', 'inbound');
+
+        expect(outFrom.items).toHaveLength(1);
+        expect(inFrom.items).toHaveLength(0);
+        expect(outTo.items).toHaveLength(0);
+        expect(inTo.items).toHaveLength(1);
+      });
+
+      it('traverses a hop between two objects of the same type', async () => {
+        await provider.createLink(tenantA, 'TeamLead', teamId1, teamId2);
+
+        const result = await provider.traverse(
+          tenantA,
+          teamId1,
+          { steps: [{ linkType: 'TeamLead', direction: 'outbound' }] },
+        );
+
+        expect(result.nodes.map(n => n._id)).toEqual([teamId2]);
+      });
+
+      it('enforces its declared cardinality like any other link type', async () => {
+        const t3 = await provider.createObject(tenantA, 'CareTeam', { name: 'Team3' });
+        await provider.createLink(tenantA, 'TeamLead', teamId1, teamId2);
+
+        // TeamLead is ONE_TO_ONE — a second outbound from the same source loses.
+        await expect(
+          provider.createLink(tenantA, 'TeamLead', teamId1, t3._id),
+        ).rejects.toThrow(/[Cc]ardinality/);
+      });
+
+      it('deletes without disturbing the other endpoint', async () => {
+        const link = await provider.createLink(tenantA, 'TeamLead', teamId1, teamId2);
+        await provider.deleteLink(tenantA, 'TeamLead', link._id);
+
+        expect((await provider.getLinks(tenantA, teamId1, 'TeamLead', 'outbound')).items).toHaveLength(0);
+        expect((await provider.getLinks(tenantA, teamId2, 'TeamLead', 'inbound')).items).toHaveLength(0);
+        // Both objects survive the link's removal.
+        expect(await provider.getObject(tenantA, 'CareTeam', teamId1)).toBeTruthy();
+        expect(await provider.getObject(tenantA, 'CareTeam', teamId2)).toBeTruthy();
+      });
+    });
+
     // ─── Cardinality MANY_TO_ONE ───
 
     describe('cardinality MANY_TO_ONE', () => {

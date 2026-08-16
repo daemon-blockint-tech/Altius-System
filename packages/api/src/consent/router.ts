@@ -133,13 +133,24 @@ export async function applyConsentRecord(
   }
 
   try {
-    await deps.consentService.recordConsent(subject, purpose as DataPurpose, decision as 'GRANT' | 'DENY', evidence, tenantId);
+    // A DENY goes through revokeConsent, not recordConsent. Both write the
+    // same DENY record, but revocation additionally closes the subject's live
+    // subscriptions — without this the only difference between "never
+    // consented" and "withdrew consent" was invisible to a connected client,
+    // and revokeConsent was dead code no surface reached.
+    let subscriptionsTerminated = 0;
+    if (decision === 'DENY') {
+      const result = await deps.consentService.revokeConsent(subject, purpose as DataPurpose, evidence ?? '', tenantId);
+      subscriptionsTerminated = result.subscriptionsTerminated;
+    } else {
+      await deps.consentService.recordConsent(subject, purpose as DataPurpose, 'GRANT', evidence, tenantId);
+    }
     await deps.auditWriter?.write({
       tenantId: auditTenant, actor: auditActor, operation: auditOp,
-      detail: { result: 'success', consentDecision: decision === 'GRANT' ? 'granted' : 'denied', after: { purpose, decision, evidence } },
+      detail: { result: 'success', consentDecision: decision === 'GRANT' ? 'granted' : 'denied', after: { purpose, decision, evidence, subscriptionsTerminated } },
       traceId,
     });
-    return { ok: true, data: { subject, purpose, decision, recorded: true } };
+    return { ok: true, data: { subject, purpose, decision, recorded: true, subscriptionsTerminated } };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Consent write failed';
     await deps.auditWriter?.write({
