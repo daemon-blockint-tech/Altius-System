@@ -27,13 +27,30 @@ from `—` for a genuinely unset value. Rendering both blank would make "you are
 not allowed to see this" read as "nobody recorded this" — in a clinical list
 that invites someone to fill the gap in. This is pinned by a test.
 
-## Not done yet
+## Auth
 
-- **Auth is an injected token** (`VITE_ALTIUS_TOKEN`). The real OIDC
-  authorization-code flow belongs here next; the client surface does not change
-  when it lands. The config deliberately throws when `VITE_ALTIUS_ENDPOINT` is
-  missing rather than defaulting, so a misbuilt bundle fails by name instead of
-  with an opaque 401 on first query.
+Authorization-code + PKCE against the shipped Keycloak, no dependency —
+`crypto.subtle` covers all of it. Two constraints are load-bearing:
+
+- The gateway is sent the **access** token, never the ID token. The realm's
+  audience, `tenant_id` and roles mappers all set `id.token.claim: false`, so an
+  ID token fails the gateway's audience and tenant checks.
+- The SPA reuses client id **`altius`**. The audience mapper lives on that
+  client and the gateway binds its expected audience to `OIDC_CLIENT_ID`, so a
+  separate client would mint tokens with `aud: account` that get rejected.
+
+Tokens are held in memory only, never `localStorage`. This app reads patient
+data, and a persisted token is readable by any XSS and outlives the tab it was
+stolen from. A page reload therefore re-runs the redirect — with the IdP session
+cookie still valid that is a round trip, not a re-login. The PKCE verifier does
+go in `sessionStorage` because it must survive the redirect, but it is
+single-use, tab-scoped and worthless without the matching code.
+
+`VITE_OIDC_ISSUER` unset means no OIDC, which is correct against the dev stack
+(`NODE_ENV=development` accepts anonymous callers). Production is covered by the
+gateway refusing them.
+
+## Not done yet
 - **No live updates yet.** The SDK exposes `onChange` subscriptions and the
   gateway now supports property-level filters; wiring them into `ObjectTable` is
   the next increment.
@@ -42,8 +59,12 @@ that invites someone to fill the gap in. This is pinned by a test.
 
 ## Running
 
+The GraphQL endpoint defaults to a **relative** `/graphql`, so one bundle is
+promotable across environments — whatever serves the bundle proxies to the
+gateway. Override per environment only if that is not true:
+
 ```bash
-VITE_ALTIUS_ENDPOINT=http://localhost:4000/graphql pnpm --filter @altius/web dev
+VITE_OIDC_ISSUER=http://localhost:8180/auth/realms/altius pnpm --filter @altius/web dev
 ```
 
 ```bash
