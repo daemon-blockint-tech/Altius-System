@@ -1,3 +1,4 @@
+{{- include "altius.assertMultiPodSafe" . -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -71,6 +72,13 @@ spec:
                   key: {{ .Values.storage.postgres.secretKeys.password }}
             - name: POSTGRES_URL
               value: {{ include "altius.postgresUrl" . | quote }}
+            # Single-instance components. The chart refuses >1 replica when
+            # either is on (see altius.assertMultiPodSafe), because a
+            # Deployment has no leader election and every pod would fire.
+            - name: AUTOMATION_ENABLED
+              value: {{ .Values.singleInstance.automation | quote }}
+            - name: SYNC_SCHEDULER_ENABLED
+              value: {{ .Values.singleInstance.syncScheduler | quote }}
           envFrom:
             - configMapRef:
                 name: {{ include "altius.fullname" . }}-config

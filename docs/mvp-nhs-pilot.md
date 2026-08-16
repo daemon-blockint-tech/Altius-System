@@ -751,7 +751,7 @@ docker compose up
 # REST API:            http://localhost:4000/api/v1/
 # FHIR endpoint:       http://localhost:4000/fhir/
 # Keycloak admin:      http://localhost:8180/admin
-# OpenFGA playground:  http://localhost:8280/playground
+# OpenFGA API:         http://localhost:8280/stores  (loopback-bound)
 ```
 
 ### 5.3 Production (Kubernetes / Helm)
@@ -760,12 +760,16 @@ docker compose up
 helm install nhs-pilot altius/altius \
   --set storage.provider=postgres \
   --set storage.postgres.host=pg-cluster.internal \
+  --set storage.postgres.sslmode=require \
   --set eventBus.redpanda.bootstrapServers=redpanda.internal:9092 \
+  --set redis.url=redis://redis.internal:6379 \
   --set auth.oidc.issuer=https://am.nhsidentity.spineservices.nhs.uk \
   --set auth.oidc.clientId=$CIS2_CLIENT_ID \
+  --set auth.oidc.defaultTenant=nhs-pilot \
+  --set authz.openfga.storeId=$OPENFGA_STORE_ID \
   --set domainPacks[0].name=nhs-acute \
   --set domainPacks[0].version=0.1.0 \
-  --set observability.otlp.endpoint=otel-collector.internal:4317 \
+  --set observability.otlp.endpoint=http://otel-collector.internal:4318 \
   --set sync.pas.dbUrl=$PAS_DB_URL
 ```
 
