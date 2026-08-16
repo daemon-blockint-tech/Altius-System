@@ -1,0 +1,4 @@
+{
+  "name": "Altius",
+  "install": "bash ./.cursor/install.sh"
+}
