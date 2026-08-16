@@ -46,11 +46,30 @@ export interface ObjectTableProps<T> {
   pageSize?: number;
   /** Stable row identity. Defaults to `row.id`. */
   rowKey?: (row: T) => string;
+  /**
+   * Live updates. Given a callback to invoke on each change event, returns
+   * something to unsubscribe with — the shape the SDK's `onAnyChange` returns.
+   *
+   * The event payload is deliberately not passed through. A change is a signal
+   * to re-read, not data to merge: which rows belong on this page is decided by
+   * server-side filtering, authorization, redaction and cursor position, so
+   * patching a row in place would drift from what the server would actually
+   * return — including showing a row the caller may no longer see.
+   */
+  subscribe?: (onChange: () => void) => { unsubscribe(): void };
 }
 
 type Status = 'loading' | 'ready' | 'error';
 
 const DEFAULT_PAGE_SIZE = 25;
+
+/**
+ * How long to gather change events before re-reading.
+ *
+ * Long enough that a bulk write collapses into one refetch, short enough that a
+ * single edit still feels immediate to the person who made it.
+ */
+const LIVE_COALESCE_MS = 250;
 
 export function ObjectTable<T extends RowMetadata>({
   caption,
@@ -58,6 +77,7 @@ export function ObjectTable<T extends RowMetadata>({
   load,
   pageSize = DEFAULT_PAGE_SIZE,
   rowKey,
+  subscribe,
 }: ObjectTableProps<T>): ReactNode {
   const [status, setStatus] = useState<Status>('loading');
   const [error, setError] = useState<string | null>(null);
@@ -94,6 +114,31 @@ export function ObjectTable<T extends RowMetadata>({
   useEffect(() => {
     void fetchPage(cursor);
   }, [fetchPage, cursor]);
+
+  // Read by the live-update effect so that changing page does not tear down and
+  // re-establish the subscription — the socket should outlive paging.
+  const cursorRef = useRef(cursor);
+  cursorRef.current = cursor;
+
+  useEffect(() => {
+    if (!subscribe) return;
+
+    let pending: ReturnType<typeof setTimeout> | null = null;
+    const subscription = subscribe(() => {
+      // Coalesce: a bulk write emits one event per row, and refetching per
+      // event would put the table into a refresh loop under load.
+      if (pending) return;
+      pending = setTimeout(() => {
+        pending = null;
+        void fetchPage(cursorRef.current);
+      }, LIVE_COALESCE_MS);
+    });
+
+    return () => {
+      subscription.unsubscribe();
+      if (pending) clearTimeout(pending);
+    };
+  }, [subscribe, fetchPage]);
 
   const goNext = () => {
     const end = connection?.pageInfo.endCursor;

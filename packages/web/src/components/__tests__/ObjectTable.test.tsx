@@ -107,6 +107,70 @@ describe('ObjectTable', () => {
     expect(screen.getByRole('button', { name: 'Previous' }).hasAttribute('disabled')).toBe(true);
   });
 
+  it('re-reads the current page when a change event arrives', async () => {
+    const load = vi
+      .fn()
+      .mockResolvedValueOnce(connection([{ id: 'p-1', name: 'Alice', status: 'ACTIVE' }]))
+      .mockResolvedValueOnce(connection([{ id: 'p-1', name: 'Alice', status: 'DISCHARGED' }]));
+    let emit = () => {};
+    const subscribe = vi.fn((onChange: () => void) => {
+      emit = onChange;
+      return { unsubscribe: vi.fn() };
+    });
+
+    render(<ObjectTable caption="Patients" columns={COLUMNS} load={load} subscribe={subscribe} />);
+    await waitFor(() => expect(screen.getByText('ACTIVE')).toBeDefined());
+
+    emit();
+    // Re-reading rather than patching is the point: what belongs on this page is
+    // the server's decision, not something the client can derive from an event.
+    await waitFor(() => expect(screen.getByText('DISCHARGED')).toBeDefined());
+    expect(load).toHaveBeenCalledTimes(2);
+  });
+
+  it('coalesces a burst of events into one re-read', async () => {
+    const load = vi.fn().mockResolvedValue(connection([{ id: 'p-1', name: 'Alice', status: 'ACTIVE' }]));
+    let emit = () => {};
+    const subscribe = vi.fn((onChange: () => void) => {
+      emit = onChange;
+      return { unsubscribe: vi.fn() };
+    });
+
+    render(<ObjectTable caption="Patients" columns={COLUMNS} load={load} subscribe={subscribe} />);
+    await waitFor(() => expect(screen.getByText('Alice')).toBeDefined());
+    expect(load).toHaveBeenCalledTimes(1);
+
+    // A bulk write emits one event per row; refetching per event would put the
+    // table into a refresh loop.
+    for (let i = 0; i < 25; i++) emit();
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(2));
+    await new Promise(r => setTimeout(r, 60));
+    expect(load).toHaveBeenCalledTimes(2);
+  });
+
+  it('unsubscribes on unmount so a closed table stops holding the stream', async () => {
+    const load = vi.fn().mockResolvedValue(connection([{ id: 'p-1', name: 'Alice', status: 'ACTIVE' }]));
+    const unsubscribe = vi.fn();
+    const subscribe = vi.fn(() => ({ unsubscribe }));
+
+    const { unmount } = render(
+      <ObjectTable caption="Patients" columns={COLUMNS} load={load} subscribe={subscribe} />,
+    );
+    await waitFor(() => expect(screen.getByText('Alice')).toBeDefined());
+
+    unmount();
+    expect(unsubscribe).toHaveBeenCalled();
+  });
+
+  it('does not subscribe at all when no stream is supplied', async () => {
+    const load = vi.fn().mockResolvedValue(connection([{ id: 'p-1', name: 'Alice', status: 'ACTIVE' }]));
+    render(<ObjectTable caption="Patients" columns={COLUMNS} load={load} />);
+
+    await waitFor(() => expect(screen.getByText('Alice')).toBeDefined());
+    await new Promise(r => setTimeout(r, 60));
+    expect(load).toHaveBeenCalledTimes(1);
+  });
+
   it('surfaces a load failure with a retry rather than an empty table', async () => {
     const load = vi
       .fn()

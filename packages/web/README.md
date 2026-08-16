@@ -50,10 +50,20 @@ single-use, tab-scoped and worthless without the matching code.
 (`NODE_ENV=development` accepts anonymous callers). Production is covered by the
 gateway refusing them.
 
+## Live updates
+
+`ObjectTable` takes an optional `subscribe`, wired to the SDK's
+`onAnyChange` — the type-level stream, not the per-id one, since a table cares
+about rows arriving and leaving as much as about rows changing.
+
+A change event is treated as a signal to **re-read**, not as data to merge. Which
+rows belong on a page is decided by server-side filtering, authorization,
+redaction and cursor position; patching a row from the event payload would drift
+from what the server would actually return, including showing a row the caller
+may no longer be allowed to see. Events are coalesced over 250ms so a bulk write
+collapses into one refetch instead of a refresh loop.
+
 ## Not done yet
-- **No live updates yet.** The SDK exposes `onChange` subscriptions and the
-  gateway now supports property-level filters; wiring them into `ObjectTable` is
-  the next increment.
 - **One view.** The patient worklist exercises the whole path end to end. Other
   object types are the same component with different columns.
 
