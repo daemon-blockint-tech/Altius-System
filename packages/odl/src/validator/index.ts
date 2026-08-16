@@ -175,6 +175,11 @@ export function validateSchema(schema: ParsedSchema): ValidationResult {
   for (const ot of schema.objectTypes) {
     validateInterfaceConformance(ot, interfaceMap, errors);
   }
+
+  // ─── Rule 16: @display titleProperty/statusProperty reference existing fields ───
+  for (const ot of schema.objectTypes) {
+    validateDisplayMetadata(ot, errors);
+  }
   for (const lt of schema.linkTypes) {
     for (const field of lt.fields) {
       validateFieldTypeRef(lt.name, field, allTypeNames, errors);
@@ -209,6 +214,28 @@ function findDirectives<K extends FieldDirective['kind']>(
 
 function hasDirective(directives: FieldDirective[], kind: FieldDirective['kind']): boolean {
   return directives.some(d => d.kind === kind);
+}
+
+/**
+ * Rule 16: a type-level `@display(titleProperty|statusProperty: "x")` must name
+ * a field that exists on the type. A dangling reference would silently give a
+ * client a title/status pointer to nothing, so it fails at compile time.
+ */
+function validateDisplayMetadata(ot: ObjectType, errors: ValidationIssue[]): void {
+  const display = ot.directives.find(d => d.kind === 'display');
+  if (!display || display.kind !== 'display') return;
+  const fieldNames = new Set(ot.fields.map(f => f.name));
+  for (const key of ['titleProperty', 'statusProperty'] as const) {
+    const prop = display[key];
+    if (prop !== undefined && !fieldNames.has(prop)) {
+      errors.push({
+        severity: 'error',
+        code: 'DISPLAY_UNKNOWN_PROPERTY',
+        message: `ObjectType "${ot.name}" declares @display(${key}: "${prop}") but has no field named "${prop}".`,
+        typeName: ot.name,
+      });
+    }
+  }
 }
 
 /**
