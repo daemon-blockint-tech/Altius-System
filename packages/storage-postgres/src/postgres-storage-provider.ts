@@ -687,7 +687,7 @@ export class PostgresStorageProvider implements StorageProvider {
       supportsTransactionIsolation: true,
       supportsTemporalQueries: true,
       supportsFullTextSearch: true,
-      supportsGeoQueries: false,
+      supportsGeoQueries: true,
       supportsGraphTraversal: true,
       supportsBulkMutations: true,
       supportsVectorSearch: false,

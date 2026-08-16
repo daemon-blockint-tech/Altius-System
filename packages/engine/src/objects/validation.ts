@@ -78,7 +78,14 @@ const SCALAR_TYPE_CHECKS: Record<string, (v: unknown) => boolean> = {
   Date: (v) => typeof v === 'string',
   DateTime: (v) => typeof v === 'string',
   Duration: (v) => typeof v === 'string',
-  GeoPoint: (v) => typeof v === 'object' && v !== null,
+  GeoPoint: (v) => {
+    if (typeof v !== 'object' || v === null) return false;
+    const p = v as { lat?: unknown; lng?: unknown };
+    return (
+      typeof p.lat === 'number' && p.lat >= -90 && p.lat <= 90 &&
+      typeof p.lng === 'number' && p.lng >= -180 && p.lng <= 180
+    );
+  },
   JSON: (_v) => true,
   URI: (v) => typeof v === 'string',
 };

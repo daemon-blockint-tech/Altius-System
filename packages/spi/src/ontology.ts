@@ -56,8 +56,22 @@ export interface FieldPredicate {
     | 'in'
     | 'contains'
     | 'startsWith'
-    | 'exists';
+    | 'exists'
+    /**
+     * Spatial bounding-box containment for a GeoPoint field. `value` is a
+     * {@link GeoBoundingBox}; matches when the point's lat/lng fall inside the
+     * (inclusive) box. Implemented by both providers without PostGIS.
+     */
+    | 'within';
   value?: unknown;
+}
+
+/** Inclusive lat/lng bounding box for the `within` spatial predicate. */
+export interface GeoBoundingBox {
+  minLat: number;
+  minLng: number;
+  maxLat: number;
+  maxLng: number;
 }
 
 export interface LogicalPredicate {

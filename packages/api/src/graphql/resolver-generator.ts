@@ -128,7 +128,7 @@ function convertFilter(filter: Record<string, unknown> | undefined): FilterExpre
   return { and: predicates };
 }
 
-type SpiOperator = 'eq' | 'neq' | 'gt' | 'gte' | 'lt' | 'lte' | 'in' | 'contains' | 'startsWith' | 'exists';
+type SpiOperator = 'eq' | 'neq' | 'gt' | 'gte' | 'lt' | 'lte' | 'in' | 'contains' | 'startsWith' | 'exists' | 'within';
 
 function mapFilterOp(op: string): SpiOperator | undefined {
   const mapping: Record<string, SpiOperator> = {
@@ -142,6 +142,7 @@ function mapFilterOp(op: string): SpiOperator | undefined {
     contains: 'contains',
     startsWith: 'startsWith',
     exists: 'exists',
+    within: 'within',
   };
   return mapping[op];
 }
