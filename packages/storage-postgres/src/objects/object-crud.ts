@@ -91,6 +91,11 @@ function rowToObject(row: Record<string, unknown>): OntologyObject {
   const systemCols = new Set([
     '_tenant_id', '_id', '_type', '_version',
     '_created_at', '_updated_at', '_deleted_at', '_actor_id',
+    // History-table bookkeeping. Absent from the live table, so this is a
+    // no-op for a normal query — but an as-of query reads the history table,
+    // and without these two the caller would get `historyId` and
+    // `historyCreatedAt` as if they were declared properties.
+    '_history_id', '_history_created_at',
   ]);
   for (const [key, value] of Object.entries(row)) {
     if (!systemCols.has(key)) {
@@ -400,11 +405,41 @@ export async function queryObjects(
   tx?: PgTransaction,
 ): Promise<ObjectPage> {
   const q = resolveQueryable(pool, tx);
-  const table = tableName(type, schema);
+
+  // `asOfVersion` is well defined for ONE object (getObjectAtVersion) and not
+  // for a set: versions are per-object, so "every Patient at version 3" has no
+  // answer for a patient that only ever reached version 2. Refuse it loudly
+  // rather than invent a reading — an as-of query that silently returns
+  // current rows looks exactly like real historical data. The memory provider
+  // refuses with the same message.
+  if (options?.asOfVersion !== undefined) {
+    throw new Error(
+      'QueryOptions.asOfVersion is not supported on collection queries: version numbers are per-object. ' +
+      'Use getObjectAtVersion for a single object, or asOfTime for a set.',
+    );
+  }
 
   // Base params: tenant isolation
   const baseParams: unknown[] = [ctx.tenantId];
   const whereClauses = [`"_tenant_id" = $1`];
+
+  // As-of reads come from the history table: one row per object, its newest
+  // version at or before the instant. An object created later has no such row
+  // and is absent (it did not exist yet); one deleted earlier comes back
+  // carrying _deleted_at, so the soft-delete clause below drops it exactly as
+  // it would today. The filter then runs against the historical values, which
+  // is the whole point — "who was DISCHARGED last Tuesday" must be evaluated
+  // against Tuesday's rows, not today's.
+  let table: string;
+  if (options?.asOfTime) {
+    baseParams.push(options.asOfTime);
+    const history = historyTableName(type, schema);
+    table = `(SELECT DISTINCT ON ("_id") * FROM ${history} ` +
+      `WHERE "_tenant_id" = $1 AND "_updated_at" <= $2 ` +
+      `ORDER BY "_id", "_version" DESC) AS asof`;
+  } else {
+    table = tableName(type, schema);
+  }
 
   // Soft-delete exclusion (default: exclude)
   if (!options?.includeDeleted) {
