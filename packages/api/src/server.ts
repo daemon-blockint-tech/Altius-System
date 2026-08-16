@@ -96,6 +96,7 @@ import { metricsMiddleware, metricsEndpoint, startStorageHealthGauge, startSyncM
 import { buildHealthReport } from './health.js';
 import type { HealthProbe } from './health.js';
 import { logger } from './logger.js';
+import { pinoSideEffectLogger } from './side-effect-logger.js';
 
 const PORT = parseInt(process.env['PORT'] ?? '4000', 10);
 
@@ -757,6 +758,10 @@ async function main(): Promise<void> {
     httpClient: sideEffectHttpClient,
     eventBus: sideEffectBus,
     env: process.env,
+    // Without this the executor's failure logging is dead code — `logger?.` on
+    // an unset field — and a webhook that exhausts its retries returns
+    // success:true with no trace anywhere in the running system.
+    logger: pinoSideEffectLogger(logger),
   });
 
   const actionExecutor = new ActionExecutor({
