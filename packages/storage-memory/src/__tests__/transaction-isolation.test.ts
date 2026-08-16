@@ -99,3 +99,66 @@ describe('in-memory transaction guarantees', () => {
     expect(final?._version).toBe(2);
   });
 });
+
+describe('deletes participate in the lost-update check', () => {
+  it('refuses a soft delete that would erase a concurrently committed update', async () => {
+    const obj = await storage.createObject(ctx, 'Ward', { name: 'A' });
+
+    const t1 = await storage.beginTransaction(ctx);
+    const t2 = await storage.beginTransaction(ctx);
+
+    await t1.updateObject('Ward', obj._id, { name: 'B' }, 1);
+    await t2.deleteObject('Ward', obj._id, 'soft');
+
+    await t1.commit();
+    await expect(t2.commit()).rejects.toThrow(/VERSION_CONFLICT/);
+
+    const final = await storage.getObject(ctx, 'Ward', obj._id);
+    expect(final?.name).toBe('B');
+    expect(final?._deletedAt).toBeUndefined();
+  });
+
+  it('refuses a hard delete that would erase a concurrently committed update', async () => {
+    const obj = await storage.createObject(ctx, 'Ward', { name: 'A' });
+
+    const t1 = await storage.beginTransaction(ctx);
+    const t2 = await storage.beginTransaction(ctx);
+
+    await t1.updateObject('Ward', obj._id, { name: 'B' }, 1);
+    await t2.deleteObject('Ward', obj._id, 'hard');
+
+    await t1.commit();
+    await expect(t2.commit()).rejects.toThrow(/VERSION_CONFLICT/);
+
+    expect(await storage.getObject(ctx, 'Ward', obj._id)).toBeTruthy();
+  });
+
+  it('refuses a restore racing another committed restore', async () => {
+    const obj = await storage.createObject(ctx, 'Ward', { name: 'A' });
+    await storage.deleteObject(ctx, 'Ward', obj._id, 'soft');
+
+    // Both snapshots see the object deleted at v2, so both believe they are
+    // the restorer. Only the first commit may win.
+    const t1 = await storage.beginTransaction(ctx);
+    const t2 = await storage.beginTransaction(ctx);
+
+    await t1.restoreObject('Ward', obj._id);
+    await t2.restoreObject('Ward', obj._id);
+
+    await t1.commit();
+    await expect(t2.commit()).rejects.toThrow(/VERSION_CONFLICT/);
+
+    const final = await storage.getObject(ctx, 'Ward', obj._id);
+    expect(final?._version).toBe(3);
+  });
+
+  it('still allows an uncontended delete', async () => {
+    const obj = await storage.createObject(ctx, 'Ward', { name: 'A' });
+
+    const txn = await storage.beginTransaction(ctx);
+    await txn.deleteObject('Ward', obj._id, 'soft');
+    await txn.commit();
+
+    expect(await storage.getObject(ctx, 'Ward', obj._id)).toBeNull();
+  });
+});

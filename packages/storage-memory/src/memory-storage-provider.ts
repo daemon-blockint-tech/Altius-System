@@ -232,6 +232,18 @@ class MemoryTransaction implements Transaction {
     if (this._rolledBack) throw new Error('Transaction already rolled back');
   }
 
+  /**
+   * Record the version the snapshot sees the first time this transaction
+   * touches an object. Only the first capture matters: later modifications
+   * within the same transaction read the already-updated snapshot, so the
+   * first capture is the version the commit-time conflict check must compare
+   * the committed state against.
+   */
+  private captureBaseVersion(key: string): void {
+    if (this._objectBaseVersions.has(key)) return;
+    this._objectBaseVersions.set(key, this._maps.objects.get(key)?._version ?? 0);
+  }
+
   async createObject(type: string, properties: Record<string, unknown>): Promise<OntologyObject> {
     this.assertOpen();
     const obj = this._provider._doCreateObject(this._ctx, type, properties, this._maps);
@@ -245,14 +257,7 @@ class MemoryTransaction implements Transaction {
   async updateObject(type: string, id: string, properties: Record<string, unknown>, expectedVersion?: number): Promise<OntologyObject> {
     this.assertOpen();
     const key = `${type}:${id}`;
-    // Capture the base version the snapshot sees at first modification. Later
-    // modifications within the same transaction see the already-updated
-    // snapshot, so only the first capture matters — it records the version
-    // the transaction's optimistic-concurrency check was made against.
-    if (!this._objectBaseVersions.has(key)) {
-      const snapshotObj = this._maps.objects.get(key);
-      this._objectBaseVersions.set(key, snapshotObj?._version ?? 0);
-    }
+    this.captureBaseVersion(key);
     const updated = this._provider._doUpdateObject(this._ctx, type, id, properties, expectedVersion, this._maps);
     this._changedObjectKeys.add(key);
     return clone(updated);
@@ -261,6 +266,9 @@ class MemoryTransaction implements Transaction {
   async deleteObject(type: string, id: string, mode: 'soft' | 'hard'): Promise<void> {
     this.assertOpen();
     const key = `${type}:${id}`;
+    // Deletes are writes like any other: they must lose to a concurrent
+    // commit rather than silently erase it.
+    this.captureBaseVersion(key);
     if (mode === 'soft') {
       this._provider._doSoftDeleteObject(this._ctx, type, id, this._maps);
       this._changedObjectKeys.add(key);
@@ -273,6 +281,7 @@ class MemoryTransaction implements Transaction {
   async restoreObject(type: string, id: string): Promise<OntologyObject> {
     this.assertOpen();
     const key = `${type}:${id}`;
+    this.captureBaseVersion(key);
     const restored = this._provider._doRestoreObject(this._ctx, type, id, this._maps);
     this._changedObjectKeys.add(key);
     return clone(restored);

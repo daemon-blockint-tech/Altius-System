@@ -1657,13 +1657,21 @@ Use the indexed code graph before grepping: `search_graph`, `query_graph`. On a 
 
 ### `actions-concurrency/transactional-object-writeback-with-version-` — Transactional object writeback with version consistency
 
-**Status:** `partial`
+**Status:** `full`
 
-> ✅ **RE-VERIFIED against source, 15 Aug 2026.** Evidence below is current, not inherited.
+> ✅ **RE-VERIFIED against source, 16 Aug 2026.** Evidence below is current, not inherited.
+
+**Evidence (read 16 Aug):** The provider-divergence blocker recorded on 15 Aug is CLOSED. MemoryTransaction now records the snapshot version of every object it touches (`_objectBaseVersions`, memory-storage-provider.ts:207-209) and re-checks each against committed state before flushing, throwing a `VERSION_CONFLICT`-coded error and marking itself rolled back when they diverge (memory-storage-provider.ts:300-322). The 15 Aug lost-update probe now raises instead of silently discarding T1's write. Fixed on 16 Aug: the check covered `updateObject` only, so `deleteObject` (both modes) and `restoreObject` — all three of which bump `_version` (memory-storage-provider.ts:585-624) and were added to the flush set — could still erase a concurrently committed update without conflict. Base-version capture is now a shared `captureBaseVersion` helper called from update, delete and restore alike, so every version-bumping write in the transaction participates in the commit-time check. Tests: packages/storage-memory/src/__tests__/transaction-isolation.test.ts, 4 added cases (soft-delete, hard-delete and restore contention, plus an uncontended delete guarding against over-strict rejection); 106 memory-provider tests pass, full workspace suite 34/34 packages green.
+
+**Gap:** None. Postgres enforces version in the UPDATE `WHERE` clause, memory enforces it at commit; both raise `VERSION_CONFLICT` and REST maps it to 412 via mapCodeToCategory. GraphQL surfaces the code in-band only, which is idiomatic for GraphQL.
+
+<details><summary>Prior evidence (15 Aug)</summary>
 
 **Evidence (read 15 Aug):** The prior gap is FIXED: action-executor.ts:463-478 now re-uses a storage-assigned `code` and only falls back to EFFECT_EXECUTION_ERROR when the throw carries none; rest/route-generator.ts:1605-1613 turns an in-band precondition/conflict refusal into a real status via mapCodeToCategory (rest/errors.ts:134 VERSION_CONFLICT->precondition, :32 precondition->412); a regression test exists at packages/actions/src/executor/__tests__/version-conflict-code.test.ts:82. Writeback is genuinely transactional (action-executor.ts:437-479 caps check, beginTransaction/commit/rollback) and the update effect passes the context version as expectedVersion, advancing it per effect (action-executor.ts:961-966). NEW BLOCKER, provider divergence: postgres enforces the version in the UPDATE's WHERE clause against committed rows and raises VERSION_CONFLICT (storage-postgres/src/objects/object-crud.ts:258-284), but storage-memory checks expectedVersion against the TRANSACTION SNAPSHOT (memory-storage-provider.ts:516-520, snapshot taken at construction :203-211) and commit blindly flushes changed keys with no re-check (memory-storage-provider.ts:274-302). I ran it against the built provider (dist is current with src): two transactions both opened at v1, T1 wrote+committed v2, T2 wrote v2 with expectedVersion=1 and committed with NO error — final state was T2's value at _version 2, T1's write silently gone (probe: /private/tmp/claude-501/-Users-macbook-Developer-Altius-System/5fb4b4e1-1b52-4980-8ee0-2fb8c31b06d9/scratchpad/lost-update.mjs, output `FINAL: { name: 'B-wins', version: 2, err: null }`). GraphQL returns the code in-band only (resolver-generator.ts:1400-1416), no status mapping, which is acceptable for GraphQL.
 
 **Gap:** storage-memory gives no write-write conflict detection: concurrent transactions on the same object silently lose an update (memory-storage-provider.ts:274-302 has no version re-check at commit), so 'version consistency' holds on postgres and not on memory. Same ODL + same action = different concurrency guarantees per provider.
+
+</details>
 
 ## Security & consent
 
@@ -1728,11 +1736,13 @@ Use the indexed code graph before grepping: `search_graph`, `query_graph`. On a 
 
 ### `defect-fixes/link-change-events-to-type-level-subscribers` — Link change events to type-level subscribers
 
-**Status:** `partial`
+**Status:** `full`
 
-**Evidence (read 14 Aug):** The TODO is gone and the mapping is fixed: packages/api/src/subscriptions/subscription-manager.ts:99-125 publishes each endpoint to `${lowerFirst(type)}Changed` when fromType/toType are present, falling back to the raw object id otherwise (:111) — and the doc comment itself concedes the fallback is "effectively dropped" (:96-97). The engine emitter carries the new optional fields (packages/engine/src/events/event-emitter.ts:119-137, :143-166, :169-189) and LinkManager passes linkDef.from/linkDef.to on create/update/delete (packages/engine/src/links/link-manager.ts:101-110, :174-185, :224-234). Unit tests cover both branches (packages/api/src/__tests__/subscriptions.test.ts:269-292). BUT the call-site note is confirmed and is decisive: server.ts's ActionEventPublisher.publishLinkChange does NOT pass types (packages/api/src/server.ts:669-672) — the interface has no such params at all (packages/actions/src/executor/types.ts:123-131) — so every link change made through an action (packages/actions/src/executor/action-executor.ts:405-417) publishes to a topic equal to the raw object id, which no generated resolver subscribes to (resolver-generator.ts:1105-1108 only registers `${lower}Changed`). And actions are the only user-facing link-mutation path: grep of packages/api/src shows LinkManager.createLink is invoked only by the boot seeder (server.ts:408); REST/GraphQL expose links read-only (route-generator.ts:628, resolver-generator.ts:315). The data needed for the fix is already in hand at the call site — the link state carries _fromType/_toType (packages/spi/src/ontology.ts:28-30) and the executor reads _fromId/_toId from it (action-executor.ts:407-408).
+> ✅ **RE-VERIFIED against source, 16 Aug 2026.** Evidence below is current, not inherited.
 
-**Gap:** Type-level delivery works only for events emitted by engine LinkManager, which in the API is called solely by the boot seeder. Fixing it needs two params added to ActionEventPublisher.publishLinkChange and threaded from the link state the executor already holds. Also unchanged: the delivered payload is still the minimal {id,_type} shape, and the in-memory bus remains single-pod.
+**Evidence (read 16 Aug):** The link-change-events gap is fully closed end-to-end. The engine emitter carries optional `fromType`/`toType` fields (packages/engine/src/events/event-emitter.ts:119-137, :169-189) and LinkManager passes `linkDef.from`/`linkDef.to` on create/update/delete (packages/engine/src/links/link-manager.ts:101-110, :174-185, :224-234). The action-event-publisher bridge (packages/api/src/events/action-event-publisher.ts:48-75) looks up endpoint types from the schema's link types and passes them to `emitLinkCreated`/`emitLinkDeleted`, so action-driven link changes now reach the same type-level `${lowerFirst(type)}Changed` topics that engine-driven changes do. The subscription manager (subscription-manager.ts:99-125) routes each endpoint to the type-level topic when types are present, falling back to per-ID only when absent. Tests: packages/api/src/__tests__/action-event-publisher.test.ts (4 tests covering created/deleted/unknown-link-type/routing) and packages/api/src/__tests__/subscriptions.test.ts:269-292 (both branches).
+
+**Gap:** None — type-level delivery works for both engine-driven and action-driven link changes. The minimal {id,_type} payload shape and single-pod in-memory bus are platform-wide constraints, not specific to this row.
 
 
 ## links-graph
