@@ -26,7 +26,7 @@ Altius provides the semantic, kinetic, and security layers needed to turn commod
 |    (schema registry, object store, relationship index)  |
 +---------------------------------------------------------+
 |               Storage Provider Interface                |
-|               (PostgreSQL+AGE | Memory)                 |
+|                 (PostgreSQL | Memory)                   |
 +---------------------------------------------------------+
 ```
 
@@ -52,8 +52,8 @@ Each layer communicates only with adjacent layers through defined interfaces. No
 
 - **ODL (Ontology Definition Language)** -- Extension of GraphQL SDL with semantic directives. A single schema defines object types, link types, actions, and permissions. The compiler generates GraphQL APIs, REST endpoints, OpenFGA models, and TypeScript SDKs.
 - **Object & link lifecycle** -- CRUD with version history, soft deletes, temporal queries, and lineage tracking.
-- **Graph traversal** -- Apache AGE-backed relationship traversal with depth (10) and node (10,000) guards.
-- **Full-text search** -- PostgreSQL `tsvector`-backed search across indexed fields.
+- **Graph traversal** -- Relationship traversal over the link tables with depth (10) and node (10,000) guards. Paths resolve with SQL joins; the Apache AGE mirror this once wrote to was removed in `15098b1` (it was write-only -- both `cypher()` call sites discarded their result).
+- **Full-text search** -- Case-insensitive substring search (`ILIKE`) across the fields marked `@searchable`, with a relevance score. Not `tsvector`: substring matching finds partial identifiers and misspelled names that a lexeme index would miss.
 - **Object sets** -- Named, persistent collections of objects for batch operations.
 - **Versioned schema registry** -- Monotonic schema versions with automatic diff classification (SAFE / BREAKING) and breaking-change gating behind an approved migration plan. In-memory and PostgreSQL-backed (`PostgresSchemaRegistry`, advisory-lock serialised) implementations.
 - **Bootstrap seeds** -- Declarative `seed:` reference data in `pack.yaml`, applied idempotently at boot via the object/link managers (outside the action pipeline) under a configurable `SEED_TENANT`.
@@ -187,7 +187,7 @@ The monorepo contains 20 packages across four workspace roots:
 | `@altius/api` | GraphQL (Apollo), REST, FHIR R4, WebSocket subscriptions, governance |
 | `@altius/security` | OIDC auth, OpenFGA ReBAC, consent manager, audit trail |
 | `@altius/storage-memory` | In-memory SPI implementation (tests and development) |
-| `@altius/storage-postgres` | PostgreSQL 17 + Apache AGE SPI implementation |
+| `@altius/storage-postgres` | PostgreSQL 17 SPI implementation |
 | `@altius/sync` | JDBC connectors, Debezium CDC, overlay mode, conflict resolution |
 | `@altius/observability` | OpenTelemetry traces, metrics, and structured logging |
 | `@altius/sdk` | Auto-generated TypeScript client SDK |
@@ -256,7 +256,7 @@ docker compose up -d
 ./init-services.sh
 ```
 
-This starts PostgreSQL+AGE, Redpanda (Kafka), Redis, Debezium CDC, Keycloak (OIDC), OpenFGA (ReBAC), OpenTelemetry Collector, and all Altius services. See [`Orion/README.md`](Orion/README.md) for the full service table.
+This starts PostgreSQL, Redpanda (Kafka), Redis, Debezium CDC, Keycloak (OIDC), OpenFGA (ReBAC), OpenTelemetry Collector, and all Altius services. See [`Orion/README.md`](Orion/README.md) for the full service table.
 
 ### Try the API
 
@@ -288,7 +288,7 @@ All persistence goes through a pluggable SPI. The platform ships two implementat
 
 | Provider | Use Case | Conformance |
 |----------|----------|-------------|
-| PostgreSQL 17 + Apache AGE | Production | Live integration suite + SPI conformance |
+| PostgreSQL 17 | Production | Live integration suite + SPI conformance |
 | In-memory | Tests and development | SPI conformance suite (10 categories) |
 
 ### PostgreSQL Capabilities
@@ -296,7 +296,7 @@ All persistence goes through a pluggable SPI. The platform ships two implementat
 | Capability | Status |
 |-----------|--------|
 | Full-text search | Supported |
-| Graph traversal (AGE) | Supported (max depth 10, max nodes 10,000) |
+| Graph traversal | Supported (max depth 10, max nodes 10,000) |
 | Transactions | Supported (configurable isolation level) |
 | Temporal queries | Supported |
 | Bulk mutations | Supported (with idempotency cache) |
@@ -313,16 +313,21 @@ Tests run at every layer:
 |-------|----------|--------------|
 | Unit tests | Per-package behaviour across all packages | Always |
 | SPI conformance suite | Storage-provider contract (10 categories), shared by the in-memory and Postgres providers | Always (in-memory); with `PG_TEST_URL` (Postgres) |
-| Postgres integration | Live PostgreSQL + Apache AGE provider — DDL, graph traversal, multi-tenancy | When `PG_TEST_URL` is set |
+| Postgres integration | Live PostgreSQL provider — DDL, graph traversal, multi-tenancy | When `PG_TEST_URL` is set |
 | Docker-stack integration | Full Compose stack — governed action pipeline, REST/GraphQL/FHIR, subscriptions | Against a running stack |
 | Enforcement E2E | Production-mode security (real OIDC + OpenFGA), capability gating, and consent-vocabulary validation | Env-gated (`SECURITY_E2E` / `CAPABILITY_E2E` / `CONSENT_VOCAB_E2E`); a dedicated CI job |
 
 The enforcement E2E specs boot the stack in non-default modes (production mode, a
 distinct pack set, or a custom consent vocabulary) on the shared ports, so they
 self-manage the Docker lifecycle and are gated behind env flags rather than run
-in the standard suite. CI exercises them in a dedicated `enforcement-e2e` job so
-real authentication, authorization, capability gating, and consent-vocabulary
-enforcement are verified on every push and pull request.
+in the standard suite. `.github/workflows/ci.yml` defines a dedicated
+`enforcement-e2e` job for them.
+
+> **That job has never executed.** GitHub Actions has run zero workflows on this
+> repository since the workflows were added (verified via the Actions API), and
+> `main` has no branch protection, so no gate in this table has ever blocked a
+> merge. Every commit on `main` has been verified locally or not at all. Read the
+> coverage table above as *what the suites cover*, not as *what has been enforced*.
 
 ---
 
