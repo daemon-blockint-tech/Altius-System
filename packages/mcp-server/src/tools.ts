@@ -7,7 +7,7 @@
  * the storage provider (for read tools), under the caller's OIDC identity.
  */
 
-import type { ActionType, ObjectType, FieldDefinition } from '@altius/odl';
+import type { ActionType, ObjectType, FunctionType, FieldDefinition } from '@altius/odl';
 import type { ActionActor, ActionContext, ActionResult } from '@altius/actions';
 import type { FilterExpression, OntologyObject, TraversalStep } from '@altius/spi';
 import { DataPurpose } from '@altius/spi';
@@ -66,7 +66,42 @@ export function buildToolList(deps: McpServerDependencies): McpTool[] {
     tools.push(buildTraverseTool(objType));
   }
 
+  // Function tools — one function_<Name> per FunctionType, only when an
+  // invoker is wired (otherwise there is nothing to dispatch to).
+  if (deps.functionInvoker) {
+    for (const fnType of deps.schema.functionTypes) {
+      tools.push(buildFunctionTool(fnType));
+    }
+  }
+
   return tools;
+}
+
+/**
+ * Build an MCP tool descriptor for a FunctionType (name `function_<Name>`).
+ * The inputSchema is derived from the function's @param fields, mirroring
+ * buildActionTool.
+ */
+function buildFunctionTool(fnType: FunctionType): McpTool {
+  const properties: Record<string, unknown> = {};
+  const required: string[] = [];
+
+  for (const field of fnType.fields) {
+    const isParam = field.directives.some((d) => d.kind === 'param');
+    if (!isParam) continue;
+    properties[field.name] = fieldToJsonSchema(field);
+    if (field.type.nonNull) required.push(field.name);
+  }
+
+  return {
+    name: `function_${fnType.name}`,
+    description: fnType.description ?? `Invoke the ${fnType.name} function`,
+    inputSchema: {
+      type: 'object',
+      properties,
+      ...(required.length > 0 ? { required } : {}),
+    },
+  };
 }
 
 /**
@@ -204,11 +239,50 @@ export async function invokeTool(
     }
   }
 
+  // Function tool: name matches function_<Name>
+  if (toolName.startsWith('function_') && deps.functionInvoker) {
+    const fnName = toolName.slice('function_'.length);
+    const fnType = deps.schema.functionTypes.find((f) => f.name === fnName);
+    if (fnType) {
+      return invokeFunctionTool(fnType, args, caller, deps);
+    }
+  }
+
   // Unknown tool — protocol error surfaced as isError content (not a JSON-RPC
   // error) so the agent sees the message and can recover.
   return {
     content: [{ type: 'text', text: JSON.stringify({ error: `Unknown tool: ${toolName}` }) }],
     isError: true,
+  };
+}
+
+/**
+ * Invoke a FunctionType through the injected governed invoker. Authorization
+ * (requiredRoles) and audit live in that path — shared with REST and GraphQL —
+ * so this only marshals the arguments and shapes the result/error.
+ */
+async function invokeFunctionTool(
+  fnType: FunctionType,
+  args: unknown,
+  caller: McpCaller,
+  deps: McpServerDependencies,
+): Promise<McpCallToolResult> {
+  const params = (args && typeof args === 'object' ? args : {}) as Record<string, unknown>;
+  const outcome = await deps.functionInvoker!.invoke({
+    functionName: fnType.name,
+    args: params,
+    user: caller.user,
+    requestContext: caller.requestContext,
+  });
+  if (!outcome.ok) {
+    return {
+      content: [{ type: 'text', text: JSON.stringify({ error: outcome.error, ...(outcome.code ? { code: outcome.code } : {}) }) }],
+      isError: true,
+    };
+  }
+  return {
+    content: [{ type: 'text', text: JSON.stringify(outcome.result ?? null) }],
+    isError: false,
   };
 }
 

@@ -8,6 +8,28 @@ import type { ActionExecutor, ActionManifest } from '@altius/actions';
 import type { AuthorizationService, OidcAuthenticator, AuthenticatedUser, ConsentService, AuditWriter } from '@altius/security';
 import type { ObjectManager } from '@altius/engine';
 
+/** Outcome of invoking a FunctionType through the governed function pipeline. */
+export type McpFunctionResult =
+  | { ok: true; result: unknown }
+  | { ok: false; error: string; code?: string };
+
+/**
+ * Invokes a declared FunctionType under the caller's identity through the same
+ * governed path REST and GraphQL use (role check, ontology access, audit).
+ *
+ * Injected as a callback so @altius/mcp-server stays free of @altius/api: the
+ * API layer wires this to its shared `invokeFunction`. When absent, function
+ * tools are neither advertised nor dispatched.
+ */
+export interface McpFunctionInvoker {
+  invoke(input: {
+    functionName: string;
+    args: Record<string, unknown>;
+    user: AuthenticatedUser;
+    requestContext: RequestContext;
+  }): Promise<McpFunctionResult>;
+}
+
 /**
  * Registry that resolves action names to parsed YAML manifests.
  * Reuses the API layer's ManifestRegistry shape.
@@ -75,6 +97,13 @@ export interface McpServerDependencies {
    * are absent on /mcp while present on every other surface.
    */
   objectManager?: ObjectManager;
+  /**
+   * Invokes declared FunctionTypes. When provided, one `function_<Name>` tool
+   * is offered per FunctionType and dispatched through it (role-gated + audited
+   * like REST/GraphQL). Without it, functions are invisible to agents — the
+   * pre-existing behaviour, not a silent downgrade.
+   */
+  functionInvoker?: McpFunctionInvoker;
 }
 
 /**

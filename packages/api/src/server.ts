@@ -71,6 +71,7 @@ import { InMemorySubscribableEventBus, SubscriptionManager, SubscriptionRegistry
 import type { SubscribableEventBus } from './subscriptions/index.js';
 import { RedpandaEventBus } from './events/index.js';
 import { AutomationRunner } from './automation/index.js';
+import { invokeFunction } from './functions/invoke-function.js';
 import type { ApiDependencies, ResolverContext } from './graphql/types.js';
 import { DEFAULT_CONSENT_PURPOSE } from './graphql/types.js';
 import type { RestRequest } from './rest/types.js';
@@ -1327,6 +1328,32 @@ async function main(): Promise<void> {
         consentPurpose: DEFAULT_CONSENT_PURPOSE as string,
         objectManager,
         auditWriter: securityAuditWriter,
+        // Expose declared FunctionTypes as function_<Name> MCP tools, dispatched
+        // through the same governed path (role check + audit) as REST/GraphQL.
+        ...(schema.functionTypes.length > 0
+          ? {
+              functionInvoker: {
+                invoke: async ({ functionName, args, user, requestContext }) => {
+                  const fn = schema.functionTypes.find((f) => f.name === functionName);
+                  if (!fn) return { ok: false as const, error: `Unknown function: ${functionName}` };
+                  try {
+                    const r = await invokeFunction(fn, deps, {
+                      requestContext,
+                      user: {
+                        id: user.id, name: user.name, email: user.email,
+                        roles: user.roles, groups: user.groups, tenantId: requestContext.tenantId,
+                      },
+                      deps,
+                    }, args);
+                    return { ok: true as const, result: r.result };
+                  } catch (err) {
+                    const e = err as { code?: string; message?: string };
+                    return { ok: false as const, error: e.message ?? 'Function invocation failed', ...(e.code ? { code: e.code } : {}) };
+                  }
+                },
+              },
+            }
+          : {}),
       },
       isDev,
     });
