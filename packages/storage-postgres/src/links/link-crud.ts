@@ -19,10 +19,6 @@ import type {
   LinkTypeDefinition,
 } from '@altius/spi';
 import { MAX_LINK_QUERY_LIMIT, DEFAULT_LINK_QUERY_LIMIT, encodePageCursor, decodePageCursor } from '@altius/spi';
-import { createLogger } from '@altius/observability';
-
-const logger = createLogger('storage-postgres');
-import { graphWritesEnabled } from '../graph-flag.js';
 import { snakeCase, pgIdent } from '../schema/type-mapping.js';
 import { PgTransaction, resolveQueryable } from '../transactions/index.js';
 import type { Queryable } from '../transactions/index.js';
@@ -31,25 +27,6 @@ import type { Queryable } from '../transactions/index.js';
 // Helpers
 // ---------------------------------------------------------------------------
 
-const GRAPH_NAME = 'altius';
-
-/**
- * Sanitize a value for inclusion in an AGE Cypher string literal.
- * Apache AGE does not support parameterized Cypher queries.
- */
-function sanitizeCypherValue(value: string, context: string): string {
-  if (/['"`\\${}]/.test(value)) {
-    throw new Error(`Invalid ${context}: contains disallowed characters`);
-  }
-  return value;
-}
-
-function sanitizeCypherLabel(label: string): string {
-  if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(label)) {
-    throw new Error(`Invalid Cypher label: ${label}`);
-  }
-  return label;
-}
 
 let _counter = 0;
 function genId(): string {
@@ -107,40 +84,6 @@ function rowToLink(row: Record<string, unknown>): OntologyLink {
 /** Build a qualified link table name. */
 function linkTableName(type: string, schema = 'public'): string {
   return `${pgIdent(schema)}.${pgIdent(snakeCase(type))}`;
-}
-
-/** AGE Cypher queries use the ag_catalog schema. */
-async function ageQuery(pool: Pool, q: Queryable, cypher: string): Promise<void> {
-  // Graph disabled for this deployment — no extension, so nothing to mirror.
-  if (!graphWritesEnabled(pool)) return;
-  // See the twin in objects/object-crud.ts: catching the error does not undo the
-  // transaction abort Postgres performs on any failed statement, so a swallowed
-  // AGE failure turned the caller's COMMIT into a silent ROLLBACK. The savepoint
-  // scopes the failure to this statement. Only meaningful on a PoolClient — a
-  // Pool query is its own implicit transaction.
-  const inTransaction = typeof (q as import('pg').PoolClient).release === 'function';
-  if (inTransaction) await q.query('SAVEPOINT age_op');
-  try {
-    await q.query(`SET search_path = ag_catalog, "$user", public`);
-    await q.query(
-      `SELECT * FROM cypher('${GRAPH_NAME}', $$${cypher}$$) AS (v agtype)`,
-    );
-    if (inTransaction) await q.query('RELEASE SAVEPOINT age_op');
-  } catch (err) {
-    if (inTransaction) {
-      await q.query('ROLLBACK TO SAVEPOINT age_op').catch(() => {});
-    }
-    const msg = err instanceof Error ? err.message : String(err);
-    if (process.env.NODE_ENV === 'test') {
-      logger.debug({ err: msg }, 'AGE graph operation skipped (test env)');
-    } else {
-      logger.error(
-        { err: msg, cypher: cypher.slice(0, 120) },
-        'AGE graph write failed — the SQL op succeeded but the graph mirror is now stale. ' +
-          'Install the AGE extension or remove graph writes from the deployment.',
-      );
-    }
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -328,18 +271,6 @@ export async function createLink(
   const link = rowToLink(row);
 
   // Create AGE edge (sanitize all interpolated values)
-  const safeFromType = sanitizeCypherLabel(fromType);
-  const safeToType = sanitizeCypherLabel(toType);
-  const safeLinkType = sanitizeCypherLabel(type);
-  const safeTenant = sanitizeCypherValue(ctx.tenantId, 'tenantId');
-  const safeFromId = sanitizeCypherValue(fromId, 'fromId');
-  const safeToId = sanitizeCypherValue(toId, 'toId');
-  const safeLinkId = sanitizeCypherValue(id, 'linkId');
-  await ageQuery(
-    pool,
-    q,
-    `MATCH (a:${safeFromType} {tenant_id: '${safeTenant}', id: '${safeFromId}'}), (b:${safeToType} {tenant_id: '${safeTenant}', id: '${safeToId}'}) CREATE (a)-[:${safeLinkType} {tenant_id: '${safeTenant}', id: '${safeLinkId}'}]->(b)`,
-  );
 
   return link;
 }
@@ -453,16 +384,6 @@ export async function deleteLink(
   if (result.rows.length === 0) {
     throw new Error(`Link ${type}:${linkId} not found or already deleted`);
   }
-
-  // Remove AGE edge (sanitize all interpolated values)
-  const safeDelType = sanitizeCypherLabel(type);
-  const safeDelTenant = sanitizeCypherValue(ctx.tenantId, 'tenantId');
-  const safeDelId = sanitizeCypherValue(linkId, 'linkId');
-  await ageQuery(
-    pool,
-    q,
-    `MATCH ()-[e:${safeDelType} {tenant_id: '${safeDelTenant}', id: '${safeDelId}'}]->() DELETE e`,
-  );
 }
 
 /**

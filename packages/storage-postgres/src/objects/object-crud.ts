@@ -17,44 +17,14 @@ import type {
   ObjectPage,
   DateTime,
 } from '@altius/spi';
-import { createLogger } from '@altius/observability';
 import { snakeCase, pgIdent, fieldCol } from '../schema/type-mapping.js';
-
-const logger = createLogger('storage-postgres');
 import { filterToSql } from './filter-to-sql.js';
-import { graphWritesEnabled } from '../graph-flag.js';
 import { PgTransaction, resolveQueryable } from '../transactions/index.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-const GRAPH_NAME = 'altius';
-
-/**
- * Sanitize a value for inclusion in an AGE Cypher string literal.
- * Apache AGE does not support parameterized Cypher queries, so we must
- * validate and escape values before interpolation.
- *
- * Rejects any value containing characters that could break out of a
- * Cypher string literal or label context.
- */
-function sanitizeCypherValue(value: string, context: string): string {
-  // Reject values with characters that could enable injection:
-  // single/double quotes, backslashes, backticks, dollar signs, braces
-  if (/['"`\\${}]/.test(value)) {
-    throw new Error(`Invalid ${context}: contains disallowed characters`);
-  }
-  // Labels must be valid identifiers (alphanumeric + underscore)
-  return value;
-}
-
-function sanitizeCypherLabel(label: string): string {
-  if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(label)) {
-    throw new Error(`Invalid Cypher label: ${label}`);
-  }
-  return label;
-}
 
 let _counter = 0;
 function genId(): string {
@@ -128,7 +98,6 @@ function historyTableName(type: string, schema = 'public'): string {
  *
  * 1. INSERT into type table
  * 2. INSERT snapshot into history table
- * 3. CREATE vertex in AGE graph
  */
 export async function createObject(
   pool: Pool,
@@ -170,7 +139,6 @@ export async function createObject(
   await insertHistory(q, type, row, schema);
 
   // Create AGE vertex
-  await createAgeVertex(pool, q, type, ctx.tenantId, id);
 
   return obj;
 }
@@ -298,7 +266,6 @@ export async function updateObject(
   await insertHistory(q, type, row, schema);
 
   // Update AGE vertex
-  await updateAgeVertex(pool, q, type, ctx.tenantId, id);
 
   return obj;
 }
@@ -388,7 +355,6 @@ export async function hardDeleteObject(
 
   // If object existed, also clean up AGE vertex (and all connected edges)
   if (result.rowCount && result.rowCount > 0) {
-    await deleteAgeVertex(pool, q, type, ctx.tenantId, id);
   }
 }
 
@@ -537,109 +503,4 @@ async function insertHistory(
   );
 }
 
-// ---------------------------------------------------------------------------
-// Apache AGE graph helpers
-// ---------------------------------------------------------------------------
 
-/**
- * AGE Cypher queries use the ag_catalog schema.
- * We set the search_path before executing Cypher.
- */
-async function ageQuery(pool: Pool, q: Pool | import('pg').PoolClient, cypher: string): Promise<void> {
-  // Graph disabled for this deployment — no extension, so nothing to mirror.
-  if (!graphWritesEnabled(pool)) return;
-  // Catching the error is NOT enough inside a transaction. Postgres aborts the
-  // whole transaction on any failed statement, so a swallowed AGE failure left
-  // the caller's transaction poisoned: every later statement raised "current
-  // transaction is aborted", and COMMIT silently behaved as ROLLBACK. The
-  // source-of-truth write was lost while the caller was told it succeeded.
-  //
-  // Demonstrated with a database that has the AGE extension but no 'altius'
-  // graph: object-crud's "commit persists changes" found 0 rows after a
-  // successful commit.
-  //
-  // A savepoint scopes the failure to this statement. Pool queries are their own
-  // implicit transaction and cannot poison anything, and SAVEPOINT outside a
-  // transaction block is an error, so it is only issued for a PoolClient.
-  const inTransaction = typeof (q as import('pg').PoolClient).release === 'function';
-  if (inTransaction) await q.query('SAVEPOINT age_op');
-  try {
-    await q.query(`SET search_path = ag_catalog, "$user", public`);
-    await q.query(
-      `SELECT * FROM cypher('${GRAPH_NAME}', $$${cypher}$$) AS (v agtype)`,
-    );
-    if (inTransaction) await q.query('RELEASE SAVEPOINT age_op');
-  } catch (err) {
-    if (inTransaction) {
-      // Undo only the AGE statement; the caller's transaction stays usable.
-      await q.query('ROLLBACK TO SAVEPOINT age_op').catch(() => {});
-    }
-    // AGE is a write-only mirror of the SQL tables today (traversal runs
-    // via JOINs in links/traversal.ts, not Cypher). The writes are best-effort:
-    // a failure must not corrupt the source-of-truth SQL op, but it MUST be
-    // visible to operators so they can decide whether to install AGE or
-    // remove the dependency. Silent swallowing hid deployment drift.
-    const msg = err instanceof Error ? err.message : String(err);
-    if (process.env.NODE_ENV === 'test') {
-      // Tests run without AGE; log at debug to avoid noise.
-      logger.debug({ err: msg }, 'AGE graph operation skipped (test env)');
-    } else {
-      logger.error(
-        { err: msg, cypher: cypher.slice(0, 120) },
-        'AGE graph write failed — the SQL op succeeded but the graph mirror is now stale. ' +
-          'Install the AGE extension or remove graph writes from the deployment.',
-      );
-    }
-  }
-}
-
-async function createAgeVertex(
-  pool: Pool,
-  q: Pool | import('pg').PoolClient,
-  type: string,
-  tenantId: string,
-  id: string,
-): Promise<void> {
-  const safeType = sanitizeCypherLabel(type);
-  const safeTenant = sanitizeCypherValue(tenantId, 'tenantId');
-  const safeId = sanitizeCypherValue(id, 'id');
-  await ageQuery(
-    pool,
-    q,
-    `CREATE (:${safeType} {tenant_id: '${safeTenant}', id: '${safeId}'})`,
-  );
-}
-
-async function updateAgeVertex(
-  pool: Pool,
-  q: Pool | import('pg').PoolClient,
-  type: string,
-  tenantId: string,
-  id: string,
-): Promise<void> {
-  const safeType = sanitizeCypherLabel(type);
-  const safeTenant = sanitizeCypherValue(tenantId, 'tenantId');
-  const safeId = sanitizeCypherValue(id, 'id');
-  await ageQuery(
-    pool,
-    q,
-    `MATCH (v:${safeType} {tenant_id: '${safeTenant}', id: '${safeId}'}) SET v.updated = true RETURN v`,
-  );
-}
-
-async function deleteAgeVertex(
-  pool: Pool,
-  q: Pool | import('pg').PoolClient,
-  type: string,
-  tenantId: string,
-  id: string,
-): Promise<void> {
-  const safeType = sanitizeCypherLabel(type);
-  const safeTenant = sanitizeCypherValue(tenantId, 'tenantId');
-  const safeId = sanitizeCypherValue(id, 'id');
-  await ageQuery(
-    pool,
-    q,
-    `MATCH (v:${safeType} {tenant_id: '${safeTenant}', id: '${safeId}'}) DETACH DELETE v`,
-  );
-}

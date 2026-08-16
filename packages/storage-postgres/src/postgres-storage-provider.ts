@@ -68,7 +68,6 @@ import {
 } from './temporal/index.js';
 import { PgTransaction } from './transactions/index.js';
 import { withRetry } from './retry.js';
-import { disableGraphWrites } from './graph-flag.js';
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -88,17 +87,6 @@ export interface PostgresStorageConfig {
   ssl?: boolean | { rejectUnauthorized: boolean };
   /** Transaction isolation level. Default: 'READ COMMITTED'. */
   defaultIsolationLevel?: 'READ COMMITTED' | 'REPEATABLE READ' | 'SERIALIZABLE';
-  /**
-   * Whether to provision and write the Apache AGE graph mirror. Default: true.
-   *
-   * Set false to run on a Postgres without the AGE binary — every managed
-   * service (Supabase, RDS, Cloud SQL) among them. AGE is a write-only mirror:
-   * traversal runs through SQL JOINs and no query reads a Cypher result, so
-   * turning it off costs nothing today and is what makes those platforms a
-   * legitimate target. It is opt-out rather than opt-in so an existing
-   * self-hosted deployment keeps writing the graph it already has.
-   */
-  enableGraph?: boolean;
 }
 
 /**
@@ -196,7 +184,6 @@ export class PostgresStorageProvider implements StorageProvider {
   private static readonly IDEMPOTENCY_TTL_MS = 5 * 60_000; // 5 minutes
 
   private _defaultIsolationLevel: string;
-  private _enableGraph: boolean;
 
   constructor(config: PostgresStorageConfig) {
     this._pool = new Pool({
@@ -214,9 +201,6 @@ export class PostgresStorageProvider implements StorageProvider {
     } satisfies PoolConfig);
     this._dataSchema = config.dataSchema ?? 'public';
     this._defaultIsolationLevel = config.defaultIsolationLevel ?? 'READ COMMITTED';
-    // Opt-out, so an existing self-hosted deployment keeps its graph.
-    this._enableGraph = config.enableGraph ?? true;
-    if (!this._enableGraph) disableGraphWrites(this._pool);
 
     // Periodically evict expired idempotency cache entries
     this._idempotencyCacheTimer = setInterval(() => {
@@ -243,7 +227,7 @@ export class PostgresStorageProvider implements StorageProvider {
 
   async applySchema(_ctx: RequestContext, schema: OntologySchema): Promise<MigrationResult> {
     const fromVersion = this._currentSchemaVersion;
-    const ddl = generateDDL(schema, { dataSchema: this._dataSchema, includeGraph: this._enableGraph });
+    const ddl = generateDDL(schema, { dataSchema: this._dataSchema });
 
     // Ensure migration tracking table exists
     await this._pool.query(`
@@ -259,7 +243,7 @@ export class PostgresStorageProvider implements StorageProvider {
     // and wasn't part of earlier schema versions' checksums.
     const checksumParts = [
       ...ddl.audit, ...ddl.lineage,
-      ...ddl.objectTables, ...ddl.linkTables, ...ddl.graph,
+      ...ddl.objectTables, ...ddl.linkTables,
     ];
     const ddlText = checksumParts.join('\n');
     const checksum = createHash('sha256').update(ddlText).digest('hex').slice(0, 16);
@@ -634,37 +618,15 @@ export class PostgresStorageProvider implements StorageProvider {
       // Basic connectivity
       await this._pool.query('SELECT 1');
 
-      // AGE presence is reported, never used to fail the check.
-      //
-      // The graph is write-only: object-crud/link-crud mirror vertices and edges
-      // into it, and both ageQuery() helpers deliberately swallow failures as
-      // "graceful degradation". Nothing reads it back — traversal.ts resolves
-      // paths with SQL JOINs on the link tables.
-      //
-      // Treating it as required made a missing extension fail readiness: /health
-      // answers 503 when unhealthy, so the pod would be pulled out of service
-      // (and StorageUnhealthy paged) over a graph no query touches, while the
-      // write layer in the same package considered it optional.
-      const extResult = await this._pool.query(
-        `SELECT extname FROM pg_extension WHERE extname = 'age'`,
-      );
-      const ageLoaded = extResult.rows.length > 0;
-      const hasGraphFeatures = this._currentSchemaVersion > 0 &&
-        [...this._schemas.values()].some(s => s.linkTypes.length > 0);
-
       const latencyMs = Date.now() - start;
       return {
         healthy: true,
         provider: 'postgres',
         latencyMs,
         details: {
-          ageExtension: ageLoaded,
           poolTotal: this._pool.totalCount,
           poolIdle: this._pool.idleCount,
           poolWaiting: this._pool.waitingCount,
-          ...(hasGraphFeatures && !ageLoaded
-            ? { note: 'AGE extension absent — graph mirroring is skipped. Reads and link traversal are unaffected (SQL JOINs).' }
-            : {}),
         },
       };
     } catch (err) {

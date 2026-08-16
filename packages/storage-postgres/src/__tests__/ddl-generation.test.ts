@@ -2,7 +2,7 @@
  * Tests for PostgreSQL DDL generation.
  *
  * Verifies that DDL generated from OntologySchema produces valid SQL
- * for object tables, history tables, link tables, AGE graph labels,
+ * for object tables, history tables, link tables,
  * audit schema, and lineage tables.
  */
 
@@ -12,7 +12,6 @@ import {
   generateDDL,
   generateObjectTableDDL,
   generateLinkTableDDL,
-  generateAllGraphDDL,
   generateAuditDDL,
   generateLineageDDL,
   pgType,
@@ -289,59 +288,6 @@ describe('generateLinkTableDDL', () => {
   });
 });
 
-// ─── AGE graph DDL tests ───
-
-describe('generateAllGraphDDL', () => {
-  it('creates AGE extension and graph setup', () => {
-    const ddl = generateAllGraphDDL(nhsSchema.objectTypes, nhsSchema.linkTypes);
-
-    expect(ddl[0]).toBe("CREATE EXTENSION IF NOT EXISTS age;");
-    expect(ddl[1]).toBe("LOAD 'age';");
-    expect(ddl[2]).toContain('search_path');
-    expect(ddl[3]).toContain("create_graph('altius')");
-  });
-
-  it('creates node labels for each ObjectType', () => {
-    const ddl = generateAllGraphDDL(nhsSchema.objectTypes, nhsSchema.linkTypes);
-    const allDDL = ddl.join('\n');
-
-    expect(allDDL).toContain("create_vlabel('altius', 'Patient')");
-    expect(allDDL).toContain("create_vlabel('altius', 'Encounter')");
-    expect(allDDL).toContain("create_vlabel('altius', 'Ward')");
-  });
-
-  it('creates edge labels for each LinkType', () => {
-    const ddl = generateAllGraphDDL(nhsSchema.objectTypes, nhsSchema.linkTypes);
-    const allDDL = ddl.join('\n');
-
-    expect(allDDL).toContain("create_elabel('altius', 'PatientEncounter')");
-    expect(allDDL).toContain("create_elabel('altius', 'EncounterWard')");
-  });
-
-  it('AGE labels match ObjectTypes and LinkTypes exactly', () => {
-    const ddl = generateAllGraphDDL(nhsSchema.objectTypes, nhsSchema.linkTypes);
-
-    // Count labels: should be objectTypes.length + linkTypes.length
-    const vlabelCount = ddl.filter(s => s.includes('create_vlabel')).length;
-    const elabelCount = ddl.filter(s => s.includes('create_elabel')).length;
-
-    expect(vlabelCount).toBe(nhsSchema.objectTypes.length);
-    expect(elabelCount).toBe(nhsSchema.linkTypes.length);
-
-    // Each ObjectType name must appear as a vlabel
-    for (const ot of nhsSchema.objectTypes) {
-      expect(ddl.some(s => s.includes(`create_vlabel('altius', '${ot.name}')`))).toBe(true);
-    }
-
-    // Each LinkType name must appear as an elabel
-    for (const lt of nhsSchema.linkTypes) {
-      expect(ddl.some(s => s.includes(`create_elabel('altius', '${lt.name}')`))).toBe(true);
-    }
-  });
-});
-
-// ─── Audit DDL tests ───
-
 describe('generateAuditDDL', () => {
   it('creates audit schema', () => {
     const ddl = generateAuditDDL();
@@ -446,7 +392,6 @@ describe('generateDDL', () => {
 
     expect(result.objectTables.length).toBeGreaterThan(0);
     expect(result.linkTables.length).toBeGreaterThan(0);
-    expect(result.graph.length).toBeGreaterThan(0);
     expect(result.audit.length).toBeGreaterThan(0);
     expect(result.consent.length).toBeGreaterThan(0);
     expect(result.lineage.length).toBeGreaterThan(0);
@@ -455,8 +400,7 @@ describe('generateDDL', () => {
       result.consent.length +
       result.lineage.length +
       result.objectTables.length +
-      result.linkTables.length +
-      result.graph.length
+      result.linkTables.length
     );
   });
 
@@ -478,15 +422,13 @@ describe('generateDDL', () => {
     }
   });
 
-  it('respects options to exclude graph, audit, consent, lineage', () => {
+  it('emits only object and link tables when the optional blocks are off', () => {
     const result = generateDDL(nhsSchema, {
-      includeGraph: false,
       includeAudit: false,
       includeConsent: false,
       includeLineage: false,
     });
 
-    expect(result.graph).toHaveLength(0);
     expect(result.audit).toHaveLength(0);
     expect(result.consent).toHaveLength(0);
     expect(result.lineage).toHaveLength(0);
