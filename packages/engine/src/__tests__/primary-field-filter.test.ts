@@ -135,3 +135,81 @@ describe('@primary field filtering and sorting', () => {
     expect(page.items.map((i) => i.label)).toEqual(['beta']);
   });
 });
+
+/**
+ * query() was fixed first; aggregate() and search() were left as bare
+ * pass-throughs to storage, so the same declared @primary name still reached
+ * a provider as a column that does not exist — Postgres raises, memory
+ * silently matches nothing. A silent empty result is the worse half: it looks
+ * like data.
+ */
+describe('@primary on aggregate and search', () => {
+  beforeEach(async () => {
+    storage = new MemoryStorageProvider();
+    manager = new ObjectManager({
+      storage,
+      schema: parsedSchema,
+      eventEmitter: new EngineEventEmitter(new InMemoryEventBus()),
+    });
+    await storage.applySchema(ctx, spiSchema);
+  });
+
+  it('filters an aggregate on the declared @primary name', async () => {
+    const alpha = await manager.create('Specimen', { label: 'alpha' }, ctx);
+    await manager.create('Specimen', { label: 'beta' }, ctx);
+
+    const result = await manager.aggregate(
+      'Specimen',
+      {
+        fields: [{ field: '*', fn: 'count', alias: 'n' }],
+        filter: { field: 'accessionId', operator: 'eq', value: alpha._id },
+      },
+      ctx,
+    );
+
+    expect(result.groups[0]?.values['n']).toBe(1);
+  });
+
+  it('groups by the declared @primary name', async () => {
+    await manager.create('Specimen', { label: 'alpha' }, ctx);
+    await manager.create('Specimen', { label: 'beta' }, ctx);
+
+    const result = await manager.aggregate(
+      'Specimen',
+      { fields: [{ field: '*', fn: 'count' }], groupBy: ['accessionId'] },
+      ctx,
+    );
+
+    // One group per object, keyed by the id — not one empty group.
+    expect(result.groups).toHaveLength(2);
+  });
+
+  it('filters a search on the declared @primary name', async () => {
+    const alpha = await manager.create('Specimen', { label: 'alpha' }, ctx);
+    await manager.create('Specimen', { label: 'alphabet' }, ctx);
+
+    const result = await manager.search(
+      'Specimen',
+      { query: 'alpha', filter: { field: 'accessionId', operator: 'eq', value: alpha._id } },
+      ctx,
+    );
+
+    expect(result.hits.map((h) => h.object['label'])).toEqual(['alpha']);
+  });
+
+  it('leaves a non-primary field alone on aggregate', async () => {
+    await manager.create('Specimen', { label: 'alpha' }, ctx);
+    await manager.create('Specimen', { label: 'beta' }, ctx);
+
+    const result = await manager.aggregate(
+      'Specimen',
+      {
+        fields: [{ field: '*', fn: 'count', alias: 'n' }],
+        filter: { field: 'label', operator: 'eq', value: 'beta' },
+      },
+      ctx,
+    );
+
+    expect(result.groups[0]?.values['n']).toBe(1);
+  });
+});

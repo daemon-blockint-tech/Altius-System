@@ -352,7 +352,9 @@ export class ObjectManager {
 
   /**
    * Aggregate objects by type with grouping and aggregate functions.
-   * Pass-through to SPI — no validation needed for reads.
+   *
+   * Rewrites the declared @primary field onto `_id` first, for the same
+   * reason query() does: storage never materialises that column.
    */
   async aggregate(
     type: string,
@@ -364,13 +366,29 @@ export class ObjectManager {
       [SpanAttributes.TENANT_ID]: ctx.tenantId,
       [SpanAttributes.OPERATION]: 'aggregate',
     }, async () => {
+      const primary = this.primaryFieldName(type);
+      if (primary) {
+        // Every field-name-bearing position, not just the filter: a caller can
+        // group, order, or count by the declared @primary name, and each one
+        // reaches the provider as a column that does not exist.
+        const rename = (f: string) => (f === primary ? '_id' : f);
+        query = {
+          ...query,
+          fields: query.fields.map((f) => ({ ...f, field: rename(f.field) })),
+          ...(query.filter ? { filter: rewritePrimaryField(query.filter, primary) } : {}),
+          ...(query.groupBy ? { groupBy: query.groupBy.map(rename) } : {}),
+          ...(query.buckets ? { buckets: query.buckets.map((b) => ({ ...b, field: rename(b.field) })) } : {}),
+          ...(query.orderBy ? { orderBy: query.orderBy.map((o) => ({ ...o, field: rename(o.field) })) } : {}),
+        };
+      }
       return this.storage.aggregateObjects(ctx, type, query);
     });
   }
 
   /**
    * Search objects by type with full-text query.
-   * Delegates to SPI — no validation needed for reads — then resolves LAZY
+   *
+   * Rewrites the declared @primary field onto `_id` first, then resolves LAZY
    * computed fields on every hit, as get() does for a single object.
    */
   async search(
@@ -383,6 +401,14 @@ export class ObjectManager {
       [SpanAttributes.TENANT_ID]: ctx.tenantId,
       [SpanAttributes.OPERATION]: 'search',
     }, async () => {
+      const primary = this.primaryFieldName(type);
+      if (primary) {
+        query = {
+          ...query,
+          ...(query.filter ? { filter: rewritePrimaryField(query.filter, primary) } : {}),
+          ...(query.fields ? { fields: query.fields.map((f) => (f === primary ? '_id' : f)) } : {}),
+        };
+      }
       const result = await this.storage.searchObjects(ctx, type, query);
       const objects = await this.withComputed(type, result.hits.map((h) => h.object), ctx);
       return {
