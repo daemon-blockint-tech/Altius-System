@@ -1,0 +1,179 @@
+# Altius — Production / Staging Deployment
+# Pulls pre-built images from GitHub Container Registry instead of building locally.
+# Inherit base services from docker-compose.yaml and override application services.
+# Usage: docker compose -f docker-compose.yaml -f docker-compose.prod.yaml up
+
+services:
+  cel-evaluator:
+    image: ${REGISTRY_PREFIX:-ghcr.io/nhs-eng/altius-system}/cel-evaluator:${IMAGE_TAG:-latest}
+    pull_policy: always
+    ports:
+      - "${CEL_PORT:-50051}:50051"
+    environment:
+      CEL_PORT: "50051"
+    healthcheck:
+      test: ["CMD", "grpc-health-probe", "-addr=localhost:50051"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    networks:
+      - altius
+
+  api-gateway:
+    image: ${REGISTRY_PREFIX:-ghcr.io/nhs-eng/altius-system}/api-gateway:${IMAGE_TAG:-latest}
+    pull_policy: always
+    ports:
+      - "${API_PORT:-4000}:4000"
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: "4000"
+      POSTGRES_URL: "postgresql://${POSTGRES_USER:-altius}:${POSTGRES_PASSWORD}@postgresql:5432/${POSTGRES_DB:-altius}"
+      OPENFGA_URL: "http://openfga:8080"
+      OPENFGA_STORE_ID: ${OPENFGA_STORE_ID:-}
+      OPENFGA_STORE_IDS: ${OPENFGA_STORE_IDS:-}
+      CEL_EVALUATOR_URL: "cel-evaluator:50051"
+      REDPANDA_BROKERS: "redpanda:9092"
+      REDIS_URL: "redis://redis:6379"
+      KEYCLOAK_URL: "http://keycloak:8080/auth"
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM:-altius}
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4317"
+      OTEL_SERVICE_NAME: api-gateway
+      DOMAIN_PACKS: ${DOMAIN_PACKS:-}
+      DOMAIN_PACKS_EXTRA_DIRS: ${DOMAIN_PACKS_EXTRA_DIRS:-}
+      SEED_TENANT: ${SEED_TENANT:-}
+      OIDC_DEFAULT_TENANT: ${OIDC_DEFAULT_TENANT:-}
+      RELATIONSHIP_GRANTER_ROLES: ${RELATIONSHIP_GRANTER_ROLES:-admin}
+      CONSENT_RECORDER_ROLES: ${CONSENT_RECORDER_ROLES:-admin}
+      CONSENT_PURPOSES: ${CONSENT_PURPOSES:-}
+      DEFAULT_CONSENT_PURPOSE: ${DEFAULT_CONSENT_PURPOSE:-}
+      CONSENT_SUBJECT_TYPES: ${CONSENT_SUBJECT_TYPES:-}
+      CONSENT_DIRECT_CARE_EXEMPTION: ${CONSENT_DIRECT_CARE_EXEMPTION:-false}
+      CONSENT_EXEMPTION_PURPOSE: ${CONSENT_EXEMPTION_PURPOSE:-}
+      INGEST_SECRET: ${INGEST_SECRET:-}
+    volumes:
+      - ${DOMAIN_PACKS_HOST_DIR:-./empty-packs}:/external-packs:ro
+    depends_on:
+      postgresql:
+        condition: service_healthy
+      openfga:
+        condition: service_started
+      cel-evaluator:
+        condition: service_started
+      redpanda:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:4000/.well-known/apollo/server-health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    networks:
+      - altius
+
+  ontology-engine:
+    image: ${REGISTRY_PREFIX:-ghcr.io/nhs-eng/altius-system}/ontology-engine:${IMAGE_TAG:-latest}
+    pull_policy: always
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: "4001"
+      POSTGRES_URL: "postgresql://${POSTGRES_USER:-altius}:${POSTGRES_PASSWORD}@postgresql:5432/${POSTGRES_DB:-altius}"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4317"
+      OTEL_SERVICE_NAME: ontology-engine
+    depends_on:
+      postgresql:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:4001/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    networks:
+      - altius
+
+  action-executor:
+    image: ${REGISTRY_PREFIX:-ghcr.io/nhs-eng/altius-system}/action-executor:${IMAGE_TAG:-latest}
+    pull_policy: always
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: "4002"
+      CEL_EVALUATOR_URL: "cel-evaluator:50051"
+      POSTGRES_URL: "postgresql://${POSTGRES_USER:-altius}:${POSTGRES_PASSWORD}@postgresql:5432/${POSTGRES_DB:-altius}"
+      REDPANDA_BROKERS: "redpanda:9092"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4317"
+      OTEL_SERVICE_NAME: action-executor
+    depends_on:
+      postgresql:
+        condition: service_healthy
+      cel-evaluator:
+        condition: service_started
+      redpanda:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:4002/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    networks:
+      - altius
+
+  sync-engine:
+    image: ${REGISTRY_PREFIX:-ghcr.io/nhs-eng/altius-system}/sync-engine:${IMAGE_TAG:-latest}
+    pull_policy: always
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: "4003"
+      POSTGRES_URL: "postgresql://${POSTGRES_USER:-altius}:${POSTGRES_PASSWORD}@postgresql:5432/${POSTGRES_DB:-altius}"
+      REDPANDA_BROKERS: "redpanda:9092"
+      DEBEZIUM_URL: "http://debezium:8083"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4317"
+      OTEL_SERVICE_NAME: sync-engine
+    depends_on:
+      postgresql:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+      debezium:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:4003/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    networks:
+      - altius
+
+  security-service:
+    image: ${REGISTRY_PREFIX:-ghcr.io/nhs-eng/altius-system}/security-service:${IMAGE_TAG:-latest}
+    pull_policy: always
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: "4004"
+      POSTGRES_URL: "postgresql://${POSTGRES_USER:-altius}:${POSTGRES_PASSWORD}@postgresql:5432/${POSTGRES_DB:-altius}"
+      OPENFGA_URL: "http://openfga:8080"
+      OPENFGA_STORE_ID: ${OPENFGA_STORE_ID:-}
+      OPENFGA_STORE_IDS: ${OPENFGA_STORE_IDS:-}
+      KEYCLOAK_URL: "http://keycloak:8080/auth"
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM:-altius}
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4317"
+      OTEL_SERVICE_NAME: security-service
+    depends_on:
+      postgresql:
+        condition: service_healthy
+      openfga:
+        condition: service_started
+      keycloak:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:4004/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    networks:
+      - altius
