@@ -13,6 +13,7 @@ import type { EventBus } from '@altius/engine';
 import type { AuthenticatedUserInfo, ResolverContext } from '../graphql/types.js';
 import { DEFAULT_CONSENT_PURPOSE, isConsentSubjectType } from '../graphql/types.js';
 import { lowerFirst, toSnakeCase } from '../utils.js';
+import { objectToGraphQL } from '../graphql/object-shape.js';
 import { logger } from '../logger.js';
 
 // ─── Types ───
@@ -26,7 +27,13 @@ export interface ChangeEvent {
    * this is the only thing that distinguishes them before delivery.
    */
   tenantId: string;
-  object: { id: string; _type: string };
+  /**
+   * The changed object. Off the bus this carries only `id` and `_type` — the
+   * emitter has no subscriber to scope a read to. It is hydrated with the full
+   * property set at delivery time, per subscriber and after every gate, by
+   * `hydrateObject`. A DELETED event is never hydrated: the row is gone.
+   */
+  object: { id: string; _type: string; [key: string]: unknown };
   previousValues: Record<string, { old: unknown; new: unknown }> | null;
   causedBy: { actionType: string | null; actionId: string | null } | null;
   timestamp: string;
@@ -364,6 +371,64 @@ async function passesConsent(event: ChangeEvent, ctx: ResolverContext): Promise<
 }
 
 /**
+ * Load the changed object as the subscriber and shape it like every other read
+ * surface, so the payload satisfies the full object type the SDL declares and
+ * a property-level filter has real values to test.
+ *
+ * Runs only after the tenant, FGA and consent gates have passed, so it never
+ * reads an object the subscriber could not have fetched over GraphQL.
+ *
+ * Returns null — leaving the {id,_type} stub in place — when the object cannot
+ * be hydrated: a DELETED event (the row is gone), a row deleted between emit
+ * and delivery, an unknown type, or a storage failure. That is the behaviour
+ * this surface had before hydration existed, so a transient read failure
+ * degrades to the old payload instead of silently killing the subscription.
+ * Property filters still fail closed in that case, because `matchesFilter`
+ * drops any key the object does not carry.
+ */
+async function hydrateObject(
+  event: ChangeEvent,
+  ctx: ResolverContext,
+): Promise<ChangeEvent['object'] | null> {
+  if (event.changeType === 'DELETED') return null;
+
+  const deps = ctx?.deps;
+  const objectManager = deps?.objectManager;
+  const requestContext = ctx?.requestContext;
+  if (!objectManager || !requestContext) return null;
+
+  const objectType = deps?.schema?.objectTypes.find(ot => ot.name === event.object._type);
+  if (!objectType) return null;
+
+  try {
+    const stored = await objectManager.get(event.object._type, event.object.id, requestContext);
+    if (!stored) return null;
+
+    const shaped = objectToGraphQL(stored, objectType);
+    const redacted = deps?.authorizationService?.redactFields(
+      ctx.user.id,
+      ctx.user.roles ?? [],
+      event.object._type,
+      shaped,
+    );
+    const data = (redacted?.data ?? shaped) as Record<string, unknown>;
+    data._redactedFields = redacted && redacted._redactedFields.length > 0 ? redacted._redactedFields : null;
+    // The bus stub keys the object by `id`; the shaped object keys the primary
+    // field by its declared name (which may be mrn, sku, …). Keep `id` so the
+    // FGA/consent identity on the payload stays what those gates checked.
+    data.id = event.object.id;
+    data._type = event.object._type;
+    return data as ChangeEvent['object'];
+  } catch (err) {
+    logger.error(
+      { err, objectType: event.object._type, objectId: event.object.id },
+      'Subscription payload hydration failed — delivering the id-only stub',
+    );
+    return null;
+  }
+}
+
+/**
  * Create a subscription resolver for a single object by id.
  */
 export function createIdFilteredSubscription(
@@ -484,9 +549,11 @@ export function createFilteredSubscription(
         const event = p[topic] as ChangeEvent | undefined;
         if (!event) return false;
 
-        // Apply user-provided filters
-        if (args.filter && Object.keys(args.filter).length > 0) {
-          if (!matchesFilter(event, args.filter)) return false;
+        // changeType is carried on the event itself, so it is evaluable before
+        // the object is loaded. Checking it here skips the hydration read for
+        // events the subscriber has already excluded.
+        if (args.filter?.changeType != null && event.changeType !== args.filter.changeType) {
+          return false;
         }
 
         // Fail closed: deny events when authorization context is unavailable
@@ -512,13 +579,31 @@ export function createFilteredSubscription(
         if (!(await passesConsent(event, ctx))) return false;
 
         // Redact previousValues for fields the subscriber cannot see.
-        const redacted = redactPreviousValues(
+        let delivered = redactPreviousValues(
           event,
           authzService as { getVisibleFields?(userId: string, roles: string[], objectType: string): Set<string> | undefined } | undefined,
           userId,
           ctx?.user?.roles ?? [],
         );
-        (p as Record<string, unknown>)[topic] = redacted;
+
+        // Hydrate the changed object as THIS subscriber, after the tenant, FGA
+        // and consent gates have all passed. Two things depend on it: the SDL
+        // declares the full object type, so a client selecting a real property
+        // gets a value instead of an error; and a property-level filter has
+        // something to evaluate against.
+        const hydrated = await hydrateObject(delivered, ctx);
+        if (hydrated) delivered = { ...delivered, object: hydrated };
+
+        // Evaluate property filters against the REDACTED object, not the raw
+        // one. Filtering on values the subscriber cannot read would turn the
+        // filter into an oracle: subscribing with {ssn: "123-45-6789"} and
+        // watching whether events arrive reveals a field that reads back null
+        // on every pull surface.
+        if (args.filter && Object.keys(args.filter).length > 0) {
+          if (!matchesFilter(delivered, args.filter)) return false;
+        }
+
+        (p as Record<string, unknown>)[topic] = delivered;
         return true;
       });
     },
@@ -562,12 +647,16 @@ function redactPreviousValues(
 
 /**
  * Check if a ChangeEvent matches a subscription filter.
- * Matches on changeType and on the object fields the event carries (id, _type).
  *
- * Fails closed: the payload carries no property values, so a filter key naming
- * an object property (e.g. status) cannot be evaluated. Treating it as a match
- * would deliver the whole type-level change stream to a subscriber who asked
- * for a narrow slice — a leak. Drop the event instead.
+ * Runs against the hydrated, redacted object, so a filter naming a real
+ * property (e.g. status) is evaluated against that property's value.
+ *
+ * Still fails closed on anything un-evaluable. A key the object does not carry
+ * never matches — which is what a DELETED event, or one whose hydration failed,
+ * falls back to. Treating un-evaluable as a match would deliver the whole
+ * type-level stream to a subscriber who asked for a narrow slice. A field the
+ * subscriber cannot see is redacted to null before this runs, so filtering on
+ * it also fails rather than confirming the value.
  */
 function matchesFilter(event: ChangeEvent, filter: SubscriptionFilter): boolean {
   for (const [key, value] of Object.entries(filter)) {

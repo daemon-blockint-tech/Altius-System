@@ -844,6 +844,7 @@ function convertObjectType(objType: ObjectType): ObjectTypeDefinition {
       name: field.name,
       type: mapFieldType(field.type.name),
       required: field.type.nonNull,
+      ...(field.type.isList ? { isList: true } : {}),
       ...(defaultDirective ? { defaultValue: defaultDirective.value } : {}),
     });
 

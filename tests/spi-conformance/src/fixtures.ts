@@ -40,6 +40,10 @@ export const baseSchema: OntologySchema = {
         { name: 'name', type: 'string', required: true },
         { name: 'specialty', type: 'string' },
         { name: 'capacity', type: 'integer' },
+        // A list-typed scalar. The isList flag never crossed the SPI boundary,
+        // so Postgres built a scalar TEXT column while memory stored a JS
+        // array — and no fixture had one, so the suite could not see it.
+        { name: 'tags', type: 'string', isList: true },
       ],
     },
     {

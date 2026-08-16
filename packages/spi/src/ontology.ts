@@ -300,6 +300,15 @@ export interface PropertyDefinition {
   required?: boolean;
   defaultValue?: unknown;
   description?: string;
+  /**
+   * Whether the property holds a list of `type` rather than one value.
+   *
+   * Without this the flag never crossed the SPI boundary: `tags: [String!]`
+   * became a scalar TEXT column on Postgres while the memory provider stored
+   * a JS array, so the same ODL produced two different shapes and only the
+   * memory one round-tripped.
+   */
+  isList?: boolean;
 }
 
 export interface IndexDefinition {

@@ -34,6 +34,7 @@ import {
   createFilteredSubscription,
 } from '../subscriptions/subscription-manager.js';
 import { lowerFirst, toSnakeCase, searchableTextFields } from '../utils.js';
+import { isPrimaryField, objectToGraphQL } from './object-shape.js';
 import { invokeFunction } from '../functions/invoke-function.js';
 import {
   buildCdmMetadata,
@@ -46,10 +47,6 @@ import { applyRelationshipChange } from '../relationships/router.js';
 import { applyConsentRecord } from '../consent/router.js';
 
 // ─── Helpers ───
-
-function isPrimaryField(field: FieldDefinition): boolean {
-  return field.directives.some(d => d.kind === 'primary');
-}
 
 function isParamField(field: FieldDefinition): boolean {
   return field.directives.some(d => d.kind === 'param');
@@ -214,44 +211,9 @@ export function validateQueryFields(
   return violations;
 }
 
-/**
- * Convert an OntologyObject to a GraphQL-friendly shape.
- * Strips the underscore prefix from system fields that map to schema fields.
- */
-export function objectToGraphQL(obj: OntologyObject, objectType: ObjectType): Record<string, unknown> {
-  const result: Record<string, unknown> = {};
-
-  for (const field of objectType.fields) {
-    if (isPrimaryField(field)) {
-      // Primary field is an alias for the system _id column — the field name
-      // can be anything (id, mrn, sku); the value always comes from obj._id.
-      result[field.name] = obj._id;
-    } else {
-      result[field.name] = obj[field.name];
-    }
-  }
-
-  // Stamp the concrete type name so interface `__resolveType` resolvers can
-  // return the implementing ObjectType without a separate lookup. graphql-tools
-  // exposes `__typename` as a default field, so this is also queryable.
-  result.__typename = objectType.name;
-
-  // Include system metadata. `_id` is not in the generated SDL (so it never
-  // reaches a client), but downstream steps identify the row by it — the list
-  // and search paths resolve the consent subject from `_id`, and without it
-  // every row is checked as subject '' and default-denied.
-  result._id = obj._id;
-  // `_version` is what callers pass back as `expectedVersion` on update/delete
-  // mutations and `_expectedVersion` on action inputs; it is in the SDL.
-  result._version = obj._version;
-  // `_actorId` attributes each version to the actor who wrote it; it is in
-  // the SDL and surfaces in history snapshots so the timeline shows who.
-  result._actorId = obj._actorId ?? null;
-  result._redactedFields = null;
-  result._consentRestricted = false;
-
-  return result;
-}
+// objectToGraphQL moved to ./object-shape.js (shared with the subscription
+// manager); re-exported here because existing callers import it from this module.
+export { objectToGraphQL } from './object-shape.js';
 
 /**
  * Map an OntologyLink record to its GraphQL shape (for link fields whose type

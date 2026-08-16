@@ -65,9 +65,62 @@ export interface CelEvalResult {
   error?: string;
 }
 
+// ISO 8601 calendar date: YYYY-MM-DD, no time part.
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+// ISO 8601 duration, e.g. P3Y6M4DT12H30M5S or PT30M. At least one component.
+const ISO_DURATION = /^P(?!$)(\d+Y)?(\d+M)?(\d+W)?(\d+D)?(T(?!$)(\d+H)?(\d+M)?(\d+(\.\d+)?S)?)?$/;
+
+/** A string that both parses as a real calendar date and is a well-formed one. */
+function isValidDate(v: unknown): boolean {
+  if (typeof v !== 'string' || !ISO_DATE.test(v)) return false;
+  const d = new Date(`${v}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return false;
+  // Reject overflow the Date constructor silently rolls over (2025-02-30).
+  return d.toISOString().slice(0, 10) === v;
+}
+
+function isValidDateTime(v: unknown): boolean {
+  if (typeof v !== 'string') return false;
+  // A bare date is not a DateTime: the two map to different Postgres column
+  // types, so accepting one for the other is exactly the divergence this
+  // table exists to prevent.
+  if (!v.includes('T')) return false;
+  return !Number.isNaN(new Date(v).getTime());
+}
+
+function isValidUri(v: unknown): boolean {
+  if (typeof v !== 'string' || v === '') return false;
+  try {
+    new URL(v);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** A GeoPoint is a lat/lng pair, and the numbers have to be on the globe. */
+function isValidGeoPoint(v: unknown): boolean {
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) return false;
+  const p = v as Record<string, unknown>;
+  const { lat, lng } = p;
+  if (typeof lat !== 'number' || typeof lng !== 'number') return false;
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return false;
+  return lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
+}
+
 /**
  * Built-in scalar type names recognized by the engine.
- * Maps ODL type names to JS typeof checks.
+ *
+ * These are FORMAT checks, not just `typeof` checks, and that distinction is
+ * the whole point. Date/DateTime/Duration map to TIMESTAMPTZ/DATE/INTERVAL on
+ * Postgres and to plain JS values in memory, so a `typeof === 'string'` gate
+ * let `"not-a-date"` through the engine and then produced two different
+ * outcomes: the memory provider stored it happily while Postgres raised. Same
+ * ODL, same write, different behaviour per backend — the class of divergence
+ * the conformance suite exists to catch, arriving from above it.
+ *
+ * GeoPoint was worse than loose: `{}` and `{foo: 1}` both passed, so the one
+ * structured type in the language guaranteed nothing about its own shape.
  */
 const SCALAR_TYPE_CHECKS: Record<string, (v: unknown) => boolean> = {
   ID: (v) => typeof v === 'string',
@@ -86,8 +139,12 @@ const SCALAR_TYPE_CHECKS: Record<string, (v: unknown) => boolean> = {
       typeof p.lng === 'number' && p.lng >= -180 && p.lng <= 180
     );
   },
+  Date: isValidDate,
+  DateTime: isValidDateTime,
+  Duration: (v) => typeof v === 'string' && ISO_DURATION.test(v),
+  GeoPoint: isValidGeoPoint,
   JSON: (_v) => true,
-  URI: (v) => typeof v === 'string',
+  URI: isValidUri,
 };
 
 /**

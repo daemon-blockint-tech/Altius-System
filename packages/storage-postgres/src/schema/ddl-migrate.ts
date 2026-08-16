@@ -37,6 +37,17 @@ export interface Queryable {
  */
 function canonicalPgType(pg: string): string {
   const t = pg.toUpperCase();
+  // information_schema.data_type reports EVERY array column as the literal
+  // string 'ARRAY' — the element type lives in udt_name, which this query does
+  // not select. Comparing a declared 'TEXT[]' against the reported 'ARRAY'
+  // looked like a type change and blocked the migration on a column that was
+  // already correct.
+  //
+  // Known limitation, deliberate: this makes any array match any other array,
+  // so changing TEXT[] to INTEGER[] is not detected as a type change. Catching
+  // that needs udt_name in the column query; until then an element-type change
+  // is the one drift this planner misses.
+  if (t.endsWith('[]')) return 'ARRAY';
   if (t === 'TIMESTAMPTZ') return 'timestamp with time zone';
   if (t === 'INTERVAL') return 'interval';
   if (t === 'TIME') return 'time without time zone';
@@ -105,7 +116,7 @@ export async function planAdditiveMigration(
 
     for (const prop of properties) {
       const col = snakeCase(prop.name);
-      const declared = pgType(prop.type);
+      const declared = pgType(prop.type, prop.isList === true);
       const liveType = existing.get(col);
       const qualified = `${pgIdent(dataSchema)}.${pgIdent(table)}`;
 
