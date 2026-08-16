@@ -53,6 +53,9 @@ type EvalHandler = (expression: string, variables: Record<string, unknown>) =>
 
 let evalHandler: EvalHandler = () => ({ result: { boolValue: true } });
 
+/** When > 0, the unary Evaluate handler defers its reply by this many ms. */
+let evalDelayMs = 0;
+
 function createMockServer(): {
   server: grpc.Server;
   start: () => Promise<string>;
@@ -88,7 +91,14 @@ function createMockServer(): {
 
       try {
         const result = evalHandler(req.expression, vars);
-        callback(null, result);
+        // Deferring the reply is the only way to exercise the client's deadline:
+        // evalHandler is synchronous and runs in this same process, so a busy
+        // wait would stall the event loop the client is waiting on.
+        if (evalDelayMs > 0) {
+          setTimeout(() => callback(null, result), evalDelayMs);
+        } else {
+          callback(null, result);
+        }
       } catch (err) {
         const serviceError: Partial<grpc.ServiceError> = {
           code: grpc.status.INTERNAL,
@@ -184,6 +194,7 @@ describe('CelClient', () => {
     });
     // Reset handler to default
     evalHandler = () => ({ result: { boolValue: true } });
+    evalDelayMs = 0;
   });
 
   // -----------------------------------------------------------------------
@@ -409,24 +420,44 @@ describe('CelClient', () => {
   // -----------------------------------------------------------------------
 
   describe('timeout handling', () => {
-    it('respects configured timeout', async () => {
-      // Create a client with a very short timeout
+    it('fails the call when the server outruns the configured deadline', async () => {
+      // This is what "respects configured timeout" was named for and never
+      // did: it used a fast handler and asserted only that the value came
+      // back, so a 100 ms deadline measured how loaded the machine was rather
+      // than whether the deadline worked. It was the intermittent red in
+      // `@altius/actions#test` — green alone, failing under a full `pnpm test`.
+      //
+      // A server slower than the deadline fails in the SAME direction under
+      // load, so this assertion cannot be flipped by a busy box.
       const shortClient = new CelClient({
         address,
         timeoutMs: 100,
         maxRetries: 0,
         protoPath: PROTO_PATH,
       });
+      evalDelayMs = 1_000;
 
-      evalHandler = () => {
-        // Simulate a fast response — timeout tested via the deadline mechanism
-        return { result: { boolValue: true } };
-      };
+      try {
+        await expect(shortClient.evaluate('true', {})).rejects.toThrow();
+      } finally {
+        evalDelayMs = 0;
+        shortClient.close();
+      }
+    });
 
-      // Should succeed because server responds quickly
-      const result = await shortClient.evaluate('true', {});
+    it('lets a fast call through under a generous deadline', async () => {
+      // The half the old test actually covered, with a budget that does not
+      // have to absorb cold-channel setup on a contended CI runner.
+      const client = new CelClient({
+        address,
+        timeoutMs: 5_000,
+        maxRetries: 0,
+        protoPath: PROTO_PATH,
+      });
+
+      const result = await client.evaluate('true', {});
       expect(result.value).toBe(true);
-      shortClient.close();
+      client.close();
     });
 
     it('fails on connection to non-existent server', async () => {
