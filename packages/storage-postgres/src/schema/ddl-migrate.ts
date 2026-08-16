@@ -105,7 +105,7 @@ export async function planAdditiveMigration(
 
     for (const prop of properties) {
       const col = snakeCase(prop.name);
-      const declared = pgType(prop.type);
+      const declared = pgType(prop.type, prop.isList === true);
       const liveType = existing.get(col);
       const qualified = `${pgIdent(dataSchema)}.${pgIdent(table)}`;
 

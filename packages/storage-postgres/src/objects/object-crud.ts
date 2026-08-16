@@ -19,6 +19,7 @@ import type {
 } from '@altius/spi';
 import { snakeCase, pgIdent, fieldCol } from '../schema/type-mapping.js';
 import { filterToSql } from './filter-to-sql.js';
+import { isListProperty } from '../list-properties.js';
 import { PgTransaction, resolveQueryable } from '../transactions/index.js';
 
 // ---------------------------------------------------------------------------
@@ -99,6 +100,19 @@ function historyTableName(type: string, schema = 'public'): string {
  * 1. INSERT into type table
  * 2. INSERT snapshot into history table
  */
+/**
+ * Bind one property value for a parameterized statement.
+ *
+ * JSONB columns need a JSON string; TIMESTAMPTZ needs the Date itself; a
+ * list-typed column needs the raw JS array, because the driver writes the
+ * Postgres array literal and a JSON string there is a syntax error.
+ */
+function serializeValue(pool: Pool, type: string, property: string, v: unknown): unknown {
+  if (v === null || typeof v !== 'object' || v instanceof Date) return v;
+  if (Array.isArray(v) && isListProperty(pool, type, property)) return v;
+  return JSON.stringify(v);
+}
+
 export async function createObject(
   pool: Pool,
   ctx: RequestContext,
@@ -117,12 +131,12 @@ export async function createObject(
   const systemVals = [ctx.tenantId, id, type, 1, timestamp, timestamp, ctx.actorId ?? null];
 
   const propCols = propEntries.map(([k]) => pgIdent(snakeCase(k)));
-  // Serialize objects/arrays as JSON strings for JSONB columns —
-  // the pg driver does not auto-serialize non-primitive values.
-  // Dates must pass through for TIMESTAMPTZ columns.
-  const propVals = propEntries.map(([, v]) =>
-    v !== null && typeof v === 'object' && !(v instanceof Date) ? JSON.stringify(v) : v,
-  );
+  // Serialize objects/arrays as JSON strings for JSONB columns — the pg
+  // driver does not auto-serialize non-primitive values. Dates pass through
+  // for TIMESTAMPTZ columns, and so do arrays bound for a real Postgres array
+  // column: the driver builds the array literal itself, and a JSON string
+  // there raises `malformed array literal`.
+  const propVals = propEntries.map(([k, v]) => serializeValue(pool, type, k, v));
 
   const allCols = [...systemCols, ...propCols];
   const allVals = [...systemVals, ...propVals];
@@ -136,7 +150,7 @@ export async function createObject(
   const obj = rowToObject(row);
 
   // Insert history snapshot
-  await insertHistory(q, type, row, schema);
+  await insertHistory(pool, q, type, row, schema);
 
   // Create AGE vertex
 
@@ -220,7 +234,7 @@ export async function updateObject(
   for (const [key, value] of propEntries) {
     setClauses.push(`${pgIdent(snakeCase(key))} = $${paramIdx}`);
     // Serialize objects/arrays as JSON strings for JSONB columns
-    params.push(value !== null && typeof value === 'object' && !(value instanceof Date) ? JSON.stringify(value) : value);
+    params.push(serializeValue(pool, type, key, value));
     paramIdx++;
   }
 
@@ -263,7 +277,7 @@ export async function updateObject(
   const obj = rowToObject(row);
 
   // Insert history snapshot
-  await insertHistory(q, type, row, schema);
+  await insertHistory(pool, q, type, row, schema);
 
   // Update AGE vertex
 
@@ -293,7 +307,7 @@ export async function softDeleteObject(
   }
 
   // Insert history snapshot for the soft-delete event
-  await insertHistory(q, type, result.rows[0] as Record<string, unknown>, schema);
+  await insertHistory(pool, q, type, result.rows[0] as Record<string, unknown>, schema);
 }
 
 /**
@@ -322,7 +336,7 @@ export async function restoreObject(
   const row = result.rows[0] as Record<string, unknown>;
   const restored = rowToObject(row);
   // Insert history snapshot for the restore event
-  await insertHistory(q, type, row, schema);
+  await insertHistory(pool, q, type, row, schema);
   return restored;
 }
 
@@ -481,6 +495,7 @@ export async function queryObjects(
 // ---------------------------------------------------------------------------
 
 async function insertHistory(
+  pool: Pool,
   q: Pool | import('pg').PoolClient,
   type: string,
   row: Record<string, unknown>,
@@ -491,10 +506,10 @@ async function insertHistory(
   // Copy all columns except _history_id (auto-generated)
   const entries = Object.entries(row);
   const cols = entries.map(([k]) => `"${k}"`);
-  // Serialize objects/arrays for JSONB columns (pg driver returns JSONB as JS objects)
-  const vals = entries.map(([, v]) =>
-    v !== null && typeof v === 'object' && !(v instanceof Date) ? JSON.stringify(v) : v,
-  );
+  // Same rule as the write path: JSONB columns need a JSON string, array
+  // columns need the array. Keys here are COLUMN names, which is why the
+  // registry holds both spellings.
+  const vals = entries.map(([k, v]) => serializeValue(pool, type, k, v));
   const placeholders = vals.map((_, i) => `$${i + 1}`);
 
   await q.query(

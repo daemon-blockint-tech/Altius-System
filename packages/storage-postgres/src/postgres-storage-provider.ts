@@ -68,6 +68,7 @@ import {
 } from './temporal/index.js';
 import { PgTransaction } from './transactions/index.js';
 import { withRetry } from './retry.js';
+import { registerListProperties } from './list-properties.js';
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -227,6 +228,7 @@ export class PostgresStorageProvider implements StorageProvider {
 
   async applySchema(_ctx: RequestContext, schema: OntologySchema): Promise<MigrationResult> {
     const fromVersion = this._currentSchemaVersion;
+    registerListProperties(this._pool, schema);
     const ddl = generateDDL(schema, { dataSchema: this._dataSchema });
 
     // Ensure migration tracking table exists
