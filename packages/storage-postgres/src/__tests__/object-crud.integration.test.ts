@@ -38,7 +38,12 @@ describeWithPg('Object CRUD (PostgreSQL integration)', () => {
   beforeAll(async () => {
     pool = new Pool({ connectionString: PG_TEST_URL });
 
-    // Create a test table mimicking a "Patient" ObjectType
+    // Hand-written DDL mimicking what generateObjectTableDDL emits for a
+    // "Patient" ObjectType. It has already drifted once — _actor_id was added
+    // to the generator (ddl-objects.ts:23, with an additive migration at :78)
+    // and not here, so every write failed with 42703. Prefer calling
+    // generateObjectTableDDL directly; keeping a second copy of the schema is
+    // what makes CRUD and DDL able to disagree at all.
     await pool.query(`
       DROP TABLE IF EXISTS "public"."patient_history" CASCADE;
       DROP TABLE IF EXISTS "public"."patient" CASCADE;
@@ -51,6 +56,7 @@ describeWithPg('Object CRUD (PostgreSQL integration)', () => {
         "_created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         "_updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         "_deleted_at" TIMESTAMPTZ,
+        "_actor_id" TEXT,
         "nhs_number" TEXT,
         "family_name" TEXT,
         "given_name" TEXT,
@@ -67,6 +73,7 @@ describeWithPg('Object CRUD (PostgreSQL integration)', () => {
         "_created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         "_updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         "_deleted_at" TIMESTAMPTZ,
+        "_actor_id" TEXT,
         "nhs_number" TEXT,
         "family_name" TEXT,
         "given_name" TEXT,
