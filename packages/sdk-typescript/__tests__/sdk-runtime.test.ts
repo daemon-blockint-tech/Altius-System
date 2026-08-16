@@ -261,6 +261,61 @@ describe('Generated SDK runtime', () => {
     });
   });
 
+  describe('token provider (refresh seam)', () => {
+    it('consults the provider on every request instead of freezing it', async () => {
+      // Access tokens expire. A client that captured the string at construction
+      // is dead after the first expiry, so the provider must be re-read.
+      let current = 'first';
+      const fetchMock = createFetchMock({ data: { patient: null } });
+      globalThis.fetch = fetchMock;
+
+      const client = new Altius({
+        endpoint: 'http://localhost:3000/graphql',
+        token: () => current,
+      });
+
+      await client.patient.get('p-1');
+      const firstHeaders = (fetchMock.mock.calls[0]![1] as RequestInit).headers as Record<string, string>;
+      expect(firstHeaders['Authorization']).toBe('Bearer first');
+
+      current = 'refreshed';
+      await client.patient.get('p-1');
+      const secondHeaders = (fetchMock.mock.calls[1]![1] as RequestInit).headers as Record<string, string>;
+      expect(secondHeaders['Authorization']).toBe('Bearer refreshed');
+    });
+
+    it('accepts an async provider and a plain string alike', async () => {
+      const fetchMock = createFetchMock({ data: { patient: null } });
+      globalThis.fetch = fetchMock;
+
+      const asyncClient = new Altius({
+        endpoint: 'http://localhost:3000/graphql',
+        token: async () => 'from-promise',
+      });
+      await asyncClient.patient.get('p-1');
+      const h = (fetchMock.mock.calls[0]![1] as RequestInit).headers as Record<string, string>;
+      expect(h['Authorization']).toBe('Bearer from-promise');
+    });
+
+    it('resolves the token when the socket opens, not when the client is built', async () => {
+      // A reconnect after a refresh must present the new token; capturing it at
+      // construction would re-authenticate with an already-expired credential.
+      let current = 'stale';
+      const client = new Altius({
+        endpoint: 'http://localhost:3000/graphql',
+        token: () => current,
+      });
+      current = 'fresh';
+
+      client.patient.onChange('p-1', () => {});
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      const ws = MockWebSocket.instances[0]!;
+      const initMsg = JSON.parse(ws.sent[0]!);
+      expect(initMsg.payload.Authorization).toBe('Bearer fresh');
+    });
+  });
+
   describe('patient.onChange (subscription)', () => {
     it('opens a WebSocket and sends connection_init + subscribe', async () => {
       const client = new Altius({

@@ -69,7 +69,10 @@ describe('TypeScript SDK codegen', () => {
       const code = getIndexTs();
       expect(code).toContain('export interface AltiusConfig {');
       expect(code).toContain('endpoint: string;');
-      expect(code).toContain('token: string;');
+      // A bare string cannot be refreshed: access tokens expire, so the config
+      // also accepts a provider the client re-reads per request.
+      expect(code).toContain('token: string | TokenProvider;');
+      expect(code).toContain('export type TokenProvider = () => string | Promise<string>;');
     });
 
     it('exports ChangeEvent generic', () => {

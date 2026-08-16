@@ -73,9 +73,21 @@ export interface Subscription {
   unsubscribe(): void;
 }
 
+/**
+ * A token, or a function returning one.
+ *
+ * Access tokens expire (the shipped Keycloak realm uses an hour), so a
+ * client that captured a string at construction is dead after the first
+ * expiry with no seam to refresh through. A provider is consulted per
+ * request, and
+ * again each time the socket re-inits, so refreshing is up to the caller
+ * and the client never holds a stale credential.
+ */
+export type TokenProvider = () => string | Promise<string>;
+
 export interface AltiusConfig {
   endpoint: string;
-  token: string;
+  token: string | TokenProvider;
 }
 
 // ─── Enums ───
@@ -955,7 +967,7 @@ export type CancelOrderResult = ActionResult;
 
 export class Altius {
   private readonly endpoint: string;
-  private readonly token: string;
+  private readonly token: string | TokenProvider;
   private readonly wsSubscriptions = new Map<string, (payload: unknown) => void>();
   private wsSocket: WebSocket | null = null;
   private wsReady = false;
@@ -966,12 +978,18 @@ export class Altius {
     this.token = config.token;
   }
 
-  private authHeaders(): Record<string, string> {
+  /** Resolve the current token, calling the provider if one was supplied. */
+  private async resolveToken(): Promise<string> {
+    return typeof this.token === 'function' ? await this.token() : this.token;
+  }
+
+  private async authHeaders(): Promise<Record<string, string>> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
     };
-    if (this.token) {
-      headers['Authorization'] = `Bearer ${this.token}`;
+    const token = await this.resolveToken();
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
     }
     return headers;
   }
@@ -979,7 +997,7 @@ export class Altius {
   private async query<T>(query: string, variables?: Record<string, unknown>): Promise<T> {
     const response = await fetch(this.endpoint, {
       method: 'POST',
-      headers: this.authHeaders(),
+      headers: await this.authHeaders(),
       body: JSON.stringify({ query, variables }),
     });
     if (!response.ok) {
@@ -1001,7 +1019,7 @@ export class Altius {
     } }`;
     const response = await fetch(this.endpoint, {
       method: 'POST',
-      headers: this.authHeaders(),
+      headers: await this.authHeaders(),
       body: JSON.stringify({ query: mutation, variables: { input } }),
     });
     if (!response.ok) {
@@ -1028,7 +1046,12 @@ export class Altius {
     this.wsSocket = socket;
     this.wsReady = false;
     socket.addEventListener('open', () => {
-      socket.send(JSON.stringify({ type: 'connection_init', payload: { Authorization: this.token ? `Bearer ${this.token}` : '' } }));
+      // Resolved at open time, not captured at construction: a reconnect
+      // after a refresh must present the NEW token, or the socket
+      // re-authenticates with a credential that has already expired.
+      void this.resolveToken().then((token) => {
+        socket.send(JSON.stringify({ type: 'connection_init', payload: { Authorization: token ? `Bearer ${token}` : '' } }));
+      });
     });
     socket.addEventListener('message', (event) => {
       const msg = JSON.parse(event.data as string) as { type: string; id?: string; payload?: unknown };
