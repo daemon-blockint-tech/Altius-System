@@ -202,6 +202,8 @@ services:
       - "${API_PORT:-4000}:4000"
     environment:
       NODE_ENV: development
+      # Opt-in for the unauthenticated dev identity. Local stack only.
+      ALTIUS_DEV_AUTH_BYPASS: "${ALTIUS_DEV_AUTH_BYPASS:-true}"
       PORT: "4000"
       POSTGRES_URL: "postgresql://${POSTGRES_USER:-altius}:${POSTGRES_PASSWORD}@postgresql:5432/${POSTGRES_DB:-altius}"
       OPENFGA_URL: "http://openfga:8080"
@@ -282,6 +284,8 @@ services:
         GIT_REVISION: ${GIT_REVISION:-unknown}
     environment:
       NODE_ENV: development
+      # Opt-in for the unauthenticated dev identity. Local stack only.
+      ALTIUS_DEV_AUTH_BYPASS: "${ALTIUS_DEV_AUTH_BYPASS:-true}"
       PORT: "4001"
       POSTGRES_URL: "postgresql://${POSTGRES_USER:-altius}:${POSTGRES_PASSWORD}@postgresql:5432/${POSTGRES_DB:-altius}"
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4317"
@@ -305,6 +309,8 @@ services:
         GIT_REVISION: ${GIT_REVISION:-unknown}
     environment:
       NODE_ENV: development
+      # Opt-in for the unauthenticated dev identity. Local stack only.
+      ALTIUS_DEV_AUTH_BYPASS: "${ALTIUS_DEV_AUTH_BYPASS:-true}"
       PORT: "4002"
       CEL_EVALUATOR_URL: "cel-evaluator:50051"
       POSTGRES_URL: "postgresql://${POSTGRES_USER:-altius}:${POSTGRES_PASSWORD}@postgresql:5432/${POSTGRES_DB:-altius}"
@@ -334,6 +340,8 @@ services:
         GIT_REVISION: ${GIT_REVISION:-unknown}
     environment:
       NODE_ENV: development
+      # Opt-in for the unauthenticated dev identity. Local stack only.
+      ALTIUS_DEV_AUTH_BYPASS: "${ALTIUS_DEV_AUTH_BYPASS:-true}"
       PORT: "4003"
       POSTGRES_URL: "postgresql://${POSTGRES_USER:-altius}:${POSTGRES_PASSWORD}@postgresql:5432/${POSTGRES_DB:-altius}"
       REDPANDA_BROKERS: "redpanda:9092"
@@ -369,6 +377,8 @@ services:
         GIT_REVISION: ${GIT_REVISION:-unknown}
     environment:
       NODE_ENV: development
+      # Opt-in for the unauthenticated dev identity. Local stack only.
+      ALTIUS_DEV_AUTH_BYPASS: "${ALTIUS_DEV_AUTH_BYPASS:-true}"
       PORT: "4004"
       POSTGRES_URL: "postgresql://${POSTGRES_USER:-altius}:${POSTGRES_PASSWORD}@postgresql:5432/${POSTGRES_DB:-altius}"
       OPENFGA_URL: "http://openfga:8080"

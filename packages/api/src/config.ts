@@ -7,7 +7,7 @@
 
 import type { PostgresStorageConfig } from '@altius/storage-postgres';
 import type { OpenFgaClientInterface, FgaClientResolver, OidcAuthenticator } from '@altius/security';
-import { AuthenticationError, AuthorizationService } from '@altius/security';
+import { AuthenticationError, AuthorizationService, DEV_USER, devAuthBypassEnabled } from '@altius/security';
 import type { SecurityLayer } from '@altius/actions';
 import type { Request } from 'express';
 import type { AuthenticatedUserInfo, ManifestRegistry } from './graphql/types.js';
@@ -322,15 +322,15 @@ export async function extractUser(
 ): Promise<AuthenticatedUserInfo> {
   const authHeader = req.headers.authorization;
   if (!authHeader?.startsWith('Bearer ')) {
-    if (isDev) {
-      return {
-        id: 'dev-user',
-        name: 'Development User',
-        email: 'dev@altius.local',
-        roles: ['admin', 'clinician', 'nurse_in_charge', 'compliance_analyst', 'compliance_officer', 'bsa_officer', 'operator', 'governor', 'auditor'],
-        groups: [],
-        tenantId: 'default',
-      };
+    // Opt-in, not merely "not production". `isDev` is
+    // `NODE_ENV !== 'production'`, which is satisfied by the variable being
+    // unset, misspelled or differently capitalised — and the api-gateway image
+    // sets no default, so running a published release image with no
+    // environment served this 9-role admin to any request with no
+    // Authorization header. The MCP endpoint has always required a flag here;
+    // this surface is now gated by the same function.
+    if (isDev && devAuthBypassEnabled('ALTIUS_DEV_AUTH_BYPASS')) {
+      return DEV_USER;
     }
     throw Object.assign(new Error('Authorization header required'), { status: 401 });
   }
