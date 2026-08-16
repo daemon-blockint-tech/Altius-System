@@ -16,6 +16,8 @@ import type { AuditRecord } from '@altius/spi';
 import { AuditWriter, MemoryAuditStore } from '@altius/security';
 import { auditRead } from '../rest/audit-read.js';
 import { generateResolvers } from '../graphql/resolver-generator.js';
+import { createFhirRouter } from '../fhir/router.js';
+import { createCdmRouter } from '../cdm/router.js';
 import type { RestRequest, RestRoute } from '../rest/types.js';
 import type { ResolverContext } from '../graphql/types.js';
 
@@ -257,5 +259,75 @@ describe('read auditing — GraphQL resolvers', () => {
     expect(rec?.operation.type).toBe('query');
     expect(rec?.operation.objectType).toBe('Patient');
     expect(rec?.operation.objectId).toBeUndefined();
+  });
+});
+
+/**
+ * FHIR and CDM are read-only projections over the same objects. They were the
+ * last unaudited read surfaces — and they are the ones a clinical integration
+ * actually calls, so a DPO asking "who read this patient" would have missed
+ * exactly the traffic that matters most in the shipped NHS pack.
+ */
+describe('read auditing — FHIR and CDM projections', () => {
+  const deps = () => ({
+    auditWriter: writer,
+    schema: { objectTypes: [], linkTypes: [], actionTypes: [], functionTypes: [], enums: [], interfaces: [] },
+    authorizationService: { check: async () => false },
+  }) as never;
+
+  const user = { id: 'u-1', name: 'Dr Smith', email: 'd@nhs.uk', roles: ['clinician'], groups: [], tenantId: 't-1' };
+
+  it('audits a FHIR resource read', async () => {
+    const router = createFhirRouter({ deps: deps() });
+    await router({ method: 'GET', path: '/Patient/p-1', query: {}, headers: {}, user } as never);
+
+    const [rec] = await records();
+    expect(rec?.operation.type).toBe('read');
+    expect(rec?.operation.objectType).toBe('Patient');
+    expect(rec?.operation.objectId).toBe('p-1');
+    expect(rec?.detail.query).toBe('fhir GET /Patient/p-1');
+  });
+
+  it('audits a FHIR search as a query', async () => {
+    const router = createFhirRouter({ deps: deps() });
+    await router({ method: 'GET', path: '/Patient', query: {}, headers: {}, user } as never);
+
+    const [rec] = await records();
+    expect(rec?.operation.type).toBe('query');
+    expect(rec?.operation.objectId).toBeUndefined();
+  });
+
+  it('does not audit the FHIR CapabilityStatement — it is not anyone data', async () => {
+    const router = createFhirRouter({ deps: deps() });
+    await router({ method: 'GET', path: '/metadata', query: {}, headers: {}, user } as never);
+
+    expect(await records()).toHaveLength(0);
+  });
+
+  it('audits a CDM object read', async () => {
+    const router = createCdmRouter({ deps: deps() });
+    await router({ method: 'GET', path: '/Patient/p-1', query: {}, headers: {}, user } as never);
+
+    const [rec] = await records();
+    expect(rec?.operation.objectType).toBe('Patient');
+    expect(rec?.operation.objectId).toBe('p-1');
+    expect(rec?.detail.query).toBe('cdm GET /Patient/p-1');
+  });
+
+  it('audits a CDM export as a query, not a record read', async () => {
+    const router = createCdmRouter({ deps: deps() });
+    await router({ method: 'GET', path: '/Patient/export', query: {}, headers: {}, user } as never);
+
+    const [rec] = await records();
+    expect(rec?.operation.type).toBe('query');
+    expect(rec?.operation.objectId).toBeUndefined();
+  });
+
+  it('records a denied FHIR read', async () => {
+    const router = createFhirRouter({ deps: deps() });
+    await router({ method: 'GET', path: '/Patient/p-9', query: {}, headers: {}, user } as never);
+
+    const [rec] = await records();
+    expect(rec?.detail.result).toBe('denied');
   });
 });

@@ -45,19 +45,47 @@ export async function writeReadAudit(
   ctx: ResolverContext,
   entry: ReadAuditEntry,
 ): Promise<void> {
-  if (!auditWriter) return;
   const { user, requestContext } = ctx;
+  await writeReadAuditFor(
+    auditWriter,
+    { id: user.id, roles: user.roles, tenantId: requestContext.tenantId, traceId: requestContext.traceId },
+    entry,
+  );
+}
+
+/** The caller identity a read audit record needs. */
+export interface ReadAuditActor {
+  id: string;
+  roles: string[];
+  tenantId: string;
+  traceId?: string;
+}
+
+/**
+ * Write a read audit record for a surface that has no `ResolverContext`.
+ *
+ * FHIR and CDM build their own request context rather than carrying the
+ * GraphQL one, so they pass the actor explicitly. Same record shape either
+ * way — a DPO filtering for reads of `Patient p-1` must not have to know
+ * which projection served them.
+ */
+export async function writeReadAuditFor(
+  auditWriter: AuditWriter | undefined,
+  actor: ReadAuditActor,
+  entry: ReadAuditEntry,
+): Promise<void> {
+  if (!auditWriter) return;
   try {
     await auditWriter.write({
-      tenantId: requestContext.tenantId,
-      actor: { type: 'user', id: user.id, roles: user.roles },
+      tenantId: actor.tenantId,
+      actor: { type: 'user', id: actor.id, roles: actor.roles },
       operation: {
         type: entry.type,
         ...(entry.objectType ? { objectType: entry.objectType } : {}),
         ...(entry.objectId ? { objectId: entry.objectId } : {}),
       },
       detail: { result: entry.result, query: entry.query },
-      traceId: requestContext.traceId,
+      traceId: actor.traceId ?? '',
     });
   } catch {
     /* best-effort — never fail a read because auditing failed */

@@ -16,6 +16,7 @@
 
 import type { FilterExpression, FieldPredicate } from '@altius/spi';
 import { DataPurpose } from '@altius/spi';
+import { writeReadAuditFor } from '../rest/audit-read.js';
 import type { ApiDependencies, AuthenticatedUserInfo } from '../graphql/types.js';
 import { isConsentSubjectType } from '../graphql/types.js';
 import { logger } from '../logger.js';
@@ -93,7 +94,7 @@ export function buildCdmMetadata(): Record<string, unknown> {
 export function createCdmRouter(config: CdmRouterConfig) {
   const { deps } = config;
 
-  return async (req: CdmRequest): Promise<CdmResponse> => {
+  const handle = async (req: CdmRequest): Promise<CdmResponse> => {
     if (req.method !== 'GET' && req.method !== 'HEAD') {
       return error(405, 'The CDM projection is read-only.');
     }
@@ -142,6 +143,31 @@ export function createCdmRouter(config: CdmRouterConfig) {
     return id
       ? handleObjectRead(deps, req.user, head, id)
       : handleObjectList(deps, req.user, head);
+  };
+
+  // Audit every CDM data read at the one dispatcher, for the same reason the
+  // REST and MCP surfaces do: a resource added later is covered without being
+  // remembered. `metadata` is skipped — it is a public capability document,
+  // not anyone's data.
+  return async (req: CdmRequest): Promise<CdmResponse> => {
+    const res = await handle(req);
+    const segments = req.path.split('/').filter(Boolean);
+    const head = segments[0];
+    const id = segments[1];
+    if (req.user?.id && req.user.tenantId && head && head !== 'metadata') {
+      await writeReadAuditFor(
+        deps.auditWriter,
+        { id: req.user.id, roles: req.user.roles, tenantId: req.user.tenantId, traceId: ctxFor(req.user).traceId },
+        {
+          type: id && id !== 'export' ? 'read' : 'query',
+          objectType: head,
+          ...(id && id !== 'export' ? { objectId: id } : {}),
+          query: `cdm ${req.method} ${req.path}`,
+          result: res.status >= 500 ? 'error' : res.status >= 400 ? 'denied' : 'success',
+        },
+      );
+    }
+    return res;
   };
 }
 
