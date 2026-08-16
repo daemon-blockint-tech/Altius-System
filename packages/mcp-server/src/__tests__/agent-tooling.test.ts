@@ -1,24 +1,24 @@
 /**
  * What an agent can see and do over MCP.
  *
- * Three gaps, all of which matter more for an autonomous agent than for a
+ * Two gaps, both of which matter more for an autonomous agent than for a
  * human at a keyboard:
  *
- * 1. Declared @function types were invisible. REST and GraphQL both expose
- *    them; MCP built tools from actionTypes and objectTypes only, so pack
- *    logic shipped as a function could not be reached by an agent at all.
- * 2. No dry-run. REST has accepted ?dryRun=true for a while; MCP never passed
+ * 1. No dry-run. REST has accepted ?dryRun=true for a while; MCP never passed
  *    it, so the caller most likely to want to preview a write before
  *    committing was the one surface that could not.
- * 3. tools/list returned every tool to every caller. Execution was denied
+ * 2. tools/list returned every tool to every caller. Execution was denied
  *    later, so this was disclosure rather than an authority hole — but for an
  *    LLM the tool list IS the affordance, and advertising writes it can never
  *    perform invites it to try.
+ *
+ * Function tools themselves are covered by function-tool.test.ts; this file
+ * only needs them to exist so the scoping assertions have something to hide.
  */
 
 import { describe, it, expect, vi } from 'vitest';
 import { parseOdl } from '@altius/odl';
-import { buildToolList, invokeTool, scopeToolList } from '../tools.js';
+import { buildToolList, scopeToolList } from '../tools.js';
 import type { McpServerDependencies, McpCaller } from '../types.js';
 
 const schema = parseOdl(`
@@ -47,6 +47,7 @@ function makeDeps(over: Partial<McpServerDependencies> = {}): McpServerDependenc
   return {
     schema,
     functionInvoker: { invoke: vi.fn(async () => ({ result: { score: 42 } })) },
+    functionInvoker: { invoke: vi.fn(async () => ({ ok: true as const, result: { score: 42 } })) },
     authorizationService: {
       listObjects: async () => ['w-1'],
       check: async () => true,
@@ -58,50 +59,6 @@ function makeDeps(over: Partial<McpServerDependencies> = {}): McpServerDependenc
     ...over,
   } as unknown as McpServerDependencies;
 }
-
-describe('FunctionTypes as MCP tools', () => {
-  it('advertises a tool per declared function', () => {
-    const names = buildToolList(makeDeps()).map(t => t.name);
-
-    expect(names).toContain('function_ScoreRisk');
-    expect(names).toContain('function_AdminOnly');
-  });
-
-  it('derives the input schema from the function fields', () => {
-    const tool = buildToolList(makeDeps()).find(t => t.name === 'function_ScoreRisk');
-    const s = tool!.inputSchema as { properties: Record<string, unknown>; required?: string[] };
-
-    expect(Object.keys(s.properties)).toEqual(['wardId', 'weight']);
-    expect(s.required).toEqual(['wardId']);
-  });
-
-  it('advertises nothing when no invoker is wired — discovery must not lie', () => {
-    const deps = makeDeps();
-    delete (deps as { functionInvoker?: unknown }).functionInvoker;
-
-    expect(buildToolList(deps).map(t => t.name).some(n => n.startsWith('function_'))).toBe(false);
-  });
-
-  it('routes invocation through the injected governed entry point', async () => {
-    const deps = makeDeps();
-    await invokeTool('function_ScoreRisk', { wardId: 'w-1' }, caller(['clinician']), deps);
-
-    expect(deps.functionInvoker!.invoke).toHaveBeenCalledWith(
-      expect.objectContaining({ functionName: 'ScoreRisk', args: { wardId: 'w-1' } }),
-    );
-  });
-
-  it('returns a denial as isError content, not a protocol error', async () => {
-    const deps = makeDeps({
-      functionInvoker: { invoke: vi.fn(async () => { throw new Error('requires one of: admin'); }) },
-    } as unknown as Partial<McpServerDependencies>);
-
-    const res = await invokeTool('function_AdminOnly', { input: 'x' }, caller(['clinician']), deps);
-
-    expect(res.isError).toBe(true);
-    expect(res.content[0]!.text).toContain('admin');
-  });
-});
 
 describe('dry-run over MCP', () => {
   it('advertises dryRun on every action tool', () => {

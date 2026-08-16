@@ -395,15 +395,6 @@ export async function invokeTool(
     }
   }
 
-  // Function tool: name matches function_<Name>
-  if (toolName.startsWith('function_') && deps.functionInvoker) {
-    const fnName = toolName.slice('function_'.length);
-    const fnType = deps.schema.functionTypes.find((f) => f.name === fnName);
-    if (fnType) {
-      return invokeFunctionTool(fnType, args, caller, deps);
-    }
-  }
-
   // Unknown tool — protocol error surfaced as isError content (not a JSON-RPC
   // error) so the agent sees the message and can recover.
   return {

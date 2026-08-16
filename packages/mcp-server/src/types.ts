@@ -104,13 +104,6 @@ export interface McpServerDependencies {
    * are absent on /mcp while present on every other surface.
    */
   objectManager?: ObjectManager;
-  /**
-   * Invokes declared FunctionTypes. When provided, one `function_<Name>` tool
-   * is offered per FunctionType and dispatched through it (role-gated + audited
-   * like REST/GraphQL). Without it, functions are invisible to agents — the
-   * pre-existing behaviour, not a silent downgrade.
-   */
-  functionInvoker?: McpFunctionInvoker;
 }
 
 /**

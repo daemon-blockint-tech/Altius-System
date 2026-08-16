@@ -74,7 +74,6 @@ import { InMemorySubscribableEventBus, SubscriptionManager, SubscriptionRegistry
 import type { SubscribableEventBus } from './subscriptions/index.js';
 import { RedpandaEventBus } from './events/index.js';
 import { AutomationRunner } from './automation/index.js';
-import { invokeFunction } from './functions/invoke-function.js';
 import type { ApiDependencies, ResolverContext } from './graphql/types.js';
 import { DEFAULT_CONSENT_PURPOSE } from './graphql/types.js';
 import type { RestRequest } from './rest/types.js';
@@ -1416,7 +1415,11 @@ async function main(): Promise<void> {
                       },
                       deps,
                     }, args);
-                    return { ok: true as const, result: r.result };
+                    // The whole invocation result, not just `result`: the SDL's
+                    // ${Name}FunctionResult carries logs and durationMs too, and
+                    // an agent debugging its own call needs them as much as a
+                    // GraphQL client does.
+                    return { ok: true as const, result: r };
                   } catch (err) {
                     const e = err as { code?: string; message?: string };
                     return { ok: false as const, error: e.message ?? 'Function invocation failed', ...(e.code ? { code: e.code } : {}) };
