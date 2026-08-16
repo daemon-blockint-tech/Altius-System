@@ -259,5 +259,52 @@ export function registerSearchTests(name: string, factory: ProviderFactory): voi
         expect(result.hits[0]!.object.name).toBe('Active SearchTarget');
       });
     });
+
+    // ─── Multi-word query semantics ───
+    //
+    // The two providers disagreed here and nothing pinned it: Postgres sent a
+    // single `%query%` ILIKE pattern while the memory provider split on
+    // whitespace and matched ANY term. search('acme corp') therefore returned
+    // rows containing "acme" OR "corp" on one and only the contiguous phrase
+    // on the other — a suite green against the test double while production
+    // behaved differently. The contract is Postgres's: one literal substring.
+
+    describe('multi-word queries match as one substring', () => {
+      it('matches a contiguous phrase', async () => {
+        await provider.createObject(tenantA, 'Patient', { name: 'Acme Corp Clinic' });
+
+        const result = await provider.searchObjects(tenantA, 'Patient', { query: 'Acme Corp' });
+
+        expect(result.hits.map(h => h.object['name'])).toEqual(['Acme Corp Clinic']);
+      });
+
+      it('does NOT match a row carrying only one of the words', async () => {
+        await provider.createObject(tenantA, 'Patient', { name: 'Acme Holdings' });
+        await provider.createObject(tenantA, 'Patient', { name: 'Corp Services' });
+
+        const result = await provider.searchObjects(tenantA, 'Patient', { query: 'Acme Corp' });
+
+        expect(result.hits).toHaveLength(0);
+      });
+
+      it('does not match when the words appear out of order', async () => {
+        await provider.createObject(tenantA, 'Patient', { name: 'Corp Acme' });
+
+        const result = await provider.searchObjects(tenantA, 'Patient', { query: 'Acme Corp' });
+
+        expect(result.hits).toHaveLength(0);
+      });
+
+      it('scores by how many fields contain the substring', async () => {
+        await provider.createObject(tenantA, 'Patient', { name: 'Zed', status: 'Zed' });
+        await provider.createObject(tenantA, 'Patient', { name: 'Zed', status: 'other' });
+
+        const result = await provider.searchObjects(tenantA, 'Patient', { query: 'Zed' });
+        const scores = result.hits.map(h => h.score).sort((a, b) => b - a);
+
+        expect(scores[0]).toBeGreaterThan(scores[1]!);
+      });
+    });
+
   });
 }

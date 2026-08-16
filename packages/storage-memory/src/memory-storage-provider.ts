@@ -1086,8 +1086,19 @@ export class MemoryStorageProvider implements StorageProvider {
       return { hits: [], totalCount: 0, hasNextPage: false };
     }
 
+    // ONE literal substring, not a bag of terms.
+    //
+    // This provider used to split the query on whitespace and match ANY term,
+    // while Postgres has always sent a single `%query%` ILIKE pattern. So
+    // search('acme corp') returned rows containing "acme" OR "corp" here and
+    // only rows containing the contiguous phrase there — the same SPI call,
+    // two different result sets, with the conformance suite green against the
+    // one that is not production.
+    //
+    // Postgres wins the tie deliberately: it is what deployments actually run,
+    // so aligning the test double changes no shipped behaviour, while
+    // "improving" Postgres to match this provider would have.
     const queryLower = query.query.toLowerCase();
-    const terms = queryLower.split(/\s+/).filter((t) => t.length > 0);
 
     // Collect candidate objects (tenant-scoped, type-matched, non-deleted)
     const maps = this._getEffectiveMaps(ctx);
@@ -1106,30 +1117,21 @@ export class MemoryStorageProvider implements StorageProvider {
         ? query.fields
         : Object.keys(obj).filter((k) => !k.startsWith('_') && typeof obj[k] === 'string');
 
-      // Count occurrences of query terms across matching fields
+      // Score is the number of FIELDS containing the substring, matching the
+      // Postgres `SUM(CASE WHEN col ILIKE ... THEN 1 ELSE 0 END)` expression.
+      // Counting occurrences within a field would rank differently.
       let score = 0;
       const highlights: Record<string, string[]> = {};
 
       for (const field of searchFields) {
         const val = obj[field];
         if (typeof val !== 'string') continue;
-        const valLower = val.toLowerCase();
-
-        for (const term of terms) {
-          let idx = 0;
-          let count = 0;
-          while ((idx = valLower.indexOf(term, idx)) !== -1) {
-            count++;
-            idx += term.length;
-          }
-          if (count > 0) {
-            score += count;
-            if (!highlights[field]) {
-              highlights[field] = [];
-            }
-            highlights[field].push(val);
-          }
+        if (!val.toLowerCase().includes(queryLower)) continue;
+        score += 1;
+        if (!highlights[field]) {
+          highlights[field] = [];
         }
+        highlights[field].push(val);
       }
 
       if (score === 0) continue;

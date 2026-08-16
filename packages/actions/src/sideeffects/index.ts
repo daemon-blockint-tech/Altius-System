@@ -17,4 +17,5 @@ export type {
   HttpRequestOptions,
   SideEffectExecutionResult,
   SideEffectExecutorConfig,
+  SideEffectLogger,
 } from './types.js';

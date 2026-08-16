@@ -6,9 +6,14 @@
  * {id,_type} and an un-evaluable key fails closed. The filter was documented
  * as supported, compiled, and silently matched nothing.
  *
- * The events are now hydrated per subscriber — after the tenant, FGA and
- * consent gates — so the filter has real values to test and the payload
- * satisfies the full object type the SDL declares.
+ * Events carrying such a filter are now hydrated per subscriber — after the
+ * tenant, FGA and consent gates — so the filter has real values to test.
+ *
+ * Only when a property filter needs it. The `${Type}ChangeEvent.object` field
+ * resolver already hydrates the delivered payload on demand, so hydrating
+ * unconditionally would read every object twice; the resolver in turn reuses an
+ * object this path already hydrated. Both directions are pinned below, because
+ * a duplicate read per event per subscriber is invisible in correctness tests.
  *
  * The redaction case is the security half: filtering must run against the
  * REDACTED object, or the filter becomes an oracle for fields the subscriber
@@ -20,6 +25,7 @@ import { PubSub } from 'graphql-subscriptions';
 import { parseOdl } from '@altius/odl';
 import type { ParsedSchema } from '@altius/odl';
 import { createFilteredSubscription } from '../subscriptions/subscription-manager.js';
+import { generateResolvers } from '../graphql/resolver-generator.js';
 import type { ChangeEvent } from '../subscriptions/subscription-manager.js';
 import type { ApiDependencies, ResolverContext } from '../graphql/types.js';
 import type { AuthenticatedUserInfo } from '../graphql/types.js';
@@ -216,6 +222,46 @@ describe('property-level subscription filtering', () => {
     expect(raced).toBe('pending');
     // The row is gone, so no read should have been attempted for it.
     expect(deps.objectManager.get).not.toHaveBeenCalled();
+  });
+
+  it('does not hydrate when no property filter needs it', async () => {
+    // The `${Type}ChangeEvent.object` field resolver hydrates the payload on
+    // demand, so hydrating here as well would read every object twice.
+    const deps = makeDeps(schema, { 'p-1': row('p-1', 'Alice', 'ACTIVE') });
+    const pubsub = new PubSub();
+    const sub = createFilteredSubscription(pubsub, 'patientChanged');
+    // changeType is on the event itself — evaluable without a read.
+    const iterator = sub.subscribe(null, { filter: { changeType: 'UPDATED' } }, makeCtx(deps));
+    const next = iterator.next();
+
+    await pubsub.publish('patientChanged', { patientChanged: event('p-1') });
+
+    const payload = (await next).value as Record<string, ChangeEvent>;
+    expect(payload['patientChanged']!.object.id).toBe('p-1');
+    expect(deps.objectManager.get).not.toHaveBeenCalled();
+  });
+
+  it('lets the field resolver reuse an already-hydrated object instead of re-reading', async () => {
+    const parsed = parseOdl(ODL);
+    const deps = makeDeps(parsed, { 'p-1': row('p-1', 'Alice', 'ACTIVE') });
+    const storageGet = vi.fn();
+    (deps as { storage: unknown }).storage = { getObject: storageGet };
+
+    const { resolvers } = generateResolvers(parsed, deps);
+    const objectResolver = (resolvers as Record<string, Record<string, unknown>>)['PatientChangeEvent']?.['object'] as
+      | ((parent: unknown, args: unknown, ctx: ResolverContext) => Promise<unknown>)
+      | undefined;
+    expect(objectResolver, 'PatientChangeEvent.object resolver is not generated').toBeDefined();
+
+    // A parent the subscription manager already hydrated — carries _version.
+    const hydratedParent = {
+      changeType: 'UPDATED',
+      object: { id: 'p-1', _type: 'Patient', _version: 1, name: 'Alice', status: 'ACTIVE' },
+    };
+    const result = await objectResolver!(hydratedParent, {}, makeCtx(deps));
+
+    expect(result).toMatchObject({ id: 'p-1', status: 'ACTIVE' });
+    expect(storageGet, 'field resolver re-read an object the manager had already hydrated').not.toHaveBeenCalled();
   });
 
   it('degrades to the id-only stub when hydration fails, rather than dropping the stream', async () => {

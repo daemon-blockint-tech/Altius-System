@@ -8,6 +8,8 @@
  */
 
 import type { ActionType, ObjectType, FunctionType, FieldDefinition } from '@altius/odl';
+import type { FunctionType, ActionType, ObjectType, FieldDefinition } from '@altius/odl';
+import { actionPermissionRelation } from '@altius/odl';
 import type { ActionActor, ActionContext, ActionResult } from '@altius/actions';
 import type { FilterExpression, OntologyObject, TraversalStep } from '@altius/spi';
 import { DataPurpose } from '@altius/spi';
@@ -60,6 +62,15 @@ export function buildToolList(deps: McpServerDependencies): McpTool[] {
     tools.push(buildActionTool(actionType));
   }
 
+  // Function tools — one per FunctionType, but only when an invoker is wired.
+  // Advertising a tool the server cannot run would make discovery lie, and an
+  // agent has no way to tell the difference until the call fails.
+  if (deps.functionInvoker) {
+    for (const fn of deps.schema.functionTypes) {
+      tools.push(buildFunctionTool(fn));
+    }
+  }
+
   // Read tools — one search_<Type> and one traverse_<Type> per ObjectType
   for (const objType of deps.schema.objectTypes) {
     tools.push(buildSearchTool(objType));
@@ -89,6 +100,18 @@ function buildFunctionTool(fnType: FunctionType): McpTool {
   for (const field of fnType.fields) {
     const isParam = field.directives.some((d) => d.kind === 'param');
     if (!isParam) continue;
+ * Build an MCP tool descriptor for a FunctionType.
+ *
+ * Named `function_<Name>` so it cannot collide with an ActionType of the same
+ * name — the two are separate namespaces in ODL and a bare name would make
+ * dispatch ambiguous.
+ */
+function buildFunctionTool(fn: FunctionType): McpTool {
+  const properties: Record<string, unknown> = {};
+  const required: string[] = [];
+
+  for (const field of fn.fields) {
+    // A function's inputs are its plain fields; @param is an action concept.
     properties[field.name] = fieldToJsonSchema(field);
     if (field.type.nonNull) required.push(field.name);
   }
@@ -96,12 +119,100 @@ function buildFunctionTool(fnType: FunctionType): McpTool {
   return {
     name: `function_${fnType.name}`,
     description: fnType.description ?? `Invoke the ${fnType.name} function`,
+    name: `function_${fn.name}`,
+    description: fn.description ?? `Invoke the ${fn.name} function`,
     inputSchema: {
       type: 'object',
       properties,
       ...(required.length > 0 ? { required } : {}),
     },
   };
+}
+
+/**
+ * Narrow the advertised tool list to what this caller could actually use.
+ *
+ * `tools/list` returned every tool to every authenticated caller, so a
+ * read-only agent still saw the full catalogue of mutating actions and their
+ * parameter schemas. Execution was denied later, so this was disclosure
+ * rather than an authority hole — but for an LLM agent the tool list IS the
+ * affordance: advertising writes it can never perform invites it to try, and
+ * the failure surfaces as a confusing denial mid-plan instead of a capability
+ * it never saw.
+ *
+ * What can be scoped exactly, and what cannot:
+ *
+ * - Function tools ARE role-gated (`requiredRoles` is the enforcement), so a
+ *   role mismatch is a guaranteed denial and the tool is hidden.
+ * - Action tools are gated by a per-OBJECT ReBAC relation, not by roles, so
+ *   there is no role test to apply. Instead we ask OpenFGA which objects the
+ *   caller holds that relation on; an empty set means every invocation would
+ *   be refused, so the tool is hidden. One listObjects per ActionType per
+ *   tools/list call — acceptable because discovery is infrequent, and the
+ *   calls run concurrently.
+ * - Read tools stay advertised for everyone: their results are FGA-scoped
+ *   per object, so an unauthorized caller gets an empty page rather than a
+ *   denial, and hiding them would misrepresent the ontology.
+ */
+export async function scopeToolList(
+  tools: McpTool[],
+  caller: McpCaller,
+  deps: McpServerDependencies,
+): Promise<McpTool[]> {
+  const roles = caller.user.roles ?? [];
+
+  const allowedFunction = new Set(
+    deps.schema.functionTypes
+      .filter((fn) => fn.requiredRoles.some((r) => roles.includes(r)))
+      .map((fn) => `function_${fn.name}`),
+  );
+
+  const objectTypeNames = new Set(deps.schema.objectTypes.map((o) => o.name));
+  const actionAllowed = new Map<string, boolean>();
+  await Promise.all(
+    deps.schema.actionTypes.map(async (action) => {
+      const target = getActionTargetTypeName(action, objectTypeNames);
+      if (!target) {
+        // No ObjectType parameter means no object to check a relation against.
+        // Keep advertising it; the executor still applies its own controls.
+        actionAllowed.set(action.name, true);
+        return;
+      }
+      try {
+        const ids = await deps.authorizationService.listObjects(
+          `user:${caller.user.id}`,
+          actionPermissionRelation(action, objectTypeNames),
+          toSnakeCase(target),
+          caller.user.tenantId,
+        );
+        actionAllowed.set(action.name, ids.length > 0);
+      } catch {
+        // Fail OPEN for discovery only. A listObjects outage must not silently
+        // empty an agent's toolbox and make the platform look broken; the
+        // executor still refuses the call if the caller truly lacks the
+        // relation, so nothing is authorized by this fallback.
+        actionAllowed.set(action.name, true);
+      }
+    }),
+  );
+
+  return tools.filter((tool) => {
+    if (tool.name.startsWith('function_')) return allowedFunction.has(tool.name);
+    if (actionAllowed.has(tool.name)) return actionAllowed.get(tool.name) === true;
+    return true; // search_/traverse_ — FGA-scoped at read time
+  });
+}
+
+/** The ObjectType an action targets, via its first ObjectType-typed @param. */
+function getActionTargetTypeName(
+  action: ActionType,
+  objectTypeNames: ReadonlySet<string>,
+): string | undefined {
+  for (const field of action.fields) {
+    if (!field.directives.some((d) => d.kind === 'param')) continue;
+    if (objectTypeNames.has(field.type.name)) return field.type.name;
+  }
+  return undefined;
 }
 
 /**
@@ -119,6 +230,15 @@ function buildActionTool(actionType: ActionType): McpTool {
     properties[field.name] = fieldToJsonSchema(field);
     if (field.type.nonNull) required.push(field.name);
   }
+
+  // Advertise dry-run alongside the declared params. REST has always accepted
+  // ?dryRun=true and MCP never passed it through, so an agent — the caller
+  // most likely to want to preview a write before committing it — was the one
+  // surface that could not. Reserved name, stripped before validation.
+  properties['dryRun'] = {
+    type: 'boolean',
+    description: 'Validate and evaluate preconditions without committing any change.',
+  };
 
   return {
     name: actionType.name,
@@ -215,6 +335,15 @@ export async function invokeTool(
   const actionType = deps.schema.actionTypes.find((a) => a.name === toolName);
   if (actionType) {
     return invokeActionTool(actionType, args, caller, deps);
+  }
+
+  // Function tool: name matches function_<Name>
+  if (toolName.startsWith('function_') && deps.functionInvoker) {
+    const fnName = toolName.slice('function_'.length);
+    const fn = deps.schema.functionTypes.find((f) => f.name === fnName);
+    if (fn) {
+      return invokeFunctionTool(fnName, args, caller, deps);
+    }
   }
 
   // Read tool: name matches search_<Type>
@@ -324,6 +453,32 @@ async function auditMcpRead(
 }
 
 /**
+ * Invoke a FunctionType through the host's governed entry point.
+ *
+ * Errors are returned as isError content rather than a JSON-RPC error, the
+ * same shape the action tool uses, so an agent sees the reason and can
+ * recover instead of the whole call failing at the protocol layer.
+ */
+async function invokeFunctionTool(
+  fnName: string,
+  args: unknown,
+  caller: McpCaller,
+  deps: McpServerDependencies,
+): Promise<McpCallToolResult> {
+  const input = (args && typeof args === 'object' ? args : {}) as Record<string, unknown>;
+  try {
+    const result = await deps.functionInvoker!(fnName, input, caller);
+    return { content: [{ type: 'text', text: JSON.stringify(result) }], isError: false };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return {
+      content: [{ type: 'text', text: JSON.stringify({ error: message }) }],
+      isError: true,
+    };
+  }
+}
+
+/**
  * Execute an action tool via the 8-stage ActionExecutor pipeline.
  */
 async function invokeActionTool(
@@ -363,12 +518,19 @@ async function invokeActionTool(
       : {}),
   };
 
+  // `dryRun` is reserved, not an action parameter: it is stripped from params
+  // before validation so a manifest can never declare a @param of that name
+  // and shadow it.
+  const dryRun = params['dryRun'] === true;
+  if ('dryRun' in params) delete params['dryRun'];
+
   const result: ActionResult = await deps.actionExecutor.execute(
     manifest,
     params,
     actor,
     actionCtx,
     deps.schema,
+    dryRun ? { dryRun: true } : undefined,
   );
 
   return {

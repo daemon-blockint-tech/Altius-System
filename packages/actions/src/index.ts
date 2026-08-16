@@ -79,6 +79,7 @@ export type {
   HttpRequestOptions,
   SideEffectExecutionResult,
   SideEffectExecutorConfig,
+  SideEffectLogger,
 } from './sideeffects/index.js';
 
 export { ToolRegistry } from './tools/index.js';

@@ -18,14 +18,17 @@
     "test": "vitest run",
     "clean": "rm -rf dist coverage"
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "license": "Apache-2.0",
   "dependencies": {
-    "@grpc/grpc-js": "^1.12.0",
-    "@grpc/proto-loader": "^0.7.0",
+    "@altius/engine": "workspace:*",
     "@altius/observability": "workspace:*",
     "@altius/odl": "workspace:*",
     "@altius/spi": "workspace:*",
+    "@grpc/grpc-js": "^1.12.0",
+    "@grpc/proto-loader": "^0.7.0",
     "yaml": "^2.8.0"
   },
   "devDependencies": {

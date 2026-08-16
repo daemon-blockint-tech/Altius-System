@@ -655,6 +655,38 @@ function isLinkField(field: FieldDefinition): boolean {
 }
 
 /**
+ * Schema-level field validation only: required (non-null with no `@default`),
+ * enum membership, and scalar shape. Deliberately excludes the uniqueness check
+ * (needs storage) and constraint evaluation (needs CEL), so it is synchronous
+ * and safe to call from inside an open write transaction.
+ *
+ * Exported for the action pipeline, which writes through the storage
+ * transaction directly rather than through ObjectManager and so never reached
+ * `validateObjectProperties`. Without it a missing required field surfaced as
+ * whatever the provider happened to raise — `EFFECT_EXECUTION_ERROR` on memory,
+ * a raw Postgres `23502` on the other — for the same ODL and the same action.
+ *
+ * Callers validating an UPDATE must pass the merged object (existing state plus
+ * the patch), not the patch alone: a patch that omits a required field is
+ * legitimate, and checking the patch in isolation would reject it.
+ */
+export function validateSchemaFields(
+  schema: ParsedSchema,
+  typeName: string,
+  properties: Record<string, unknown>,
+): ValidationFailure[] {
+  const objectType = schema.objectTypes.find((t) => t.name === typeName);
+  if (!objectType) {
+    return [{ step: 'schema', message: `Unknown object type: ${typeName}` }];
+  }
+  const enumMap = new Map<string, Set<string>>();
+  for (const e of schema.enums) {
+    enumMap.set(e.name, new Set(e.values.map((v) => v.name)));
+  }
+  return validateSchema(objectType, properties, enumMap);
+}
+
+/**
  * Creates a structured PlatformError for validation failures.
  */
 export function validationError(failures: ValidationFailure[]): PlatformError {

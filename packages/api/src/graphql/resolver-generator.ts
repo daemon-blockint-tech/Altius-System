@@ -1690,6 +1690,13 @@ function generateChangeEventObjectResolver(
     const stub = parent?.object;
     if (!stub) return null;
 
+    // A subscription carrying a property-level filter has already hydrated and
+    // redacted this object to evaluate the filter against it (see
+    // subscription-manager's hydrateObject). Reading it again here would be a
+    // second storage round-trip per event per subscriber for the same row.
+    // `_version` only exists on the shaped object, never on the bus stub.
+    if ('_version' in stub) return stub;
+
     // For DELETED events, the object may no longer exist in storage.
     // Return the stub as-is (id + _type only) so the subscriber still
     // knows WHICH object was deleted.

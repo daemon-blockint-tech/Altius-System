@@ -61,6 +61,7 @@ import type { OpenFgaClientInterface, FgaClientResolver } from '@altius/security
 import type { StorageProvider, RequestContext } from '@altius/spi';
 import { createGraphQLServer, buildResolverContext } from './graphql/index.js';
 import { generateRestRoutes, generateOpenApiSpec, auditRead } from './rest/index.js';
+import { invokeFunction } from './functions/invoke-function.js';
 import { generateAuditRoutes } from './rest/audit-routes.js';
 import { generateTraverseRoutes } from './rest/traverse-route.js';
 import { readPlatformVersion } from './version.js';
@@ -99,6 +100,7 @@ import { metricsMiddleware, metricsEndpoint, startStorageHealthGauge, startSyncM
 import { buildHealthReport } from './health.js';
 import type { HealthProbe } from './health.js';
 import { logger } from './logger.js';
+import { pinoSideEffectLogger } from './side-effect-logger.js';
 
 const PORT = parseInt(process.env['PORT'] ?? '4000', 10);
 
@@ -761,6 +763,10 @@ async function main(): Promise<void> {
     httpClient: sideEffectHttpClient,
     eventBus: sideEffectBus,
     env: process.env,
+    // Without this the executor's failure logging is dead code — `logger?.` on
+    // an unset field — and a webhook that exhausts its retries returns
+    // success:true with no trace anywhere in the running system.
+    logger: pinoSideEffectLogger(logger),
   });
 
   const actionExecutor = new ActionExecutor({
@@ -1365,6 +1371,16 @@ async function main(): Promise<void> {
               },
             }
           : {}),
+        // Route agent function calls through the SAME governed entry point
+        // REST and GraphQL use. A FunctionType runs pack-authored code, so a
+        // second invocation path would be a way around the requiredRoles gate
+        // and the audit record both other surfaces enforce.
+        functionInvoker: async (functionName, input, caller) => {
+          const fn = schema.functionTypes.find(f => f.name === functionName);
+          if (!fn) throw new Error(`Unknown function: ${functionName}`);
+          const result = await invokeFunction(fn, deps, buildResolverContext(caller.user, deps), input);
+          return result;
+        },
       },
       isDev,
     });
