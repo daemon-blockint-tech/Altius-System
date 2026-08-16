@@ -273,8 +273,23 @@ async function main(): Promise<void> {
   }
 
   // ── Register loaded packs in _domain_packs table (Postgres only) ──
+  //
+  // The table is created here rather than assumed. It was only ever created
+  // by the Helm init job, so every other deployment — docker-compose, a bare
+  // Postgres, a managed instance — logged "relation _domain_packs does not
+  // exist" at every boot and the table stayed permanently empty. Creating it
+  // where it is written makes the feature real in all of them, and IF NOT
+  // EXISTS keeps the Helm path unchanged.
   if (storage instanceof PostgresStorageProvider) {
     try {
+      await storage.pool.query(
+        `CREATE TABLE IF NOT EXISTS _domain_packs (
+           name TEXT PRIMARY KEY,
+           version TEXT NOT NULL,
+           namespace TEXT NOT NULL,
+           loaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+         )`,
+      );
       for (const info of packInfos) {
         await storage.pool.query(
           `INSERT INTO _domain_packs (name, version, namespace)
@@ -285,8 +300,9 @@ async function main(): Promise<void> {
       }
       logger.info(`Domain packs: registered ${packInfos.length} pack(s) in _domain_packs`);
     } catch (err) {
-      // Non-fatal: table may not exist yet (init-services.sh creates it)
-      logger.warn({ err: err instanceof Error ? err.message : 'unknown' }, 'Domain packs: failed to register in _domain_packs (table may not exist yet)');
+      // Still non-fatal: pack registration is bookkeeping, and a gateway that
+      // cannot record which packs it loaded should still serve them.
+      logger.warn({ err: err instanceof Error ? err.message : 'unknown' }, 'Domain packs: failed to register in _domain_packs');
     }
   }
 
