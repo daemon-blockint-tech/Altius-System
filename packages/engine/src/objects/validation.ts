@@ -128,17 +128,6 @@ const SCALAR_TYPE_CHECKS: Record<string, (v: unknown) => boolean> = {
   Int: (v) => typeof v === 'number' && Number.isInteger(v),
   Float: (v) => typeof v === 'number',
   Boolean: (v) => typeof v === 'boolean',
-  Date: (v) => typeof v === 'string',
-  DateTime: (v) => typeof v === 'string',
-  Duration: (v) => typeof v === 'string',
-  GeoPoint: (v) => {
-    if (typeof v !== 'object' || v === null) return false;
-    const p = v as { lat?: unknown; lng?: unknown };
-    return (
-      typeof p.lat === 'number' && p.lat >= -90 && p.lat <= 90 &&
-      typeof p.lng === 'number' && p.lng >= -180 && p.lng <= 180
-    );
-  },
   Date: isValidDate,
   DateTime: isValidDateTime,
   Duration: (v) => typeof v === 'string' && ISO_DURATION.test(v),
