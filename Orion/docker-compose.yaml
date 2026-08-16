@@ -376,6 +376,36 @@ services:
       start_period: 10s
     networks:
       - altius
+  # Operational web UI. Serves the SPA and proxies /graphql and /api to the
+  # gateway from the SAME origin, so the browser never makes a cross-origin
+  # request and CORS_ALLOWED_ORIGINS is not in the path for this client.
+  web:
+    build:
+      context: ..
+      dockerfile: packages/web/Dockerfile
+      args:
+        GIT_REVISION: ${GIT_REVISION:-unknown}
+        # Inlined into the bundle at build time. Empty issuer means no OIDC,
+        # which is correct for this stack: the gateway runs NODE_ENV=development
+        # and serves anonymous callers. Orion/docker-compose.prod-test.yaml is
+        # where real auth is exercised.
+        VITE_OIDC_ISSUER: ${VITE_OIDC_ISSUER:-}
+        VITE_OIDC_CLIENT_ID: ${VITE_OIDC_CLIENT_ID:-altius}
+        VITE_OIDC_REDIRECT_URI: ${VITE_OIDC_REDIRECT_URI:-}
+    ports:
+      - "${WEB_PORT:-8090}:8080"
+    depends_on:
+      api-gateway:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/index.html"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    networks:
+      - altius
+
 volumes:
   pg_data:
   redpanda_data:

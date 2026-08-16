@@ -70,3 +70,30 @@ VITE_OIDC_ISSUER=http://localhost:8180/auth/realms/altius pnpm --filter @altius/
 ```bash
 pnpm --filter @altius/web test
 ```
+
+## Deployment
+
+`packages/web/Dockerfile` builds the bundle and serves it from nginx on 8080,
+proxying `/graphql` (including the graphql-ws upgrade) and `/api/` to the
+gateway. The `web` service in `Orion/docker-compose.yaml` wires it up.
+
+Serving the API from the **same origin** is the design, not a convenience:
+
+- the bundle can use a relative `/graphql`, so one artifact is promotable
+  between environments instead of one build per environment;
+- the browser never makes a cross-origin request, so the gateway's
+  `CORS_ALLOWED_ORIGINS` is not in the path for this client at all. That setting
+  still matters for any browser client served from a different origin — in
+  production an unset value denies every cross-origin caller, which the gateway
+  warns about at boot.
+
+`VITE_*` values are inlined by vite at build time, so they are Docker build args
+rather than runtime env. The endpoint deliberately is not one: it stays relative.
+Changing the OIDC issuer therefore means a rebuild, which is the honest
+consequence of shipping a static bundle.
+
+nginx caches `/assets/` hard (vite content-hashes them) and marks `index.html`
+`no-store` — otherwise a deploy leaves browsers holding the previous bundle's
+asset names. Unknown paths fall through to `index.html` so the OIDC redirect
+lands on the app rather than a 404.
+
