@@ -34,7 +34,13 @@ services:
       resources:
         limits:
           memory: 512M
-    image: apache/age:release_PG17_1.6.0
+    # Plain Postgres 17. The AGE image was pinned when the provider mirrored
+    # the graph; 15098b1 removed that mirror, a regression test asserts the DDL
+    # emits no AGE statement, and the only extension the schema still needs is
+    # pg_trgm — which `applySchema` creates itself. Developing and testing
+    # against an image no deployment runs hides the failures this stack exists
+    # to surface.
+    image: postgres:17
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     environment:

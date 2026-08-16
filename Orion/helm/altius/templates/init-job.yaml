@@ -49,15 +49,16 @@ spec:
               set -e
               echo "[init] Waiting for PostgreSQL..."
               until pg_isready -q; do sleep 2; done
-              echo "[init] PostgreSQL ready. Initializing AGE extension..."
-              psql -q <<'SQL'
-              CREATE EXTENSION IF NOT EXISTS age;
+              echo "[init] PostgreSQL ready. Initializing schema..."
+              # ON_ERROR_STOP is what makes `set -e` mean anything here: psql
+              # exits 0 after a failed statement without it, so every error was
+              # swallowed and the Job reported success on a database it had not
+              # initialised.
+              psql -q -v ON_ERROR_STOP=1 <<'SQL'
+              -- pg_trgm backs the GIN trigram indexes the DDL emits for
+              -- FULLTEXT fields; search is ILIKE, and these are what make it
+              -- indexable rather than a sequential scan.
               CREATE EXTENSION IF NOT EXISTS pg_trgm;
-              LOAD 'age';
-              SET search_path = ag_catalog, "$user", public;
-              SELECT create_graph('altius') WHERE NOT EXISTS (
-                SELECT 1 FROM ag_catalog.ag_graph WHERE name = 'altius'
-              );
               CREATE TABLE IF NOT EXISTS _domain_packs (
                 name TEXT PRIMARY KEY, version TEXT NOT NULL,
                 namespace TEXT NOT NULL, loaded_at TIMESTAMPTZ DEFAULT NOW()
