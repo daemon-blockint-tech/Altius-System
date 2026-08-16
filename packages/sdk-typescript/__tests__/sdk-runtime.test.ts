@@ -55,7 +55,9 @@ class MockWebSocket {
   onclose: (() => void) | null = null;
   onerror: (() => void) | null = null;
 
-  constructor(public url: string) {
+  // The subprotocol argument was dropped here, which is why a client that
+  // never sent one looked correct to this suite for as long as it existed.
+  constructor(public url: string, public protocol?: string) {
     MockWebSocket.instances.push(this);
     // Simulate async connection open
     setTimeout(() => {
@@ -278,6 +280,9 @@ describe('Generated SDK runtime', () => {
       const ws = MockWebSocket.instances[0]!;
       // URL should be ws:// or wss:// version of the endpoint
       expect(ws.url).toMatch(/^wss?:\/\//);
+      // Without the subprotocol graphql-ws closes with 4406 before the
+      // handshake completes, so no subscription ever starts.
+      expect(ws.protocol).toBe('graphql-transport-ws');
 
       // connection_init must be sent with the auth token
       const initMsg = JSON.parse(ws.sent[0]!);
@@ -293,21 +298,29 @@ describe('Generated SDK runtime', () => {
       expect(subMsg.type).toBe('subscribe');
       expect(subMsg.payload.query).toContain('patientChanged');
 
-      // Simulate a server message — the callback should fire.
-      // The SDK passes msg.payload (the GraphQL response envelope) to the callback.
-      const mockPayload = {
-        data: {
-          patientChanged: {
-            changeType: 'UPDATED',
-            object: { id: 'p-1', name: 'Jane' },
-            previousValues: null,
-            causedBy: null,
-            timestamp: '2026-01-01T00:00:00Z',
-          },
-        },
+      // `causedBy` is a composite (ActionReference). Selecting it bare is a
+      // GraphQL validation error the server reports as an `error` message,
+      // which this client drops — the subscription then looks alive and
+      // delivers nothing. The document must subselect it.
+      expect(subMsg.payload.query).toMatch(/causedBy\s*\{[^}]*actionType/);
+      // A bare `object { id }` would make every live view property-blind, even
+      // though the server hydrates the full object per subscriber.
+      expect(subMsg.payload.query).toMatch(/object\s*\{[^}]*nhsNumber/);
+
+      // graphql-ws delivers an ExecutionResult envelope on `next`. The callback
+      // is typed as receiving ChangeEvent<T>, so the client must unwrap it —
+      // handing over the envelope would satisfy no declared type.
+      const changeEvent = {
+        changeType: 'UPDATED',
+        object: { id: 'p-1', name: 'Jane' },
+        previousValues: null,
+        causedBy: null,
+        timestamp: '2026-01-01T00:00:00Z',
       };
-      ws._receive(JSON.stringify({ type: 'next', id: subMsg.id, payload: mockPayload }));
-      expect(receivedEvent).toEqual(mockPayload);
+      ws._receive(
+        JSON.stringify({ type: 'next', id: subMsg.id, payload: { data: { patientChanged: changeEvent } } }),
+      );
+      expect(receivedEvent).toEqual(changeEvent);
 
       // Unsubscribe sends a complete message
       sub.unsubscribe();
