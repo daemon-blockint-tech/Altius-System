@@ -111,6 +111,15 @@ export const baseSchema: OntologySchema = {
       toType: 'CareTeam',
       cardinality: 'ONE_TO_ONE',
     },
+    // MANY_TO_ONE is the cardinality the shipped domain packs use most
+    // (AdmittedTo, UnderCareOf, BedInWard, AlertCase, OrderedFrom) and had no
+    // fixture, so neither provider's enforcement of it was ever exercised.
+    {
+      name: 'CaredForBy',
+      fromType: 'Patient',
+      toType: 'CareTeam',
+      cardinality: 'MANY_TO_ONE',
+    },
   ],
 };
 

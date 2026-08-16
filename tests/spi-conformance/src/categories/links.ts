@@ -299,6 +299,31 @@ export function registerLinkTests(name: string, factory: ProviderFactory): void 
       });
     });
 
+    // ─── Cardinality MANY_TO_ONE ───
+
+    describe('cardinality MANY_TO_ONE', () => {
+      it('allows multiple inbound to same target', async () => {
+        await provider.createLink(tenantA, 'CaredForBy', patientId1, teamId1);
+        await provider.createLink(tenantA, 'CaredForBy', patientId2, teamId1);
+        const page = await provider.getLinks(tenantA, teamId1, 'CaredForBy', 'inbound');
+        expect(page.items).toHaveLength(2);
+      });
+
+      it('prevents a second outbound from the same source', async () => {
+        await provider.createLink(tenantA, 'CaredForBy', patientId1, teamId1);
+        await expect(
+          provider.createLink(tenantA, 'CaredForBy', patientId1, teamId2),
+        ).rejects.toThrow(/[Cc]ardinality/);
+      });
+
+      it('allows a new outbound after deleting the previous one', async () => {
+        const link = await provider.createLink(tenantA, 'CaredForBy', patientId1, teamId1);
+        await provider.deleteLink(tenantA, 'CaredForBy', link._id);
+        const newLink = await provider.createLink(tenantA, 'CaredForBy', patientId1, teamId2);
+        expect(newLink._toId).toBe(teamId2);
+      });
+    });
+
     // ─── Cardinality MANY_TO_MANY ───
 
     describe('cardinality MANY_TO_MANY', () => {
