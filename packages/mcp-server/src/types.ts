@@ -75,6 +75,13 @@ export interface McpServerDependencies {
    */
   rateLimiter?: McpRateLimiter;
   /**
+   * Mandatory marking policy. Absent means no markings are configured.
+   *
+   * An agent reads at machine rate, so a mandatory control enforced on the
+   * human surfaces and not here is not enforced at all.
+   */
+  markingPolicy?: McpMarkingPolicy;
+  /**
    * Invokes a declared @function on behalf of the caller.
    *
    * Injected rather than imported: the governed entry point lives in
@@ -86,13 +93,6 @@ export interface McpServerDependencies {
    *
    * Absent means functions are simply not advertised as tools.
    */
-  /**
-   * Mandatory marking policy. Absent means no markings are configured.
-   *
-   * An agent reads at machine rate, so a mandatory control enforced on the
-   * human surfaces and not here is not enforced at all.
-   */
-  markingPolicy?: McpMarkingPolicy;
   functionInvoker?: McpFunctionInvoker;
   /**
    * Audit sink for read tools.
