@@ -1,0 +1,29 @@
+# Mandatory access-control markings.
+#
+# Kept out of ODL deliberately: markings are a security policy, not schema.
+# A security officer changes who may see a category of data without editing
+# the ontology or triggering a schema migration.
+categories:
+  - name: CLASSIFICATION
+    mode: CONJUNCTIVE
+  - name: RELEASE_TO
+    mode: DISJUNCTIVE
+
+markings:
+  - name: PII
+  # Hierarchical: a higher rank satisfies a lower requirement, so a caller
+  # cleared for IDENTIFIABLE also satisfies DEIDENTIFIED and SYNTHETIC.
+  - name: SYNTHETIC
+    category: CLASSIFICATION
+    rank: 1
+  - name: DEIDENTIFIED
+    category: CLASSIFICATION
+    rank: 2
+  - name: IDENTIFIABLE
+    category: CLASSIFICATION
+    rank: 3
+
+# Nothing is marked by default. Marking a type here immediately hides it from
+# every caller who does not hold the marking, including admins — review before
+# adding an entry.
+objectTypes: {}

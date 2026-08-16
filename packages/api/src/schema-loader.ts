@@ -24,12 +24,19 @@ import { parseActionManifest, crossReferenceManifest } from '@altius/actions';
 import { logger } from './logger.js';
 import type { ActionManifest, ManifestIssue } from '@altius/actions';
 import type { OntologySchema, ObjectTypeDefinition, LinkTypeDefinition, PropertyDefinition, IndexDefinition } from '@altius/spi';
-import type { FieldPermissionConfig } from '@altius/security';
+import type { FieldPermissionConfig, MarkingDefinition, MarkingCategoryDefinition } from '@altius/security';
 import type { ManifestRegistry } from './graphql/types.js';
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
+
+/** Marking policy accumulated across packs. */
+export interface MutableMarkingConfig {
+  markings: MarkingDefinition[];
+  categories: MarkingCategoryDefinition[];
+  byObjectType: Record<string, string[]>;
+}
 
 interface PackManifest {
   name: string;
@@ -125,6 +132,7 @@ export interface LoadedSchema {
   manifestRegistry: ManifestRegistry;
   /** Field permission configurations for field-level redaction. */
   fieldPermissions: FieldPermissionConfig[];
+  markingConfig: MutableMarkingConfig;
   /** OpenFGA permission override DSL strings from pack permissions/*.fga files. */
   permissionOverrides: string[];
   /** Connector manifests from pack connectors/*.yaml files. */
@@ -313,6 +321,68 @@ function loadPackActions(
       // Structural errors are fatal — manifest must parse correctly
       const errors = result.errors.map(e => e.message).join('; ');
       throw new Error(`Schema loader: action manifest '${file}' is invalid: ${errors}`);
+    }
+  }
+}
+
+/**
+ * Load mandatory access-control markings from a domain pack.
+ *
+ * Looks for permissions/markings.yaml, alongside field-permissions.yaml —
+ * markings are a security policy, not schema, and keeping them out of ODL
+ * means a security officer can change who may see a category of data without
+ * editing the ontology or triggering a schema migration.
+ *
+ *   categories:
+ *     - name: RELEASE_TO
+ *       mode: DISJUNCTIVE
+ *   markings:
+ *     - name: PII
+ *     - name: GBR
+ *       category: RELEASE_TO
+ *     - name: IDENTIFIABLE
+ *       category: CLASSIFICATION
+ *       rank: 3
+ *   objectTypes:
+ *     Patient: [PII, IDENTIFIABLE]
+ */
+function loadPackMarkings(
+  packDir: string,
+  _manifest: PackManifest,
+  into: MutableMarkingConfig,
+): void {
+  const filePath = resolve(packDir, 'permissions', 'markings.yaml');
+  if (!existsSync(filePath)) return;
+
+  const parsed = parseYaml(readFileSync(filePath, 'utf-8')) as Record<string, unknown> | null;
+  if (!parsed || typeof parsed !== 'object') return;
+
+  for (const raw of Array.isArray(parsed['categories']) ? parsed['categories'] : []) {
+    const c = raw as Record<string, unknown>;
+    if (typeof c['name'] !== 'string') continue;
+    const mode = c['mode'] === 'DISJUNCTIVE' ? 'DISJUNCTIVE' : 'CONJUNCTIVE';
+    into.categories.push({ name: c['name'], mode });
+  }
+
+  for (const raw of Array.isArray(parsed['markings']) ? parsed['markings'] : []) {
+    const m = raw as Record<string, unknown>;
+    if (typeof m['name'] !== 'string') continue;
+    into.markings.push({
+      name: m['name'],
+      ...(typeof m['category'] === 'string' ? { category: m['category'] } : {}),
+      ...(typeof m['rank'] === 'number' ? { rank: m['rank'] } : {}),
+    });
+  }
+
+  const byType = parsed['objectTypes'];
+  if (byType && typeof byType === 'object') {
+    for (const [objectType, names] of Object.entries(byType as Record<string, unknown>)) {
+      if (!Array.isArray(names)) continue;
+      const existing = into.byObjectType[objectType] ?? [];
+      // Union across packs: a second pack marking the same type ADDS a
+      // restriction. Markings only ever narrow access, so replacing would let
+      // one pack silently widen what another protected.
+      into.byObjectType[objectType] = [...new Set([...existing, ...names.filter(n => typeof n === 'string')])];
     }
   }
 }
@@ -944,6 +1014,7 @@ export async function loadDomainPacks(
   const functionPackDirs: Record<string, string> = {};
   const packInfos: LoadedPackInfo[] = [];
   const fieldPermissions: FieldPermissionConfig[] = [];
+  const markingConfig: MutableMarkingConfig = { markings: [], categories: [], byObjectType: {} };
   const permissionOverrides: string[] = [];
   const connectorManifests: ConnectorManifest[] = [];
   const seedManifests: SeedManifest[] = [];
@@ -984,6 +1055,7 @@ export async function loadDomainPacks(
 
     // Load field permission configurations
     loadPackFieldPermissions(packDir, manifest, fieldPermissions);
+    loadPackMarkings(packDir, manifest, markingConfig);
 
     // Load OpenFGA permission overrides (.fga files)
     loadPackPermissions(packDir, manifest, permissionOverrides);
@@ -1065,6 +1137,7 @@ export async function loadDomainPacks(
     manifestRegistry,
     functionPackDirs,
     fieldPermissions,
+    markingConfig,
     permissionOverrides,
     connectorManifests,
     seedManifests,

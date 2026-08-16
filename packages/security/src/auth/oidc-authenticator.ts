@@ -41,6 +41,7 @@ export class OidcAuthenticator {
   private issuer: string | null = null;
   private audience: string | null = null;
   private tenantClaim: string = "tenant_id";
+  private markingsClaim: string = "markings";
   private defaultTenantId: string | null = null;
   private roleMapping: RoleMappingConfig = DEFAULT_ROLE_MAPPING;
 
@@ -55,6 +56,7 @@ export class OidcAuthenticator {
       cooldownDuration: 30_000, // cache JWKS for 30s before re-fetching
     });
     this.tenantClaim = config.tenantClaim ?? "tenant_id";
+    this.markingsClaim = config.markingsClaim ?? "markings";
     this.defaultTenantId = config.defaultTenantId ?? null;
 
     if (config.roleMapping) {
@@ -142,7 +144,26 @@ export class OidcAuthenticator {
       roles,
       groups: resolveGroups(claimsRecord),
       tenantId,
+      markings: this.resolveMarkings(claimsRecord),
     };
+  }
+
+  /**
+   * Markings from the token claim.
+   *
+   * A missing or malformed claim yields an empty list rather than an error:
+   * most deployments configure no markings at all, and failing authentication
+   * over an absent optional claim would break them. Holding no markings is
+   * already the restrictive outcome — every marked resource is denied.
+   */
+  private resolveMarkings(claims: Record<string, unknown>): string[] {
+    const raw = claims[this.markingsClaim];
+    if (Array.isArray(raw)) return raw.filter((v): v is string => typeof v === 'string');
+    // A space- or comma-separated string is the other common encoding.
+    if (typeof raw === 'string') {
+      return raw.split(/[,\s]+/).map(v => v.trim()).filter(v => v.length > 0);
+    }
+    return [];
   }
 
   private resolveUserRoles(claims: Record<string, unknown>): string[] {

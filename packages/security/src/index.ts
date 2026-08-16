@@ -41,3 +41,12 @@ export type {
   ConsentStore,
 } from "./consent/index.js";
 export { ConsentError, ConsentService, MemoryConsentStore } from "./consent/index.js";
+
+export { MarkingPolicy } from './markings/marking-policy.js';
+export type {
+  MarkingDefinition,
+  MarkingCategoryDefinition,
+  MarkingCategoryMode,
+  MarkingPolicyConfig,
+  MarkingDecision,
+} from './markings/marking-policy.js';

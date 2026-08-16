@@ -30,6 +30,10 @@ const DEV_USER: AuthenticatedUser = {
     'auditor',
   ],
   groups: [],
+  // No markings, deliberately: the dev fallback must not be a way past a
+  // mandatory control. A deployment that configures markings denies this user
+  // every marked type, which is the correct outcome for a stand-in identity.
+  markings: [],
   tenantId: 'default',
 };
 

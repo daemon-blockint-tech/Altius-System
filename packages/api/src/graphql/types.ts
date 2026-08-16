@@ -6,6 +6,7 @@ import type {
   ConsentService,
   AuditWriter,
   AuditStore,
+  MarkingPolicy,
 } from '@altius/security';
 import type { ParsedSchema } from '@altius/odl';
 import type { RequestContext, StorageProvider, LLMClient } from '@altius/spi';
@@ -30,6 +31,8 @@ export interface ApiDependencies {
   authorizationService: AuthorizationService;
   authenticator: OidcAuthenticator;
   consentService?: ConsentService;
+  /** Mandatory marking policy; absent means no markings are configured. */
+  markingPolicy?: MarkingPolicy;
   /**
    * Live-subscription registry, so consent revocation can close the streams
    * about the revoking subject. Absent means revocation still takes effect —
@@ -127,6 +130,8 @@ export interface AuthenticatedUserInfo {
   roles: string[];
   groups: string[];
   tenantId: string;
+  /** Mandatory access-control markings held by the caller. */
+  markings?: string[];
 }
 
 /**
