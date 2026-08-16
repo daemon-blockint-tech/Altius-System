@@ -439,6 +439,8 @@ function generateObjectRoutes(
 
   // Route order matters for Express: static path segments must come before
   // parameterized segments (e.g., /search before /:id) to avoid shadowing.
+  // Every route here belongs to exactly one ObjectType, so stamp it once
+  // rather than threading obj.name through nine generators.
   return [
     generateListRoute(obj, plural, fgaType, deps),
     generateExportRoute(obj, plural, deps),
@@ -449,7 +451,7 @@ function generateObjectRoutes(
     generateDeleteRoute(obj, plural, fgaType, deps),
     generateLinksRoute(plural, fgaType, deps),
     generateHistoryRoute(obj, plural, fgaType, deps),
-  ];
+  ].map(route => ({ ...route, objectType: obj.name }));
 }
 
 /**
@@ -1300,6 +1302,8 @@ function generateAggregateRoute(
 ): RestRoute {
   return {
     method: 'POST',
+    // A read expressed as POST because it carries a body — audited as a query.
+    readOperation: 'query',
     pattern: `/api/v1/${plural}/aggregate`,
     handler: async (req: RestRequest, ctx: ResolverContext): Promise<RestResponse> => {
       try {

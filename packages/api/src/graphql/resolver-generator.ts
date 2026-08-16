@@ -22,6 +22,7 @@ import { ToolRegistry } from '@altius/actions';
 import type { ActionActor, ActionContext, ActionManifest } from '@altius/actions';
 import type { RedactionResult, AuditQueryFilter } from '@altius/security';
 import { PubSub } from 'graphql-subscriptions';
+import { writeReadAudit } from '../rest/audit-read.js';
 import type { ApiDependencies, ResolverContext, PaginationArgs } from './types.js';
 import { DEFAULT_CONSENT_PURPOSE, DEFAULT_CONSENT_SUBJECT_TYPES, DEFAULT_PAGE_SIZE, isConsentSubjectType } from './types.js';
 import { resolvePagination, buildConnection, decodeCursor } from './pagination.js';
@@ -735,6 +736,10 @@ function generateQueryResolvers(
         user.tenantId,
       );
       if (!allowed) {
+        await writeReadAudit(deps.auditWriter, ctx, {
+          type: 'read', objectType: typeName, objectId: args.id,
+          query: `query ${lower}`, result: 'denied',
+        });
         throw createAltiusError({
           code: 'FORBIDDEN',
           category: 'authorization',
@@ -781,6 +786,11 @@ function generateQueryResolvers(
           }
         }
       }
+
+      await writeReadAudit(deps.auditWriter, ctx, {
+        type: 'read', objectType: typeName, objectId: args.id,
+        query: `query ${lower}`, result: 'success',
+      });
 
       return gqlObj;
     } catch (err) {
@@ -909,6 +919,11 @@ function generateQueryResolvers(
         items = mapAndRedact(page.items);
         totalCount = page.totalCount;
       }
+
+      await writeReadAudit(deps.auditWriter, ctx, {
+        type: 'query', objectType: typeName,
+        query: `query ${lower}s`, result: 'success',
+      });
 
       // g. Build Relay connection
       return buildConnection(items, totalCount, offset);
@@ -1517,6 +1532,11 @@ function generateSearchResolver(
         totalCount = r.totalCount;
         hasNextPage = offset + hits.length < totalCount;
       }
+
+      await writeReadAudit(deps.auditWriter, ctx, {
+        type: 'query', objectType: typeName,
+        query: `query search${typeName}s`, result: 'success',
+      });
 
       return { hits, totalCount, hasNextPage };
     } catch (err) {

@@ -59,7 +59,7 @@ import { AuthorizationService, OidcAuthenticator, AuditWriter, MemoryAuditStore,
 import type { OpenFgaClientInterface, FgaClientResolver } from '@altius/security';
 import type { StorageProvider, RequestContext } from '@altius/spi';
 import { createGraphQLServer, buildResolverContext } from './graphql/index.js';
-import { generateRestRoutes, generateOpenApiSpec } from './rest/index.js';
+import { generateRestRoutes, generateOpenApiSpec, auditRead } from './rest/index.js';
 import { generateAuditRoutes } from './rest/audit-routes.js';
 import { generateTraverseRoutes } from './rest/traverse-route.js';
 import { readPlatformVersion } from './version.js';
@@ -1135,6 +1135,7 @@ async function main(): Promise<void> {
         };
         const ctx: ResolverContext = buildResolverContext(user, deps);
         const result = await route.handler(restReq, ctx);
+        await auditRead(deps.auditWriter, route, restReq, ctx, result.status);
         // Apply optional response headers (e.g. Content-Type for export endpoints)
         if (result.headers) {
           for (const [key, value] of Object.entries(result.headers)) res.setHeader(key, value);
