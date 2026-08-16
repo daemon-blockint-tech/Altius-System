@@ -60,6 +60,7 @@ import type { OpenFgaClientInterface, FgaClientResolver } from '@altius/security
 import type { StorageProvider, RequestContext } from '@altius/spi';
 import { createGraphQLServer, buildResolverContext } from './graphql/index.js';
 import { generateRestRoutes, generateOpenApiSpec, auditRead } from './rest/index.js';
+import { invokeFunction } from './functions/invoke-function.js';
 import { generateAuditRoutes } from './rest/audit-routes.js';
 import { generateTraverseRoutes } from './rest/traverse-route.js';
 import { readPlatformVersion } from './version.js';
@@ -1310,6 +1311,16 @@ async function main(): Promise<void> {
         consentPurpose: DEFAULT_CONSENT_PURPOSE as string,
         objectManager,
         auditWriter: securityAuditWriter,
+        // Route agent function calls through the SAME governed entry point
+        // REST and GraphQL use. A FunctionType runs pack-authored code, so a
+        // second invocation path would be a way around the requiredRoles gate
+        // and the audit record both other surfaces enforce.
+        functionInvoker: async (functionName, input, caller) => {
+          const fn = schema.functionTypes.find(f => f.name === functionName);
+          if (!fn) throw new Error(`Unknown function: ${functionName}`);
+          const result = await invokeFunction(fn, deps, buildResolverContext(caller.user, deps), input);
+          return result;
+        },
       },
       isDev,
     });

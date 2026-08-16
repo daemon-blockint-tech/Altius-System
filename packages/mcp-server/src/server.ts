@@ -10,7 +10,7 @@
  * Supported methods:
  *   - initialize          → server info + capabilities
  *   - notifications/initialized → 202 (no body)
- *   - tools/list          → tool descriptors (actions + search_<Type>)
+ *   - tools/list          → tool descriptors, scoped to the caller
  *   - tools/call          → tool execution result
  *
  * Auth: OIDC bearer token validated by the same OidcAuthenticator used by the
@@ -35,7 +35,7 @@ import {
 } from './protocol.js';
 import type { McpServerConfig, McpServerDependencies, McpCaller } from './types.js';
 import { authenticateMcpRequest } from './auth.js';
-import { buildToolList, invokeTool } from './tools.js';
+import { buildToolList, invokeTool, scopeToolList } from './tools.js';
 
 /**
  * Framework-agnostic HTTP request shape. The API gateway adapts its
@@ -225,7 +225,10 @@ async function dispatchMethod(
     }
 
     case 'tools/list': {
-      const result: McpToolsListResult = { tools: toolList };
+      // Scoped to this caller, not the full catalogue. For an LLM agent the
+      // tool list is the affordance: advertising writes it can never perform
+      // invites it to try, and the refusal lands mid-plan.
+      const result: McpToolsListResult = { tools: await scopeToolList(toolList, caller, deps) };
       return jsonRpcResult(id, result);
     }
 
