@@ -219,7 +219,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build all images
-        run: docker compose -f Orion/docker-compose.yaml build
+        # Every profile, explicitly. The compose file puts the optional
+        # services behind profiles so a laptop can run the core stack, and a
+        # bare `build` therefore skips them — which silently narrowed this
+        # scan to the images that happen to be on by default. A scan must
+        # cover what is shipped, not what is convenient to run.
+        run: >
+          docker compose -f Orion/docker-compose.yaml
+          --profile cdc --profile microservices
+          --profile observability --profile cache
+          build
       - name: Install trivy
         run: |
           curl -fsSL "https://github.com/aquasecurity/trivy/releases/download/v0.71.0/trivy_0.71.0_Linux-64bit.tar.gz" \
@@ -227,7 +236,7 @@ jobs:
       - name: Scan all images (fail on HIGH/CRITICAL)
         run: |
           status=0
-          for img in cel-evaluator api-gateway ontology-engine action-executor security-service sync-engine; do
+          for img in cel-evaluator api-gateway ontology-engine action-executor security-service sync-engine web; do
             echo "::group::trivy orion-$img"
             trivy image --scanners vuln --severity HIGH,CRITICAL --exit-code 1 "orion-$img:latest" || status=1
             echo "::endgroup::"
