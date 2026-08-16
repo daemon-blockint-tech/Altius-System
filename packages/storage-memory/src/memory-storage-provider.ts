@@ -456,6 +456,26 @@ export class MemoryStorageProvider implements StorageProvider {
    * @param candidate - the object as it would be stored after the write
    * @param selfId - id of the object being updated, excluded from uniqueness
    */
+  /**
+   * Fill in any declared default the caller omitted.
+   *
+   * Only absent values are filled: an explicit null is the caller saying
+   * "no value", which must still fail a NOT NULL check rather than be
+   * quietly replaced by the default.
+   */
+  private _applyDefaults(type: string, properties: Record<string, unknown>): Record<string, unknown> {
+    const def = this._getObjectTypeDef(type);
+    if (!def) return properties;
+    let out = properties;
+    for (const prop of def.properties) {
+      if (prop.defaultValue === undefined) continue;
+      if (out[prop.name] !== undefined) continue;
+      if (out === properties) out = { ...properties };
+      out[prop.name] = prop.defaultValue;
+    }
+    return out;
+  }
+
   private _enforceObjectConstraints(
     ctx: RequestContext,
     type: string,
@@ -540,6 +560,11 @@ export class MemoryStorageProvider implements StorageProvider {
 
   /** @internal */ _doCreateObject(ctx: RequestContext, type: string, properties: Record<string, unknown>, maps?: MemMaps): OntologyObject {
     const m = maps ?? { objects: this._objects, links: this._links, versionHistory: this._versionHistory };
+    // Apply declared defaults before validating. Postgres applies them in the
+    // column DEFAULT, so skipping the check without also filling the value
+    // would leave the same create storing "DRAFT" on one provider and nothing
+    // on the other — a divergence that only shows up on read.
+    properties = this._applyDefaults(type, properties);
     this._enforceObjectConstraints(ctx, type, properties, undefined, m.objects);
     const id = genId();
     const timestamp = now();
