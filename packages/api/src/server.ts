@@ -791,6 +791,7 @@ async function main(): Promise<void> {
 
   const actionExecutor = new ActionExecutor({
     storage, security, cel, auditWriter,
+    ...(markingPolicy ? { markingPolicy } : {}),
     eventPublisher: actionEventPublisher,
     consentManager: consentService,
     sideEffectHandler,

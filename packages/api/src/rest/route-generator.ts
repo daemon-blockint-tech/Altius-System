@@ -1608,6 +1608,7 @@ function generateActionRoute(
           id: user.id,
           type: 'user',
           roles: user.roles,
+          markings: user.markings ?? [],
         };
 
         // Derive consent from action schema — if the action has a @param whose

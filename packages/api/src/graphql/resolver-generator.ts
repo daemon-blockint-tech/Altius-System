@@ -1561,6 +1561,9 @@ function generateMutationResolver(
         id: user.id,
         type: 'user',
         roles: user.roles,
+        // Markings travel with the actor so the executor can apply the
+        // mandatory control; omitting them would deny every marked type.
+        markings: user.markings ?? [],
       };
 
       // Build ActionContext — derive consent from action schema. If the action

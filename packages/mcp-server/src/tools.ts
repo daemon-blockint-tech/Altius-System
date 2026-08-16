@@ -549,6 +549,7 @@ async function invokeActionTool(
     id: user.id,
     type: 'agent',
     roles: user.roles,
+    markings: user.markings ?? [],
   };
 
   // Derive consent subject from @param fields (mirrors REST/GraphQL resolvers)

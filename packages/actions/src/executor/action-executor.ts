@@ -315,6 +315,29 @@ export class ActionExecutor {
     }
 
     // ------------------------------------------------------------------
+    // Step 1b: MARKINGS — mandatory control, ahead of authorisation
+    //
+    // Markings restrict where roles and relations expand, so this cannot sit
+    // inside the authorisation step: a caller holding the action's ReBAC
+    // permission must still be refused when they do not satisfy the marking
+    // on the type the action operates on.
+    //
+    // The refusal is a plain denial rather than the read surfaces' "as if it
+    // did not exist": the caller already named the action, so pretending it
+    // is unknown tells them nothing they did not supply themselves, while a
+    // clear refusal is what an operator needs to diagnose a failed write.
+    // ------------------------------------------------------------------
+    const markingDenial = this.checkMarkings(actionTypeDef, actor, schema);
+    if (markingDenial) {
+      return {
+        success: false,
+        actionId,
+        errors: [markingDenial],
+        affectedObjects: [],
+      };
+    }
+
+    // ------------------------------------------------------------------
     // Step 2: AUTHORISE — call SecurityLayer.checkPermission
     // ------------------------------------------------------------------
     const permResult = await this.config.security.checkPermission(
@@ -682,6 +705,47 @@ export class ActionExecutor {
   }
 
   // ─── Step 1: Param validation ───
+
+
+  /**
+   * Refuse the action when the actor does not satisfy the markings on the
+   * ObjectType it operates on.
+   *
+   * The type is taken from the action's ObjectType-typed @param — the same
+   * parameter the ReBAC layer authorises against — so the two controls agree
+   * on what the action touches. An action with no ObjectType param has no
+   * marked subject and passes.
+   */
+  private checkMarkings(
+    actionTypeDef: ActionType | undefined,
+    actor: ActionActor,
+    schema: ParsedSchema,
+  ): ActionError | null {
+    const policy = this.config.markingPolicy;
+    if (!policy || policy.isEmpty || !actionTypeDef) return null;
+
+    const objectTypeNames = new Set(schema.objectTypes.map((o) => o.name));
+    const held = actor.markings ?? [];
+
+    for (const field of actionTypeDef.fields) {
+      if (!field.directives.some((d) => d.kind === 'param')) continue;
+      if (!objectTypeNames.has(field.type.name)) continue;
+
+      const required = policy.requiredFor(field.type.name);
+      if (required.length === 0) continue;
+
+      const decision = policy.check(held, required);
+      if (!decision.allowed) {
+        return {
+          code: 'MARKING_DENIED',
+          message:
+            `Action "${actionTypeDef.name}" operates on ${field.type.name}, which is restricted by ` +
+            `mandatory markings the caller does not satisfy.`,
+        };
+      }
+    }
+    return null;
+  }
 
   private validateParams(
     actionTypeDef: ActionType | undefined,
