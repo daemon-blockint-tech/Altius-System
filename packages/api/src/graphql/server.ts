@@ -29,6 +29,12 @@ export interface GraphQLServerInstance {
   sdl: string;
   /** Executable GraphQL schema (shared by Apollo and graphql-ws). */
   executableSchema: GraphQLSchema;
+  /**
+   * The complexity gate, shared with graphql-ws for the same reason the schema
+   * is: one set of limits, applied identically whichever transport a caller
+   * picks. The WebSocket path enforced none of it until this was exposed.
+   */
+  complexityAnalyzer: QueryComplexityAnalyzer;
 }
 
 /**
@@ -81,7 +87,11 @@ export function createGraphQLServer(config: GraphQLServerConfig): GraphQLServerI
     ],
   });
 
-  return { server, pubsub, sdl, executableSchema };
+  // The analyzer is returned, not just used, because the WebSocket transport
+  // has to apply the SAME gate. A second `new QueryComplexityAnalyzer()` over
+  // there would be a second set of limits to keep in step, and the transport
+  // that skipped the gate entirely is the one that needs it most.
+  return { server, pubsub, sdl, executableSchema, complexityAnalyzer };
 }
 
 /**
