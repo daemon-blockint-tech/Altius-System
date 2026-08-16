@@ -57,13 +57,31 @@ services:
   openfga:
     image: openfga/openfga:v1.8.2
     command: run
+    # Loopback-only. OpenFGA runs with OPENFGA_AUTHN_METHOD unset, which means
+    # NO authentication, and it is the decision point behind every permission
+    # check on the platform: anyone who reaches it can POST a tuple granting
+    # themselves any relation on any object, after which an ordinary Keycloak
+    # token opens the whole tenant — and Altius logs nothing, because the grant
+    # never passed through Altius.
+    #
+    # Published on 0.0.0.0 this was reachable from off-host on any machine
+    # following DEPLOYMENT.md §4, since docker-compose.prod.yaml overrides only
+    # the six application services and never touches this one (and Docker's
+    # DNAT rules bypass a host firewall). Every consumer that legitimately
+    # needs the published port — init-services.sh, the integration suite,
+    # DEMO.md — already addresses it as localhost.
+    #
+    # Set OPENFGA_AUTHN_METHOD=preshared with OPENFGA_AUTHN_PRESHARED_KEYS here
+    # and OPENFGA_API_TOKEN on the gateway before exposing this anywhere.
     ports:
-      - "${OPENFGA_PORT:-8280}:8080"
-      - "8281:8081"
+      - "127.0.0.1:${OPENFGA_PORT:-8280}:8080"
+      - "127.0.0.1:8281:8081"
     environment:
       OPENFGA_DATASTORE_ENGINE: postgres
       OPENFGA_DATASTORE_URI: "postgres://${POSTGRES_USER:-altius}:${POSTGRES_PASSWORD}@postgresql:5432/${POSTGRES_DB:-altius}?sslmode=disable"
-      OPENFGA_PLAYGROUND_ENABLED: "true"
+      # Opt-in, not on by default: the playground is an unauthenticated write
+      # UI against that same decision point.
+      OPENFGA_PLAYGROUND_ENABLED: "${OPENFGA_PLAYGROUND_ENABLED:-false}"
     depends_on:
       openfga-migrate:
         condition: service_completed_successfully
@@ -187,6 +205,7 @@ services:
       PORT: "4000"
       POSTGRES_URL: "postgresql://${POSTGRES_USER:-altius}:${POSTGRES_PASSWORD}@postgresql:5432/${POSTGRES_DB:-altius}"
       OPENFGA_URL: "http://openfga:8080"
+      OPENFGA_API_TOKEN: "${OPENFGA_API_TOKEN:-}"
       OPENFGA_STORE_ID: ${OPENFGA_STORE_ID:-}
       # Multi-tenant: 'tenant=storeId,tenant2=storeId2'. Takes precedence
       # over OPENFGA_STORE_ID, which needs OIDC_DEFAULT_TENANT alongside it.
@@ -353,6 +372,7 @@ services:
       PORT: "4004"
       POSTGRES_URL: "postgresql://${POSTGRES_USER:-altius}:${POSTGRES_PASSWORD}@postgresql:5432/${POSTGRES_DB:-altius}"
       OPENFGA_URL: "http://openfga:8080"
+      OPENFGA_API_TOKEN: "${OPENFGA_API_TOKEN:-}"
       OPENFGA_STORE_ID: ${OPENFGA_STORE_ID:-}
       # Multi-tenant: 'tenant=storeId,tenant2=storeId2'. Takes precedence
       # over OPENFGA_STORE_ID, which needs OIDC_DEFAULT_TENANT alongside it.

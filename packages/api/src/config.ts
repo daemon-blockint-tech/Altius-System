@@ -45,8 +45,24 @@ export function parsePostgresUrl(url: string): PostgresStorageConfig {
 
 export async function createFgaClient(apiUrl: string, storeId: string): Promise<OpenFgaClientInterface> {
   // Dynamic import to avoid pulling @openfga/sdk in dev mode
-  const { OpenFgaClient } = await import('@openfga/sdk');
-  const client = new OpenFgaClient({ apiUrl, storeId });
+  const { OpenFgaClient, CredentialsMethod } = await import('@openfga/sdk');
+
+  // OpenFGA is the decision point for every ReBAC check on the platform: a
+  // caller who can write tuples to it grants themselves any permission, and
+  // Altius records nothing because the grant never passes through Altius.
+  // Until this existed there was no way to point the gateway at an OpenFGA
+  // that requires a credential — the SDK supports it, we simply never wired
+  // it — so hardening the decision point meant patching source.
+  //
+  // Absent means unauthenticated, which is what a local compose stack runs.
+  const token = process.env['OPENFGA_API_TOKEN']?.trim();
+  const client = new OpenFgaClient({
+    apiUrl,
+    storeId,
+    ...(token
+      ? { credentials: { method: CredentialsMethod.ApiToken, config: { token } } }
+      : {}),
+  });
   return {
     check: (body) => client.check(body),
     listObjects: (body) => client.listObjects(body),

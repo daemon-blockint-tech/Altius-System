@@ -199,7 +199,7 @@ main() {
   log "Services:"
   log "  GraphQL Playground: http://localhost:4000/graphql"
   log "  Keycloak Admin:     http://localhost:8180/auth/admin"
-  log "  OpenFGA Playground: http://localhost:8280/playground"
+  log "  OpenFGA API:        http://localhost:8280/stores"
   log "  Debezium:           http://localhost:8083/"
   log "  OTEL Collector:     http://localhost:4317 (gRPC)"
   log ""
