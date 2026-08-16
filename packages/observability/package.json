@@ -28,6 +28,7 @@
   },
   "license": "Apache-2.0",
   "devDependencies": {
+    "@types/node": "^20.0.0",
     "@opentelemetry/context-async-hooks": "^2.8.0",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"
