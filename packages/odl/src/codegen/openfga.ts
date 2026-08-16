@@ -178,7 +178,15 @@ function generateTypeRelations(
     const targetTypeName = toSnakeCase(linkTypeDef.to);
     const relationName = toSnakeCase(link.linkType);
 
-    linkRelations.push({ relationName, targetType: targetTypeName });
+    // The relation itself is always emitted, so self-link tuples are storable
+    // and traversable. But a self-link must not become the derivation basis:
+    // `viewer: viewer from <relation on my own type>` is a legal recursive
+    // definition with no base case, so nobody is ever a viewer and every
+    // check fails closed and silently. Types whose only outbound links are
+    // self-links fall through to direct assignment below, which grounds them.
+    if (linkTypeDef.to !== obj.name) {
+      linkRelations.push({ relationName, targetType: targetTypeName });
+    }
     relations.push({
       name: relationName,
       directTypes: [`[${targetTypeName}]`],

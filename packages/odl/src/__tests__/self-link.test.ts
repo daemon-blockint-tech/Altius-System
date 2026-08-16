@@ -26,6 +26,7 @@ type Comment @objectType {
   id: ID! @primary
   body: String!
   authorId: String! @indexed
+  parent: Comment @link(type: "ReplyTo", direction: OUTBOUND)
   replies: [Comment!]! @link(type: "ReplyTo", direction: INBOUND)
 }
 
@@ -72,26 +73,43 @@ describe('self-referential link types', () => {
     expect(() => generateGraphQLSchema(parseOdl(THREADED))).not.toThrow();
   });
 
-  it('never derives a permission on a type from a relation on itself', () => {
+  it('never grounds a permission in the type\'s own self-link relation', () => {
     const model = generateOpenFGAModel(parseOdl(THREADED)) as unknown;
     const parsed = (typeof model === 'string' ? JSON.parse(model) : model) as {
       types: Array<{
         name: string;
-        relations: Array<{ name: string; derivedFrom?: string; directTypes?: string[] }>;
+        relations: Array<{
+          name: string;
+          derivedFrom?: string;
+          directTypes?: string[];
+          derivedThrough?: { relation: string; through: string };
+        }>;
       }>;
     };
 
     const comment = parsed.types.find(t => t.name === 'comment');
     expect(comment).toBeDefined();
+    const byName = new Map(comment!.relations.map(r => [r.name, r]));
 
-    // The cycle OpenFGA would reject: `viewer` derived from a relation that is
-    // itself reached through comment→comment.
-    for (const relation of comment!.relations) {
-      expect(relation.derivedFrom).not.toBe(relation.name);
+    // The self-link relation is still emitted, so ReplyTo tuples remain
+    // storable and traversable.
+    expect(byName.get('reply_to')?.directTypes).toEqual(['[comment]']);
+
+    // But viewer/editor must not be derived *through* it. That renders as
+    // `viewer: viewer from reply_to` on type comment — a recursive definition
+    // with no base case, so no tuple can ever satisfy it and every check on a
+    // Comment fails closed and silently.
+    for (const name of ['viewer', 'editor']) {
+      const rel = byName.get(name);
+      expect(rel).toBeDefined();
+      const through = rel!.derivedThrough?.through;
+      if (through) {
+        expect(byName.get(through)?.directTypes).not.toContain('[comment]');
+      }
     }
 
-    // And the type must still be reachable — a self-link must not leave it with
-    // no way to grant access at all.
-    expect(comment!.relations.map(r => r.name)).toContain('viewer');
+    // Grounded instead: something must actually be able to grant access.
+    expect(byName.get('assigned')?.directTypes).toEqual(['[user]']);
+    expect(byName.get('viewer')?.derivedFrom).toBe('assigned');
   });
 });
