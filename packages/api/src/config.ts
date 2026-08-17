@@ -7,7 +7,7 @@
 
 import type { PostgresStorageConfig } from '@altius/storage-postgres';
 import type { OpenFgaClientInterface, FgaClientResolver, OidcAuthenticator } from '@altius/security';
-import { AuthenticationError, AuthorizationService } from '@altius/security';
+import { AuthenticationError, AuthorizationService, DEV_USER, devAuthBypassEnabled } from '@altius/security';
 import type { SecurityLayer } from '@altius/actions';
 import type { Request } from 'express';
 import type { AuthenticatedUserInfo, ManifestRegistry } from './graphql/types.js';
@@ -45,8 +45,24 @@ export function parsePostgresUrl(url: string): PostgresStorageConfig {
 
 export async function createFgaClient(apiUrl: string, storeId: string): Promise<OpenFgaClientInterface> {
   // Dynamic import to avoid pulling @openfga/sdk in dev mode
-  const { OpenFgaClient } = await import('@openfga/sdk');
-  const client = new OpenFgaClient({ apiUrl, storeId });
+  const { OpenFgaClient, CredentialsMethod } = await import('@openfga/sdk');
+
+  // OpenFGA is the decision point for every ReBAC check on the platform: a
+  // caller who can write tuples to it grants themselves any permission, and
+  // Altius records nothing because the grant never passes through Altius.
+  // Until this existed there was no way to point the gateway at an OpenFGA
+  // that requires a credential — the SDK supports it, we simply never wired
+  // it — so hardening the decision point meant patching source.
+  //
+  // Absent means unauthenticated, which is what a local compose stack runs.
+  const token = process.env['OPENFGA_API_TOKEN']?.trim();
+  const client = new OpenFgaClient({
+    apiUrl,
+    storeId,
+    ...(token
+      ? { credentials: { method: CredentialsMethod.ApiToken, config: { token } } }
+      : {}),
+  });
   return {
     check: (body) => client.check(body),
     listObjects: (body) => client.listObjects(body),
@@ -306,15 +322,15 @@ export async function extractUser(
 ): Promise<AuthenticatedUserInfo> {
   const authHeader = req.headers.authorization;
   if (!authHeader?.startsWith('Bearer ')) {
-    if (isDev) {
-      return {
-        id: 'dev-user',
-        name: 'Development User',
-        email: 'dev@altius.local',
-        roles: ['admin', 'clinician', 'nurse_in_charge', 'compliance_analyst', 'compliance_officer', 'bsa_officer', 'operator', 'governor', 'auditor'],
-        groups: [],
-        tenantId: 'default',
-      };
+    // Opt-in, not merely "not production". `isDev` is
+    // `NODE_ENV !== 'production'`, which is satisfied by the variable being
+    // unset, misspelled or differently capitalised — and the api-gateway image
+    // sets no default, so running a published release image with no
+    // environment served this 9-role admin to any request with no
+    // Authorization header. The MCP endpoint has always required a flag here;
+    // this surface is now gated by the same function.
+    if (isDev && devAuthBypassEnabled('ALTIUS_DEV_AUTH_BYPASS')) {
+      return DEV_USER;
     }
     throw Object.assign(new Error('Authorization header required'), { status: 401 });
   }

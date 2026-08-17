@@ -16,6 +16,7 @@ export { AuthenticationError } from "./auth/index.js";
 export { OidcAuthenticator } from "./auth/index.js";
 
 export { CIS2_ROLE_MAPPINGS, resolveRoles, resolveGroups } from "./auth/index.js";
+export { DEV_USER, devAuthBypassEnabled } from "./auth/index.js";
 
 // Authorization — ReBAC via OpenFGA (Section 7.1)
 export type {

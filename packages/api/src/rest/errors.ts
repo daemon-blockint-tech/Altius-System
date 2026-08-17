@@ -8,6 +8,7 @@
 
 import type { ErrorCategory, ErrorCode } from '@altius/spi';
 import type { RestResponse } from './types.js';
+import { logger } from '../logger.js';
 
 interface RestErrorOptions {
   code: ErrorCode;
@@ -84,9 +85,21 @@ export function wrapErrorToRest(err: unknown, traceId?: string): RestResponse {
   const category = mapCodeToCategory(code);
 
   // Never expose internal error messages to clients for system/timeout errors.
-  const message = (category === 'system' || category === 'timeout')
-    ? 'An internal error occurred'
-    : rawMessage;
+  const withheld = category === 'system' || category === 'timeout';
+  const message = withheld ? 'An internal error occurred' : rawMessage;
+
+  // Withholding the message from the caller is right; losing it is not. The
+  // response hands the client a traceId as if it were a lookup key, and
+  // nothing was ever written under it — an operator handed that id had
+  // nothing to search. Log exactly what the caller was not told, keyed by the
+  // same id, so the trade is "the client cannot see it" rather than "no one
+  // can".
+  if (withheld) {
+    logger.error(
+      { traceId, code, err: rawMessage, stack: err instanceof Error ? err.stack : undefined },
+      'Request failed with an internal error — message withheld from the caller',
+    );
+  }
 
   return createRestErrorResponse({
     code,

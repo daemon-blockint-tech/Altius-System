@@ -39,6 +39,14 @@ jobs:
           - service: cel-evaluator
             dockerfile: packages/cel-evaluator/Dockerfile
             context: packages/cel-evaluator
+          # Static bundle + nginx. Included here so the deployment path is
+          # actually exercised: nothing else builds this image, and its nginx
+          # config has never been machine-checked (`nginx -t` needs a registry
+          # pull that does not work on the dev machine). A failure in this job
+          # is the config, not a flake.
+          - service: web
+            dockerfile: packages/web/Dockerfile
+            context: .
     steps:
       - uses: actions/checkout@v4
 

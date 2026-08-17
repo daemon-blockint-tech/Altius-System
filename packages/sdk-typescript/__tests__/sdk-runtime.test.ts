@@ -261,6 +261,54 @@ describe('Generated SDK runtime', () => {
     });
   });
 
+  describe('actions.available (runtime metadata)', () => {
+    it('returns the descriptors a form generator needs', async () => {
+      // The typed action methods are generated at build time; this is the only
+      // runtime view, and the only way to learn a parameter's enum members.
+      const descriptors = [
+        {
+          name: 'TriagePatient',
+          kind: 'action',
+          description: 'Set triage category',
+          parameters: {
+            type: 'object',
+            properties: {
+              category: { type: 'string', enum: ['IMMEDIATE', 'URGENT'] },
+              assessedAt: { type: 'string', format: 'date-time' },
+            },
+            required: ['category'],
+          },
+          returnType: {},
+          requiredPermissions: [],
+          dryRunSupported: false,
+          reversible: false,
+          tags: [],
+        },
+      ];
+      const fetchMock = createFetchMock({ data: { availableTools: descriptors } });
+      globalThis.fetch = fetchMock;
+
+      const client = new Altius({ endpoint: 'http://localhost:3000/graphql', token: 't' });
+      const tools = await client.actions.available();
+
+      expect(tools).toHaveLength(1);
+      const params = tools[0]!.parameters as { properties: Record<string, { enum?: string[]; format?: string }> };
+      expect(params.properties['category']!.enum).toEqual(['IMMEDIATE', 'URGENT']);
+      expect(params.properties['assessedAt']!.format).toBe('date-time');
+    });
+
+    it('forwards a filter', async () => {
+      const fetchMock = createFetchMock({ data: { availableTools: [] } });
+      globalThis.fetch = fetchMock;
+
+      const client = new Altius({ endpoint: 'http://localhost:3000/graphql', token: 't' });
+      await client.actions.available({ kind: 'action' });
+
+      const body = JSON.parse((fetchMock.mock.calls[0]![1] as RequestInit).body as string);
+      expect(body.variables.filter).toEqual({ kind: 'action' });
+    });
+  });
+
   describe('token provider (refresh seam)', () => {
     it('consults the provider on every request instead of freezing it', async () => {
       // Access tokens expire. A client that captured the string at construction

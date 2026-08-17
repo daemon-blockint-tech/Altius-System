@@ -37,11 +37,16 @@ jobs:
         run: pnpm run test
 
   postgres-integration:
-    name: Postgres integration (AGE)
+    name: Postgres integration
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: apache/age:release_PG17_1.6.0
+        # Plain Postgres 17. The AGE image was pinned here when the provider
+        # mirrored the graph; that mirror was removed in 15098b1 and a
+        # regression test asserts the DDL emits no AGE statement. Testing
+        # against an image no deployment uses hides exactly the failures
+        # this job exists to catch.
+        image: postgres:17
         env:
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: altius_test
@@ -66,14 +71,14 @@ jobs:
       # must be built first or vite can't resolve them.
       - name: Build workspace
         run: pnpm run build
-      - name: Initialise Apache AGE
+      - name: Initialise Postgres extensions
         run: |
           sudo apt-get update && sudo apt-get install -y postgresql-client
-          PGPASSWORD=postgres psql -h localhost -U postgres -d altius_test \
-            -c "CREATE EXTENSION IF NOT EXISTS age;" \
-            -c "LOAD 'age';" \
-            -c "SET search_path = ag_catalog, public;" \
-            -c "SELECT create_graph('altius');"
+          # pg_trgm backs the GIN trigram indexes the DDL emits for FULLTEXT
+          # fields. ON_ERROR_STOP so a failure here fails the job rather than
+          # surfacing later as an unexplained missing index.
+          PGPASSWORD=postgres psql -v ON_ERROR_STOP=1 -h localhost -U postgres -d altius_test \
+            -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;"
       - name: Storage-postgres integration tests
         env:
           PG_TEST_URL: postgresql://postgres:postgres@localhost:5432/altius_test
@@ -214,7 +219,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build all images
-        run: docker compose -f Orion/docker-compose.yaml build
+        # Every profile, explicitly. The compose file puts the optional
+        # services behind profiles so a laptop can run the core stack, and a
+        # bare `build` therefore skips them — which silently narrowed this
+        # scan to the images that happen to be on by default. A scan must
+        # cover what is shipped, not what is convenient to run.
+        run: >
+          docker compose -f Orion/docker-compose.yaml
+          --profile cdc --profile microservices
+          --profile observability --profile cache
+          build
       - name: Install trivy
         run: |
           curl -fsSL "https://github.com/aquasecurity/trivy/releases/download/v0.71.0/trivy_0.71.0_Linux-64bit.tar.gz" \
@@ -222,7 +236,7 @@ jobs:
       - name: Scan all images (fail on HIGH/CRITICAL)
         run: |
           status=0
-          for img in cel-evaluator api-gateway ontology-engine action-executor security-service sync-engine; do
+          for img in cel-evaluator api-gateway ontology-engine action-executor security-service sync-engine web; do
             echo "::group::trivy orion-$img"
             trivy image --scanners vuln --severity HIGH,CRITICAL --exit-code 1 "orion-$img:latest" || status=1
             echo "::endgroup::"

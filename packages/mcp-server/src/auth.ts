@@ -10,7 +10,7 @@
  */
 
 import type { OidcAuthenticator, AuthenticatedUser } from '@altius/security';
-import { AuthenticationError } from '@altius/security';
+import { AuthenticationError, DEV_USER, devAuthBypassEnabled } from '@altius/security';
 import type { RequestContext } from '@altius/spi';
 
 /** Dev-mode fallback user (mirrors packages/api/src/config.ts extractUser). */
@@ -41,14 +41,12 @@ const DEV_USER: AuthenticatedUser = {
  * Whether the unauthenticated dev-user fallback may be used at all.
  *
  * Requires a deliberate opt-in (ALTIUS_MCP_DEV_AUTH_BYPASS=true) and is never
- * honoured when NODE_ENV=production. Read per call so the flag can be flipped
- * without re-importing the module. Fails closed when unset.
+ * honoured when NODE_ENV=production. The identity and the two-condition gate
+ * are shared with the REST/GraphQL surface — this file used to carry its own
+ * copy of both, and the copy on the other surface was not gated at all.
  */
 function devBypassEnabled(): boolean {
-  return (
-    process.env['ALTIUS_MCP_DEV_AUTH_BYPASS'] === 'true' &&
-    process.env['NODE_ENV'] !== 'production'
-  );
+  return devAuthBypassEnabled('ALTIUS_MCP_DEV_AUTH_BYPASS');
 }
 
 /**

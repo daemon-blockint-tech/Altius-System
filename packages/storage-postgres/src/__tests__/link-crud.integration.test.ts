@@ -48,6 +48,17 @@ describeWithPg('Link CRUD, Traversal, Temporal (PostgreSQL integration)', () => 
       DROP TABLE IF EXISTS "public"."bed_in_ward" CASCADE;
       DROP TABLE IF EXISTS "public"."assigned_to" CASCADE;
 
+      -- Hand-written DDL mimicking generateObjectTableDDL. It drifted the same
+      -- way object-crud's fixture did (5c2f476): _actor_id was added to the
+      -- generator (ddl-objects.ts:23, additive migration at :78) and not here,
+      -- so every write in this file failed with 42703. Only the object and
+      -- _history tables carry the column; link tables do not.
+      --
+      -- The real fix is to call generateObjectTableDDL instead of keeping a
+      -- second copy of the schema — a copy is the only reason CRUD and DDL can
+      -- disagree at all. Left as a column addition here because that refactor
+      -- touches nine tables and CI is currently red on this exact error.
+
       CREATE TABLE IF NOT EXISTS "public"."patient" (
         "_tenant_id" TEXT NOT NULL,
         "_id" TEXT NOT NULL,
@@ -56,6 +67,7 @@ describeWithPg('Link CRUD, Traversal, Temporal (PostgreSQL integration)', () => 
         "_created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         "_updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         "_deleted_at" TIMESTAMPTZ,
+        "_actor_id" TEXT,
         "nhs_number" TEXT,
         "family_name" TEXT,
         "given_name" TEXT,
@@ -72,6 +84,7 @@ describeWithPg('Link CRUD, Traversal, Temporal (PostgreSQL integration)', () => 
         "_created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         "_updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         "_deleted_at" TIMESTAMPTZ,
+        "_actor_id" TEXT,
         "nhs_number" TEXT,
         "family_name" TEXT,
         "given_name" TEXT,
@@ -90,6 +103,7 @@ describeWithPg('Link CRUD, Traversal, Temporal (PostgreSQL integration)', () => 
         "_created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         "_updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         "_deleted_at" TIMESTAMPTZ,
+        "_actor_id" TEXT,
         "name" TEXT,
         "capacity" INTEGER,
         PRIMARY KEY ("_tenant_id", "_id")
@@ -104,6 +118,7 @@ describeWithPg('Link CRUD, Traversal, Temporal (PostgreSQL integration)', () => 
         "_created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         "_updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         "_deleted_at" TIMESTAMPTZ,
+        "_actor_id" TEXT,
         "name" TEXT,
         "capacity" INTEGER,
         "_history_created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -120,6 +135,7 @@ describeWithPg('Link CRUD, Traversal, Temporal (PostgreSQL integration)', () => 
         "_created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         "_updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         "_deleted_at" TIMESTAMPTZ,
+        "_actor_id" TEXT,
         "bed_number" TEXT,
         "status" TEXT,
         PRIMARY KEY ("_tenant_id", "_id")
@@ -134,6 +150,7 @@ describeWithPg('Link CRUD, Traversal, Temporal (PostgreSQL integration)', () => 
         "_created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         "_updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         "_deleted_at" TIMESTAMPTZ,
+        "_actor_id" TEXT,
         "bed_number" TEXT,
         "status" TEXT,
         "_history_created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW()

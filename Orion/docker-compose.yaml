@@ -1,3 +1,28 @@
+# Altius local stack.
+#
+# `docker compose up -d` starts ONLY what you need to run the platform:
+# Postgres, OpenFGA, Keycloak, the CEL sidecar, the API gateway and the web UI.
+# Everything else sits behind a profile:
+#
+#   docker compose up -d                          # core, ~2.3 GB
+#   docker compose --profile cdc up -d            # + Redpanda and Debezium
+#   docker compose --profile microservices up -d  # + the split-out services
+#   docker compose --profile observability up -d  # + the OTel collector
+#   docker compose --profile cache up -d          # + Redis (else in-memory)
+#
+# The split is not tidiness. Docker Desktop here allocates ~4 GB to the whole
+# VM, and this file used to start sixteen services with no memory limit on any
+# of them — two JVMs, a Kafka broker and five Node services. It OOM-killed
+# Postgres mid-write, left a container whose PID could not be killed, and took
+# the daemon down with it. Twice.
+#
+# Limits use `deploy.resources.limits`, NOT `mem_limit`: current Compose parses
+# `mem_limit`, drops it silently, and runs the container unbounded — verified
+# here by inspecting HostConfig.Memory, which read 0.
+#
+# Raise Docker Desktop's memory (Settings > Resources) before enabling cdc or
+# microservices; they roughly double the footprint.
+
 # Altius — NHS Acute Pilot — Development Deployment
 # Per MVP Section 5.2: all 12 services for local development.
 
@@ -5,7 +30,17 @@ services:
   # ─── Infrastructure ──────────────────────────────────────────────
 
   postgresql:
-    image: apache/age:release_PG17_1.6.0
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    # Plain Postgres 17. The AGE image was pinned when the provider mirrored
+    # the graph; 15098b1 removed that mirror, a regression test asserts the DDL
+    # emits no AGE statement, and the only extension the schema still needs is
+    # pg_trgm — which `applySchema` creates itself. Developing and testing
+    # against an image no deployment runs hides the failures this stack exists
+    # to surface.
+    image: postgres:17
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     environment:
@@ -22,6 +57,11 @@ services:
     networks:
       - altius
   redpanda:
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+    profiles: ["cdc"]
     image: docker.redpanda.com/redpandadata/redpanda:v24.1.1
     command:
       - redpanda start
@@ -44,6 +84,10 @@ services:
     networks:
       - altius
   openfga-migrate:
+    deploy:
+      resources:
+        limits:
+          memory: 128M
     image: openfga/openfga:v1.8.2
     command: migrate
     environment:
@@ -55,15 +99,37 @@ services:
     networks:
       - altius
   openfga:
+    deploy:
+      resources:
+        limits:
+          memory: 256M
     image: openfga/openfga:v1.8.2
     command: run
+    # Loopback-only. OpenFGA runs with OPENFGA_AUTHN_METHOD unset, which means
+    # NO authentication, and it is the decision point behind every permission
+    # check on the platform: anyone who reaches it can POST a tuple granting
+    # themselves any relation on any object, after which an ordinary Keycloak
+    # token opens the whole tenant — and Altius logs nothing, because the grant
+    # never passed through Altius.
+    #
+    # Published on 0.0.0.0 this was reachable from off-host on any machine
+    # following DEPLOYMENT.md §4, since docker-compose.prod.yaml overrides only
+    # the six application services and never touches this one (and Docker's
+    # DNAT rules bypass a host firewall). Every consumer that legitimately
+    # needs the published port — init-services.sh, the integration suite,
+    # DEMO.md — already addresses it as localhost.
+    #
+    # Set OPENFGA_AUTHN_METHOD=preshared with OPENFGA_AUTHN_PRESHARED_KEYS here
+    # and OPENFGA_API_TOKEN on the gateway before exposing this anywhere.
     ports:
-      - "${OPENFGA_PORT:-8280}:8080"
-      - "8281:8081"
+      - "127.0.0.1:${OPENFGA_PORT:-8280}:8080"
+      - "127.0.0.1:8281:8081"
     environment:
       OPENFGA_DATASTORE_ENGINE: postgres
       OPENFGA_DATASTORE_URI: "postgres://${POSTGRES_USER:-altius}:${POSTGRES_PASSWORD}@postgresql:5432/${POSTGRES_DB:-altius}?sslmode=disable"
-      OPENFGA_PLAYGROUND_ENABLED: "true"
+      # Opt-in, not on by default: the playground is an unauthenticated write
+      # UI against that same decision point.
+      OPENFGA_PLAYGROUND_ENABLED: "${OPENFGA_PLAYGROUND_ENABLED:-false}"
     depends_on:
       openfga-migrate:
         condition: service_completed_successfully
@@ -72,6 +138,10 @@ services:
     networks:
       - altius
   keycloak:
+    deploy:
+      resources:
+        limits:
+          memory: 768M
     image: quay.io/keycloak/keycloak:25.0
     # --import-realm provisions the `altius` realm on first boot with the
     # client + three protocol mappers (audience, tenant_id, flat roles) the
@@ -103,6 +173,11 @@ services:
     networks:
       - altius
   debezium:
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+    profiles: ["cdc"]
     image: debezium/connect:2.7.3.Final
     ports:
       - "${DEBEZIUM_PORT:-8083}:8083"
@@ -113,8 +188,6 @@ services:
       OFFSET_STORAGE_TOPIC: _cdc_offsets
       STATUS_STORAGE_TOPIC: _cdc_status
     depends_on:
-      redpanda:
-        condition: service_healthy
       postgresql:
         condition: service_healthy
     healthcheck:
@@ -126,6 +199,11 @@ services:
     networks:
       - altius
   redis:
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    profiles: ["cache"]
     image: redis:7-alpine
     ports:
       - "${REDIS_PORT:-6379}:6379"
@@ -139,6 +217,11 @@ services:
     networks:
       - altius
   otel-collector:
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    profiles: ["observability"]
     image: otel/opentelemetry-collector-contrib:0.104.0
     ports:
       - "${OTEL_PORT:-4317}:4317"
@@ -157,6 +240,10 @@ services:
   # ─── Application Services ────────────────────────────────────────
 
   cel-evaluator:
+    deploy:
+      resources:
+        limits:
+          memory: 128M
     build:
       context: ../packages/cel-evaluator
       dockerfile: Dockerfile
@@ -175,6 +262,10 @@ services:
     networks:
       - altius
   api-gateway:
+    deploy:
+      resources:
+        limits:
+          memory: 512M
     build:
       context: ..
       dockerfile: packages/api/Dockerfile
@@ -184,16 +275,19 @@ services:
       - "${API_PORT:-4000}:4000"
     environment:
       NODE_ENV: development
+      # Opt-in for the unauthenticated dev identity. Local stack only.
+      ALTIUS_DEV_AUTH_BYPASS: "${ALTIUS_DEV_AUTH_BYPASS:-true}"
       PORT: "4000"
       POSTGRES_URL: "postgresql://${POSTGRES_USER:-altius}:${POSTGRES_PASSWORD}@postgresql:5432/${POSTGRES_DB:-altius}"
       OPENFGA_URL: "http://openfga:8080"
+      OPENFGA_API_TOKEN: "${OPENFGA_API_TOKEN:-}"
       OPENFGA_STORE_ID: ${OPENFGA_STORE_ID:-}
       # Multi-tenant: 'tenant=storeId,tenant2=storeId2'. Takes precedence
       # over OPENFGA_STORE_ID, which needs OIDC_DEFAULT_TENANT alongside it.
       OPENFGA_STORE_IDS: ${OPENFGA_STORE_IDS:-}
       CEL_EVALUATOR_URL: "cel-evaluator:50051"
-      REDPANDA_BROKERS: "redpanda:9092"
-      REDIS_URL: "redis://redis:6379"
+      REDPANDA_BROKERS: "${REDPANDA_BROKERS:-}"
+      REDIS_URL: "${REDIS_URL:-}"
       KEYCLOAK_URL: "http://keycloak:8080/auth"
       KEYCLOAK_REALM: ${KEYCLOAK_REALM:-altius}
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4317"
@@ -243,10 +337,6 @@ services:
         condition: service_started
       cel-evaluator:
         condition: service_started
-      redpanda:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:4000/.well-known/apollo/server-health"]
       interval: 10s
@@ -256,6 +346,11 @@ services:
     networks:
       - altius
   ontology-engine:
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+    profiles: ["microservices"]
     build:
       context: ..
       dockerfile: packages/engine/Dockerfile
@@ -263,6 +358,8 @@ services:
         GIT_REVISION: ${GIT_REVISION:-unknown}
     environment:
       NODE_ENV: development
+      # Opt-in for the unauthenticated dev identity. Local stack only.
+      ALTIUS_DEV_AUTH_BYPASS: "${ALTIUS_DEV_AUTH_BYPASS:-true}"
       PORT: "4001"
       POSTGRES_URL: "postgresql://${POSTGRES_USER:-altius}:${POSTGRES_PASSWORD}@postgresql:5432/${POSTGRES_DB:-altius}"
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4317"
@@ -279,6 +376,11 @@ services:
     networks:
       - altius
   action-executor:
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+    profiles: ["microservices"]
     build:
       context: ..
       dockerfile: packages/actions/Dockerfile
@@ -286,10 +388,12 @@ services:
         GIT_REVISION: ${GIT_REVISION:-unknown}
     environment:
       NODE_ENV: development
+      # Opt-in for the unauthenticated dev identity. Local stack only.
+      ALTIUS_DEV_AUTH_BYPASS: "${ALTIUS_DEV_AUTH_BYPASS:-true}"
       PORT: "4002"
       CEL_EVALUATOR_URL: "cel-evaluator:50051"
       POSTGRES_URL: "postgresql://${POSTGRES_USER:-altius}:${POSTGRES_PASSWORD}@postgresql:5432/${POSTGRES_DB:-altius}"
-      REDPANDA_BROKERS: "redpanda:9092"
+      REDPANDA_BROKERS: "${REDPANDA_BROKERS:-}"
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4317"
       OTEL_SERVICE_NAME: action-executor
     depends_on:
@@ -297,8 +401,6 @@ services:
         condition: service_healthy
       cel-evaluator:
         condition: service_started
-      redpanda:
-        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:4002/health"]
       interval: 10s
@@ -308,6 +410,11 @@ services:
     networks:
       - altius
   sync-engine:
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+    profiles: ["microservices"]
     build:
       context: ..
       dockerfile: packages/sync/Dockerfile
@@ -315,9 +422,11 @@ services:
         GIT_REVISION: ${GIT_REVISION:-unknown}
     environment:
       NODE_ENV: development
+      # Opt-in for the unauthenticated dev identity. Local stack only.
+      ALTIUS_DEV_AUTH_BYPASS: "${ALTIUS_DEV_AUTH_BYPASS:-true}"
       PORT: "4003"
       POSTGRES_URL: "postgresql://${POSTGRES_USER:-altius}:${POSTGRES_PASSWORD}@postgresql:5432/${POSTGRES_DB:-altius}"
-      REDPANDA_BROKERS: "redpanda:9092"
+      REDPANDA_BROKERS: "${REDPANDA_BROKERS:-}"
       # DEBEZIUM_URL: Debezium Connect REST endpoint. Used to register
       # connectors (POST /connectors) that stream change events into
       # Redpanda topics consumed by KafkaCdcSource (packages/sync/src/cdc).
@@ -330,8 +439,6 @@ services:
     depends_on:
       postgresql:
         condition: service_healthy
-      redpanda:
-        condition: service_healthy
       debezium:
         condition: service_healthy
     healthcheck:
@@ -343,6 +450,11 @@ services:
     networks:
       - altius
   security-service:
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+    profiles: ["microservices"]
     build:
       context: ..
       dockerfile: packages/security/Dockerfile
@@ -350,9 +462,12 @@ services:
         GIT_REVISION: ${GIT_REVISION:-unknown}
     environment:
       NODE_ENV: development
+      # Opt-in for the unauthenticated dev identity. Local stack only.
+      ALTIUS_DEV_AUTH_BYPASS: "${ALTIUS_DEV_AUTH_BYPASS:-true}"
       PORT: "4004"
       POSTGRES_URL: "postgresql://${POSTGRES_USER:-altius}:${POSTGRES_PASSWORD}@postgresql:5432/${POSTGRES_DB:-altius}"
       OPENFGA_URL: "http://openfga:8080"
+      OPENFGA_API_TOKEN: "${OPENFGA_API_TOKEN:-}"
       OPENFGA_STORE_ID: ${OPENFGA_STORE_ID:-}
       # Multi-tenant: 'tenant=storeId,tenant2=storeId2'. Takes precedence
       # over OPENFGA_STORE_ID, which needs OIDC_DEFAULT_TENANT alongside it.
@@ -380,6 +495,10 @@ services:
   # gateway from the SAME origin, so the browser never makes a cross-origin
   # request and CORS_ALLOWED_ORIGINS is not in the path for this client.
   web:
+    deploy:
+      resources:
+        limits:
+          memory: 128M
     build:
       context: ..
       dockerfile: packages/web/Dockerfile

@@ -60,6 +60,7 @@ import { AuthorizationService, OidcAuthenticator, AuditWriter, MemoryAuditStore,
 import type { OpenFgaClientInterface, FgaClientResolver } from '@altius/security';
 import type { StorageProvider, RequestContext } from '@altius/spi';
 import { createGraphQLServer, buildResolverContext } from './graphql/index.js';
+import { guardWsOperation } from './graphql/ws-gate.js';
 import { generateRestRoutes, generateOpenApiSpec, auditRead } from './rest/index.js';
 import { writeReadAuditFor } from './rest/audit-read.js';
 import { isTypeVisible, missingMarkings } from './markings/enforce.js';
@@ -923,7 +924,7 @@ async function main(): Promise<void> {
   // ── GraphQL (Apollo Server + WebSocket Subscriptions) ──
   // Single executable schema shared by both Apollo (HTTP) and graphql-ws (WS)
   // transports. This guarantees mutations and subscriptions use the same PubSub.
-  const { server: apolloServer, pubsub, executableSchema } = createGraphQLServer({ schema, deps, isDev });
+  const { server: apolloServer, pubsub, executableSchema, complexityAnalyzer } = createGraphQLServer({ schema, deps, isDev });
 
   // WebSocket server for GraphQL subscriptions (graphql-ws protocol)
   const wsServer = new WebSocketServer({
@@ -986,16 +987,28 @@ async function main(): Promise<void> {
         }
         return buildResolverContext(authResult.user, deps);
       },
-      onSubscribe: (ctx) => {
+      // graphql-ws carries QUERIES and MUTATIONS as well as subscriptions, so
+      // this hook is the WebSocket equivalent of the HTTP request path — and it
+      // enforced neither of the two gates that path applies. A principal
+      // holding any valid token could run unlimited operations of unbounded
+      // depth and cost simply by opening a socket instead of POSTing, which
+      // made both HTTP controls advisory rather than enforced.
+      onSubscribe: async (ctx, message) => {
         const key = (ctx as { extra?: object }).extra ?? ctx;
-        const count = subscriptionCounts.get(key) ?? 0;
-        if (count >= MAX_SUBSCRIPTIONS_PER_CONNECTION) {
-          return [new GraphQLError('Subscription limit exceeded', {
-            extensions: { code: 'RATE_LIMITED' },
-          })];
-        }
-        subscriptionCounts.set(key, count + 1);
-        return undefined; // proceed normally
+        return guardWsOperation(
+          {
+            complexityAnalyzer,
+            rateLimiter,
+            subscriptionManager,
+            maxSubscriptionsPerConnection: MAX_SUBSCRIPTIONS_PER_CONNECTION,
+          },
+          (ctx.connectionParams ?? {}) as Record<string, unknown>,
+          (message.payload as { query?: string } | undefined)?.query,
+          {
+            get: () => subscriptionCounts.get(key) ?? 0,
+            set: (n) => subscriptionCounts.set(key, n),
+          },
+        );
       },
       onComplete: (ctx) => {
         const key = (ctx as { extra?: object }).extra ?? ctx;

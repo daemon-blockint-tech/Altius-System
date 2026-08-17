@@ -19,6 +19,12 @@ storage:
     host: postgresql
     port: 5432
     database: altius
+    # -- libpq sslmode appended to POSTGRES_URL. Empty means the connection is
+    # cleartext, which the chart permits only because an in-cluster Postgres on
+    # a private network is a defensible topology. Anything crossing a network
+    # boundary — a managed database, a peered VPC — must set `require` at
+    # minimum, and `verify-full` where a CA bundle is available.
+    sslmode: ""
     existingSecret: altius-postgres
     secretKeys:
       username: username
@@ -32,8 +38,25 @@ eventBus:
     bootstrapServers: ""
 
 # -- Redis (distributed rate limiting)
+# Empty means each pod counts requests in its own memory, so the effective
+# limit is the configured one multiplied by the replica count. The chart
+# refuses a multi-replica install with this empty — see `singleInstance`.
 redis:
   url: ""
+
+# -- Components that MUST run on exactly one instance.
+#
+# The gateway reads AUTOMATION_ENABLED and SYNC_SCHEDULER_ENABLED to decide
+# whether to start pack-declared automations and the sync poll loop. Both gates
+# exist because running them on N pods fires every trigger N times. The chart
+# had no way to set either, so a Helm deployment could not run them at all;
+# enabling one now also constrains the deployment to a single replica, because
+# a Deployment cannot elect a leader.
+singleInstance:
+  # -- Start pack-declared automations (event + schedule triggers).
+  automation: false
+  # -- Start the sync poll loop for POLLING/CDC/BATCH pack connectors.
+  syncScheduler: false
 
 # -- Authentication / OIDC
 auth:
