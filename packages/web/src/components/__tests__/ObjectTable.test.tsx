@@ -13,7 +13,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import { ObjectTable } from '../ObjectTable.js';
-import type { ConnectionLike } from '../ObjectTable.js';
+import type { Column, ConnectionLike } from '../ObjectTable.js';
 
 interface Patient {
   id: string;
@@ -36,7 +36,7 @@ function connection(nodes: Patient[], opts: { hasNextPage?: boolean; endCursor?:
   };
 }
 
-const COLUMNS = [
+const COLUMNS: Column<Patient>[] = [
   { key: 'name', header: 'Name' },
   { key: 'status', header: 'Status' },
 ];

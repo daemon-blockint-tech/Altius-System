@@ -18,9 +18,18 @@ export interface RowMetadata {
 }
 
 export interface Column<T> {
-  /** Property name. Matched against `_redactedFields`, so it must be the
-   *  schema field name, not a display alias. */
-  key: string;
+  /**
+   * Property name. Matched against `_redactedFields`, so it must be the schema
+   * field name, not a display alias.
+   *
+   * Constrained to keys of T rather than `string`: a column naming a field the
+   * query does not select renders as an em dash, which this table defines as
+   * "not recorded" — indistinguishable from a real empty value, and on a
+   * clinical worklist that invites someone to fill the gap in. The SDK's
+   * generated row type lists exactly the selected fields, so binding to it
+   * turns that into a compile error.
+   */
+  key: keyof T & string;
   header: string;
   /** Defaults to reading `row[key]` and stringifying it. */
   render?: (row: T) => ReactNode;

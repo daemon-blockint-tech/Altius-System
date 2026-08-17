@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { ObjectTable } from './components/ObjectTable.js';
+import type { Patient } from '@altius/sdk';
 import { ActionPanel } from './components/ActionPanel.js';
 import type { ActionSchema } from './components/ActionForm.js';
 import { createClient } from './client.js';
@@ -113,7 +114,10 @@ export function App({ config }: { config: WebConfig }): ReactNode {
   return (
     <main>
       <h1>Altius</h1>
-      <ObjectTable
+      {/* Parameterised explicitly: the column literals cannot drive inference,
+          so without this T falls back to the bare constraint and the key check
+          below binds against nothing. */}
+      <ObjectTable<Patient>
         caption="Patients"
         columns={[
           { key: 'nhsNumber', header: 'NHS number' },
