@@ -10,13 +10,10 @@ import { AuthSession } from './auth/session.js';
 import { beginLogin, completeLogin } from './auth/pkce.js';
 import { isAuthFailure } from './auth/auth-failure.js';
 import { EditorialShell } from './components/EditorialShell.js';
-import type { JobKey, ScreenEntry, JobGroup, PackOption, RoleOption } from './components/EditorialShell.js';
+import type { JobKey, JobGroup, PackOption, RoleOption } from './components/EditorialShell.js';
 import { FacilitiesScreen } from './components/FacilitiesScreen.js';
 import type { ActiveFilter, FacilityStats } from './components/FacilitiesScreen.js';
-import { GovernanceRail } from './components/GovernanceRail.js';
-import { TraceBar } from './components/TraceBar.js';
 import type { TraceState } from './components/TraceBar.js';
-import './editorial.css';
 
 type AuthState = 'checking' | 'anonymous' | 'signed-in' | 'error';
 
@@ -156,13 +153,12 @@ export function App({ config }: { config: WebConfig }): ReactNode {
     { field: 'country', values: ['DE', 'NL', 'GB'] },
   ]);
 
-  // Stats — in a real deployment these would come from an aggregate query.
-  // For now they are static placeholders matching the mockup.
-  const facilityStats: FacilityStats | null = activeScreen === 'facilities' && activePack === 'supply-chain'
-    ? { visible: 38, total: 41, disrupted: 2, meanUtilisation: 67, cdcLagSeconds: 1.8 }
-    : null;
+  const facilityStats: FacilityStats | null =
+    activeScreen === 'facilities' && activePack === 'supply-chain'
+      ? { visible: 38, total: 41, disrupted: 2, meanUtilisation: 67, cdcLagSeconds: 1.8 }
+      : null;
 
-  const trace: TraceState | null = {
+  const trace: TraceState = {
     activeStage: 'emit',
     durationMs: 41,
     auditId: '01JQ4Z…7KP',
@@ -187,8 +183,6 @@ export function App({ config }: { config: WebConfig }): ReactNode {
   };
 
   const handleAddFilter = (field: string) => {
-    // Simple: add an empty filter pill that the user can interact with.
-    // A real implementation would open a dropdown of available values.
     setActiveFilters(filters => {
       if (filters.some(f => f.field === field)) return filters;
       return [...filters, { field, values: [] }];
@@ -235,18 +229,6 @@ export function App({ config }: { config: WebConfig }): ReactNode {
 
   // ── Render the active screen inside the shell ────────────────
 
-  const screenContent = renderScreen(
-    activeScreen,
-    activePack,
-    client,
-    facilityStats,
-    activeFilters,
-    handleRemoveFilter,
-    handleAddFilter,
-    guardAuth,
-    loadActions,
-  );
-
   return (
     <EditorialShell
       packs={PACKS}
@@ -261,60 +243,65 @@ export function App({ config }: { config: WebConfig }): ReactNode {
       onRoleChange={setActiveRole}
       brand="SC"
       userInitials="JO"
-      governance={
-        <GovernanceRail
-          principal={{
-            name: 'Joy Okafor',
-            email: 'j.okafor@trust.example',
-            tenant: 'acme-eu',
-            sub: '4f2a…9c1',
-            relationsSummary: (
-              <>
-                Holds <code>warehouse_manager</code> on 4 facilities and{' '}
-                <code>viewer</code> everywhere it derives.
-              </>
-            ),
-          }}
-          hidden={[
-            {
-              title: `${Math.max(0, (facilityStats?.total ?? 41) - (facilityStats?.visible ?? 38))} rows, filtered`,
-              detail: (
-                <>
-                  No <code>assigned</code> relation. Removed by the ReBAC pre-filter before the page
-                  was built.
-                </>
-              ),
-            },
-            {
-              title: '2 fields, redacted',
-              detail: (
-                <>
-                  <code>unitCost</code> and <code>currency</code> on linked purchase orders.
-                  Commercial terms sit outside your relation.
-                </>
-              ),
-            },
-            {
-              title: 'Consent: not applicable',
-              detail: (
-                <>
-                  No consent-gated type on this view. It engages on{' '}
-                  <code>nhs.acute</code>.
-                </>
-              ),
-            },
-          ]}
-          events={[
-            { time: '14:22:07', text: <>Shipment <code>SHP-8841</code> delayed</> },
-            { time: '14:21:58', text: 'Inventory adjusted at Leipzig' },
-            { time: '14:21:31', text: <>Hamburg Altenwerder set <code>DISRUPTED</code></> },
-          ]}
-          live={true}
-        />
-      }
-      trace={<TraceBar trace={trace} label="LAST READ" />}
+      principal={{
+        name: 'Joy Okafor',
+        email: 'j.okafor@trust.example',
+        tenant: 'acme-eu',
+        sub: '4f2a…9c1',
+        relationsSummary: (
+          <>
+            Holds <code>warehouse_manager</code> on 4 facilities and{' '}
+            <code>viewer</code> everywhere it derives.
+          </>
+        ),
+      }}
+      hidden={[
+        {
+          title: '3 rows, filtered',
+          detail: (
+            <>
+              No <code>assigned</code> relation. Removed by the ReBAC pre-filter before the page
+              was built.
+            </>
+          ),
+        },
+        {
+          title: '2 fields, redacted',
+          detail: (
+            <>
+              <code>unitCost</code> and <code>currency</code> on linked purchase orders.
+              Commercial terms sit outside your relation.
+            </>
+          ),
+        },
+        {
+          title: 'Consent: not applicable',
+          detail: (
+            <>
+              No consent-gated type on this view. It engages on <code>nhs.acute</code>.
+            </>
+          ),
+        },
+      ]}
+      events={[
+        { time: '14:22:07', text: <>Shipment <code>SHP-8841</code> delayed</> },
+        { time: '14:21:58', text: 'Inventory adjusted at Leipzig' },
+        { time: '14:21:31', text: <>Hamburg Altenwerder set <code>DISRUPTED</code></> },
+      ]}
+      feedLive={true}
+      trace={trace}
     >
-      {screenContent}
+      {renderScreen(
+        activeScreen,
+        activePack,
+        client,
+        facilityStats,
+        activeFilters,
+        handleRemoveFilter,
+        handleAddFilter,
+        guardAuth,
+        loadActions,
+      )}
     </EditorialShell>
   );
 
@@ -328,9 +315,9 @@ export function App({ config }: { config: WebConfig }): ReactNode {
  * Render the main content for the active screen.
  *
  * Only the Facilities screen (supply-chain pack) and the patient worklist
- * (nhs.acute pack) are wired to live data in this implementation. The other
- * nine screens render a placeholder — they are defined in the sidebar so the
- * navigation is complete, but their data surfaces are future work.
+ * (nhs.acute pack) are wired to live data. The other nine screens render a
+ * placeholder — they are defined in the sidebar so the navigation is complete,
+ * but their data surfaces are future work.
  */
 function renderScreen(
   screenId: string,
@@ -356,19 +343,19 @@ function renderScreen(
     );
   }
 
-  // NHS acute — patient worklist (the existing screen, restyled by the shell).
+  // NHS acute — patient worklist (the existing screen, in the shell).
   if (screenId === 'facilities' && packId === 'nhs-acute') {
     return (
-      <main className="ed-main">
-        <header className="ed-main__header">
-          <span className="ed-main__eyebrow">NHS.ACUTE · OBJECT TYPE</span>
-          <h1 className="ed-main__title">Patients</h1>
-          <p className="ed-main__lede">
+      <main className="shell__main">
+        <header className="main__header">
+          <span className="main__eyebrow">NHS.ACUTE · OBJECT TYPE</span>
+          <h1 className="main__title">Patients</h1>
+          <p className="main__lede">
             The patient worklist. Reads are FGA-filtered, field-redacted and consent-gated
             server-side — the UI adds no data access of its own.
           </p>
         </header>
-        <div className="ed-table-wrap">
+        <div style={{ padding: '8px 44px 40px', maxWidth: '1180px' }}>
           <ObjectTable<Patient>
             caption="Patients"
             columns={[
@@ -401,13 +388,14 @@ function renderScreen(
   }
 
   // Placeholder for the other nine screens.
-  const screen = JOBS.flatMap(j => j.screens).find(s => s.id === screenId);
+  const allScreens = JOBS.flatMap(j => j.screens);
+  const match = allScreens.find(s => s.id === screenId);
   return (
-    <main className="ed-main">
-      <header className="ed-main__header">
-        <span className="ed-main__eyebrow">{packId.toUpperCase().replace('-', '.')} · SCREEN</span>
-        <h1 className="ed-main__title">{screen?.label ?? screenId}</h1>
-        <p className="ed-main__lede">
+    <main className="shell__main">
+      <header className="main__header">
+        <span className="main__eyebrow">{packId.toUpperCase().replace('-', '.')} · SCREEN</span>
+        <h1 className="main__title">{match?.label ?? screenId}</h1>
+        <p className="main__lede">
           This screen is defined in the navigation but its data surface is not yet wired.
           The governed API endpoints exist — this placeholder will be replaced with a live view.
         </p>

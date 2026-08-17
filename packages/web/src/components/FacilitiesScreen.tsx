@@ -1,5 +1,5 @@
 /**
- * Facility screen — the anchor screen of the Operate job.
+ * Facilities screen — the anchor screen of the Operate job.
  *
  * Shows the Facility object type with:
  *  - A stats strip (visible/disrupted/mean utilisation/CDC lag)
@@ -17,8 +17,26 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { Altius, Facility, FacilityConnection, FacilityFilter, FacilityOrderBy } from '@altius/sdk';
 
-export interface FacilityScreenProps {
+export interface FacilityStats {
+  visible: number;
+  total: number;
+  disrupted: number;
+  meanUtilisation: number;
+  cdcLagSeconds: number;
+}
+
+export interface ActiveFilter {
+  field: string;
+  values: string[];
+}
+
+export interface FacilitiesScreenProps {
   client: Altius;
+  stats: FacilityStats | null;
+  activeFilters: ActiveFilter[];
+  onRemoveFilter: (field: string, value: string) => void;
+  onAddFilter: (field: string) => void;
+  onSelectFacility?: (facility: Facility) => void;
 }
 
 type Status = 'loading' | 'ready' | 'error';
@@ -26,7 +44,14 @@ type Status = 'loading' | 'ready' | 'error';
 const PAGE_SIZE = 25;
 const LIVE_COALESCE_MS = 250;
 
-export function FacilityScreen({ client }: FacilityScreenProps): ReactNode {
+export function FacilitiesScreen({
+  client,
+  stats,
+  activeFilters,
+  onRemoveFilter,
+  onAddFilter,
+  onSelectFacility,
+}: FacilitiesScreenProps): ReactNode {
   const [status, setStatus] = useState<Status>('loading');
   const [error, setError] = useState<string | null>(null);
   const [connection, setConnection] = useState<FacilityConnection | null>(null);
@@ -38,17 +63,31 @@ export function FacilityScreen({ client }: FacilityScreenProps): ReactNode {
 
   const ticket = useRef(0);
 
+  const buildFilter = useCallback((): FacilityFilter | undefined => {
+    const parts: FacilityFilter[] = [];
+    for (const f of activeFilters) {
+      if (f.values.length === 1) {
+        parts.push({ [f.field]: f.values[0] } as FacilityFilter);
+      } else if (f.values.length > 1) {
+        parts.push({ [f.field]: { in: f.values } } as FacilityFilter);
+      }
+    }
+    if (search.trim()) {
+      parts.push({ OR: [{ name: { contains: search.trim() } }, { code: { contains: search.trim() } }] });
+    }
+    if (parts.length === 0) return undefined;
+    if (parts.length === 1) return parts[0];
+    return { AND: parts };
+  }, [activeFilters, search]);
+
   const fetchPage = useCallback(
     async (after: string | undefined, orderBy: FacilityOrderBy | null) => {
       const mine = ++ticket.current;
       setStatus('loading');
       setError(null);
       try {
-        const filter: FacilityFilter | undefined = search
-          ? { OR: [{ name: { contains: search } }, { code: { contains: search } }] }
-          : undefined;
         const result = await client.facility.list(
-          filter,
+          buildFilter(),
           after === undefined ? { first: PAGE_SIZE } : { first: PAGE_SIZE, after },
           undefined,
           orderBy ?? undefined,
@@ -62,7 +101,7 @@ export function FacilityScreen({ client }: FacilityScreenProps): ReactNode {
         setStatus('error');
       }
     },
-    [client, search],
+    [client, buildFilter],
   );
 
   useEffect(() => {
@@ -132,32 +171,25 @@ export function FacilityScreen({ client }: FacilityScreenProps): ReactNode {
 
   if (status === 'error') {
     return (
-      <div className="main__header" role="alert">
-        <h1 className="main__title">Facility</h1>
-        <p>Could not load facilities.</p>
-        <p style={{ font: '400 13px var(--font-mono)', color: 'var(--muted)', marginBottom: '16px' }}>{error}</p>
-        <button
-          type="button"
-          className="trace-bar__link"
-          onClick={() => void fetchPage(cursor, sort ? { [sort.key]: sort.direction } as FacilityOrderBy : null)}
-        >
-          Retry
-        </button>
-      </div>
+      <main className="shell__main">
+        <header className="main__header" role="alert">
+          <h1 className="main__title">Facility</h1>
+          <p>Could not load facilities.</p>
+          <p style={{ font: '400 13px var(--font-mono)', color: 'var(--muted)', marginBottom: '16px' }}>{error}</p>
+          <button
+            type="button"
+            className="trace-bar__link"
+            onClick={() => void fetchPage(cursor, sort ? { [sort.key]: sort.direction } as FacilityOrderBy : null)}
+          >
+            Retry
+          </button>
+        </header>
+      </main>
     );
   }
 
   const rows = connection?.edges ?? [];
   const total = connection?.totalCount ?? 0;
-
-  // Derive stats from what the server returned. These are approximate —
-  // a real deployment would call the aggregate endpoint, but the list
-  // already carries enough for the header strip on a single page.
-  const disrupted = rows.filter(r => r.node.status === 'DISRUPTED').length;
-  const visibleCount = total;
-  const meanUtil = rows.length > 0
-    ? Math.round(rows.reduce((sum, r) => sum + (r.node.currentUtilization ?? 0), 0) / rows.length)
-    : 0;
 
   return (
     <main className="shell__main">
@@ -165,60 +197,62 @@ export function FacilityScreen({ client }: FacilityScreenProps): ReactNode {
         <span className="main__eyebrow">SUPPLY.CHAIN · OBJECT TYPE</span>
         <h1 className="main__title">Facility</h1>
         <p className="main__lede">
-          Six object types load from this pack. Facility is where inventory, shipments and disruption meet —{' '}
-          {visibleCount} facilities are visible to you, scoped by the{' '}
-          <code>assigned</code> relation.
+          Six object types load from this pack. Facility is where inventory, shipments and
+          disruption meet. The list below is scoped by the <code>assigned</code> relation —
+          rows you hold no relation to are removed by the ReBAC pre-filter before the page is built.
         </p>
 
-        <div className="stats-strip">
-          <div className="stats-strip__cell">
-            <span className="stats-strip__label">VISIBLE</span>
-            <span className="stats-strip__value">
-              {visibleCount.toLocaleString()}
-              <span className="stats-strip__unit"> total</span>
-            </span>
+        {stats && (
+          <div className="stats-strip">
+            <div className="stats-strip__cell">
+              <span className="stats-strip__label">VISIBLE</span>
+              <span className="stats-strip__value">
+                {stats.visible}
+                <span className="stats-strip__unit"> / {stats.total}</span>
+              </span>
+            </div>
+            <div className="stats-strip__cell">
+              <span className="stats-strip__label">DISRUPTED</span>
+              <span className="stats-strip__value">{stats.disrupted}</span>
+            </div>
+            <div className="stats-strip__cell">
+              <span className="stats-strip__label">MEAN UTILISATION</span>
+              <span className="stats-strip__value">
+                {stats.meanUtilisation}
+                <span className="stats-strip__unit">%</span>
+              </span>
+            </div>
+            <div className="stats-strip__cell">
+              <span className="stats-strip__label">CDC LAG</span>
+              <span className="stats-strip__value">
+                {live ? stats.cdcLagSeconds : '—'}
+                <span className="stats-strip__unit">s</span>
+              </span>
+            </div>
           </div>
-          <div className="stats-strip__cell">
-            <span className="stats-strip__label">DISRUPTED</span>
-            <span className="stats-strip__value">{disrupted}</span>
-          </div>
-          <div className="stats-strip__cell">
-            <span className="stats-strip__label">MEAN UTILISATION</span>
-            <span className="stats-strip__value">
-              {meanUtil}
-              <span className="stats-strip__unit">%</span>
-            </span>
-          </div>
-          <div className="stats-strip__cell">
-            <span className="stats-strip__label">CDC LAG</span>
-            <span className="stats-strip__value">
-              {live ? '1.8' : '—'}
-              <span className="stats-strip__unit">s</span>
-            </span>
-          </div>
-        </div>
+        )}
 
         <div className="filter-bar">
           <div className="filter-bar__chips">
-            <button
-              type="button"
-              className="filter-add"
-              onClick={() => toggleSort('country')}
-            >
-              + country
-            </button>
-            <button
-              type="button"
-              className="filter-add"
-              onClick={() => toggleSort('status')}
-            >
+            {activeFilters.flatMap(af =>
+              af.values.map(v => (
+                <span key={`${af.field}=${v}`} className="filter-chip">
+                  {af.field} = {v}{' '}
+                  <button
+                    type="button"
+                    className="filter-chip__remove"
+                    onClick={() => onRemoveFilter(af.field, v)}
+                    aria-label={`Remove filter ${af.field} = ${v}`}
+                  >
+                    ✕
+                  </button>
+                </span>
+              )),
+            )}
+            <button type="button" className="filter-add" onClick={() => onAddFilter('status')}>
               + status
             </button>
-            <button
-              type="button"
-              className="filter-add"
-              onClick={() => toggleSort('type')}
-            >
+            <button type="button" className="filter-add" onClick={() => onAddFilter('type')}>
               + type
             </button>
           </div>
@@ -246,22 +280,13 @@ export function FacilityScreen({ client }: FacilityScreenProps): ReactNode {
             <table className="editorial-table">
               <thead>
                 <tr>
-                  <th
-                    style={{ cursor: 'pointer' }}
-                    onClick={() => toggleSort('name')}
-                  >
+                  <th style={{ cursor: 'pointer' }} onClick={() => toggleSort('name')}>
                     FACILITY {sort?.key === 'name' ? (sort.direction === 'ASC' ? '▲' : '▼') : ''}
                   </th>
-                  <th
-                    style={{ cursor: 'pointer' }}
-                    onClick={() => toggleSort('status')}
-                  >
+                  <th style={{ cursor: 'pointer' }} onClick={() => toggleSort('status')}>
                     STATUS {sort?.key === 'status' ? (sort.direction === 'ASC' ? '▲' : '▼') : ''}
                   </th>
-                  <th
-                    style={{ textAlign: 'right', cursor: 'pointer' }}
-                    onClick={() => toggleSort('capacity')}
-                  >
+                  <th style={{ textAlign: 'right', cursor: 'pointer' }} onClick={() => toggleSort('capacity')}>
                     CAPACITY {sort?.key === 'capacity' ? (sort.direction === 'ASC' ? '▲' : '▼') : ''}
                   </th>
                   <th style={{ width: '210px' }}>UTILISATION</th>
@@ -269,7 +294,7 @@ export function FacilityScreen({ client }: FacilityScreenProps): ReactNode {
               </thead>
               <tbody>
                 {rows.map(({ node }) => (
-                  <FacilityRow key={node.id} facility={node} />
+                  <FacilityRow key={node.id} facility={node} onSelect={onSelectFacility} />
                 ))}
                 {rows.length === 0 && (
                   <tr>
@@ -278,10 +303,19 @@ export function FacilityScreen({ client }: FacilityScreenProps): ReactNode {
                     </td>
                   </tr>
                 )}
+                {stats && total < stats.total && (
+                  <tr>
+                    <td colSpan={4} className="filtered-notice">
+                      {stats.total - total} facilities are not listed. You hold no{' '}
+                      <code>assigned</code> relation to them, so they were filtered before the query
+                      ran — absent, not refused. <a href="#">See why</a>
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
 
-            <nav className="pagination">
+            <nav className="pagination" aria-label="Facilities pagination">
               <button
                 type="button"
                 className="pagination__prev"
@@ -304,6 +338,12 @@ export function FacilityScreen({ client }: FacilityScreenProps): ReactNode {
                 showing {rows.length > 0 ? `1–${rows.length}` : '0'} of {total}
               </span>
             </nav>
+
+            {!live && (
+              <p role="status" style={{ marginTop: 12, color: 'var(--viz-pressure)' }}>
+                Live updates disconnected — this list may be out of date.
+              </p>
+            )}
           </>
         )}
       </div>
@@ -318,28 +358,40 @@ export function FacilityScreen({ client }: FacilityScreenProps): ReactNode {
  * a diamond for disrupted, a hollow circle for closed. The utilisation
  * bar is the one place colour appears — healthy/pressure/disrupted.
  */
-function FacilityRow({ facility }: { facility: Facility }): ReactNode {
+function FacilityRow({
+  facility,
+  onSelect,
+}: {
+  facility: Facility;
+  onSelect?: (facility: Facility) => void;
+}): ReactNode {
   const utilPct = facility.currentUtilization ?? 0;
   const utilClass =
-    facility.status === 'DISRUPTED' ? 'util-bar__fill--disrupted'
-    : utilPct >= 85 ? 'util-bar__fill--pressure'
-    : 'util-bar__fill--healthy';
+    facility.status === 'DISRUPTED'
+      ? 'util-bar__fill--disrupted'
+      : utilPct >= 85
+        ? 'util-bar__fill--pressure'
+        : 'util-bar__fill--healthy';
 
-  const statusGlyph = facility.status === 'DISRUPTED'
-    ? <span className="status-dot status-dot--disrupted" />
-    : facility.status === 'MAINTENANCE'
-    ? <span className="status-dot status-dot--maintenance" />
-    : facility.status === 'CLOSED'
-    ? <span className="status-dot status-dot--closed" />
-    : <span className="status-dot" />;
+  const statusGlyph =
+    facility.status === 'DISRUPTED' ? (
+      <span className="status-dot status-dot--disrupted" />
+    ) : facility.status === 'MAINTENANCE' ? (
+      <span className="status-dot status-dot--maintenance" />
+    ) : facility.status === 'CLOSED' ? (
+      <span className="status-dot status-dot--closed" />
+    ) : (
+      <span className="status-dot" />
+    );
 
-  // Redacted fields — the server nulls fields the caller may not see and
-  // lists them in _redactedFields. Render them distinctly from empty.
   const capacityRedacted = facility._redactedFields?.includes('capacity') ?? false;
   const utilRedacted = facility._redactedFields?.includes('currentUtilization') ?? false;
 
   return (
-    <tr>
+    <tr
+      onClick={() => onSelect?.(facility)}
+      style={{ cursor: onSelect ? 'pointer' : 'default' }}
+    >
       <td>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
           <span className="editorial-table__name">{facility.name ?? '—'}</span>
@@ -350,7 +402,11 @@ function FacilityRow({ facility }: { facility: Facility }): ReactNode {
       </td>
       <td>
         <span
-          className={facility.status === 'DISRUPTED' ? 'editorial-table__status editorial-table__status--disrupted' : 'editorial-table__status'}
+          className={
+            facility.status === 'DISRUPTED'
+              ? 'editorial-table__status editorial-table__status--disrupted'
+              : 'editorial-table__status'
+          }
         >
           {statusGlyph}
           {facility.status ?? '—'}
@@ -361,7 +417,7 @@ function FacilityRow({ facility }: { facility: Facility }): ReactNode {
           <span className="cell-consent">consent withheld</span>
         ) : capacityRedacted ? (
           <span className="cell-redacted">redacted</span>
-        ) : facility.capacity !== null && facility.capacity !== undefined ? (
+        ) : facility.capacity != null ? (
           <span className="numeral" style={{ font: '450 13px var(--font-mono)' }}>
             {facility.capacity.toLocaleString()}
           </span>
@@ -374,7 +430,7 @@ function FacilityRow({ facility }: { facility: Facility }): ReactNode {
           <span className="cell-consent">consent withheld</span>
         ) : utilRedacted ? (
           <span className="cell-redacted">redacted</span>
-        ) : facility.currentUtilization !== null && facility.currentUtilization !== undefined ? (
+        ) : facility.currentUtilization != null ? (
           <div className="util-bar">
             <div className="util-bar__track">
               <div
