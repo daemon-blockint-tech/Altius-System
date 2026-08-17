@@ -91,7 +91,19 @@ jobs:
         env:
           PG_TEST_URL: postgresql://postgres:postgres@localhost:5432/altius_test
         run: pnpm --filter @altius/spi-conformance test
-
+      # A stack that fails to come up leaves no trace in the job output: the
+      # `up --wait` step reports only "container X exited (1)", and the reason
+      # lives in a container log nobody ever printed. Four integration jobs
+      # have been red since this workflow was written and none of them said
+      # why. Dump the logs on failure so the next red run is diagnosable.
+      - name: Container logs (on failure)
+        if: failure()
+        run: |
+          for f in Orion/docker-compose.yaml Orion/docker-compose.test.yaml Orion/docker-compose.prod-test.yaml; do
+            [ -f "$f" ] && files="$files -f $f"
+          done
+          docker compose $files ps -a || true
+          docker compose $files logs --no-color --tail 200 || true
   docker-stack-integration:
     name: Docker-stack integration
     runs-on: ubuntu-latest
@@ -144,7 +156,19 @@ jobs:
           -f Orion/docker-compose.yaml
           -f Orion/docker-compose.test.yaml
           down -v --remove-orphans
-
+      # A stack that fails to come up leaves no trace in the job output: the
+      # `up --wait` step reports only "container X exited (1)", and the reason
+      # lives in a container log nobody ever printed. Four integration jobs
+      # have been red since this workflow was written and none of them said
+      # why. Dump the logs on failure so the next red run is diagnosable.
+      - name: Container logs (on failure)
+        if: failure()
+        run: |
+          for f in Orion/docker-compose.yaml Orion/docker-compose.test.yaml Orion/docker-compose.prod-test.yaml; do
+            [ -f "$f" ] && files="$files -f $f"
+          done
+          docker compose $files ps -a || true
+          docker compose $files logs --no-color --tail 200 || true
   enforcement-e2e:
     name: Enforcement E2E (prod security, capability gating, consent vocab)
     runs-on: ubuntu-latest
@@ -191,7 +215,19 @@ jobs:
       - name: Tear down stack
         if: always()
         run: docker compose -f Orion/docker-compose.yaml down -v --remove-orphans
-
+      # A stack that fails to come up leaves no trace in the job output: the
+      # `up --wait` step reports only "container X exited (1)", and the reason
+      # lives in a container log nobody ever printed. Four integration jobs
+      # have been red since this workflow was written and none of them said
+      # why. Dump the logs on failure so the next red run is diagnosable.
+      - name: Container logs (on failure)
+        if: failure()
+        run: |
+          for f in Orion/docker-compose.yaml Orion/docker-compose.test.yaml Orion/docker-compose.prod-test.yaml; do
+            [ -f "$f" ] && files="$files -f $f"
+          done
+          docker compose $files ps -a || true
+          docker compose $files logs --no-color --tail 200 || true
   helm-lint:
     name: Helm lint
     runs-on: ubuntu-latest
