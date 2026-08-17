@@ -116,6 +116,154 @@ export function registerLineageTests(name: string, factory: ProviderFactory): vo
         expect(result.nodes).toHaveLength(2);
       });
 
+      // ─── Variable-depth traversal (TraversalStep.maxDepth) ───
+      //
+      // These replace 'rejects a step that sets maxDepth, on either provider',
+      // which pinned the unimplemented state and asked to be updated
+      // deliberately when the feature landed. Its guarantee — that neither
+      // provider silently answers a 2-hop request with 1 hop — is now carried
+      // by the positive cases below, on both providers.
+
+      /**
+       * Build a chain a→b→c→d where each ReportsTo points at its manager, and
+       * return the ids in order. Traversing `inbound` from a walks DOWN the
+       * tree, which is the "everyone under this manager" query.
+       */
+      async function chain(prefix: string): Promise<string[]> {
+        const a = await provider.createObject(tenantA, 'CareTeam', { name: `${prefix}-a` });
+        const b = await provider.createObject(tenantA, 'CareTeam', { name: `${prefix}-b` });
+        const c = await provider.createObject(tenantA, 'CareTeam', { name: `${prefix}-c` });
+        const d = await provider.createObject(tenantA, 'CareTeam', { name: `${prefix}-d` });
+        await provider.createLink(tenantA, 'ReportsTo', b._id, a._id);
+        await provider.createLink(tenantA, 'ReportsTo', c._id, b._id);
+        await provider.createLink(tenantA, 'ReportsTo', d._id, c._id);
+        return [a._id, b._id, c._id, d._id];
+      }
+
+      it('maxDepth: 1 is identical to omitting it', async () => {
+        // The invariant that lets this feature exist without changing any
+        // answer that was already correct.
+        const [a] = await chain('one');
+        const step = { linkType: 'ReportsTo', direction: 'inbound' as const };
+
+        const without = await provider.traverse(tenantA, a!, { steps: [step] });
+        const with1 = await provider.traverse(tenantA, a!, { steps: [{ ...step, maxDepth: 1 }] });
+
+        expect(with1.nodes.map((n) => n.name).sort()).toEqual(
+          without.nodes.map((n) => n.name).sort(),
+        );
+        expect(with1.totalCount).toBe(without.totalCount);
+      });
+
+      it('returns every node reachable within N hops, not only those at exactly N', async () => {
+        // "Up to N" is what makes it useful: everyone under this manager, not
+        // everyone exactly three levels down.
+        const [a] = await chain('upto');
+
+        const result = await provider.traverse(tenantA, a!, {
+          steps: [{ linkType: 'ReportsTo', direction: 'inbound', maxDepth: 3 }],
+        });
+
+        expect(result.nodes.map((n) => n.name).sort()).toEqual([
+          'upto-b',
+          'upto-c',
+          'upto-d',
+        ]);
+      });
+
+      it('stops at the depth asked for', async () => {
+        const [a] = await chain('stop');
+
+        const result = await provider.traverse(tenantA, a!, {
+          steps: [{ linkType: 'ReportsTo', direction: 'inbound', maxDepth: 2 }],
+        });
+
+        // d is three hops down and must not appear.
+        expect(result.nodes.map((n) => n.name).sort()).toEqual(['stop-b', 'stop-c']);
+      });
+
+      it('terminates on a cycle instead of running to the node cap', async () => {
+        // A self-referential link is exactly what maxDepth is for, and such a
+        // graph can cycle. Without a per-step visited set the frontier never
+        // empties: the traversal would stop only on MAX_TRAVERSAL_NODES, which
+        // reads as a silent truncation rather than a complete answer.
+        const x = await provider.createObject(tenantA, 'CareTeam', { name: 'cyc-x' });
+        const y = await provider.createObject(tenantA, 'CareTeam', { name: 'cyc-y' });
+        await provider.createLink(tenantA, 'ReportsTo', x._id, y._id);
+        await provider.createLink(tenantA, 'ReportsTo', y._id, x._id);
+
+        const result = await provider.traverse(tenantA, x._id, {
+          steps: [{ linkType: 'ReportsTo', direction: 'outbound', maxDepth: 9 }],
+        });
+
+        expect(result.nodes.map((n) => n.name).sort()).toEqual(['cyc-x', 'cyc-y']);
+      });
+
+      it('does not report a node twice when two paths reach it', async () => {
+        // Diamond: a→b, a→c, b→d, c→d. Two distinct paths reach d at the same
+        // depth, which a tree cannot express — ReportsTo is MANY_TO_ONE and
+        // correctly refuses a second manager, so this uses the many-to-many
+        // self link.
+        const a = await provider.createObject(tenantA, 'CareTeam', { name: 'dia-a' });
+        const b = await provider.createObject(tenantA, 'CareTeam', { name: 'dia-b' });
+        const c = await provider.createObject(tenantA, 'CareTeam', { name: 'dia-c' });
+        const d = await provider.createObject(tenantA, 'CareTeam', { name: 'dia-d' });
+        await provider.createLink(tenantA, 'CollaboratesWith', a._id, b._id);
+        await provider.createLink(tenantA, 'CollaboratesWith', a._id, c._id);
+        await provider.createLink(tenantA, 'CollaboratesWith', b._id, d._id);
+        await provider.createLink(tenantA, 'CollaboratesWith', c._id, d._id);
+
+        const result = await provider.traverse(tenantA, a._id, {
+          steps: [{ linkType: 'CollaboratesWith', direction: 'outbound', maxDepth: 3 }],
+        });
+
+        const names = result.nodes.map((n) => n.name).sort();
+        expect(names).toEqual(['dia-b', 'dia-c', 'dia-d']);
+        expect(result.totalCount).toBe(3);
+      });
+
+      it('feeds every depth into the following step, not just the deepest', async () => {
+        // The step's node set and the frontier it hands on must be the same
+        // set, or a following step silently sees fewer objects than the caller
+        // was told the step matched.
+        const [a, , c] = await chain('feed');
+        const med = await provider.createObject(tenantA, 'Medication', { name: 'feed-med' });
+        // Prescribed by the MIDDLE of the chain, reachable only if depth 2 is
+        // carried forward as well as depth 3.
+        await provider.createLink(tenantA, 'Prescribes', c!, med._id);
+
+        const result = await provider.traverse(tenantA, a!, {
+          steps: [
+            { linkType: 'ReportsTo', direction: 'inbound', maxDepth: 3 },
+            { linkType: 'Prescribes', direction: 'outbound' },
+          ],
+        });
+
+        expect(result.nodes.map((n) => n.name)).toEqual(['feed-med']);
+      });
+
+      it('counts the depth budget in hops, so a large maxDepth cannot slip past it', async () => {
+        const [a] = await chain('budget');
+        // The cap is 10 hops. One step asking for 11 exceeds it just as
+        // eleven single-hop steps would; counting steps would let this pass.
+        await expect(
+          provider.traverse(tenantA, a!, {
+            steps: [{ linkType: 'ReportsTo', direction: 'inbound', maxDepth: 11 }],
+          }),
+        ).rejects.toThrow(/exceeds maximum/);
+      });
+
+      it('rejects a maxDepth below 1 rather than returning nothing', async () => {
+        // An empty result would be indistinguishable from "no such
+        // relationships exist", which hides the caller's bug.
+        const [a] = await chain('zero');
+        await expect(
+          provider.traverse(tenantA, a!, {
+            steps: [{ linkType: 'ReportsTo', direction: 'inbound', maxDepth: 0 }],
+          }),
+        ).rejects.toThrow(/maxDepth/);
+      });
+
       it('multi-step traversal shows transitive lineage', async () => {
         const p = await provider.createObject(tenantA, 'Patient', { name: 'Start' });
         const c = await provider.createObject(tenantA, 'CareTeam', { name: 'Middle' });
@@ -131,19 +279,6 @@ export function registerLineageTests(name: string, factory: ProviderFactory): vo
         });
         expect(result.nodes).toHaveLength(1);
         expect(result.nodes[0]!.name).toBe('End');
-      });
-
-      it('rejects a step that sets maxDepth, on either provider', async () => {
-        // Declared in the SPI, implemented by neither: every step is one hop.
-        // Both providers must refuse rather than answer a 2-hop request with
-        // 1 hop — a silently shallow traversal is a wrong answer the caller
-        // cannot detect. Pinned here so the two cannot drift apart, and so
-        // implementing it forces this expectation to be updated deliberately.
-        await expect(
-          provider.traverse(tenantA, 'any-id', {
-            steps: [{ linkType: 'AssignedTo', direction: 'outbound', maxDepth: 2 }],
-          }),
-        ).rejects.toThrow(/maxDepth is not implemented/);
       });
 
       it('traversal with filters narrows results', async () => {

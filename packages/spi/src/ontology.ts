@@ -93,15 +93,19 @@ export interface TraversalStep {
   direction: 'inbound' | 'outbound';
   filter?: FilterExpression;
   /**
-   * NOT IMPLEMENTED — neither provider honours this, and both reject a step
-   * that sets it.
+   * Repeat this step's link type up to N hops, which is how a self-referential
+   * link expresses a hierarchy (a reply chain, an org tree).
    *
-   * The intent is "repeat this link type up to N hops", which is how a
-   * self-referential link expresses a hierarchy (a reply chain, an org tree).
-   * Every step is currently exactly one hop. It stays in the contract as the
-   * named shape that feature will take, but a silently ignored depth limit is
-   * a wrong answer — a caller asking for 2 hops and getting 1 has no way to
-   * tell — so setting it is an error until it works.
+   * A node reachable at ANY depth 1..N is in the result, not only one at
+   * exactly N — "up to" is what makes it useful ("everyone under this
+   * manager"). Traversal is cycle-safe: each node is expanded once per step.
+   *
+   * Omitted, or 1, means exactly one hop; the two are identical by
+   * construction. Below 1 is rejected rather than returning nothing, which
+   * would be indistinguishable from "no such relationships exist".
+   *
+   * The depth budget is counted in hops, so a step with maxDepth: N consumes
+   * N of the traversal's maximum. See stepDepth/totalHops.
    */
   maxDepth?: number;
 }

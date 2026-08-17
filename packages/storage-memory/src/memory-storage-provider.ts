@@ -39,6 +39,7 @@ import type {
 } from '@altius/spi';
 import type { BucketInterval } from '@altius/spi';
 import { MAX_LINK_QUERY_LIMIT, DEFAULT_LINK_QUERY_LIMIT, encodePageCursor, decodePageCursor } from '@altius/spi';
+import { stepDepth, totalHops } from '@altius/spi';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -1308,22 +1309,16 @@ export class MemoryStorageProvider implements StorageProvider {
     options?: TraversalOptions,
   ): Promise<TraversalResult> {
     const maps = this._getEffectiveMaps(ctx);
-    // maxDepth is declared in the SPI but implemented by neither provider:
-    // every step is exactly one hop. Silently ignoring it would answer a
-    // 2-hop request with 1 hop and no way for the caller to notice.
-    const depthStep = path.steps.find(s => s.maxDepth !== undefined);
-    if (depthStep) {
-      throw new Error(
-        `TraversalStep.maxDepth is not implemented (step "${depthStep.linkType}"). ` +
-        `Each step traverses exactly one hop; repeat the step to go deeper.`,
-      );
-    }
     // Match Postgres traversal safety limits (PERF-03)
     const MAX_TRAVERSAL_DEPTH = 10;
     const MAX_TRAVERSAL_NODES = 10_000;
 
-    if (path.steps.length > MAX_TRAVERSAL_DEPTH) {
-      throw new Error(`Traversal depth ${path.steps.length} exceeds maximum of ${MAX_TRAVERSAL_DEPTH}`);
+    // A step's effective cost is its maxDepth, not 1 — the budget has to be
+    // counted in hops or `maxDepth: 1000` would slip past a limit that exists
+    // to bound work.
+    const effectiveDepth = totalHops(path.steps);
+    if (effectiveDepth > MAX_TRAVERSAL_DEPTH) {
+      throw new Error(`Traversal depth ${effectiveDepth} exceeds maximum of ${MAX_TRAVERSAL_DEPTH}`);
     }
 
     const includeDeleted = options?.includeDeleted ?? false;
@@ -1338,47 +1333,70 @@ export class MemoryStorageProvider implements StorageProvider {
       if (currentIds.size === 0) break;
       if (totalNodesSeen >= MAX_TRAVERSAL_NODES) break;
 
-      const nextIds = new Set<string>();
+      const depth = stepDepth(step);
       stepNodes = new Map<string, OntologyObject>();
+      // Ids reachable within this step at ANY depth 1..N. This is both the
+      // step's node set and the frontier handed to the next step, so the two
+      // cannot disagree.
+      const reached = new Set<string>();
+      // Re-expansion guard. A self-referential link is what maxDepth exists
+      // for, and such a graph can cycle: without this, every hop re-expands
+      // nodes already visited, so a dense or cyclic region costs work
+      // proportional to the branching factor raised to the depth. It does not
+      // change the answer — the hop loop is bounded by `depth`, and the node
+      // map dedups — which is why no conformance case fails without it. It is
+      // here for cost, and that is deliberately not dressed up as correctness.
+      const expanded = new Set<string>();
+      let frontier = currentIds;
 
-      for (const objectId of currentIds) {
+      for (let hop = 0; hop < depth && frontier.size > 0; hop++) {
         if (totalNodesSeen >= MAX_TRAVERSAL_NODES) break;
+        const nextFrontier = new Set<string>();
 
-        const links = Array.from(maps.links.values()).filter((link) => {
-          if (link._tenantId !== ctx.tenantId) return false;
-          if (link._type !== step.linkType) return false;
-          if (!includeDeleted && link._deletedAt) return false;
-          if (step.direction === 'outbound') return link._fromId === objectId;
-          return link._toId === objectId;
-        });
-
-        for (const link of links) {
+        for (const objectId of frontier) {
           if (totalNodesSeen >= MAX_TRAVERSAL_NODES) break;
+          if (expanded.has(objectId)) continue;
+          expanded.add(objectId);
 
-          const targetId = step.direction === 'outbound' ? link._toId : link._fromId;
-          const targetType = step.direction === 'outbound' ? link._toType : link._fromType;
+          const links = Array.from(maps.links.values()).filter((link) => {
+            if (link._tenantId !== ctx.tenantId) return false;
+            if (link._type !== step.linkType) return false;
+            if (!includeDeleted && link._deletedAt) return false;
+            if (step.direction === 'outbound') return link._fromId === objectId;
+            return link._toId === objectId;
+          });
 
-          // Find the target object
-          const targetObj = maps.objects.get(`${targetType}:${targetId}`);
-          if (!targetObj || targetObj._tenantId !== ctx.tenantId) continue;
-          if (!includeDeleted && targetObj._deletedAt) continue;
+          for (const link of links) {
+            if (totalNodesSeen >= MAX_TRAVERSAL_NODES) break;
 
-          // Apply step filter if present
-          if (step.filter && !evaluateFilter(targetObj as Record<string, unknown>, step.filter)) {
-            continue;
+            const targetId = step.direction === 'outbound' ? link._toId : link._fromId;
+            const targetType = step.direction === 'outbound' ? link._toType : link._fromType;
+
+            // Find the target object
+            const targetObj = maps.objects.get(`${targetType}:${targetId}`);
+            if (!targetObj || targetObj._tenantId !== ctx.tenantId) continue;
+            if (!includeDeleted && targetObj._deletedAt) continue;
+
+            // Apply step filter if present
+            if (step.filter && !evaluateFilter(targetObj as Record<string, unknown>, step.filter)) {
+              continue;
+            }
+
+            collectedEdges.set(`${link._type}:${link._id}`, link);
+            const nodeKey = `${targetType}:${targetId}`;
+            if (!stepNodes.has(nodeKey)) {
+              stepNodes.set(nodeKey, targetObj);
+              totalNodesSeen++;
+            }
+            reached.add(targetId);
+            nextFrontier.add(targetId);
           }
-
-          collectedEdges.set(`${link._type}:${link._id}`, link);
-          const nodeKey = `${targetType}:${targetId}`;
-          if (!stepNodes.has(nodeKey)) {
-            stepNodes.set(nodeKey, targetObj);
-            totalNodesSeen++;
-          }
-          nextIds.add(targetId);
         }
+
+        frontier = nextFrontier;
       }
 
-      currentIds = nextIds;
+      currentIds = reached;
     }
 
     // nodes = only the final step's results; edges = all traversed edges

@@ -119,3 +119,5 @@ export type {
   ObjectSetDefinition,
   ObjectSetStore,
 } from './object-set.js';
+
+export { stepDepth, totalHops } from './traversal-depth.js';

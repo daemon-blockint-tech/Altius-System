@@ -94,6 +94,24 @@ export const baseSchema: OntologySchema = {
       cardinality: 'ONE_TO_MANY',
     },
     {
+      // Self-referential, which is the case TraversalStep.maxDepth exists for
+      // (a hierarchy: an org tree, a reply chain). No other fixture link has a
+      // type on both ends, so depth traversal had nothing to be tested against.
+      name: 'ReportsTo',
+      fromType: 'CareTeam',
+      toType: 'CareTeam',
+      cardinality: 'MANY_TO_ONE',
+    },
+    {
+      // Many-to-many self link. ReportsTo is MANY_TO_ONE (one manager), which
+      // makes a diamond impossible by construction — so dedup across two
+      // distinct paths to the same node needs this shape to be testable.
+      name: 'CollaboratesWith',
+      fromType: 'CareTeam',
+      toType: 'CareTeam',
+      cardinality: 'MANY_TO_MANY',
+    },
+    {
       name: 'Prescribes',
       fromType: 'CareTeam',
       toType: 'Medication',

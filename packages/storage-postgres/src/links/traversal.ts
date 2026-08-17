@@ -20,6 +20,7 @@ import type {
   OntologyLink,
   DateTime,
 } from '@altius/spi';
+import { stepDepth, totalHops } from '@altius/spi';
 import { snakeCase, pgIdent } from '../schema/type-mapping.js';
 import { filterToSql } from '../objects/filter-to-sql.js';
 import { PgTransaction, resolveQueryable } from '../transactions/index.js';
@@ -115,24 +116,16 @@ export async function traverse(
   schema = 'public',
   tx?: PgTransaction,
 ): Promise<TraversalResult> {
-  // maxDepth is declared in the SPI but implemented by neither provider: every
-  // step is exactly one hop. Silently ignoring it would answer a 2-hop request
-  // with 1 hop and no way for the caller to notice.
-  const depthStep = path.steps.find(s => s.maxDepth !== undefined);
-  if (depthStep) {
-    throw new Error(
-      `TraversalStep.maxDepth is not implemented (step "${depthStep.linkType}"). ` +
-      `Each step traverses exactly one hop; repeat the step to go deeper.`,
-    );
-  }
-
   const q = resolveQueryable(pool, tx);
   const includeDeleted = options?.includeDeleted ?? false;
 
-  // PERF-03: Enforce maximum traversal depth to prevent resource exhaustion
+  // PERF-03: Enforce maximum traversal depth to prevent resource exhaustion.
+  // Counted in hops, not steps — counting steps would let `maxDepth: 1000`
+  // straight past a limit whose purpose is to bound the work one call can do.
   const MAX_TRAVERSAL_DEPTH = 10;
-  if (path.steps.length > MAX_TRAVERSAL_DEPTH) {
-    throw new Error(`Traversal depth ${path.steps.length} exceeds maximum of ${MAX_TRAVERSAL_DEPTH}`);
+  const effectiveDepth = totalHops(path.steps);
+  if (effectiveDepth > MAX_TRAVERSAL_DEPTH) {
+    throw new Error(`Traversal depth ${effectiveDepth} exceeds maximum of ${MAX_TRAVERSAL_DEPTH}`);
   }
 
   // Only the final step's nodes are returned; all edges are collected.
@@ -154,6 +147,30 @@ export async function traverse(
     // Reset step nodes — only the final step's results are returned
     stepNodes = [];
 
+    const depth = stepDepth(step);
+    // Nodes reached within this step at ANY depth 1..N: both the step's result
+    // and the frontier handed to the next step, so the two cannot disagree.
+    const reached: string[] = [];
+    // Dedup across hops. One hop cannot yield the same target twice (the
+    // target map is keyed by id), but two different hops can.
+    const stepNodeKeys = new Set<string>();
+    // Re-expansion guard. A self-referential link is what maxDepth exists
+    // for, and such a graph can cycle: without this, every hop re-expands
+    // nodes already visited, so a dense or cyclic region costs work
+    // proportional to the branching factor raised to the depth. It does not
+    // change the answer — the hop loop is bounded by `depth`, and the node
+    // map dedups — which is why no conformance case fails without it. It is
+    // here for cost, and that is deliberately not dressed up as correctness.
+    const expanded = new Set<string>();
+    let frontier = currentIds;
+
+    for (let hop = 0; hop < depth && frontier.length > 0; hop++) {
+      if (totalNodesSeen >= MAX_TRAVERSAL_NODES) break;
+
+      const hopIds = frontier.filter((id) => !expanded.has(id));
+      if (hopIds.length === 0) break;
+      for (const id of hopIds) expanded.add(id);
+
     const linkTable = `${pgIdent(schema)}.${pgIdent(snakeCase(step.linkType))}`;
 
     // Build query based on direction
@@ -172,8 +189,8 @@ export async function traverse(
     }
 
     // Build WHERE clause
-    const placeholders = currentIds.map((_, i) => `$${i + 2}`).join(', ');
-    const params: unknown[] = [ctx.tenantId, ...currentIds];
+    const placeholders = hopIds.map((_, i) => `$${i + 2}`).join(', ');
+    const params: unknown[] = [ctx.tenantId, ...hopIds];
 
     let whereClause = `"_tenant_id" = $1 AND ${dirCol} IN (${placeholders})`;
     if (!includeDeleted) {
@@ -227,9 +244,16 @@ export async function traverse(
       const objects = (objResult.rows as Record<string, unknown>[]).map(
         (row) => rowToObject(row),
       );
-      stepNodes.push(...objects);
-      totalNodesSeen += objects.length;
-      nextIds.push(...objects.map((o) => o._id));
+      for (const obj of objects) {
+        const nodeKey = `${obj._type}:${obj._id}`;
+        if (!stepNodeKeys.has(nodeKey)) {
+          stepNodeKeys.add(nodeKey);
+          stepNodes.push(obj);
+          totalNodesSeen++;
+        }
+        nextIds.push(obj._id);
+        reached.push(obj._id);
+      }
     }
 
     // Edges are collected only for targets that survived (existence, soft
@@ -243,7 +267,12 @@ export async function traverse(
       }
     }
 
-    currentIds = nextIds;
+      frontier = nextIds;
+    }
+
+    // Dedup: a node reachable by two paths would otherwise be expanded twice
+    // by the next step.
+    currentIds = [...new Set(reached)];
   }
 
   // Apply pagination. When no limit is specified, return all collected
