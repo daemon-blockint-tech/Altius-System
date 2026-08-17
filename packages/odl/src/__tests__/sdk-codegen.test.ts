@@ -134,6 +134,30 @@ describe('TypeScript SDK codegen', () => {
       expect(code).toContain('_consentRestricted: boolean | null;');
     });
 
+    it('actually SELECTS the redaction metadata it declares', () => {
+      // The assertion above passed while every generated query omitted these
+      // two fields, so the interface promised a required member the client
+      // could never receive. A consumer that trusts the type — the web table
+      // does — renders "not recorded" for a value it is merely not allowed to
+      // see, which on a clinical worklist invites someone to overwrite data
+      // that already exists.
+      const code = getIndexTs();
+      // Only the per-ObjectType accessors: `get` selects on `(id: "${id}") {`
+      // and `list` on `{ edges { node {`. availableTools and the action
+      // mutations return their own shapes and carry no redaction metadata.
+      const objectQueries = code
+        .split('\n')
+        .filter((l) => l.includes('(id: "${id}") {') || l.includes('edges { node {'));
+      expect(objectQueries.length).toBeGreaterThan(0);
+
+      for (const q of objectQueries) {
+        expect(q, `selection set omits redaction metadata: ${q.trim().slice(0, 90)}`)
+          .toContain('_redactedFields');
+        expect(q, `selection set omits consent metadata: ${q.trim().slice(0, 90)}`)
+          .toContain('_consentRestricted');
+      }
+    });
+
     it('generates Ward interface', () => {
       const code = getIndexTs();
       expect(code).toContain('export interface Ward {');

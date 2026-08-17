@@ -381,10 +381,20 @@ function generateObjectAccessor(obj: ObjectType): string {
 }
 
 function getFieldNames(obj: ObjectType): string {
-  return obj.fields
+  const declared = obj.fields
     .filter(f => !isLinkField(f) && !isComputedField(f))
-    .map(f => f.name)
-    .join(' ');
+    .map(f => f.name);
+
+  // The redaction metadata, which every generated interface declares as a
+  // required member (`_redactedFields: string[] | null`) and no generated query
+  // asked for — so it was always undefined at runtime and the type lied.
+  //
+  // It is what separates "you may not see this" from "nobody recorded this".
+  // Redaction nulls a value rather than removing the field, so without this a
+  // caller cannot tell the two apart, and on a clinical worklist the second
+  // reading invites someone to fill the gap in over data that already exists.
+  // Both are declared on every object type in the SDL (codegen/index.ts:154).
+  return [...declared, '_redactedFields', '_consentRestricted'].join(' ');
 }
 
 function generateActionsNamespace(schema: ParsedSchema): string {
