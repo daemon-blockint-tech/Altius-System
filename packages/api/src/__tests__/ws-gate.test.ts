@@ -111,3 +111,43 @@ describe('WebSocket operation gate', () => {
     expect(errs).toBeUndefined();
   });
 });
+
+describe('subscription cap under concurrency', () => {
+  it('caps concurrent operations, not just sequential ones', async () => {
+    // graphql-ws does not serialize message handling: use/ws.js does
+    // `socket.on('message', async (event) => { await cb(...) })` and never
+    // awaits the returned promise, so every in-flight Subscribe frame runs its
+    // handler interleaved. Reading the counter before an await and writing it
+    // after lets N handlers all observe the same pre-increment value.
+    //
+    // The hook this gate replaced was synchronous, so its get/set pair was
+    // atomic within one tick. Making the gate async to add the rate-limit
+    // check reintroduced the cap as a TOCTOU race.
+    const cfg = makeCfg({
+      maxSubscriptionsPerConnection: 2,
+      // Both awaits present, so the window is real.
+      rateLimiter: { check: async () => ({ allowed: true }) },
+    });
+    const c = counter();
+
+    const results = await Promise.all(
+      Array.from({ length: 50 }, () => guardWsOperation(cfg, {}, 'subscription { x }', c)),
+    );
+
+    const allowed = results.filter((r) => r === undefined).length;
+    expect(allowed, 'concurrent Subscribe frames bypassed the cap').toBe(2);
+    expect(c.value()).toBe(2);
+  });
+
+  it('releases the reserved slot when a later check refuses', async () => {
+    // Reserving before the awaits is what makes the cap hold; a refusal after
+    // the reservation must give the slot back or a connection leaks its budget
+    // one rejected operation at a time.
+    const cfg = makeCfg({ rateLimiter: { check: async () => ({ allowed: false }) } });
+    const c = counter();
+
+    await guardWsOperation(cfg, {}, 'subscription { x }', c);
+
+    expect(c.value()).toBe(0);
+  });
+});

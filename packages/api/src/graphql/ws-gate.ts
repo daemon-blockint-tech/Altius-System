@@ -57,12 +57,18 @@ export async function guardWsOperation(
   query: string | undefined,
   counts: { get(): number; set(n: number): void },
 ): Promise<readonly GraphQLError[] | undefined> {
-  const count = counts.get();
-  if (count >= cfg.maxSubscriptionsPerConnection) {
-    return [new GraphQLError('Subscription limit exceeded', {
-      extensions: { code: 'RATE_LIMITED' },
-    })];
-  }
+  // Everything synchronous happens before the first await, and the counter is
+  // reserved within that same tick.
+  //
+  // graphql-ws does not serialize message handling — use/ws.js registers
+  // `socket.on('message', async (event) => { await cb(...) })` and never awaits
+  // the returned promise — so pipelined Subscribe frames run their handlers
+  // interleaved. Reading the count before an await and writing it after lets
+  // every in-flight handler observe the same pre-increment value, which
+  // defeats the cap entirely: 50 concurrent frames against a cap of 2 all pass.
+  // The hook this replaced was fully synchronous, so its get/set pair was
+  // atomic by construction; adding the rate-limit await is what opened the
+  // window.
 
   if (typeof query === 'string') {
     let analysis;
@@ -76,13 +82,27 @@ export async function guardWsOperation(
     if (analysis && !analysis.valid) {
       // The analyzer's own error, unwrapped and unrebuilt, so a client sees the
       // identical QUERY_TOO_COMPLEX payload — violations and all — whichever
-      // transport it used.
+      // transport it used. Refused before any slot is reserved, so there is
+      // nothing to release.
       return [cfg.complexityAnalyzer.createComplexityError(analysis)];
     }
   }
 
+  const count = counts.get();
+  if (count >= cfg.maxSubscriptionsPerConnection) {
+    return [new GraphQLError('Subscription limit exceeded', {
+      extensions: { code: 'RATE_LIMITED' },
+    })];
+  }
+  counts.set(count + 1);
+
+  // From here the slot is held, so every refusal must give it back or a
+  // connection leaks its budget one rejected operation at a time.
+  const release = (): void => counts.set(Math.max(0, counts.get() - 1));
+
   const authResult = await cfg.subscriptionManager.authenticateConnection(connectionParams);
   if (!authResult.authenticated) {
+    release();
     return [new GraphQLError(authResult.error, { extensions: { code: 'UNAUTHENTICATED' } })];
   }
 
@@ -93,11 +113,11 @@ export async function guardWsOperation(
     principalId: authResult.user.id,
   } as RateLimitIdentity);
   if (!rl.allowed) {
+    release();
     return [new GraphQLError('Rate limit exceeded', {
       extensions: { code: 'RATE_LIMITED' },
     })];
   }
 
-  counts.set(count + 1);
   return undefined;
 }
