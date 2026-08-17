@@ -335,6 +335,14 @@ export interface IndexDefinition {
   indexType: IndexType;
   /** If true, a UNIQUE constraint is generated instead of a regular index. */
   unique?: boolean;
+  /**
+   * Full-text search language (Postgres regconfig name).
+   * Only meaningful when indexType is FULLTEXT. Controls stemming:
+   * 'english', 'french', 'german', 'spanish', 'simple', etc.
+   * Defaults to 'english'. The value is emitted into the generated
+   * tsvector column and used at query time for plainto_tsquery.
+   */
+  language?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -415,6 +423,26 @@ export interface DateBucket {
   alias?: string;
 }
 
+/**
+ * Numeric bucketing for aggregate groupBy. Divides a numeric field's range
+ * into `numBuckets` equal-width bins between `min` and `max`. Values below
+ * `min` go to bucket 0, values >= `max` go to bucket `numBuckets + 1`.
+ * The group key is the bucket number (1-based, matching Postgres
+ * width_bucket). Use this for Filter List histograms over numeric properties.
+ */
+export interface NumericBucket {
+  /** The numeric field to bucket (must be Int/Float/Decimal). */
+  field: string;
+  /** Lower bound of bucket range (inclusive). */
+  min: number;
+  /** Upper bound of bucket range (exclusive, except for the overflow bucket). */
+  max: number;
+  /** Number of equal-width buckets between min and max. */
+  numBuckets: number;
+  /** Group key name in the result (defaults to the field name). */
+  alias?: string;
+}
+
 export interface AggregateField {
   field: string;          // Property name ('*' for count)
   fn: AggregateFunction;
@@ -424,8 +452,8 @@ export interface AggregateField {
 export interface AggregateQuery {
   fields: AggregateField[];
   groupBy?: string[];
-  /** Optional date bucketing dimensions. Each bucket becomes a group key. */
-  buckets?: DateBucket[];
+  /** Optional bucketing dimensions (date or numeric). Each bucket becomes a group key. */
+  buckets?: (DateBucket | NumericBucket)[];
   filter?: FilterExpression;
   orderBy?: { field: string; direction: 'asc' | 'desc' }[];
   limit?: number;

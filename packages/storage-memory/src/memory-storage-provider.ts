@@ -74,6 +74,20 @@ function bucketDate(raw: unknown, interval: BucketInterval): string | null {
   return utc.toISOString();
 }
 
+/**
+ * Numeric bucketing — mirrors Postgres width_bucket(operand, min, max, numBuckets).
+ * Returns 1..numBuckets for in-range values, 0 for below-min, numBuckets+1 for >= max.
+ * Returns null for non-numeric input.
+ */
+function bucketNumber(raw: unknown, min: number, max: number, numBuckets: number): number | null {
+  if (raw === null || raw === undefined) return null;
+  const n = typeof raw === 'number' ? raw : Number(raw);
+  if (!isFinite(n)) return null;
+  if (n < min) return 0;
+  if (n >= max) return numBuckets + 1;
+  return Math.floor(((n - min) / (max - min)) * numBuckets) + 1;
+}
+
 function now(): DateTime {
   return new Date().toISOString() as DateTime;
 }
@@ -1011,8 +1025,21 @@ export class MemoryStorageProvider implements StorageProvider {
     // interval is a silent wrong answer here while Postgres rejects it.
     const ALLOWED_BUCKET_INTERVALS = new Set(['day', 'week', 'month', 'year']);
     for (const bucket of query.buckets ?? []) {
-      if (!ALLOWED_BUCKET_INTERVALS.has(bucket.interval)) {
-        throw new Error(`Invalid bucket interval: ${bucket.interval}`);
+      if ('interval' in bucket) {
+        if (!ALLOWED_BUCKET_INTERVALS.has(bucket.interval)) {
+          throw new Error(`Invalid bucket interval: ${bucket.interval}`);
+        }
+      } else {
+        // NumericBucket validation — mirror Postgres checks.
+        if (typeof bucket.min !== 'number' || typeof bucket.max !== 'number' || typeof bucket.numBuckets !== 'number') {
+          throw new Error('NumericBucket requires numeric min, max, and numBuckets');
+        }
+        if (bucket.numBuckets <= 0) {
+          throw new Error('NumericBucket numBuckets must be positive');
+        }
+        if (bucket.min >= bucket.max) {
+          throw new Error('NumericBucket min must be less than max');
+        }
       }
     }
     // 1. Collect matching objects (tenant-scoped, non-deleted)
@@ -1036,12 +1063,16 @@ export class MemoryStorageProvider implements StorageProvider {
           keys[field] = (obj as Record<string, unknown>)[field] ?? null;
         }
       }
-      // Date bucketing — truncate the field value to the bucket boundary
+      // Bucketing — date or numeric, truncate the field value to the bucket
       if (query.buckets) {
         for (const bucket of query.buckets) {
           const aliasName = bucket.alias ?? bucket.field;
           const raw = (obj as Record<string, unknown>)[bucket.field];
-          keys[aliasName] = bucketDate(raw, bucket.interval);
+          if ('interval' in bucket) {
+            keys[aliasName] = bucketDate(raw, bucket.interval);
+          } else {
+            keys[aliasName] = bucketNumber(raw, bucket.min, bucket.max, bucket.numBuckets);
+          }
         }
       }
       const groupKey = JSON.stringify(keys);

@@ -129,4 +129,135 @@ describeWithPg('searchObjects with FULLTEXT trigram index (integration)', () => 
       client.release();
     }
   });
+
+  it('emits a per-field _fts tsvector generated column with a GIN index', async () => {
+    const colResult = await provider.pool.query(
+      `SELECT column_name, data_type FROM information_schema.columns
+       WHERE table_schema = 'public' AND table_name = 'search_doc' AND column_name = '_fts_title'`,
+    );
+    expect(colResult.rows).toHaveLength(1);
+    expect(colResult.rows[0].data_type).toBe('tsvector');
+
+    const idxResult = await provider.pool.query(
+      `SELECT indexdef FROM pg_indexes
+       WHERE schemaname = 'public' AND indexname = 'idx_search_doc__fts_title'`,
+    );
+    expect(idxResult.rows).toHaveLength(1);
+    expect(idxResult.rows[0].indexdef).toContain('USING gin');
+    expect(idxResult.rows[0].indexdef).toContain('"_fts_title"');
+  });
+
+  it('stemming: query "summary" matches "summarize" via tsvector (ILIKE cannot)', async () => {
+    // 'summarize' stems to the same lexeme as 'summary' in English.
+    // ILIKE '%summary%' does NOT match 'Summarize Report' (no 'summary'
+    // substring), so this only passes via the tsvector @@ path.
+    await provider.createObject(ctx, 'SearchDoc', {
+      title: 'Summarize Report',
+      contactEmail: 's@hospital.org',
+    });
+    const r = await provider.searchObjects(ctx, 'SearchDoc', {
+      query: 'summary',
+      fields: ['title'],
+    });
+    const titles = r.hits.map((h) => h.object.title as string);
+    expect(titles).toContain('Summarize Report');
+  });
+
+  it('field-scoped: stemming only applies to FULLTEXT-indexed fields', async () => {
+    // contactEmail is NOT FULLTEXT-indexed in this schema. A stemmed query
+    // for 'summary' against contactEmail must NOT match 'summarize@x.org'
+    // via tsvector — only ILIKE substring applies. This proves the per-field
+    // scoping: _fts_title is used for title searches, but contactEmail
+    // searches get no tsvector boost.
+    await provider.createObject(ctx, 'SearchDoc', {
+      title: 'Unrelated',
+      contactEmail: 'summarize@hospital.org',
+    });
+    const r = await provider.searchObjects(ctx, 'SearchDoc', {
+      query: 'summary',
+      fields: ['contactEmail'],
+    });
+    // ILIKE '%summary%' does NOT match 'summarize@hospital.org' — and since
+    // contactEmail has no _fts column, there's no tsvector fallback. Zero hits.
+    expect(r.hits).toHaveLength(0);
+  });
+
+  it('stemming: query "running" matches "run" via tsvector', async () => {
+    // Insert a doc with 'run' and search for 'running' — stems match.
+    await provider.createObject(ctx, 'SearchDoc', {
+      title: 'Daily Run Log',
+      contactEmail: 'run@hospital.org',
+    });
+    const r = await provider.searchObjects(ctx, 'SearchDoc', {
+      query: 'running',
+      fields: ['title'],
+    });
+    const titles = r.hits.map((h) => h.object.title as string);
+    expect(titles).toContain('Daily Run Log');
+  });
+
+  it('ts_rank scoring: higher term density scores higher', async () => {
+    // A doc with the term repeated should outscore one with a single mention.
+    await provider.createObject(ctx, 'SearchDoc', {
+      title: 'guidelines guidelines guidelines',
+      contactEmail: 'g@hospital.org',
+    });
+    await provider.createObject(ctx, 'SearchDoc', {
+      title: 'guidelines',
+      contactEmail: 'g2@hospital.org',
+    });
+    const r = await provider.searchObjects(ctx, 'SearchDoc', {
+      query: 'guidelines',
+      fields: ['title'],
+    });
+    const dense = r.hits.find((h) => h.object.title === 'guidelines guidelines guidelines');
+    const sparse = r.hits.find((h) => h.object.title === 'guidelines');
+    expect(dense).toBeDefined();
+    expect(sparse).toBeDefined();
+    expect(dense!.score).toBeGreaterThan(sparse!.score);
+  });
+
+  it('multi-language: French stemming matches plural with singular query', async () => {
+    // Apply a schema with language: 'french' on the FULLTEXT index.
+    // 'hôpitaux' (plural) stems to the same lexeme as 'hôpital' (singular)
+    // in French. ILIKE '%hôpital%' does NOT match 'hôpitaux' (different
+    // suffix), so this only passes via the French tsvector path.
+    const frSchema: OntologySchema = {
+      version: SCHEMA_VERSION + 1,
+      objectTypes: [
+        {
+          name: 'SearchDocFr',
+          properties: [
+            { name: 'title', type: 'String', required: true },
+          ],
+          indexes: [{ field: 'title', indexType: 'FULLTEXT', language: 'french' }],
+        },
+      ],
+      linkTypes: [],
+    };
+    const frCtx: RequestContext = { tenantId: 'tenant-search-fr', actorId: 'test-actor' };
+    await provider.pool.query(`
+      DROP TABLE IF EXISTS "public"."search_doc_fr_history" CASCADE;
+      DROP TABLE IF EXISTS "public"."search_doc_fr" CASCADE;
+    `);
+    await provider.pool.query(
+      'DELETE FROM _schema_migrations WHERE version = $1',
+      [frSchema.version],
+    ).catch(() => {});
+    await provider.applySchema(frCtx, frSchema);
+
+    await provider.createObject(frCtx, 'SearchDocFr', { title: 'Les hôpitaux de Paris' });
+    const r = await provider.searchObjects(frCtx, 'SearchDocFr', {
+      query: 'hôpital',
+      fields: ['title'],
+    });
+    expect(r.hits.map((h) => h.object.title as string)).toContain('Les hôpitaux de Paris');
+
+    await provider.pool.query('DROP TABLE IF EXISTS "public"."search_doc_fr_history" CASCADE');
+    await provider.pool.query('DROP TABLE IF EXISTS "public"."search_doc_fr" CASCADE');
+    await provider.pool.query(
+      'DELETE FROM _schema_migrations WHERE version = $1',
+      [frSchema.version],
+    ).catch(() => {});
+  });
 });

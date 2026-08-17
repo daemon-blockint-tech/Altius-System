@@ -352,16 +352,16 @@ export async function extractUser(
 
 /**
  * SCHEMA_BREAKING_POLICY gates boot when the merged pack schema is a BREAKING
- * change vs the latest registry version. 'warn' (default) records the version
- * and logs a warning; 'block' fails boot without recording the version.
+ * change vs the latest registry version. 'block' (default) fails boot without
+ * recording the version; 'warn' records the version and logs a warning.
  * Blank counts as unset (compose/Helm pass unset knobs through as '').
  */
 export function parseSchemaBreakingPolicy(
   raw: string | undefined = process.env['SCHEMA_BREAKING_POLICY'],
 ): 'warn' | 'block' {
   const v = raw?.trim().toLowerCase();
-  if (!v || v === 'warn') return 'warn';
-  if (v === 'block') return 'block';
+  if (!v || v === 'block') return 'block';
+  if (v === 'warn') return 'warn';
   throw new Error(`SCHEMA_BREAKING_POLICY: expected 'warn' or 'block', got '${raw}'`);
 }
 

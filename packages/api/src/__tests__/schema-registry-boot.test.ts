@@ -47,10 +47,10 @@ describe('recordSchemaVersion (boot wiring)', () => {
     expect(r).toMatchObject({ version: 2, recorded: true, breaking: false });
   });
 
-  it('records a breaking change with the breaking flag (auto-approved, not blocked)', async () => {
+  it('records a breaking change with the breaking flag under warn policy (auto-approved, not blocked)', async () => {
     const reg = new InMemorySchemaRegistry();
     await recordSchemaVersion(reg, v1());
-    const r = await recordSchemaVersion(reg, v2breaking());
+    const r = await recordSchemaVersion(reg, v2breaking(), 'warn');
     expect(r.recorded).toBe(true);
     expect(r.version).toBe(2);
     expect(r.breaking).toBe(true);
@@ -76,11 +76,18 @@ describe('recordSchemaVersion (boot wiring)', () => {
     expect(r).toMatchObject({ version: 1, recorded: true, breaking: false });
   });
 
-  it("policy 'warn' (explicit): records a breaking change, same as the default", async () => {
+  it("policy 'warn' (explicit): records a breaking change", async () => {
     const reg = new InMemorySchemaRegistry();
     await recordSchemaVersion(reg, v1());
     const r = await recordSchemaVersion(reg, v2breaking(), 'warn');
     expect(r).toMatchObject({ version: 2, recorded: true, breaking: true });
+  });
+
+  it("default policy (no arg): blocks a breaking change (default is now 'block')", async () => {
+    const reg = new InMemorySchemaRegistry();
+    await recordSchemaVersion(reg, v1());
+    await expect(recordSchemaVersion(reg, v2breaking())).rejects.toThrow(BreakingSchemaChangeError);
+    expect(await reg.getCurrentVersion()).toBe(1);
   });
 
   it('treats type reordering as unchanged (no spurious version from pack discovery order)', async () => {
@@ -99,10 +106,10 @@ describe('recordSchemaVersion (boot wiring)', () => {
 });
 
 describe('parseSchemaBreakingPolicy (SCHEMA_BREAKING_POLICY env parsing)', () => {
-  it("defaults to 'warn' when unset or blank (compose/Helm pass unset knobs as '')", () => {
-    expect(parseSchemaBreakingPolicy(undefined)).toBe('warn');
-    expect(parseSchemaBreakingPolicy('')).toBe('warn');
-    expect(parseSchemaBreakingPolicy('  ')).toBe('warn');
+  it("defaults to 'block' when unset or blank (compose/Helm pass unset knobs as '')", () => {
+    expect(parseSchemaBreakingPolicy(undefined)).toBe('block');
+    expect(parseSchemaBreakingPolicy('')).toBe('block');
+    expect(parseSchemaBreakingPolicy('  ')).toBe('block');
   });
 
   it('accepts warn/block case-insensitively with surrounding whitespace', () => {

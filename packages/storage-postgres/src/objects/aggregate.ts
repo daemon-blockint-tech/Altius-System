@@ -11,6 +11,8 @@ import type {
   AggregateQuery,
   AggregateResult,
   AggregateGroup,
+  DateBucket,
+  NumericBucket,
 } from '@altius/spi';
 import { snakeCase, pgIdent, fieldCol, fieldColName } from '../schema/type-mapping.js';
 import { filterToSql } from './filter-to-sql.js';
@@ -41,6 +43,10 @@ export async function aggregateObjects(
 
   // --- SELECT clause ---
   const selectParts: string[] = [];
+  // Params for the query — tenantId is always $1. Declared here (not at
+  // WHERE) because NumericBucket pushes min/max/numBuckets before the
+  // WHERE clause is built.
+  const baseParams: unknown[] = [ctx.tenantId];
 
   // Group-by columns
   if (query.groupBy && query.groupBy.length > 0) {
@@ -68,13 +74,40 @@ export async function aggregateObjects(
   const bucketAliases: { alias: string; field: string }[] = [];
   if (query.buckets && query.buckets.length > 0) {
     for (const bucket of query.buckets) {
-      if (!ALLOWED_BUCKET_INTERVALS.has(bucket.interval)) {
-        throw new Error(`Invalid bucket interval: ${bucket.interval}`);
-      }
-      const col = fieldCol(bucket.field);
       const aliasName = bucket.alias ?? bucket.field;
       const aliasIdent = pgIdent(snakeCase(aliasName));
-      selectParts.push(`date_trunc('${bucket.interval}', ${col}) AS ${aliasIdent}`);
+      const col = fieldCol(bucket.field);
+
+      if ('interval' in bucket) {
+        // DateBucket — date_trunc produces a timestamptz at the bucket boundary.
+        const dateBucket = bucket as DateBucket;
+        if (!ALLOWED_BUCKET_INTERVALS.has(dateBucket.interval)) {
+          throw new Error(`Invalid bucket interval: ${dateBucket.interval}`);
+        }
+        selectParts.push(`date_trunc('${dateBucket.interval}', ${col}) AS ${aliasIdent}`);
+      } else {
+        // NumericBucket — width_bucket returns 1..numBuckets for in-range
+        // values, 0 for below-min, numBuckets+1 for >= max. The bucket number
+        // is the group key. Parameters are pushed to avoid SQL injection
+        // (min/max/numBuckets come from untrusted REST/GraphQL bodies).
+        const nb = bucket as NumericBucket;
+        if (typeof nb.min !== 'number' || typeof nb.max !== 'number' || typeof nb.numBuckets !== 'number') {
+          throw new Error('NumericBucket requires numeric min, max, and numBuckets');
+        }
+        if (nb.numBuckets <= 0) {
+          throw new Error('NumericBucket numBuckets must be positive');
+        }
+        if (nb.min >= nb.max) {
+          throw new Error('NumericBucket min must be less than max');
+        }
+        const minIdx = baseParams.length + 1;
+        baseParams.push(nb.min);
+        const maxIdx = baseParams.length + 1;
+        baseParams.push(nb.max);
+        const numIdx = baseParams.length + 1;
+        baseParams.push(nb.numBuckets);
+        selectParts.push(`width_bucket(${col}::numeric, $${minIdx}, $${maxIdx}, $${numIdx}) AS ${aliasIdent}`);
+      }
       bucketAliases.push({ alias: aliasName, field: bucket.field });
     }
   }
@@ -105,7 +138,6 @@ export async function aggregateObjects(
   }
 
   // --- WHERE clause ---
-  const baseParams: unknown[] = [ctx.tenantId];
   const whereClauses = [`"_tenant_id" = $1`, `"_deleted_at" IS NULL`];
 
   if (query.filter) {

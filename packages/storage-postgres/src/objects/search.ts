@@ -86,9 +86,13 @@ export async function searchObjects(
   query: SearchQuery,
   schema = 'public',
   tx?: PgTransaction,
+  ftsLanguage = 'english',
 ): Promise<SearchResult> {
   const q = resolveQueryable(pool, tx);
   const table = tableName(type, schema);
+  // Validate the FTS language: it's interpolated into SQL as a regconfig
+  // name (cannot be parameterized), so only alphanumeric/underscore is safe.
+  const ftsLang = /^[a-zA-Z0-9_]+$/.test(ftsLanguage) ? ftsLanguage : 'english';
 
   const params: unknown[] = [ctx.tenantId];
   const whereClauses = [`"_tenant_id" = $1`, `"_deleted_at" IS NULL`];
@@ -126,10 +130,61 @@ export async function searchObjects(
     return { hits: [], totalCount: 0, hasNextPage: false };
   }
 
+  // Detect per-field _fts_<field> tsvector columns (emitted by DDL for
+  // each FULLTEXT index). Build a map of which search fields have an FTS
+  // column. Word terms match via stemmed tsvector @@ plainto_tsquery on
+  // those columns in addition to ILIKE; score includes ts_rank_cd.
+  // Phrases always use ILIKE only (tsvector phrase matching is complex
+  // and the SPI contract is substring).
+  const ftsColResult = await q.query(
+    `SELECT column_name FROM information_schema.columns
+     WHERE table_schema = $1 AND table_name = $2
+       AND column_name LIKE '\\_fts\\_%' ESCAPE '\\'`,
+    [schema, snakeCase(type)],
+  );
+  // Map: camelCase field name → quoted _fts_<snake> column identifier
+  const ftsCols = new Map<string, string>();
+  for (const row of ftsColResult.rows as Array<{ column_name?: string }>) {
+    if (typeof row.column_name !== 'string') continue;
+    // _fts_family_name → familyName
+    const camel = row.column_name
+      .replace(/^_fts_/, '')
+      .replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
+    // Quote manually to preserve the leading underscore (pgIdent strips it).
+    ftsCols.set(camel, `"${row.column_name.replace(/"/g, '""')}"`);
+  }
+
   // Build SQL for the parsed query.
   // Each term (required/excluded/orGroup) is matched against the OR of
   // ILIKE across all search fields. Escape LIKE wildcards in the term.
   const fieldCols = searchFields.map((f) => fieldCol(f));
+
+  /** Build tsvector match clause for word terms across FTS-indexed fields. */
+  const buildFtsMatch = (term: SearchTerm): string => {
+    if (term.kind !== 'word' || ftsCols.size === 0) return '';
+    const parts: string[] = [];
+    for (const [field, ftsCol] of ftsCols) {
+      // Only use FTS columns for fields that are in the search scope.
+      if (!searchFields.includes(field)) continue;
+      params.push(term.value);
+      const tsIdx = params.length;
+      parts.push(`${ftsCol} @@ plainto_tsquery('${ftsLang}', $${tsIdx})`);
+    }
+    return parts.length > 0 ? ` OR ${parts.join(' OR ')}` : '';
+  };
+
+  /** Build ts_rank_cd score for word terms across FTS-indexed fields. */
+  const buildFtsScore = (term: SearchTerm): string => {
+    if (term.kind !== 'word' || ftsCols.size === 0) return '';
+    const parts: string[] = [];
+    for (const [field, ftsCol] of ftsCols) {
+      if (!searchFields.includes(field)) continue;
+      params.push(term.value);
+      const tsIdx = params.length;
+      parts.push(`4 * ts_rank_cd(${ftsCol}, plainto_tsquery('${ftsLang}', $${tsIdx}))`);
+    }
+    return parts.length > 0 ? ` + ${parts.join(' + ')}` : '';
+  };
 
   /** Build "(col1 ILIKE $n OR col2 ILIKE $n OR ...)" and push the param. */
   const buildTermMatch = (term: SearchTerm): string => {
@@ -137,7 +192,8 @@ export async function searchObjects(
     params.push(`%${escaped}%`);
     const idx = params.length;
     const parts = fieldCols.map((c) => `${c} ILIKE $${idx} ESCAPE '\\'`);
-    return `(${parts.join(' OR ')})`;
+    const fts = buildFtsMatch(term);
+    return `(${parts.join(' OR ')}${fts})`;
   };
 
   /** Build a score contribution for a term across all fields.
@@ -163,7 +219,9 @@ export async function searchObjects(
         ` WHEN ${c} ILIKE $${subIdx} ESCAPE '\\' THEN 1` +
         ` ELSE 0 END`;
     });
-    return parts.join(' + ');
+    const score = parts.join(' + ');
+    // Add per-field ts_rank_cd bonus for word terms on FTS-indexed fields.
+    return score + buildFtsScore(term);
   };
 
   // Required: AND of (term matches any field)
@@ -172,7 +230,8 @@ export async function searchObjects(
     whereClauses.push(`(${requiredClauses.join(' AND ')})`);
   }
 
-  // Excluded: no field may match (NOT (any field ILIKE))
+  // Excluded: no field may match (NOT (any field ILIKE)), and for word
+  // terms the stemmed tsvector must not match either.
   for (const term of parsed.excluded) {
     const match = buildTermMatch(term);
     whereClauses.push(`NOT ${match}`);

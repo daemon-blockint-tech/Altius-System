@@ -256,32 +256,11 @@ async function main(): Promise<void> {
     logger.warn('WARNING: No object types loaded — check DOMAIN_PACKS configuration.');
   }
 
-  // Apply schema to storage (creates tables/indexes in Postgres, registers types in memory)
-  const bootCtx: RequestContext = { tenantId: 'system', actorId: 'boot' };
-  await storage.applySchema(bootCtx, spiSchema);
-
-  // Tenant for bootstrap seed data. Defaults to 'system' (isolated from ordinary
-  // request tenants); set SEED_TENANT to the request tenant (e.g. 'default') when
-  // seeded reference data must be readable through the API — otherwise seeds are
-  // invisible to API reads in a different tenant.
-  //
-  // Treat blank as unset: compose/Helm pass through unset knobs as an empty
-  // string (`SEED_TENANT: ${SEED_TENANT:-}`), and `?? 'system'` would not catch
-  // that — seeds would land under a nameless tenant no request could ever read.
-  const seedTenant = process.env['SEED_TENANT']?.trim();
-  const seedCtx: RequestContext = {
-    tenantId: seedTenant || 'system',
-    actorId: 'boot',
-  };
-
-  // ── Schema registry (versioned ODL schema history) ──
-  // Records the merged ParsedSchema as a new version when it differs from the
-  // latest stored one. PostgreSQL-backed when available (durable, shared across
-  // pods); in-memory otherwise. Under SCHEMA_BREAKING_POLICY=warn (default) a
-  // breaking pack change is *recorded* under an auto-approved migration plan
-  // (with a warning) rather than blocking startup; under 'block' a BREAKING
-  // change fails boot and no version is recorded. Other recording failures
-  // (e.g. registry backend unavailable) stay non-fatal under either policy.
+  // ── Schema breaking-change gate (runs BEFORE DDL) ──
+  // The breaking-change gate must run before storage.applySchema so a BREAKING
+  // pack change fails boot before any DDL is applied to the database. Under
+  // SCHEMA_BREAKING_POLICY=block (default) a BREAKING change fails boot and no
+  // version is recorded; under 'warn' the change is recorded with a warning.
   const schemaBreakingPolicy = parseSchemaBreakingPolicy();
   const schemaRegistry: SchemaRegistry = storage instanceof PostgresStorageProvider
     ? new PostgresSchemaRegistry(storage.pool)
@@ -303,6 +282,26 @@ async function main(): Promise<void> {
     // Non-fatal: schema-history recording must not block startup.
     logger.warn({ err: err instanceof Error ? err.message : 'unknown' }, 'Schema registry: failed to record schema version');
   }
+
+  // Apply schema to storage (creates tables/indexes in Postgres, registers types in memory).
+  // This runs AFTER the breaking-change gate so a BREAKING pack change fails boot
+  // before any DDL touches the database.
+  const bootCtx: RequestContext = { tenantId: 'system', actorId: 'boot' };
+  await storage.applySchema(bootCtx, spiSchema);
+
+  // Tenant for bootstrap seed data. Defaults to 'system' (isolated from ordinary
+  // request tenants); set SEED_TENANT to the request tenant (e.g. 'default') when
+  // seeded reference data must be readable through the API — otherwise seeds are
+  // invisible to API reads in a different tenant.
+  //
+  // Treat blank as unset: compose/Helm pass through unset knobs as an empty
+  // string (`SEED_TENANT: ${SEED_TENANT:-}`), and `?? 'system'` would not catch
+  // that — seeds would land under a nameless tenant no request could ever read.
+  const seedTenant = process.env['SEED_TENANT']?.trim();
+  const seedCtx: RequestContext = {
+    tenantId: seedTenant || 'system',
+    actorId: 'boot',
+  };
 
   // ── Register loaded packs in _domain_packs table (Postgres only) ──
   //

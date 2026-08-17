@@ -497,4 +497,141 @@ describe('ToolRegistry', () => {
       expect(tools[0]!.function.name).toBe('DischargePatient');
     });
   });
+
+  describe('toLangChainTools', () => {
+    const actor = { id: 'agent-1', type: 'system' as const, roles: ['admin'] };
+    const ctx = { requestContext: { tenantId: 't1' } };
+
+    /** Registry with an executor, which the exporter requires. */
+    const executable = () => new ToolRegistry({
+      schema: NHS_SCHEMA,
+      manifests: createManifestMap(),
+      executor: {} as any,
+    });
+
+    it('maps every available tool to the shape LangChain tool() accepts', () => {
+      const tools = executable().toLangChainTools(actor, ctx, { agentId: 'agent-1', dryRun: true });
+      expect(tools).toHaveLength(3);
+
+      for (const t of tools) {
+        expect(t.name).toBeTruthy();
+        expect(typeof t.description).toBe('string');
+        // JSON Schema, which LangChain accepts in place of a Zod schema — so
+        // no conversion step and no @langchain/core dependency in this package.
+        expect(t.schema.type).toBe('object');
+        expect(t.schema.properties).toBeDefined();
+        expect(typeof t.invoke).toBe('function');
+      }
+    });
+
+    it('respects the filter', () => {
+      const tools = executable().toLangChainTools(
+        actor, ctx, { agentId: 'agent-1', dryRun: true }, { namePattern: 'Admit' },
+      );
+      expect(tools).toHaveLength(1);
+      expect(tools[0]!.name).toBe('AdmitPatient');
+    });
+
+    it('refuses to export without an executor, at export rather than mid-conversation', () => {
+      // `registry` (outer fixture) is descriptor-only: no executor.
+      expect(() => registry.toLangChainTools(actor, ctx, { agentId: 'agent-1', dryRun: true }))
+        .toThrow(/requires an executor/);
+    });
+
+    it('refuses to export a high-risk tool when no PolicyGuard is configured', () => {
+      // The guard would be skipped by ABSENCE and nothing would say so, which
+      // is the exact silent bypass this exporter exists to prevent.
+      const unguarded = new ToolRegistry({
+        schema: NHS_SCHEMA,
+        manifests: createManifestMap(),
+        executor: {} as any,
+        riskLevels: new Map([['AdmitPatient', 'high']]),
+      });
+
+      expect(() => unguarded.toLangChainTools(actor, ctx, { agentId: 'agent-1', dryRun: false }))
+        .toThrow(/high-risk: AdmitPatient/);
+    });
+
+    it('allows the export when the high-risk tool is filtered out', () => {
+      const unguarded = new ToolRegistry({
+        schema: NHS_SCHEMA,
+        manifests: createManifestMap(),
+        executor: {} as any,
+        riskLevels: new Map([['AdmitPatient', 'high']]),
+      });
+
+      const tools = unguarded.toLangChainTools(
+        actor, ctx, { agentId: 'agent-1', dryRun: false }, { namePattern: 'Discharge' },
+      );
+      expect(tools.map(t => t.name)).toEqual(['DischargePatient']);
+    });
+
+    it('routes invoke through executeForAgent, so dry-run is honoured', async () => {
+      const bound = new ToolRegistry({
+        schema: NHS_SCHEMA,
+        manifests: createManifestMap(),
+        executor: {} as any, // dry-run never reaches the executor
+      });
+
+      const [admit] = bound.toLangChainTools(
+        actor, ctx, { agentId: 'agent-1', dryRun: true }, { namePattern: 'Admit' },
+      );
+
+      const result = await admit!.invoke({ reason: 'test' }); // missing required params
+
+      expect(result.dryRun).toBe(true);
+      expect(result.result.success).toBe(false);
+      expect(result.result.errors[0]!.code).toBe('MISSING_REQUIRED_PARAM');
+    });
+
+    // The reason this exporter binds execution instead of returning bare
+    // descriptors. A caller who wired LangChain straight to
+    // ActionExecutor.execute would skip the guard entirely and an agent would
+    // commit a high-risk write that policy says needs a human.
+    it('still holds a high-risk action for approval when invoked as a tool', async () => {
+      const guard: PolicyGuard = {
+        async evaluate(): Promise<PolicyGuardResult> {
+          return { allowed: false, holdId: 'hold_123', reason: 'needs human approval' };
+        },
+      };
+
+      const guarded = new ToolRegistry({
+        schema: NHS_SCHEMA,
+        manifests: createManifestMap(),
+        executor: {} as any,
+        policyGuard: guard,
+        riskLevels: new Map([['AdmitPatient', 'high']]),
+      });
+
+      const [admit] = guarded.toLangChainTools(
+        actor, ctx, { agentId: 'agent-1', dryRun: false }, { namePattern: 'Admit' },
+      );
+
+      const result = await admit!.invoke({ patient: 'p1', ward: 'w1', consultant: 'c1' });
+
+      // Held is neither success nor failure: the agent has to learn it needs an
+      // approval rather than a retry, which is why invoke resolves with the
+      // whole AgentExecutionResult instead of a string.
+      expect(result.held).toBe(true);
+      expect(result.holdId).toBe('hold_123');
+      expect(result.result.errors[0]!.code).toBe('POLICY_HOLD');
+    });
+
+    it('treats a tool call with no arguments as empty params, not a crash', async () => {
+      const bound = new ToolRegistry({
+        schema: NHS_SCHEMA,
+        manifests: createManifestMap(),
+        executor: {} as any,
+      });
+
+      const [admit] = bound.toLangChainTools(
+        actor, ctx, { agentId: 'agent-1', dryRun: true }, { namePattern: 'Admit' },
+      );
+
+      // A model can emit a tool call with no input; that must surface as
+      // missing-parameter validation, not a TypeError.
+      const result = await admit!.invoke(undefined as unknown as Record<string, unknown>);
+      expect(result.result.errors[0]!.code).toBe('MISSING_REQUIRED_PARAM');
+    });
+  });
 });

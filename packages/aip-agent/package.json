@@ -1,0 +1,26 @@
+{
+  "name": "@altius/aip-agent",
+  "version": "0.0.1",
+  "private": true,
+  "description": "AIP agent — Deep Agents harness connected to Altius ontology via MCP",
+  "type": "module",
+  "scripts": {
+    "start": "node --enable-source-maps dist/index.js",
+    "dev": "tsx src/index.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "deepagents": "^1.10.0",
+    "langchain": "^1.5.0",
+    "@langchain/core": "^1.2.0",
+    "@langchain/mcp-adapters": "^1.1.0",
+    "@langchain/langgraph": "^1.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}

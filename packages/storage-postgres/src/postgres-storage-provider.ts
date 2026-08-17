@@ -418,7 +418,11 @@ export class PostgresStorageProvider implements StorageProvider {
   }
 
   async searchObjects(ctx: RequestContext, type: string, query: SearchQuery): Promise<SearchResult> {
-    return withRetry(() => pgSearchObjects(this._pool, ctx, type, query, this._dataSchema));
+    const schema = this._schemas.get(this._currentSchemaVersion);
+    const ot = schema?.objectTypes.find((t) => t.name === type);
+    const ftsIdx = ot?.indexes?.find((i) => i.indexType === 'FULLTEXT');
+    const ftsLang = ftsIdx?.language ?? 'english';
+    return withRetry(() => pgSearchObjects(this._pool, ctx, type, query, this._dataSchema, undefined, ftsLang));
   }
 
   async bulkMutate(ctx: RequestContext, request: BulkMutationRequest): Promise<BulkMutationResult> {

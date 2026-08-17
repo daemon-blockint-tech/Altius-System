@@ -49,6 +49,7 @@ export type {
   AggregateResult,
   BucketInterval,
   DateBucket,
+  NumericBucket,
   SearchQuery,
   SearchHit,
   SearchResult,

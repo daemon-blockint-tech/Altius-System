@@ -7,10 +7,10 @@
  *
  * Recording auto-approves the migration plan. Whether a BREAKING pack change
  * gates boot depends on `breakingPolicy`:
- *   - 'warn' (default): the change is *recorded* (with the `breaking` flag set
- *     for the caller to log) and startup continues.
- *   - 'block' (SCHEMA_BREAKING_POLICY=block): a BREAKING diff throws
+ *   - 'block' (default, SCHEMA_BREAKING_POLICY=block): a BREAKING diff throws
  *     BreakingSchemaChangeError and no version is recorded — boot is the gate.
+ *   - 'warn': the change is *recorded* (with the `breaking` flag set
+ *     for the caller to log) and startup continues.
  */
 
 import { diff, classify } from '@altius/odl';
@@ -41,7 +41,7 @@ function canonicalKey(schema: ParsedSchema): string {
 export class BreakingSchemaChangeError extends Error {
   constructor() {
     super(
-      'BREAKING schema change detected at boot and SCHEMA_BREAKING_POLICY=block — version not recorded. ' +
+      'BREAKING schema change detected at boot — version not recorded. ' +
       'Review the pack change, or set SCHEMA_BREAKING_POLICY=warn to record it and continue.',
     );
     this.name = 'BreakingSchemaChangeError';
@@ -64,7 +64,7 @@ export interface SchemaRecordResult {
 export async function recordSchemaVersion(
   registry: SchemaRegistry,
   schema: ParsedSchema,
-  breakingPolicy: 'warn' | 'block' = 'warn',
+  breakingPolicy: 'warn' | 'block' = 'block',
 ): Promise<SchemaRecordResult> {
   const currentVersion = await registry.getCurrentVersion();
 

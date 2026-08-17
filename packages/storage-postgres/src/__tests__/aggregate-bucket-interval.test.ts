@@ -77,4 +77,55 @@ describe('aggregateObjects — bucket interval', () => {
     ).rejects.toThrow(/Invalid bucket interval/);
     expect(captured).toHaveLength(0);
   });
+
+  it('emits width_bucket for NumericBucket with parameterized min/max/numBuckets', async () => {
+    const captured: string[] = [];
+
+    await aggregateObjects(stubPool(captured), ctx, 'Transaction', {
+      fields: [{ field: '*', fn: 'count' }],
+      buckets: [{ field: 'amount', min: 0, max: 100, numBuckets: 5 }],
+    });
+
+    const sql = captured.join('\n');
+    expect(sql).toContain('width_bucket(');
+    // min/max/numBuckets must be parameterized, not interpolated
+    expect(sql).toMatch(/\$\d+,\s*\$\d+,\s*\$\d+\)/);
+    expect(sql).not.toContain('width_bucket("amount"::numeric, 0, 100, 5)');
+  });
+
+  it('rejects NumericBucket with numBuckets <= 0', async () => {
+    const captured: string[] = [];
+
+    await expect(
+      aggregateObjects(stubPool(captured), ctx, 'Transaction', {
+        fields: [{ field: '*', fn: 'count' }],
+        buckets: [{ field: 'amount', min: 0, max: 100, numBuckets: 0 }],
+      }),
+    ).rejects.toThrow(/numBuckets must be positive/);
+    expect(captured).toHaveLength(0);
+  });
+
+  it('rejects NumericBucket with min >= max', async () => {
+    const captured: string[] = [];
+
+    await expect(
+      aggregateObjects(stubPool(captured), ctx, 'Transaction', {
+        fields: [{ field: '*', fn: 'count' }],
+        buckets: [{ field: 'amount', min: 100, max: 100, numBuckets: 5 }],
+      }),
+    ).rejects.toThrow(/min must be less than max/);
+    expect(captured).toHaveLength(0);
+  });
+
+  it('rejects NumericBucket with non-numeric min/max/numBuckets', async () => {
+    const captured: string[] = [];
+
+    await expect(
+      aggregateObjects(stubPool(captured), ctx, 'Transaction', {
+        fields: [{ field: '*', fn: 'count' }],
+        buckets: [{ field: 'amount', min: '0' as unknown as number, max: 100, numBuckets: 5 }],
+      }),
+    ).rejects.toThrow(/requires numeric min, max, and numBuckets/);
+    expect(captured).toHaveLength(0);
+  });
 });

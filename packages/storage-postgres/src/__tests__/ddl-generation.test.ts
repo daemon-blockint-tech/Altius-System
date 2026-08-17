@@ -184,19 +184,72 @@ describe('generateObjectTableDDL', () => {
     expect(allDDL).toContain('USING btree ("family_name")');
   });
 
-  it('emits trigram GIN for FULLTEXT indexes (serves runtime ILIKE search)', () => {
+  it('emits trigram GIN for FULLTEXT indexes plus a per-field tsvector column', () => {
     const searchable: ObjectTypeDefinition = {
       ...patientType,
       indexes: [{ field: 'familyName', indexType: 'FULLTEXT' }],
     };
     const allDDL = generateObjectTableDDL(searchable).join('\n');
 
+    // Trigram GIN serves ILIKE substring queries (the SPI contract).
     expect(allDDL).toContain('USING gin ("family_name" gin_trgm_ops)');
-    expect(allDDL).not.toContain('to_tsvector');
+    // Per-field tsvector generated column + GIN serves stemmed word matching.
+    expect(allDDL).toContain('to_tsvector');
+    expect(allDDL).toContain('"_fts_family_name"');
+    expect(allDDL).toContain('USING gin ("_fts_family_name")');
+    expect(allDDL).not.toContain('"_fts" tsvector'); // no type-wide _fts column
 
-    // generateDDL must bootstrap the extension the index depends on
+    // generateDDL must bootstrap the extension the trigram index depends on
     const full = generateDDL({ version: 1, objectTypes: [searchable], linkTypes: [] });
     expect(full.objectTables[0]).toBe('CREATE EXTENSION IF NOT EXISTS pg_trgm;');
+  });
+
+  it('uses the configured language for FULLTEXT tsvector stemming', () => {
+    const french: ObjectTypeDefinition = {
+      ...patientType,
+      indexes: [{ field: 'familyName', indexType: 'FULLTEXT', language: 'french' }],
+    };
+    const allDDL = generateObjectTableDDL(french).join('\n');
+    expect(allDDL).toContain("to_tsvector('french',");
+    expect(allDDL).not.toContain("to_tsvector('english',");
+  });
+
+  it('defaults to english when no language is specified', () => {
+    const searchable: ObjectTypeDefinition = {
+      ...patientType,
+      indexes: [{ field: 'familyName', indexType: 'FULLTEXT' }],
+    };
+    const allDDL = generateObjectTableDDL(searchable).join('\n');
+    expect(allDDL).toContain("to_tsvector('english',");
+  });
+
+  it('falls back to english for invalid language strings (injection guard)', () => {
+    const malicious: ObjectTypeDefinition = {
+      ...patientType,
+      indexes: [{ field: 'familyName', indexType: 'FULLTEXT', language: "'; DROP TABLE--" }],
+    };
+    const allDDL = generateObjectTableDDL(malicious).join('\n');
+    // Invalid characters → falls back to 'english', no injection possible
+    expect(allDDL).toContain("to_tsvector('english',");
+    expect(allDDL).not.toContain('DROP TABLE');
+  });
+
+  it('emits a separate tsvector column per FULLTEXT-indexed field', () => {
+    const multi: ObjectTypeDefinition = {
+      ...patientType,
+      indexes: [
+        { field: 'familyName', indexType: 'FULLTEXT' },
+        { field: 'givenName', indexType: 'FULLTEXT', language: 'french' },
+      ],
+    };
+    const allDDL = generateObjectTableDDL(multi).join('\n');
+    // Two separate per-field tsvector columns, each with its own language.
+    expect(allDDL).toContain('"_fts_family_name"');
+    expect(allDDL).toContain('"_fts_given_name"');
+    expect(allDDL).toContain("to_tsvector('english', coalesce(\"family_name\", ''))");
+    expect(allDDL).toContain("to_tsvector('french', coalesce(\"given_name\", ''))");
+    expect(allDDL).toContain('USING gin ("_fts_family_name")');
+    expect(allDDL).toContain('USING gin ("_fts_given_name")');
   });
 
   it('supports HASH index type', () => {

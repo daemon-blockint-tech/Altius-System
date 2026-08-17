@@ -168,4 +168,51 @@ describe('MemoryStorageProvider aggregate with date bucketing', () => {
       }),
     ).rejects.toThrow(/Invalid bucket interval/);
   });
+
+  it('groups by numeric bucket (width_bucket semantics)', async () => {
+    // amounts: 100, 200, 150, 300, 250. min=0, max=300, numBuckets=3.
+    // bucket width = 100. bucket 1 = [0,100), bucket 2 = [100,200), bucket 3 = [200,300).
+    // 100 → bucket 2, 200 → bucket 3, 150 → bucket 2, 300 → bucket 4 (overflow), 250 → bucket 3.
+    const result = await storage.aggregateObjects(CTX, 'Transaction', {
+      fields: [{ field: '*', fn: 'count', alias: 'cnt' }],
+      buckets: [{ field: 'amount', min: 0, max: 300, numBuckets: 3 }],
+    });
+
+    // 3 distinct buckets: 2, 3, 4 (overflow)
+    expect(result.groups).toHaveLength(3);
+    const byBucket = new Map(result.groups.map((g) => [g.keys['amount'] as number, g.values['cnt'] as number]));
+    expect(byBucket.get(2)).toBe(2); // 100, 150
+    expect(byBucket.get(3)).toBe(2); // 200, 250
+    expect(byBucket.get(4)).toBe(1); // 300 (>= max → overflow)
+  });
+
+  it('numeric bucket: below-min goes to bucket 0', async () => {
+    await storage.createObject(CTX, 'Transaction', { amount: 50, timestamp: '2025-01-01T00:00:00Z', status: 'PENDING' });
+    const result = await storage.aggregateObjects(CTX, 'Transaction', {
+      fields: [{ field: '*', fn: 'count', alias: 'cnt' }],
+      buckets: [{ field: 'amount', min: 100, max: 300, numBuckets: 2 }],
+    });
+
+    const bucket0 = result.groups.find((g) => g.keys['amount'] === 0);
+    expect(bucket0).toBeDefined();
+    expect(bucket0!.values['cnt']).toBe(1); // the 50
+  });
+
+  it('rejects NumericBucket with numBuckets <= 0', async () => {
+    await expect(
+      storage.aggregateObjects(CTX, 'Transaction', {
+        fields: [{ field: '*', fn: 'count', alias: 'cnt' }],
+        buckets: [{ field: 'amount', min: 0, max: 100, numBuckets: 0 }],
+      }),
+    ).rejects.toThrow(/numBuckets must be positive/);
+  });
+
+  it('rejects NumericBucket with min >= max', async () => {
+    await expect(
+      storage.aggregateObjects(CTX, 'Transaction', {
+        fields: [{ field: '*', fn: 'count', alias: 'cnt' }],
+        buckets: [{ field: 'amount', min: 100, max: 100, numBuckets: 5 }],
+      }),
+    ).rejects.toThrow(/min must be less than max/);
+  });
 });

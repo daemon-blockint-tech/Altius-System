@@ -63,6 +63,36 @@ export function generateObjectTableDDL(objectType: ObjectTypeDefinition, schema 
     }
   }
 
+  // Full-text search: for each FULLTEXT index, emit a per-field generated
+  // tsvector column plus a GIN index. Field-scoped (not type-wide) so
+  // search restricted to a field only matches that field's tsvector, and
+  // each FULLTEXT index can carry its own language.
+  //
+  // The stemming language is taken from the IndexDefinition's `language`
+  // field (default 'english'). It is validated as alphanumeric to prevent
+  // SQL injection via the regconfig name — the value is interpolated into
+  // a string literal, not parameterized, because DDL cannot use params.
+  //
+  // Additive: ALTER TABLE ADD COLUMN IF NOT EXISTS + CREATE INDEX IF NOT
+  // EXISTS. No DROP, no type change. Requires no extension beyond pg_trgm
+  // (tsvector and to_tsvector are built-in).
+  const fulltextIndexes = objectType.indexes?.filter(i => i.indexType === 'FULLTEXT') ?? [];
+  for (const idx of fulltextIndexes) {
+    const rawLang = idx.language ?? 'english';
+    const lang = /^[a-zA-Z0-9_]+$/.test(rawLang) ? rawLang : 'english';
+    const colName = snakeCase(idx.field);
+    // Keep the leading underscore: pgIdent strips it, so quote manually.
+    const ftsCol = `_fts_${colName}`;
+    const ftsColQuoted = `"${ftsCol.replace(/"/g, '""')}"`;
+    const colQuoted = `"${colName.replace(/"/g, '""')}"`;
+    statements.push(
+      `ALTER TABLE ${qualifiedTable} ADD COLUMN IF NOT EXISTS ${ftsColQuoted} tsvector GENERATED ALWAYS AS (to_tsvector('${lang}', coalesce(${colQuoted}, ''))) STORED;`,
+    );
+    statements.push(
+      `CREATE INDEX IF NOT EXISTS "idx_${tableName}_${ftsCol}" ON ${qualifiedTable} USING gin (${ftsColQuoted});`,
+    );
+  }
+
   // Indexes from property directives (unique / indexed)
   for (const prop of objectType.properties) {
     const colName = snakeCase(prop.name);

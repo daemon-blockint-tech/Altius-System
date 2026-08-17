@@ -486,4 +486,95 @@ export class ToolRegistry {
       },
     }));
   }
+
+  /**
+   * Export tools for LangChain's `tool()` factory, with execution already
+   * bound to executeForAgent.
+   *
+   * Bound, unlike the two exporters above, because of where the frameworks
+   * differ: those hand a descriptor to a model and the CALLER dispatches the
+   * resulting tool call, so a descriptor is the whole job. LangChain's `tool()`
+   * takes the schema and the implementation together, so the natural unit here
+   * already contains invocation — and if this returned descriptors only, every
+   * caller would write that implementation themselves, against
+   * ActionExecutor.execute, and lose the governance that makes agent execution
+   * different from ordinary execution: the PolicyGuard hold on high-risk
+   * actions, dry-run, and the agentId/sessionId/model attribution the audit
+   * trail needs to tell an agent's write from a human's. Binding it here means
+   * that cannot be skipped by accident.
+   *
+   * No `@langchain/core` import: the return shape is what `tool()`'s second
+   * argument accepts, and `parameters` is already JSON Schema, which LangChain
+   * takes in place of a Zod schema. Depending on the framework to export to it
+   * would put a UI-layer dependency in the actions package for no gain, which
+   * is why the Anthropic and OpenAI exporters return plain objects too.
+   *
+   * Usage:
+   *   const tools = registry
+   *     .toLangChainTools(actor, ctx, { agentId, sessionId, dryRun: false })
+   *     .map(d => tool(d.invoke, { name: d.name, description: d.description, schema: d.schema }));
+   *
+   * `invoke` resolves with the full AgentExecutionResult rather than throwing
+   * or flattening to a string: a held action is not a failure and not a
+   * success, and `held`/`holdId` is the only way the agent learns it needs an
+   * approval rather than a retry.
+   *
+   * @param actor  The agent acting, as ActionExecutor understands actors
+   * @param ctx    Execution context (tenant, trace)
+   * @param agentContext Carries dryRun and the audit attribution
+   * @param filter Optional filter (same as availableTools)
+   */
+  toLangChainTools(
+    actor: ActionActor,
+    ctx: ActionContext,
+    agentContext: AgentContext,
+    filter?: ToolFilter,
+  ): Array<{
+    name: string;
+    description: string;
+    schema: JsonSchema;
+    invoke: (args: Record<string, unknown>) => Promise<AgentExecutionResult>;
+  }> {
+    const descriptors = this.availableTools(filter);
+
+    // Fail at export, not at the first tool call. executeForAgent throws
+    // without an executor anyway, but by then the tools are bound into an
+    // agent and the failure surfaces mid-conversation as a tool error the
+    // model will try to work around.
+    if (!this.executor) {
+      throw new Error(
+        'toLangChainTools requires an executor on ToolRegistry: the returned tools execute actions.',
+      );
+    }
+
+    // A high-risk action with no PolicyGuard would execute unheld, and nothing
+    // would say so — the guard is skipped by absence, not by decision. That is
+    // the one failure this exporter exists to prevent, so it is an error rather
+    // than a warning.
+    //
+    // Note the converse is NOT checked here: when riskLevels is empty every
+    // action defaults to 'low' and no guard is ever consulted. That is
+    // executeForAgent's own default and predates this method; classifying
+    // actions is the caller's job, and inventing a default here would silently
+    // change behaviour for the existing callers of executeForAgent.
+    if (!this.policyGuard) {
+      const highRisk = descriptors
+        .map(d => d.name)
+        .filter(name => this.riskLevels.get(name) === 'high');
+      if (highRisk.length > 0) {
+        throw new Error(
+          `toLangChainTools: no policyGuard configured, but these tools are high-risk: ` +
+          `${highRisk.join(', ')}. Configure a PolicyGuard, or exclude them with a filter.`,
+        );
+      }
+    }
+
+    return descriptors.map(d => ({
+      name: d.name,
+      description: d.description,
+      schema: d.parameters,
+      invoke: (args: Record<string, unknown>) =>
+        this.executeForAgent(d.name, args ?? {}, actor, ctx, agentContext),
+    }));
+  }
 }
