@@ -5,12 +5,30 @@
   "accessTokenLifespan": 3600,
   "roles": {
     "realm": [
-      { "name": "clinician", "description": "Clinical staff" },
-      { "name": "nurse_in_charge", "description": "Charge nurse" },
-      { "name": "receptionist", "description": "ED reception" },
-      { "name": "porter", "description": "Porter (bed cleaning)" },
-      { "name": "admin", "description": "Platform administrator" },
-      { "name": "compliance_analyst", "description": "Compliance / IG analyst" }
+      {
+        "name": "clinician",
+        "description": "Clinical staff"
+      },
+      {
+        "name": "nurse_in_charge",
+        "description": "Charge nurse"
+      },
+      {
+        "name": "receptionist",
+        "description": "ED reception"
+      },
+      {
+        "name": "porter",
+        "description": "Porter (bed cleaning)"
+      },
+      {
+        "name": "admin",
+        "description": "Platform administrator"
+      },
+      {
+        "name": "compliance_analyst",
+        "description": "Compliance / IG analyst"
+      }
     ]
   },
   "clients": [
@@ -21,8 +39,16 @@
       "publicClient": true,
       "standardFlowEnabled": true,
       "directAccessGrantsEnabled": true,
-      "redirectUris": ["*"],
-      "webOrigins": ["*"],
+      "redirectUris": [
+        "http://localhost:8090/*",
+        "http://127.0.0.1:8090/*",
+        "http://localhost:5173/*"
+      ],
+      "webOrigins": [
+        "http://localhost:8090",
+        "http://127.0.0.1:8090",
+        "http://localhost:5173"
+      ],
       "protocolMappers": [
         {
           "name": "audience",
@@ -61,7 +87,10 @@
             "userinfo.token.claim": "false"
           }
         }
-      ]
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      }
     }
   ],
   "users": [
@@ -72,9 +101,22 @@
       "firstName": "Test",
       "lastName": "Clinician",
       "emailVerified": true,
-      "attributes": { "tenant_id": ["default"] },
-      "credentials": [{ "type": "password", "value": "test-password", "temporary": false }],
-      "realmRoles": ["clinician", "nurse_in_charge"]
+      "attributes": {
+        "tenant_id": [
+          "default"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "test-password",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "clinician",
+        "nurse_in_charge"
+      ]
     },
     {
       "username": "admin-test",
@@ -84,9 +126,21 @@
       "lastName": "Admin",
       "emailVerified": true,
       "requiredActions": [],
-      "attributes": { "tenant_id": ["default"] },
-      "credentials": [{ "type": "password", "value": "test-password", "temporary": false }],
-      "realmRoles": ["admin"]
+      "attributes": {
+        "tenant_id": [
+          "default"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "test-password",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "admin"
+      ]
     }
   ]
 }
