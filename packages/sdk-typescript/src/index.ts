@@ -1189,6 +1189,13 @@ export class Altius {
       previousValues causedBy { actionType actionId } timestamp
     } }`;
     const sendSubscribe = () => {
+      // The queue is a snapshot taken when a retry was scheduled, and it is
+      // only flushed on ack. unsubscribe() inside that window cannot send
+      // `complete` because the socket is not OPEN yet, so this is the only
+      // place left that can stop a cancelled stream being re-established.
+      // Guarding here rather than at each queueing site covers the first
+      // subscribe, the retry replay, and anything queued later.
+      if (!this.wsResubscribers.has(subId)) return;
       const socket = this.ensureWebSocket();
       const payload = filter && id === null ? { query, variables: { filter } } : { query };
       socket.send(JSON.stringify({ id: subId, type: 'subscribe', payload }));

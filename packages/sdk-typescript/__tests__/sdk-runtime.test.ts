@@ -430,6 +430,34 @@ describe('Generated SDK runtime', () => {
       vi.useRealTimers();
     });
 
+    it('does not resurrect a subscription cancelled mid-reconnect', async () => {
+      // The retry snapshots the replay list, opens a socket, and only flushes on
+      // ack. Unsubscribing inside that window cannot send `complete` (the socket
+      // is not OPEN yet), so nothing tells the server to stop — and if the
+      // snapshot is still flushed, the subscribe goes out for a stream the
+      // caller has let go, re-registering its callback. The caller then receives
+      // events after unsubscribing, which for a React table means setState on an
+      // unmounted component.
+      vi.useFakeTimers();
+      const received = vi.fn();
+      const client = new Altius({ endpoint: 'http://localhost:3000/graphql', token: 't' });
+
+      const sub = client.patient.onAnyChange(received);
+      await vi.advanceTimersByTimeAsync(10);
+      MockWebSocket.instances[0]!._receive(JSON.stringify({ type: 'connection_ack' }));
+      MockWebSocket.instances[0]!.close();
+
+      // Retry fires and opens a socket, still awaiting ack.
+      await vi.advanceTimersByTimeAsync(1500);
+      const retry = MockWebSocket.instances[1]!;
+
+      sub.unsubscribe();
+      retry._receive(JSON.stringify({ type: 'connection_ack' }));
+
+      expect(retry.sent.filter(m => m.includes('"subscribe"'))).toHaveLength(0);
+      vi.useRealTimers();
+    });
+
     it('does not reconnect after the caller unsubscribes', async () => {
       // Letting go of a stream is not losing one; reconnecting here would
       // resurrect a subscription the caller has already abandoned.
