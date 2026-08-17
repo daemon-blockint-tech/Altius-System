@@ -55,6 +55,9 @@ function makeLinkRow(overrides: Record<string, unknown> = {}): Record<string, un
     _created_at: new Date('2025-01-01T00:00:00Z'),
     _updated_at: new Date('2025-01-01T00:00:00Z'),
     _deleted_at: null,
+    // Emitted by generateObjectTableDDL (ddl-objects.ts). The fixture omitted
+    // it, which is why the phantom-"ActorId" mapping was invisible here.
+    _actor_id: 'user-9',
     ...overrides,
   };
 }
@@ -374,4 +377,5 @@ describe('traverse()', () => {
       expect(result.edges).toHaveLength(1);
     });
   });
+
 });

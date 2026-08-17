@@ -61,12 +61,8 @@ function rowToLink(row: Record<string, unknown>): OntologyLink {
   }
 
   // Map remaining columns (user-defined link properties)
-  const systemCols = new Set([
-    '_tenant_id', '_id', '_type', '_from_type', '_from_id',
-    '_to_type', '_to_id', '_version', '_created_at', '_updated_at', '_deleted_at',
-  ]);
   for (const [key, value] of Object.entries(row)) {
-    if (!systemCols.has(key)) {
+    if (!key.startsWith('_')) {
       // An unset link property is SQL NULL here but absent on the memory
       // provider, so `link.role` read back as null on one and undefined on the
       // other for the same link. Omit unset properties so both agree; a caller

@@ -42,13 +42,13 @@ function historyRowToObject(row: Record<string, unknown>): OntologyObject {
   }
 
   // Map remaining columns (user-defined properties)
-  const systemCols = new Set([
-    '_tenant_id', '_id', '_type', '_version',
-    '_created_at', '_updated_at', '_deleted_at',
-    '_history_id', '_history_created_at',
-  ]);
+  // System columns are identified by the leading underscore, not by an
+  // enumerated list. Four copies of that list existed and only one of them
+  // gained "_actor_id" when the DDL did, so the other three fell through to the
+  // user-property branch and surfaced it as a phantom "ActorId" — a key in no
+  // schema, which redaction then treats as a normal field.
   for (const [key, value] of Object.entries(row)) {
-    if (!systemCols.has(key)) {
+    if (!key.startsWith('_')) {
       const camelKey = key.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
       obj[camelKey] = value;
     }
