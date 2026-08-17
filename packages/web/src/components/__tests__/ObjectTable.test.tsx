@@ -190,6 +190,34 @@ describe('ObjectTable', () => {
     expect(screen.getByText(/may be out of date/)).toBeDefined();
   });
 
+  it('re-reads when the stream resumes, not just clearing the notice', async () => {
+    // Events during the outage are gone, so the page on screen may already be
+    // wrong; clearing the warning without re-reading hides that.
+    const load = vi
+      .fn()
+      .mockResolvedValueOnce(connection([{ id: 'p-1', name: 'Alice', status: 'ACTIVE' }]))
+      .mockResolvedValue(connection([{ id: 'p-1', name: 'Alice', status: 'DISCHARGED' }]));
+    let lose = () => {};
+    let resume = () => {};
+    const subscribe = vi.fn((_c: () => void, onLost: () => void, onResumed: () => void) => {
+      lose = onLost;
+      resume = onResumed;
+      return { unsubscribe: vi.fn() };
+    });
+
+    const { container } = render(
+      <ObjectTable caption="Patients" columns={COLUMNS} load={load} subscribe={subscribe} />,
+    );
+    await waitFor(() => expect(screen.getByText('ACTIVE')).toBeDefined());
+
+    lose();
+    await waitFor(() => expect(container.querySelector('[data-live-lost]')).not.toBeNull());
+
+    resume();
+    await waitFor(() => expect(screen.getByText('DISCHARGED')).toBeDefined());
+    expect(container.querySelector('[data-live-lost]')).toBeNull();
+  });
+
   it('unsubscribes on unmount so a closed table stops holding the stream', async () => {
     const load = vi.fn().mockResolvedValue(connection([{ id: 'p-1', name: 'Alice', status: 'ACTIVE' }]));
     const unsubscribe = vi.fn();

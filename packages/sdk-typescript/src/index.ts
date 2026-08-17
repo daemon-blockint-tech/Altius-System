@@ -999,6 +999,13 @@ export class Altius {
    * a reconnect that quietly misses events during the gap is the same bug.
    */
   private readonly wsCloseHandlers = new Map<string, () => void>();
+  /** Replay closures, one per live subscription, used to re-establish after a drop. */
+  private readonly wsResubscribers = new Map<string, () => void>();
+  /** Fired after a dropped stream is re-established. Callers must RE-READ: */
+  /** events that occurred while the socket was down are gone, so resuming */
+  /** without re-reading is the silent-staleness bug wearing a fix. */
+  private readonly wsResumeHandlers = new Map<string, () => void>();
+  private wsReconnectAttempt = 0;
   private wsSocket: WebSocket | null = null;
   private wsReady = false;
   private wsReadyQueue: Array<() => void> = [];
@@ -1062,6 +1069,26 @@ export class Altius {
     return (json.data?.[field] ?? null) as T;
   }
 
+  /**
+   * Re-establish the socket after an unexpected close, with backoff.
+   *
+   * Replay goes through wsReadyQueue, the same path a first subscribe uses,
+   * so a reconnected subscription is established exactly like a fresh one
+   * rather than by a second code path that can drift from it.
+   */
+  private scheduleReconnect(): void {
+    const attempt = ++this.wsReconnectAttempt;
+    // 1s, 2s, 4s... capped. Capped rather than unbounded because a client
+    // that gives up entirely leaves the caller with a dead stream and no
+    // further notice, which is the state this whole mechanism exists to end.
+    const delay = Math.min(1000 * Math.pow(2, attempt - 1), 30000);
+    setTimeout(() => {
+      if (this.wsResubscribers.size === 0) return;
+      for (const replay of this.wsResubscribers.values()) this.wsReadyQueue.push(replay);
+      this.ensureWebSocket();
+    }, delay);
+  }
+
   private ensureWebSocket(): WebSocket {
     if (this.wsSocket && (this.wsSocket.readyState === WebSocket.OPEN || this.wsSocket.readyState === WebSocket.CONNECTING)) {
       return this.wsSocket;
@@ -1089,6 +1116,12 @@ export class Altius {
         this.wsReady = true;
         for (const fn of this.wsReadyQueue) fn();
         this.wsReadyQueue = [];
+        if (this.wsReconnectAttempt > 0) {
+          this.wsReconnectAttempt = 0;
+          for (const onResume of this.wsResumeHandlers.values()) {
+            try { onResume(); } catch { /* one handler must not stop the rest */ }
+          }
+        }
       } else if (msg.type === 'next' && msg.id) {
         const handler = this.wsSubscriptions.get(msg.id);
         if (handler) handler(msg.payload);
@@ -1102,7 +1135,10 @@ export class Altius {
       for (const onClose of this.wsCloseHandlers.values()) {
         try { onClose(); } catch { /* a handler must not stop the others */ }
       }
-      this.wsCloseHandlers.clear();
+      // Deliberately NOT cleared: the handlers are needed again if the
+      // socket drops a second time, and the resubscribers are what make
+      // recovery possible. Only unsubscribe() removes them.
+      if (this.wsResubscribers.size > 0) this.scheduleReconnect();
       this.wsSocket = null;
       this.wsReady = false;
       this.wsSubscriptions.clear();
@@ -1124,6 +1160,7 @@ export class Altius {
     callback: (event: ChangeEvent<T>) => void,
     filter?: Record<string, unknown>,
     onClose?: () => void,
+    onResume?: () => void,
   ): Subscription {
     const subId = `${typeName}:${id ?? "*"}:${Math.random().toString(36).slice(2)}`;
     const lower = typeName.charAt(0).toLowerCase() + typeName.slice(1);
@@ -1145,6 +1182,7 @@ export class Altius {
       const payload = filter && id === null ? { query, variables: { filter } } : { query };
       socket.send(JSON.stringify({ id: subId, type: 'subscribe', payload }));
       if (onClose) this.wsCloseHandlers.set(subId, onClose);
+      if (onResume) this.wsResumeHandlers.set(subId, onResume);
       this.wsSubscriptions.set(subId, (raw) => {
         // graphql-ws `next` carries an ExecutionResult envelope, not the
         // event itself. Handing the envelope to the callback would satisfy
@@ -1156,6 +1194,7 @@ export class Altius {
         }
       });
     };
+    this.wsResubscribers.set(subId, sendSubscribe);
     if (this.wsReady) {
       sendSubscribe();
     } else {
@@ -1166,6 +1205,8 @@ export class Altius {
       unsubscribe: () => {
         this.wsSubscriptions.delete(subId);
         this.wsCloseHandlers.delete(subId);
+        this.wsResumeHandlers.delete(subId);
+        this.wsResubscribers.delete(subId);
         if (this.wsSocket && this.wsSocket.readyState === WebSocket.OPEN) {
           this.wsSocket.send(JSON.stringify({ id: subId, type: 'complete' }));
         }
@@ -1184,8 +1225,8 @@ export class Altius {
       onChange: (id: string, callback: (event: ChangeEvent<Bed>) => void): Subscription =>
         this.subscribe<Bed>('Bed', id, 'id number type status _redactedFields _consentRestricted', callback),
 
-      onAnyChange: (callback: (event: ChangeEvent<Bed>) => void, filter?: BedFilter, onClose?: () => void): Subscription =>
-        this.subscribe<Bed>('Bed', null, 'id number type status _redactedFields _consentRestricted', callback, filter as Record<string, unknown> | undefined, onClose),
+      onAnyChange: (callback: (event: ChangeEvent<Bed>) => void, filter?: BedFilter, onClose?: () => void, onResume?: () => void): Subscription =>
+        this.subscribe<Bed>('Bed', null, 'id number type status _redactedFields _consentRestricted', callback, filter as Record<string, unknown> | undefined, onClose, onResume),
     };
   }
   get consultant() {
@@ -1199,8 +1240,8 @@ export class Altius {
       onChange: (id: string, callback: (event: ChangeEvent<Consultant>) => void): Subscription =>
         this.subscribe<Consultant>('Consultant', id, 'id gmcNumber name specialty _redactedFields _consentRestricted', callback),
 
-      onAnyChange: (callback: (event: ChangeEvent<Consultant>) => void, filter?: ConsultantFilter, onClose?: () => void): Subscription =>
-        this.subscribe<Consultant>('Consultant', null, 'id gmcNumber name specialty _redactedFields _consentRestricted', callback, filter as Record<string, unknown> | undefined, onClose),
+      onAnyChange: (callback: (event: ChangeEvent<Consultant>) => void, filter?: ConsultantFilter, onClose?: () => void, onResume?: () => void): Subscription =>
+        this.subscribe<Consultant>('Consultant', null, 'id gmcNumber name specialty _redactedFields _consentRestricted', callback, filter as Record<string, unknown> | undefined, onClose, onResume),
     };
   }
   get dischargeRecord() {
@@ -1214,8 +1255,8 @@ export class Altius {
       onChange: (id: string, callback: (event: ChangeEvent<DischargeRecord>) => void): Subscription =>
         this.subscribe<DischargeRecord>('DischargeRecord', id, 'id patient ward destination dischargeDate notes _redactedFields _consentRestricted', callback),
 
-      onAnyChange: (callback: (event: ChangeEvent<DischargeRecord>) => void, filter?: DischargeRecordFilter, onClose?: () => void): Subscription =>
-        this.subscribe<DischargeRecord>('DischargeRecord', null, 'id patient ward destination dischargeDate notes _redactedFields _consentRestricted', callback, filter as Record<string, unknown> | undefined, onClose),
+      onAnyChange: (callback: (event: ChangeEvent<DischargeRecord>) => void, filter?: DischargeRecordFilter, onClose?: () => void, onResume?: () => void): Subscription =>
+        this.subscribe<DischargeRecord>('DischargeRecord', null, 'id patient ward destination dischargeDate notes _redactedFields _consentRestricted', callback, filter as Record<string, unknown> | undefined, onClose, onResume),
     };
   }
   get patient() {
@@ -1229,8 +1270,8 @@ export class Altius {
       onChange: (id: string, callback: (event: ChangeEvent<Patient>) => void): Subscription =>
         this.subscribe<Patient>('Patient', id, 'id nhsNumber name family given dateOfBirth status triageCategory presentingComplaint createdAt createdBy updatedAt updatedBy validFrom validTo _redactedFields _consentRestricted', callback),
 
-      onAnyChange: (callback: (event: ChangeEvent<Patient>) => void, filter?: PatientFilter, onClose?: () => void): Subscription =>
-        this.subscribe<Patient>('Patient', null, 'id nhsNumber name family given dateOfBirth status triageCategory presentingComplaint createdAt createdBy updatedAt updatedBy validFrom validTo _redactedFields _consentRestricted', callback, filter as Record<string, unknown> | undefined, onClose),
+      onAnyChange: (callback: (event: ChangeEvent<Patient>) => void, filter?: PatientFilter, onClose?: () => void, onResume?: () => void): Subscription =>
+        this.subscribe<Patient>('Patient', null, 'id nhsNumber name family given dateOfBirth status triageCategory presentingComplaint createdAt createdBy updatedAt updatedBy validFrom validTo _redactedFields _consentRestricted', callback, filter as Record<string, unknown> | undefined, onClose, onResume),
     };
   }
   get staff() {
@@ -1244,8 +1285,8 @@ export class Altius {
       onChange: (id: string, callback: (event: ChangeEvent<Staff>) => void): Subscription =>
         this.subscribe<Staff>('Staff', id, 'id staffId name role specialty _redactedFields _consentRestricted', callback),
 
-      onAnyChange: (callback: (event: ChangeEvent<Staff>) => void, filter?: StaffFilter, onClose?: () => void): Subscription =>
-        this.subscribe<Staff>('Staff', null, 'id staffId name role specialty _redactedFields _consentRestricted', callback, filter as Record<string, unknown> | undefined, onClose),
+      onAnyChange: (callback: (event: ChangeEvent<Staff>) => void, filter?: StaffFilter, onClose?: () => void, onResume?: () => void): Subscription =>
+        this.subscribe<Staff>('Staff', null, 'id staffId name role specialty _redactedFields _consentRestricted', callback, filter as Record<string, unknown> | undefined, onClose, onResume),
     };
   }
   get transfer() {
@@ -1259,8 +1300,8 @@ export class Altius {
       onChange: (id: string, callback: (event: ChangeEvent<Transfer>) => void): Subscription =>
         this.subscribe<Transfer>('Transfer', id, 'id patient fromWard toWard transferDate reason _redactedFields _consentRestricted', callback),
 
-      onAnyChange: (callback: (event: ChangeEvent<Transfer>) => void, filter?: TransferFilter, onClose?: () => void): Subscription =>
-        this.subscribe<Transfer>('Transfer', null, 'id patient fromWard toWard transferDate reason _redactedFields _consentRestricted', callback, filter as Record<string, unknown> | undefined, onClose),
+      onAnyChange: (callback: (event: ChangeEvent<Transfer>) => void, filter?: TransferFilter, onClose?: () => void, onResume?: () => void): Subscription =>
+        this.subscribe<Transfer>('Transfer', null, 'id patient fromWard toWard transferDate reason _redactedFields _consentRestricted', callback, filter as Record<string, unknown> | undefined, onClose, onResume),
     };
   }
   get ward() {
@@ -1274,8 +1315,8 @@ export class Altius {
       onChange: (id: string, callback: (event: ChangeEvent<Ward>) => void): Subscription =>
         this.subscribe<Ward>('Ward', id, 'id name specialty capacity location address _redactedFields _consentRestricted', callback),
 
-      onAnyChange: (callback: (event: ChangeEvent<Ward>) => void, filter?: WardFilter, onClose?: () => void): Subscription =>
-        this.subscribe<Ward>('Ward', null, 'id name specialty capacity location address _redactedFields _consentRestricted', callback, filter as Record<string, unknown> | undefined, onClose),
+      onAnyChange: (callback: (event: ChangeEvent<Ward>) => void, filter?: WardFilter, onClose?: () => void, onResume?: () => void): Subscription =>
+        this.subscribe<Ward>('Ward', null, 'id name specialty capacity location address _redactedFields _consentRestricted', callback, filter as Record<string, unknown> | undefined, onClose, onResume),
     };
   }
   get account() {
@@ -1289,8 +1330,8 @@ export class Altius {
       onChange: (id: string, callback: (event: ChangeEvent<Account>) => void): Subscription =>
         this.subscribe<Account>('Account', id, 'id accountNumber type status currency customer openDate lastActivityDate _redactedFields _consentRestricted', callback),
 
-      onAnyChange: (callback: (event: ChangeEvent<Account>) => void, filter?: AccountFilter, onClose?: () => void): Subscription =>
-        this.subscribe<Account>('Account', null, 'id accountNumber type status currency customer openDate lastActivityDate _redactedFields _consentRestricted', callback, filter as Record<string, unknown> | undefined, onClose),
+      onAnyChange: (callback: (event: ChangeEvent<Account>) => void, filter?: AccountFilter, onClose?: () => void, onResume?: () => void): Subscription =>
+        this.subscribe<Account>('Account', null, 'id accountNumber type status currency customer openDate lastActivityDate _redactedFields _consentRestricted', callback, filter as Record<string, unknown> | undefined, onClose, onResume),
     };
   }
   get alert() {
@@ -1304,8 +1345,8 @@ export class Altius {
       onChange: (id: string, callback: (event: ChangeEvent<Alert>) => void): Subscription =>
         this.subscribe<Alert>('Alert', id, 'id alertNumber severity status ruleName score narrative transaction customer assignedTo createdDate _redactedFields _consentRestricted', callback),
 
-      onAnyChange: (callback: (event: ChangeEvent<Alert>) => void, filter?: AlertFilter, onClose?: () => void): Subscription =>
-        this.subscribe<Alert>('Alert', null, 'id alertNumber severity status ruleName score narrative transaction customer assignedTo createdDate _redactedFields _consentRestricted', callback, filter as Record<string, unknown> | undefined, onClose),
+      onAnyChange: (callback: (event: ChangeEvent<Alert>) => void, filter?: AlertFilter, onClose?: () => void, onResume?: () => void): Subscription =>
+        this.subscribe<Alert>('Alert', null, 'id alertNumber severity status ruleName score narrative transaction customer assignedTo createdDate _redactedFields _consentRestricted', callback, filter as Record<string, unknown> | undefined, onClose, onResume),
     };
   }
   get case() {
@@ -1319,8 +1360,8 @@ export class Altius {
       onChange: (id: string, callback: (event: ChangeEvent<Case>) => void): Subscription =>
         this.subscribe<Case>('Case', id, 'id caseNumber status priority assignedAnalyst summary openDate closeDate _redactedFields _consentRestricted', callback),
 
-      onAnyChange: (callback: (event: ChangeEvent<Case>) => void, filter?: CaseFilter, onClose?: () => void): Subscription =>
-        this.subscribe<Case>('Case', null, 'id caseNumber status priority assignedAnalyst summary openDate closeDate _redactedFields _consentRestricted', callback, filter as Record<string, unknown> | undefined, onClose),
+      onAnyChange: (callback: (event: ChangeEvent<Case>) => void, filter?: CaseFilter, onClose?: () => void, onResume?: () => void): Subscription =>
+        this.subscribe<Case>('Case', null, 'id caseNumber status priority assignedAnalyst summary openDate closeDate _redactedFields _consentRestricted', callback, filter as Record<string, unknown> | undefined, onClose, onResume),
     };
   }
   get customer() {
@@ -1334,8 +1375,8 @@ export class Altius {
       onChange: (id: string, callback: (event: ChangeEvent<Customer>) => void): Subscription =>
         this.subscribe<Customer>('Customer', id, 'id externalId name type riskLevel kycStatus kycExpiryDate country dateOfBirth taxId _redactedFields _consentRestricted', callback),
 
-      onAnyChange: (callback: (event: ChangeEvent<Customer>) => void, filter?: CustomerFilter, onClose?: () => void): Subscription =>
-        this.subscribe<Customer>('Customer', null, 'id externalId name type riskLevel kycStatus kycExpiryDate country dateOfBirth taxId _redactedFields _consentRestricted', callback, filter as Record<string, unknown> | undefined, onClose),
+      onAnyChange: (callback: (event: ChangeEvent<Customer>) => void, filter?: CustomerFilter, onClose?: () => void, onResume?: () => void): Subscription =>
+        this.subscribe<Customer>('Customer', null, 'id externalId name type riskLevel kycStatus kycExpiryDate country dateOfBirth taxId _redactedFields _consentRestricted', callback, filter as Record<string, unknown> | undefined, onClose, onResume),
     };
   }
   get suspiciousActivityReport() {
@@ -1349,8 +1390,8 @@ export class Altius {
       onChange: (id: string, callback: (event: ChangeEvent<SuspiciousActivityReport>) => void): Subscription =>
         this.subscribe<SuspiciousActivityReport>('SuspiciousActivityReport', id, 'id sarNumber status filingDate narrative amount reportingEntity caseRef _redactedFields _consentRestricted', callback),
 
-      onAnyChange: (callback: (event: ChangeEvent<SuspiciousActivityReport>) => void, filter?: SuspiciousActivityReportFilter, onClose?: () => void): Subscription =>
-        this.subscribe<SuspiciousActivityReport>('SuspiciousActivityReport', null, 'id sarNumber status filingDate narrative amount reportingEntity caseRef _redactedFields _consentRestricted', callback, filter as Record<string, unknown> | undefined, onClose),
+      onAnyChange: (callback: (event: ChangeEvent<SuspiciousActivityReport>) => void, filter?: SuspiciousActivityReportFilter, onClose?: () => void, onResume?: () => void): Subscription =>
+        this.subscribe<SuspiciousActivityReport>('SuspiciousActivityReport', null, 'id sarNumber status filingDate narrative amount reportingEntity caseRef _redactedFields _consentRestricted', callback, filter as Record<string, unknown> | undefined, onClose, onResume),
     };
   }
   get transaction() {
@@ -1364,8 +1405,8 @@ export class Altius {
       onChange: (id: string, callback: (event: ChangeEvent<Transaction>) => void): Subscription =>
         this.subscribe<Transaction>('Transaction', id, 'id referenceId type status amount currency sourceAccount destinationAccount transactionDate description country _redactedFields _consentRestricted', callback),
 
-      onAnyChange: (callback: (event: ChangeEvent<Transaction>) => void, filter?: TransactionFilter, onClose?: () => void): Subscription =>
-        this.subscribe<Transaction>('Transaction', null, 'id referenceId type status amount currency sourceAccount destinationAccount transactionDate description country _redactedFields _consentRestricted', callback, filter as Record<string, unknown> | undefined, onClose),
+      onAnyChange: (callback: (event: ChangeEvent<Transaction>) => void, filter?: TransactionFilter, onClose?: () => void, onResume?: () => void): Subscription =>
+        this.subscribe<Transaction>('Transaction', null, 'id referenceId type status amount currency sourceAccount destinationAccount transactionDate description country _redactedFields _consentRestricted', callback, filter as Record<string, unknown> | undefined, onClose, onResume),
     };
   }
   get facility() {
@@ -1379,8 +1420,8 @@ export class Altius {
       onChange: (id: string, callback: (event: ChangeEvent<Facility>) => void): Subscription =>
         this.subscribe<Facility>('Facility', id, 'id name code type status location address country capacity _redactedFields _consentRestricted', callback),
 
-      onAnyChange: (callback: (event: ChangeEvent<Facility>) => void, filter?: FacilityFilter, onClose?: () => void): Subscription =>
-        this.subscribe<Facility>('Facility', null, 'id name code type status location address country capacity _redactedFields _consentRestricted', callback, filter as Record<string, unknown> | undefined, onClose),
+      onAnyChange: (callback: (event: ChangeEvent<Facility>) => void, filter?: FacilityFilter, onClose?: () => void, onResume?: () => void): Subscription =>
+        this.subscribe<Facility>('Facility', null, 'id name code type status location address country capacity _redactedFields _consentRestricted', callback, filter as Record<string, unknown> | undefined, onClose, onResume),
     };
   }
   get inventoryRecord() {
@@ -1394,8 +1435,8 @@ export class Altius {
       onChange: (id: string, callback: (event: ChangeEvent<InventoryRecord>) => void): Subscription =>
         this.subscribe<InventoryRecord>('InventoryRecord', id, 'id quantity reservedQuantity stockLevel lastCountDate product facility _redactedFields _consentRestricted', callback),
 
-      onAnyChange: (callback: (event: ChangeEvent<InventoryRecord>) => void, filter?: InventoryRecordFilter, onClose?: () => void): Subscription =>
-        this.subscribe<InventoryRecord>('InventoryRecord', null, 'id quantity reservedQuantity stockLevel lastCountDate product facility _redactedFields _consentRestricted', callback, filter as Record<string, unknown> | undefined, onClose),
+      onAnyChange: (callback: (event: ChangeEvent<InventoryRecord>) => void, filter?: InventoryRecordFilter, onClose?: () => void, onResume?: () => void): Subscription =>
+        this.subscribe<InventoryRecord>('InventoryRecord', null, 'id quantity reservedQuantity stockLevel lastCountDate product facility _redactedFields _consentRestricted', callback, filter as Record<string, unknown> | undefined, onClose, onResume),
     };
   }
   get product() {
@@ -1409,8 +1450,8 @@ export class Altius {
       onChange: (id: string, callback: (event: ChangeEvent<Product>) => void): Subscription =>
         this.subscribe<Product>('Product', id, 'id sku name category unitOfMeasure reorderPoint reorderQuantity _redactedFields _consentRestricted', callback),
 
-      onAnyChange: (callback: (event: ChangeEvent<Product>) => void, filter?: ProductFilter, onClose?: () => void): Subscription =>
-        this.subscribe<Product>('Product', null, 'id sku name category unitOfMeasure reorderPoint reorderQuantity _redactedFields _consentRestricted', callback, filter as Record<string, unknown> | undefined, onClose),
+      onAnyChange: (callback: (event: ChangeEvent<Product>) => void, filter?: ProductFilter, onClose?: () => void, onResume?: () => void): Subscription =>
+        this.subscribe<Product>('Product', null, 'id sku name category unitOfMeasure reorderPoint reorderQuantity _redactedFields _consentRestricted', callback, filter as Record<string, unknown> | undefined, onClose, onResume),
     };
   }
   get purchaseOrder() {
@@ -1424,8 +1465,8 @@ export class Altius {
       onChange: (id: string, callback: (event: ChangeEvent<PurchaseOrder>) => void): Subscription =>
         this.subscribe<PurchaseOrder>('PurchaseOrder', id, 'id orderNumber status supplier product quantity unitCost currency requestedDeliveryDate notes _redactedFields _consentRestricted', callback),
 
-      onAnyChange: (callback: (event: ChangeEvent<PurchaseOrder>) => void, filter?: PurchaseOrderFilter, onClose?: () => void): Subscription =>
-        this.subscribe<PurchaseOrder>('PurchaseOrder', null, 'id orderNumber status supplier product quantity unitCost currency requestedDeliveryDate notes _redactedFields _consentRestricted', callback, filter as Record<string, unknown> | undefined, onClose),
+      onAnyChange: (callback: (event: ChangeEvent<PurchaseOrder>) => void, filter?: PurchaseOrderFilter, onClose?: () => void, onResume?: () => void): Subscription =>
+        this.subscribe<PurchaseOrder>('PurchaseOrder', null, 'id orderNumber status supplier product quantity unitCost currency requestedDeliveryDate notes _redactedFields _consentRestricted', callback, filter as Record<string, unknown> | undefined, onClose, onResume),
     };
   }
   get shipment() {
@@ -1439,8 +1480,8 @@ export class Altius {
       onChange: (id: string, callback: (event: ChangeEvent<Shipment>) => void): Subscription =>
         this.subscribe<Shipment>('Shipment', id, 'id trackingNumber status transportMode quantity departureDate estimatedArrival actualArrival order origin destination _redactedFields _consentRestricted', callback),
 
-      onAnyChange: (callback: (event: ChangeEvent<Shipment>) => void, filter?: ShipmentFilter, onClose?: () => void): Subscription =>
-        this.subscribe<Shipment>('Shipment', null, 'id trackingNumber status transportMode quantity departureDate estimatedArrival actualArrival order origin destination _redactedFields _consentRestricted', callback, filter as Record<string, unknown> | undefined, onClose),
+      onAnyChange: (callback: (event: ChangeEvent<Shipment>) => void, filter?: ShipmentFilter, onClose?: () => void, onResume?: () => void): Subscription =>
+        this.subscribe<Shipment>('Shipment', null, 'id trackingNumber status transportMode quantity departureDate estimatedArrival actualArrival order origin destination _redactedFields _consentRestricted', callback, filter as Record<string, unknown> | undefined, onClose, onResume),
     };
   }
   get supplier() {
@@ -1454,8 +1495,8 @@ export class Altius {
       onChange: (id: string, callback: (event: ChangeEvent<Supplier>) => void): Subscription =>
         this.subscribe<Supplier>('Supplier', id, 'id name code system display tier contactName contactEmail country leadTimeDays onTimeDeliveryRate _redactedFields _consentRestricted', callback),
 
-      onAnyChange: (callback: (event: ChangeEvent<Supplier>) => void, filter?: SupplierFilter, onClose?: () => void): Subscription =>
-        this.subscribe<Supplier>('Supplier', null, 'id name code system display tier contactName contactEmail country leadTimeDays onTimeDeliveryRate _redactedFields _consentRestricted', callback, filter as Record<string, unknown> | undefined, onClose),
+      onAnyChange: (callback: (event: ChangeEvent<Supplier>) => void, filter?: SupplierFilter, onClose?: () => void, onResume?: () => void): Subscription =>
+        this.subscribe<Supplier>('Supplier', null, 'id name code system display tier contactName contactEmail country leadTimeDays onTimeDeliveryRate _redactedFields _consentRestricted', callback, filter as Record<string, unknown> | undefined, onClose, onResume),
     };
   }
   get actions() {

@@ -56,7 +56,11 @@ export interface ObjectTableProps<T> {
    * patching a row in place would drift from what the server would actually
    * return — including showing a row the caller may no longer see.
    */
-  subscribe?: (onChange: () => void, onLost: () => void) => { unsubscribe(): void };
+  subscribe?: (
+    onChange: () => void,
+    onLost: () => void,
+    onResumed: () => void,
+  ) => { unsubscribe(): void };
 }
 
 type Status = 'loading' | 'ready' | 'error';
@@ -136,9 +140,14 @@ export function ObjectTable<T extends RowMetadata>({
         void fetchPage(cursorRef.current);
       }, LIVE_COALESCE_MS);
     }, () => {
-      // The stream is gone and the client does not reconnect. Saying so beats a
-      // table that silently stops updating while still looking current.
+      // Dropped. Say so rather than let a stale table look current.
       setLive(false);
+    }, () => {
+      // Re-established. Re-read rather than just clearing the notice: the
+      // events that happened while the socket was down are gone, so the page
+      // on screen may already be wrong.
+      setLive(true);
+      void fetchPage(cursorRef.current);
     });
 
     return () => {

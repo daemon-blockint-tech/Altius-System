@@ -346,6 +346,54 @@ describe('Generated SDK runtime', () => {
     });
   });
 
+  describe('subscription reconnection', () => {
+    it('re-establishes a dropped subscription and announces the resume', async () => {
+      // Visibility alone leaves the stream dead. Recovery has to actually
+      // resubscribe, and the caller has to be told so it can RE-READ: events
+      // during the gap are gone, so resuming without re-reading is the same
+      // silent-staleness bug with a nicer message.
+      vi.useFakeTimers();
+      const onClose = vi.fn();
+      const onResume = vi.fn();
+      const client = new Altius({ endpoint: 'http://localhost:3000/graphql', token: 't' });
+
+      client.patient.onAnyChange(() => {}, undefined, onClose, onResume);
+      await vi.advanceTimersByTimeAsync(10);
+      MockWebSocket.instances[0]!._receive(JSON.stringify({ type: 'connection_ack' }));
+
+      MockWebSocket.instances[0]!.close();
+      expect(onClose).toHaveBeenCalledTimes(1);
+
+      // Backoff, then a fresh socket carrying the replayed subscription.
+      await vi.advanceTimersByTimeAsync(1500);
+      expect(MockWebSocket.instances.length).toBe(2);
+      MockWebSocket.instances[1]!._receive(JSON.stringify({ type: 'connection_ack' }));
+
+      expect(onResume).toHaveBeenCalledTimes(1);
+      // The subscribe was actually re-sent, not just the socket reopened.
+      expect(MockWebSocket.instances[1]!.sent.some(m => m.includes('"subscribe"'))).toBe(true);
+      vi.useRealTimers();
+    });
+
+    it('does not reconnect after the caller unsubscribes', async () => {
+      // Letting go of a stream is not losing one; reconnecting here would
+      // resurrect a subscription the caller has already abandoned.
+      vi.useFakeTimers();
+      const client = new Altius({ endpoint: 'http://localhost:3000/graphql', token: 't' });
+
+      const sub = client.patient.onAnyChange(() => {});
+      await vi.advanceTimersByTimeAsync(10);
+      MockWebSocket.instances[0]!._receive(JSON.stringify({ type: 'connection_ack' }));
+      sub.unsubscribe();
+
+      MockWebSocket.instances[0]!.close();
+      await vi.advanceTimersByTimeAsync(5000);
+
+      expect(MockWebSocket.instances.length).toBe(1);
+      vi.useRealTimers();
+    });
+  });
+
   describe('token provider (refresh seam)', () => {
     it('consults the provider on every request instead of freezing it', async () => {
       // Access tokens expire. A client that captured the string at construction
