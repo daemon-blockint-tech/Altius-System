@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { ObjectTable } from './components/ObjectTable.js';
+import { ActionPanel } from './components/ActionPanel.js';
+import type { ActionSchema } from './components/ActionForm.js';
 import { createClient } from './client.js';
 import type { WebConfig } from './client.js';
 import { AuthSession } from './auth/session.js';
@@ -58,6 +60,20 @@ export function App({ config }: { config: WebConfig }): ReactNode {
     [config.endpoint, session, authState],
   );
 
+  // Memoised so ActionPanel refetches only when the client actually changes,
+  // not on every render of this component.
+  const loadActions = useMemo(
+    () => async (): Promise<ActionSchema[]> => {
+      const tools = await client.actions.available({ kind: 'action' });
+      return tools.map(t => ({
+        name: t.name,
+        description: t.description,
+        parameters: t.parameters as ActionSchema['parameters'],
+      }));
+    },
+    [client],
+  );
+
   if (authState === 'checking') return <p>Signing in…</p>;
 
   if (authState === 'error') {
@@ -94,6 +110,11 @@ export function App({ config }: { config: WebConfig }): ReactNode {
           client.patient.list(undefined, after === undefined ? { first } : { first, after })
         }
         subscribe={onChange => client.patient.onAnyChange(() => onChange())}
+      />
+
+      <ActionPanel
+        loadActions={loadActions}
+        submit={(name, input) => client.actions.invoke(name, input)}
       />
     </main>
   );

@@ -1451,6 +1451,17 @@ export class Altius {
        * way a client can build a form without hard-coding one per action.
        * It is also caller-scoped, so it reflects what this user may run.
        */
+      /**
+       * Invoke an action by name.
+       *
+       * The typed methods below are generated from the schema this build
+       * saw. A UI driven by availableTools is working from the RUNTIME
+       * list, which can include an action this bundle predates, so it
+       * needs a by-name path as well.
+       */
+      invoke: (name: string, input: Record<string, unknown>): Promise<ActionResult> =>
+        this.mutate<ActionResult>(name, input),
+
       available: (filter?: ToolFilter): Promise<ToolDescriptor[]> =>
         this.query<ToolDescriptor[]>(`query($filter: ToolFilter) { availableTools(filter: $filter) { name kind description parameters returnType requiredPermissions dryRunSupported reversible tags } }`, { filter }).then(
           (r) => (r as unknown as { availableTools?: ToolDescriptor[] })?.availableTools ?? (r as ToolDescriptor[]) ?? [],
