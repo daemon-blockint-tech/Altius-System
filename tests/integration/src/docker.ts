@@ -81,6 +81,29 @@ export function dockerComposeUp(): void {
  * Tear down the Docker Compose stack and remove volumes.
  */
 export function dockerComposeDown(): void {
+  // In CI, print the logs before destroying the stack.
+  //
+  // The startup path already dumps on a failed `up`, but a test that fails
+  // against a stack that came up fine leaves nothing: the assertion says
+  // "expected 500 to be 200" and the reason for the 500 is in a container log
+  // that `down -v` removes on the next line. That is how a one-line
+  // assertion failure stays unexplainable across runs.
+  //
+  // Unconditional in CI rather than only-on-failure: vitest settles its
+  // failure state after teardown runs, so the honest options are "always" or
+  // "never". Logs on a green run are ignored; logs missing on a red one cost
+  // another full cycle to recover.
+  if (process.env['CI']) {
+    try {
+      execSync(
+        `docker compose ${COMPOSE_FILES} logs --no-color --tail 100`,
+        { ...EXEC_OPTS, timeout: 60_000, stdio: 'inherit' },
+      );
+    } catch {
+      // Best-effort; never let diagnostics block teardown.
+    }
+  }
+
   execSync(
     `docker compose ${COMPOSE_FILES} down -v --remove-orphans`,
     { ...EXEC_OPTS, timeout: 120_000, stdio: 'inherit' },
