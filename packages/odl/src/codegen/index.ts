@@ -208,6 +208,33 @@ function generateConnection(typeName: string): string {
   ].join('\n');
 }
 
+/**
+ * Input for a generic update mutation.
+ *
+ * Every field is optional: an update is a partial patch, and requiring the
+ * whole object would make a caller read-modify-write just to change one
+ * property — and race anyone else doing the same. The @primary field is
+ * excluded because storage mints it and it is the mutation's `id` argument;
+ * @readonly and @immutable fields are excluded because the write path refuses
+ * them anyway, so advertising them would invite a request that always fails.
+ */
+function generateUpdateInput(obj: ObjectType, objectTypeNames: ReadonlySet<string>): string {
+  const lines: string[] = [`input Update${obj.name}Input {`];
+  for (const field of getScalarFields(obj.fields)) {
+    if (isPrimaryField(field)) continue;
+    if (field.directives.some(d => d.kind === 'readonly' || d.kind === 'immutable')) continue;
+    // An ObjectType-typed field is an output type; GraphQL refuses it inside
+    // an input. Relationships are edited through link effects, not by
+    // patching an embedded object, so skipping it is also the right shape.
+    if (objectTypeNames.has(field.type.name)) continue;
+    // Strip the non-null marker: a partial patch omits what it does not change.
+    const gqlType = fieldToGqlType(field).replace(/!$/, '');
+    lines.push(`  ${field.name}: ${gqlType}`);
+  }
+  lines.push('}');
+  return lines.join('\n');
+}
+
 function generateFilter(obj: ObjectType): string {
   const lines: string[] = [];
   lines.push(`input ${obj.name}Filter {`);
@@ -817,6 +844,7 @@ export function generateGraphQLSchema(schema: ParsedSchema, options?: GraphQLSch
   for (const obj of schema.objectTypes) {
     sections.push(generateObjectType(obj));
     sections.push(generateConnection(obj.name));
+    sections.push(generateUpdateInput(obj, objectTypeNames));
     sections.push(generateFilter(obj));
     sections.push(generateOrderBy(obj));
     sections.push(generateChangeEvent(obj.name));
@@ -1040,6 +1068,22 @@ export function generateGraphQLSchema(schema: ParsedSchema, options?: GraphQLSch
     const fieldName = `${lowerFirst(fn.name)}Function`;
     mutationFields.push(`  ${fieldName}(input: ${fn.name}FunctionInput!): ${fn.name}FunctionResult!`);
   }
+  // Generic object update/delete.
+  //
+  // The resolvers for these have always been generated — with FGA checks,
+  // write-side field permissions, audit records and optimistic concurrency —
+  // but no SDL field referenced them, so graphql-tools warned
+  // "defined in resolvers, but not in schema" once per ObjectType at every
+  // boot and the mutations were unreachable. REST has exposed PUT and DELETE
+  // /{plural}/:id throughout, so this is the parity the platform already
+  // claimed rather than a new capability.
+  for (const obj of schema.objectTypes) {
+    mutationFields.push(
+      `  update${obj.name}(id: ID!, input: Update${obj.name}Input!, expectedVersion: Int): ${obj.name}!`,
+    );
+    mutationFields.push(`  delete${obj.name}(id: ID!, expectedVersion: Int): Boolean!`);
+  }
+
   // Object Set mutations
   mutationFields.push('  createObjectSet(input: CreateObjectSetInput!): ObjectSet!');
   mutationFields.push('  updateObjectSet(id: ID!, input: UpdateObjectSetInput!): ObjectSet!');

@@ -326,6 +326,29 @@ export class ActionExecutor {
     }
 
     // ------------------------------------------------------------------
+    // Step 1b: MARKINGS — mandatory control, ahead of authorisation
+    //
+    // Markings restrict where roles and relations expand, so this cannot sit
+    // inside the authorisation step: a caller holding the action's ReBAC
+    // permission must still be refused when they do not satisfy the marking
+    // on the type the action operates on.
+    //
+    // The refusal is a plain denial rather than the read surfaces' "as if it
+    // did not exist": the caller already named the action, so pretending it
+    // is unknown tells them nothing they did not supply themselves, while a
+    // clear refusal is what an operator needs to diagnose a failed write.
+    // ------------------------------------------------------------------
+    const markingDenial = this.checkMarkings(actionTypeDef, manifest, actor, schema);
+    if (markingDenial) {
+      return {
+        success: false,
+        actionId,
+        errors: [markingDenial],
+        affectedObjects: [],
+      };
+    }
+
+    // ------------------------------------------------------------------
     // Step 2: AUTHORISE — call SecurityLayer.checkPermission
     // ------------------------------------------------------------------
     const permResult = await this.config.security.checkPermission(
@@ -693,6 +716,88 @@ export class ActionExecutor {
   }
 
   // ─── Step 1: Param validation ───
+
+
+  /**
+   * Refuse the action when the actor does not satisfy the markings on the
+   * ObjectType it operates on.
+   *
+   * The type is taken from the action's ObjectType-typed @param — the same
+   * parameter the ReBAC layer authorises against — so the two controls agree
+   * on what the action touches. An action with no ObjectType param has no
+   * marked subject and passes.
+   */
+  private checkMarkings(
+    actionTypeDef: ActionType | undefined,
+    manifest: ActionManifest,
+    actor: ActionActor,
+    schema: ParsedSchema,
+  ): ActionError | null {
+    const policy = this.config.markingPolicy;
+    if (!policy || policy.isEmpty) return null;
+
+    const held = actor.markings ?? [];
+    const name = actionTypeDef?.name ?? manifest.action;
+
+    for (const objectType of this.touchedObjectTypes(actionTypeDef, manifest, schema)) {
+      const required = policy.requiredFor(objectType);
+      if (required.length === 0) continue;
+
+      if (!policy.check(held, required).allowed) {
+        return {
+          code: 'MARKING_DENIED',
+          message:
+            `Action "${name}" operates on ${objectType}, which is restricted by ` +
+            `mandatory markings the caller does not satisfy.`,
+        };
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Every ObjectType this action touches, as far as the declaration reveals.
+   *
+   * The @param types alone are not enough. An effect names its own target: a
+   * `createObject` declares an `objectType` outright, and a link effect names
+   * a `linkType` whose endpoints the schema resolves to object types. Checking
+   * only @param let an action declare `@param Ward`, pass every control, and
+   * create a Patient the caller may not see — the marking holding on all five
+   * read surfaces and silently absent on the one that writes.
+   *
+   * `updateObject`/`deleteObject` targets are expressions naming a param, so
+   * their type is already covered by the @param pass.
+   */
+  private touchedObjectTypes(
+    actionTypeDef: ActionType | undefined,
+    manifest: ActionManifest,
+    schema: ParsedSchema,
+  ): Set<string> {
+    const objectTypeNames = new Set(schema.objectTypes.map((o) => o.name));
+    const touched = new Set<string>();
+
+    for (const field of actionTypeDef?.fields ?? []) {
+      if (!field.directives.some((d) => d.kind === 'param')) continue;
+      if (objectTypeNames.has(field.type.name)) touched.add(field.type.name);
+    }
+
+    for (const effect of manifest.effects ?? []) {
+      if (effect.type === 'createObject' && objectTypeNames.has(effect.objectType)) {
+        touched.add(effect.objectType);
+        continue;
+      }
+      if (effect.type === 'createLink' || effect.type === 'deleteLink' || effect.type === 'updateLink') {
+        // A link touches both endpoints, and either may be the marked one.
+        const linkDef = schema.linkTypes.find((lt) => lt.name === effect.linkType);
+        if (!linkDef) continue;
+        for (const endpoint of [linkDef.from, linkDef.to]) {
+          if (objectTypeNames.has(endpoint)) touched.add(endpoint);
+        }
+      }
+    }
+
+    return touched;
+  }
 
   private validateParams(
     actionTypeDef: ActionType | undefined,

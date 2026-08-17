@@ -412,3 +412,117 @@ After changing a pack, rebuild: `docker compose up -d --build api-gateway`.
 docker compose down        # Stop services (keep data)
 docker compose down -v     # Stop and remove volumes
 ```
+
+## Production Deployment (Pre-built Registry Images)
+
+For non-dev environments (staging, production), use the companion
+`docker-compose.prod.yaml` override to **pull pre-built images from GitHub
+Container Registry** instead of building locally. This is faster, reproducible,
+and decoupled from source code access.
+
+### Prerequisites
+
+- `.env` configured with required secrets (see `.env.example`)
+- Docker credentials to pull from GHCR (if private; public images pull without auth)
+
+### Quick Start — Production Mode
+
+```bash
+# 1. Copy environment config
+cp .env.example .env
+
+# 2. Edit .env — required passwords + registry overrides (optional):
+#   POSTGRES_PASSWORD=<secure-password>
+#   KEYCLOAK_ADMIN_PASSWORD=<secure-password>
+#   REGISTRY_PREFIX=ghcr.io/nhs-eng/altius-system  (default)
+#   IMAGE_TAG=latest  (or sha-<short-sha>, v1.2.3, etc.)
+
+# 3. Start dependencies first (create DB + OpenFGA store)
+docker compose up -d postgresql openfga keycloak redis redpanda
+
+# 4. Initialize (schema, AGE, OpenFGA store)
+./init-services.sh
+
+# 5. Start app services (now that store ID is set)
+docker compose -f docker-compose.yaml -f docker-compose.prod.yaml up -d
+```
+
+### Registry Configuration
+
+Images are pulled from GitHub Container Registry. Override the registry or
+tag via `.env`:
+
+```bash
+# Default registry (NHS Eng public images)
+REGISTRY_PREFIX=ghcr.io/nhs-eng/altius-system
+
+# Custom registry (your fork or internal mirror)
+REGISTRY_PREFIX=ghcr.io/your-org/altius-system
+
+# Pin to a specific version tag
+IMAGE_TAG=v1.2.3        # Release version
+IMAGE_TAG=sha-abc123    # Git short-SHA (built in CI)
+IMAGE_TAG=latest        # Always pull latest
+```
+
+### Authentication
+
+If pulling from a private registry, authenticate with Docker credentials
+before starting the stack:
+
+```bash
+docker login ghcr.io -u <username> -p <token>
+docker compose -f docker-compose.yaml -f docker-compose.prod.yaml up -d
+```
+
+### Service Images
+
+The following services are pulled from the registry (all others remain from
+public sources like `postgres`, `keycloak`, `openfga`):
+
+| Service | Registry Image |
+|---------|----------------|
+| cel-evaluator | `${REGISTRY_PREFIX}/cel-evaluator:${IMAGE_TAG}` |
+| api-gateway | `${REGISTRY_PREFIX}/api-gateway:${IMAGE_TAG}` |
+| ontology-engine | `${REGISTRY_PREFIX}/ontology-engine:${IMAGE_TAG}` |
+| action-executor | `${REGISTRY_PREFIX}/action-executor:${IMAGE_TAG}` |
+| sync-engine | `${REGISTRY_PREFIX}/sync-engine:${IMAGE_TAG}` |
+| security-service | `${REGISTRY_PREFIX}/security-service:${IMAGE_TAG}` |
+
+### Pull Policy
+
+All app services use `pull_policy: always`, ensuring fresh images on every
+start. To use locally-cached images, temporarily edit
+`docker-compose.prod.yaml` (not recommended for production).
+
+### Verification
+
+```bash
+# Verify the resolved image names
+docker compose -f docker-compose.yaml -f docker-compose.prod.yaml config \
+  | grep 'image:.*ghcr.io'
+
+# Check running containers
+docker compose ps
+
+# Tail logs
+docker compose logs -f api-gateway
+```
+
+### Hybrid Dev + Prod
+
+To test the prod stack locally while still building from source for a specific
+service (e.g., you're developing the API and want to run prod images for
+infrastructure):
+
+```bash
+# Start prod stack
+docker compose -f docker-compose.yaml -f docker-compose.prod.yaml up -d
+
+# Rebuild and restart just api-gateway locally
+docker compose up -d --build api-gateway
+```
+
+The local build (dev mode) will run against the prod-mode infrastructure
+(Postgres, OpenFGA, etc.). Note: app services will have different
+`NODE_ENV` values — monitor logs for any inconsistency.

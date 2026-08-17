@@ -17,6 +17,14 @@ export interface ActionActor {
   type: 'user' | 'system' | 'connector' | 'agent';
   roles: string[];
   ip?: string;
+  /**
+   * Mandatory access-control markings the actor holds.
+   *
+   * Optional so an actor built by a path that predates markings still
+   * compiles; omitting it denies every marked type rather than granting one,
+   * so forgetting to populate it fails closed.
+   */
+  markings?: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -218,4 +226,23 @@ export interface ActionExecutorConfig {
   relationshipWriter?: RelationshipWriter;
   /** Which link types to sync to ReBAC tuples (and how). */
   linkTupleMap?: LinkTupleMap;
+  /**
+   * Mandatory marking policy. Absent means no markings are configured.
+   *
+   * Enforced here rather than at each surface because four call sites already
+   * reach `execute` (REST, GraphQL, MCP, functions) and a fifth added later
+   * would silently miss the control. A marking that stops reads but permits
+   * writes is not a control at all.
+   */
+  markingPolicy?: ActionMarkingPolicy;
+}
+
+/**
+ * The marking surface the executor needs — structural, so @altius/actions
+ * does not take a dependency on @altius/security.
+ */
+export interface ActionMarkingPolicy {
+  readonly isEmpty: boolean;
+  requiredFor(objectType: string): readonly string[];
+  check(held: readonly string[], required: readonly string[]): { allowed: boolean; missing: string[] };
 }

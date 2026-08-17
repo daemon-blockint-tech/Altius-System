@@ -23,6 +23,7 @@ import type { ActionActor, ActionContext, ActionManifest } from '@altius/actions
 import type { RedactionResult, AuditQueryFilter } from '@altius/security';
 import { PubSub } from 'graphql-subscriptions';
 import { writeReadAudit } from '../rest/audit-read.js';
+import { isTypeVisible } from '../markings/enforce.js';
 import type { ApiDependencies, ResolverContext, PaginationArgs } from './types.js';
 import { DEFAULT_CONSENT_PURPOSE, DEFAULT_CONSENT_SUBJECT_TYPES, DEFAULT_PAGE_SIZE, isConsentSubjectType } from './types.js';
 import { resolvePagination, buildConnection, decodeCursor } from './pagination.js';
@@ -691,6 +692,18 @@ function generateQueryResolvers(
       // a. Authenticate (already done in context middleware)
       const { user, requestContext } = ctx;
 
+      // Mandatory markings come first: they restrict where roles expand, so a
+      // viewer relation must not get past one. An invisible type answers null
+      // rather than FORBIDDEN — markings hide discovery, and a denial would
+      // confirm the record exists.
+      if (!isTypeVisible(deps.markingPolicy, user, typeName)) {
+        await writeReadAudit(deps.auditWriter, ctx, {
+          type: 'read', objectType: typeName, objectId: args.id,
+          query: `query ${lower}`, result: 'denied',
+        });
+        return null;
+      }
+
       // b. Authorize: check user has viewer relation to this object
       const allowed = await deps.authorizationService.check(
         `user:${user.id}`,
@@ -824,6 +837,16 @@ function generateQueryResolvers(
       } else {
         const passThrough: FilterExpression = { field: '_deleted_at', operator: 'exists', value: false };
         combinedFilter = userFilter ? { and: [passThrough, userFilter] } : passThrough;
+      }
+
+      // An invisible type yields an empty page, matching "not in search
+      // results" — the caller cannot tell it apart from a type with no rows.
+      if (!isTypeVisible(deps.markingPolicy, user, typeName)) {
+        await writeReadAudit(deps.auditWriter, ctx, {
+          type: 'query', objectType: typeName,
+          query: `query ${lower}s`, result: 'denied',
+        });
+        return buildConnection([], 0, 0);
       }
 
       // c. Resolve pagination
@@ -1538,6 +1561,9 @@ function generateMutationResolver(
         id: user.id,
         type: 'user',
         roles: user.roles,
+        // Markings travel with the actor so the executor can apply the
+        // mandatory control; omitting them would deny every marked type.
+        markings: user.markings ?? [],
       };
 
       // Build ActionContext — derive consent from action schema. If the action

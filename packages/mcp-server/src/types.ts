@@ -75,6 +75,13 @@ export interface McpServerDependencies {
    */
   rateLimiter?: McpRateLimiter;
   /**
+   * Mandatory marking policy. Absent means no markings are configured.
+   *
+   * An agent reads at machine rate, so a mandatory control enforced on the
+   * human surfaces and not here is not enforced at all.
+   */
+  markingPolicy?: McpMarkingPolicy;
+  /**
    * Invokes a declared @function on behalf of the caller.
    *
    * Injected rather than imported: the governed entry point lives in
@@ -145,6 +152,16 @@ export interface McpServerConfig {
  * Resolved caller identity + request context, produced by the auth layer
  * from the bearer token. Passed to tool handlers.
  */
+/**
+ * The marking surface this server needs — structural, so @altius/security
+ * stays an implementation detail of the host.
+ */
+export interface McpMarkingPolicy {
+  readonly isEmpty: boolean;
+  requiredFor(objectType: string): readonly string[];
+  check(held: readonly string[], required: readonly string[]): { allowed: boolean };
+}
+
 export interface McpCaller {
   user: AuthenticatedUser;
   requestContext: RequestContext;

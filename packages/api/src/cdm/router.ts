@@ -17,6 +17,7 @@
 import type { FilterExpression, FieldPredicate } from '@altius/spi';
 import { DataPurpose } from '@altius/spi';
 import { writeReadAuditFor } from '../rest/audit-read.js';
+import { isTypeVisible } from '../markings/enforce.js';
 import type { ApiDependencies, AuthenticatedUserInfo } from '../graphql/types.js';
 import { isConsentSubjectType } from '../graphql/types.js';
 import { logger } from '../logger.js';
@@ -124,6 +125,13 @@ export function createCdmRouter(config: CdmRouterConfig) {
     // Encounter is link-kind (derived from AdmittedTo), addressed by ?patient.
     if (head === 'Encounter') {
       return handleEncounterSearch(deps, req, req.user);
+    }
+
+    // A marked type the caller cannot satisfy is reported exactly as an
+    // unexposed one: markings restrict discovery, so a distinct denial would
+    // confirm the type exists.
+    if (!isTypeVisible(deps.markingPolicy, req.user, head)) {
+      return error(404, `CDM source type '${head}' is not exposed. Known: ${OBJECT_SOURCE_TYPES.join(', ')}, Encounter.`);
     }
 
     // Object-kind resources.

@@ -56,12 +56,14 @@ import {
 } from '@altius/engine';
 import { ActionExecutor, CelClient, SideEffectExecutor } from '@altius/actions';
 import type { SecurityLayer, CelEvaluator, EventBus as SideEffectEventBus, HttpClient as SideEffectHttpClient, LinkTupleMap } from '@altius/actions';
-import { AuthorizationService, OidcAuthenticator, AuditWriter, MemoryAuditStore, ConsentService, MemoryConsentStore } from '@altius/security';
+import { AuthorizationService, OidcAuthenticator, AuditWriter, MemoryAuditStore, ConsentService, MemoryConsentStore, MarkingPolicy } from '@altius/security';
 import type { OpenFgaClientInterface, FgaClientResolver } from '@altius/security';
 import type { StorageProvider, RequestContext } from '@altius/spi';
 import { createGraphQLServer, buildResolverContext } from './graphql/index.js';
 import { guardWsOperation } from './graphql/ws-gate.js';
 import { generateRestRoutes, generateOpenApiSpec, auditRead } from './rest/index.js';
+import { writeReadAuditFor } from './rest/audit-read.js';
+import { isTypeVisible, missingMarkings } from './markings/enforce.js';
 import { invokeFunction } from './functions/invoke-function.js';
 import { generateAuditRoutes } from './rest/audit-routes.js';
 import { generateTraverseRoutes } from './rest/traverse-route.js';
@@ -228,7 +230,7 @@ async function main(): Promise<void> {
   const packNames = parseDomainPacksEnv(process.env['DOMAIN_PACKS']);
   const {
     parsed: schema, spiSchema, packs, packInfos, manifestRegistry, functionPackDirs,
-    fieldPermissions, permissionOverrides, connectorManifests, seedManifests,
+    fieldPermissions, markingConfig, permissionOverrides, connectorManifests, seedManifests,
     automationManifests,
   } = await loadDomainPacks(undefined, packNames);
   logger.info(
@@ -303,8 +305,23 @@ async function main(): Promise<void> {
   }
 
   // ── Register loaded packs in _domain_packs table (Postgres only) ──
+  //
+  // The table is created here rather than assumed. It was only ever created
+  // by the Helm init job, so every other deployment — docker-compose, a bare
+  // Postgres, a managed instance — logged "relation _domain_packs does not
+  // exist" at every boot and the table stayed permanently empty. Creating it
+  // where it is written makes the feature real in all of them, and IF NOT
+  // EXISTS keeps the Helm path unchanged.
   if (storage instanceof PostgresStorageProvider) {
     try {
+      await storage.pool.query(
+        `CREATE TABLE IF NOT EXISTS _domain_packs (
+           name TEXT PRIMARY KEY,
+           version TEXT NOT NULL,
+           namespace TEXT NOT NULL,
+           loaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+         )`,
+      );
       for (const info of packInfos) {
         await storage.pool.query(
           `INSERT INTO _domain_packs (name, version, namespace)
@@ -315,8 +332,9 @@ async function main(): Promise<void> {
       }
       logger.info(`Domain packs: registered ${packInfos.length} pack(s) in _domain_packs`);
     } catch (err) {
-      // Non-fatal: table may not exist yet (init-services.sh creates it)
-      logger.warn({ err: err instanceof Error ? err.message : 'unknown' }, 'Domain packs: failed to register in _domain_packs (table may not exist yet)');
+      // Still non-fatal: pack registration is bookkeeping, and a gateway that
+      // cannot record which packs it loaded should still serve them.
+      logger.warn({ err: err instanceof Error ? err.message : 'unknown' }, 'Domain packs: failed to register in _domain_packs');
     }
   }
 
@@ -679,6 +697,23 @@ async function main(): Promise<void> {
 
   const authorizationService = new AuthorizationService(fgaClient, fieldPermissions);
 
+  // Mandatory markings. Left undefined when no pack declares any, so the
+  // enforcement path short-circuits and deployments without markings pay
+  // nothing for the feature.
+  const markingPolicy = markingConfig.markings.length > 0 || Object.keys(markingConfig.byObjectType).length > 0
+    ? new MarkingPolicy({
+        markings: markingConfig.markings,
+        categories: markingConfig.categories,
+        byObjectType: markingConfig.byObjectType,
+      })
+    : undefined;
+  if (markingPolicy) {
+    logger.info(
+      { markings: markingConfig.markings.length, markedTypes: Object.keys(markingConfig.byObjectType).length },
+      'Mandatory markings enabled',
+    );
+  }
+
   // ── Backfill ReBAC tuples for seeded links ──
   // Seeded links bypass the action executor (which mints tuples at runtime), so
   // mint their tuples here now that the model + authz layer are ready. Mirrors
@@ -801,6 +836,7 @@ async function main(): Promise<void> {
 
   const actionExecutor = new ActionExecutor({
     storage, security, cel, auditWriter,
+    ...(markingPolicy ? { markingPolicy } : {}),
     eventPublisher: actionEventPublisher,
     consentManager: consentService,
     sideEffectHandler,
@@ -885,6 +921,8 @@ async function main(): Promise<void> {
     authorizationService,
     authenticator,
     consentService,
+
+    ...(markingPolicy ? { markingPolicy } : {}),
     storage,
     manifestRegistry,
     objectSetManager,
@@ -1225,6 +1263,38 @@ async function main(): Promise<void> {
           headers: req.headers as Record<string, string | undefined>,
         };
         const ctx: ResolverContext = buildResolverContext(user, deps);
+
+        // Mandatory markings, checked BEFORE the route runs and before any
+        // authorization: a marking restricts access where a role expands it,
+        // so holding `editor` or `admin` must not get past one.
+        //
+        // The answer is 404, not 403. Markings restrict DISCOVERY — a 403
+        // confirms the type exists and that something is being withheld,
+        // which is the disclosure the marking was applied to prevent.
+        if (!isTypeVisible(deps.markingPolicy, user, route.objectType)) {
+          const missing = missingMarkings(deps.markingPolicy, user, route.objectType);
+          // The caller is told nothing; the trail records exactly what was
+          // unsatisfied so a DPO can answer why.
+          await writeReadAuditFor(
+            deps.auditWriter,
+            { id: user.id, roles: user.roles, tenantId: user.tenantId },
+            {
+              type: 'read',
+              ...(route.objectType ? { objectType: route.objectType } : {}),
+              query: `${restReq.method} ${restReq.path}`,
+              result: 'denied',
+            },
+          );
+          logger.warn(
+            { objectType: route.objectType, actor: user.id, missing },
+            'Read withheld: caller does not satisfy mandatory markings',
+          );
+          res.status(404).json({
+            error: { code: 'NOT_FOUND', message: 'Not found', retryable: false },
+          });
+          return;
+        }
+
         const result = await route.handler(restReq, ctx);
         await auditRead(deps.auditWriter, route, restReq, ctx, result.status);
         // Apply optional response headers (e.g. Content-Type for export endpoints)
@@ -1387,6 +1457,7 @@ async function main(): Promise<void> {
         consentPurpose: DEFAULT_CONSENT_PURPOSE as string,
         objectManager,
         auditWriter: securityAuditWriter,
+        ...(markingPolicy ? { markingPolicy } : {}),
         // Wired, not left optional: tool scoping hides an action tool whenever
         // the caller holds its relation on no object, and a relation missing
         // from the deployed FGA model is indistinguishable from that. Without

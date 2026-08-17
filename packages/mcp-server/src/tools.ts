@@ -78,35 +78,64 @@ export function buildToolList(deps: McpServerDependencies): McpTool[] {
 }
 
 /**
- * Build an MCP tool descriptor for a FunctionType.
+ * Build an MCP tool descriptor for a FunctionType (name `function_<Name>`).
  *
- * Named `function_<Name>` so it cannot collide with an ActionType of the same
- * name — the two are separate namespaces in ODL and a bare name would make
- * dispatch ambiguous.
- *
- * Inputs are the `@param` fields, exactly what `generateFunctionInputType`
- * puts in `${Name}FunctionInput`. Advertising every plain field instead would
- * hand an agent a schema the published SDL does not have, and the argument it
- * then sends reaches `functionExecutor` unvalidated by any surface.
+ * Inputs come from the function's @param fields, matching what
+ * generateFunctionInputType already emits for GraphQL — the two surfaces must
+ * advertise the same shape or an agent and a human disagree about what the
+ * function takes.
  */
-function buildFunctionTool(fn: FunctionType): McpTool {
+function buildFunctionTool(fnType: FunctionType): McpTool {
   const properties: Record<string, unknown> = {};
   const required: string[] = [];
 
-  for (const field of fn.fields) {
-    if (!field.directives.some((d) => d.kind === 'param')) continue;
+  for (const field of fnType.fields) {
+    const isParam = field.directives.some((d) => d.kind === 'param');
+    if (!isParam) continue;
+
     properties[field.name] = fieldToJsonSchema(field);
     if (field.type.nonNull) required.push(field.name);
   }
 
   return {
-    name: `function_${fn.name}`,
-    description: fn.description ?? `Invoke the ${fn.name} function`,
+    name: `function_${fnType.name}`,
+    description: fnType.description ?? `Invoke the ${fnType.name} function`,
     inputSchema: {
       type: 'object',
       properties,
       ...(required.length > 0 ? { required } : {}),
     },
+  };
+}
+
+/**
+ * Whether this caller satisfies the mandatory markings on an ObjectType.
+ *
+ * Fail-closed: no markings held means every marked type is denied, and an
+ * unconfigured policy means there is nothing to enforce.
+ */
+function markingAllows(
+  deps: McpServerDependencies,
+  caller: McpCaller,
+  objectType: string,
+): boolean {
+  const policy = deps.markingPolicy;
+  if (!policy || policy.isEmpty) return true;
+  const required = policy.requiredFor(objectType);
+  if (required.length === 0) return true;
+  return policy.check(caller.user.markings ?? [], required).allowed;
+}
+
+/**
+ * The response for a tool a caller may not see.
+ *
+ * Deliberately identical to the unknown-tool response: a distinct "denied"
+ * would tell the agent the tool exists, which is what the marking hides.
+ */
+function unknownTool(toolName: string): McpCallToolResult {
+  return {
+    content: [{ type: 'text', text: JSON.stringify({ error: `Unknown tool: ${toolName}` }) }],
+    isError: true,
   };
 }
 
@@ -141,6 +170,17 @@ export async function scopeToolList(
   deps: McpServerDependencies,
 ): Promise<McpTool[]> {
   const roles = caller.user.roles ?? [];
+
+  // Mandatory markings hide a type entirely, so its read tools must not be
+  // advertised either — listing search_Patient tells an agent Patient exists,
+  // which is the disclosure the marking prevents.
+  const hiddenTypes = new Set(
+    deps.markingPolicy && !deps.markingPolicy.isEmpty
+      ? deps.schema.objectTypes
+          .filter((o) => !markingAllows(deps, caller, o.name))
+          .map((o) => o.name)
+      : [],
+  );
 
   const allowedFunction = new Set(
     deps.schema.functionTypes
@@ -198,6 +238,9 @@ export async function scopeToolList(
   );
 
   return tools.filter((tool) => {
+    for (const hidden of hiddenTypes) {
+      if (tool.name === `search_${hidden}` || tool.name === `traverse_${hidden}`) return false;
+    }
     if (tool.name.startsWith('function_')) return allowedFunction.has(tool.name);
     if (actionAllowed.has(tool.name)) return actionAllowed.get(tool.name) === true;
     return true; // search_/traverse_ — FGA-scoped at read time
@@ -329,9 +372,9 @@ export async function invokeTool(
   // Function tool: name matches function_<Name>
   if (toolName.startsWith('function_') && deps.functionInvoker) {
     const fnName = toolName.slice('function_'.length);
-    const fn = deps.schema.functionTypes.find((f) => f.name === fnName);
-    if (fn) {
-      return invokeFunctionTool(fn, args, caller, deps);
+    const fnType = deps.schema.functionTypes.find((f) => f.name === fnName);
+    if (fnType) {
+      return invokeFunctionTool(fnType, args, caller, deps);
     }
   }
 
@@ -339,6 +382,7 @@ export async function invokeTool(
   if (toolName.startsWith('search_')) {
     const typeName = toolName.slice('search_'.length);
     const objType = deps.schema.objectTypes.find((o) => o.name === typeName);
+    if (objType && !markingAllows(deps, caller, typeName)) return unknownTool(toolName);
     if (objType) {
       const result = await invokeSearchTool(objType, args, caller, deps);
       await auditMcpRead(deps, caller, typeName, toolName, result.isError === true);
@@ -350,6 +394,7 @@ export async function invokeTool(
   if (toolName.startsWith('traverse_')) {
     const typeName = toolName.slice('traverse_'.length);
     const objType = deps.schema.objectTypes.find((o) => o.name === typeName);
+    if (objType && !markingAllows(deps, caller, typeName)) return unknownTool(toolName);
     if (objType) {
       const result = await invokeTraverseTool(objType, args, caller, deps);
       await auditMcpRead(deps, caller, typeName, toolName, result.isError === true);
@@ -362,6 +407,51 @@ export async function invokeTool(
   return {
     content: [{ type: 'text', text: JSON.stringify({ error: `Unknown tool: ${toolName}` }) }],
     isError: true,
+  };
+}
+
+/**
+ * Invoke a FunctionType through the injected governed invoker. Authorization
+ * (requiredRoles) and audit live in that path — shared with REST and GraphQL —
+ * so this only marshals the arguments and shapes the result/error.
+ */
+async function invokeFunctionTool(
+  fnType: FunctionType,
+  args: unknown,
+  caller: McpCaller,
+  deps: McpServerDependencies,
+): Promise<McpCallToolResult> {
+  const params = (args && typeof args === 'object' ? args : {}) as Record<string, unknown>;
+
+  // A throw from the invoker — an authorization denial is the common one —
+  // would reach the dispatcher's catch and be reported as INTERNAL_ERROR. A
+  // refusal is not an internal error, and an agent that sees one has no way
+  // to tell "you may not do this" from "the platform is broken". Returned as
+  // isError content instead, matching the action and read tools.
+  let outcome: Awaited<ReturnType<NonNullable<McpServerDependencies['functionInvoker']>['invoke']>>;
+  try {
+    outcome = await deps.functionInvoker!.invoke({
+      functionName: fnType.name,
+      args: params,
+      user: caller.user,
+      requestContext: caller.requestContext,
+    });
+  } catch (err) {
+    return {
+      content: [{ type: 'text', text: JSON.stringify({ error: err instanceof Error ? err.message : String(err) }) }],
+      isError: true,
+    };
+  }
+
+  if (!outcome.ok) {
+    return {
+      content: [{ type: 'text', text: JSON.stringify({ error: outcome.error, ...(outcome.code ? { code: outcome.code } : {}) }) }],
+      isError: true,
+    };
+  }
+  return {
+    content: [{ type: 'text', text: JSON.stringify(outcome.result ?? null) }],
+    isError: false,
   };
 }
 
@@ -403,44 +493,6 @@ async function auditMcpRead(
 }
 
 /**
- * Invoke a FunctionType through the injected governed invoker. Authorization
- * (requiredRoles) and audit live in that path — shared with REST and GraphQL —
- * so this only marshals the arguments and shapes the result/error.
- *
- * The caller's `requestContext` is handed over rather than letting the adapter
- * mint a fresh one, so the function's audit record carries the same traceId as
- * the MCP request that caused it (the action tool already does this).
- *
- * A refusal comes back as isError content rather than a JSON-RPC error, the
- * same shape the action tool uses, so an agent sees the reason and can recover
- * instead of the whole call failing at the protocol layer.
- */
-async function invokeFunctionTool(
-  fnType: FunctionType,
-  args: unknown,
-  caller: McpCaller,
-  deps: McpServerDependencies,
-): Promise<McpCallToolResult> {
-  const params = (args && typeof args === 'object' ? args : {}) as Record<string, unknown>;
-  const outcome = await deps.functionInvoker!.invoke({
-    functionName: fnType.name,
-    args: params,
-    user: caller.user,
-    requestContext: caller.requestContext,
-  });
-  if (!outcome.ok) {
-    return {
-      content: [{ type: 'text', text: JSON.stringify({ error: outcome.error, ...(outcome.code ? { code: outcome.code } : {}) }) }],
-      isError: true,
-    };
-  }
-  return {
-    content: [{ type: 'text', text: JSON.stringify(outcome.result ?? null) }],
-    isError: false,
-  };
-}
-
-/**
  * Execute an action tool via the 8-stage ActionExecutor pipeline.
  */
 async function invokeActionTool(
@@ -464,6 +516,7 @@ async function invokeActionTool(
     id: user.id,
     type: 'agent',
     roles: user.roles,
+    markings: user.markings ?? [],
   };
 
   // Derive consent subject from @param fields (mirrors REST/GraphQL resolvers)

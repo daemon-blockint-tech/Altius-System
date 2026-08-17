@@ -19,6 +19,20 @@ export interface AuthenticatedUser {
   groups: string[];
   /** Tenant identifier (from claim or configured mapping). */
   tenantId: string;
+  /**
+   * Mandatory access-control markings this caller holds.
+   *
+   * Sourced from a token claim, not from platform state: marking eligibility
+   * usually reflects a process outside the platform (clearance, training,
+   * contract), and the identity provider is where that lives. Absent claim
+   * means an empty list, which denies every marked resource — markings are a
+   * restriction, so the safe default is to hold none.
+   *
+   * Optional so an identity built by a path that predates markings still
+   * compiles; omitting it denies every marked type rather than granting one,
+   * so forgetting to populate it fails closed.
+   */
+  markings?: string[];
 }
 
 /** Platform identity derived from authentication, compatible with AuditActor. */
@@ -42,6 +56,8 @@ export interface OidcConfig {
   defaultTenantId?: string;
   /** Role mapping configuration. */
   roleMapping?: RoleMappingConfig;
+  /** Claim name carrying the caller's markings. Defaults to 'markings'. */
+  markingsClaim?: string;
 }
 
 /** Maps token claim values to platform roles. */
