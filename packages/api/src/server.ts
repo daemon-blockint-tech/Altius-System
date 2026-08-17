@@ -132,6 +132,37 @@ function parseDomainPacksEnv(raw?: string): string[] | undefined {
   return trimmed.split(',').map(s => s.trim()).filter(Boolean);
 }
 
+/**
+ * A readable description of anything that was thrown.
+ *
+ * `String(err)` on a non-Error object yields "[object Object]", which is what
+ * the seed loader logged for every failure: the error was caught, reported,
+ * and its content destroyed by the formatting. The engine's validation path
+ * throws a structured object rather than an Error, so that was the common
+ * case, not an edge one.
+ */
+function describeError(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (err && typeof err === 'object') {
+    const o = err as Record<string, unknown>;
+    // createAltiusError shapes carry the useful text under extensions.altius.
+    const ext = (o['extensions'] as { altius?: { code?: unknown; message?: unknown } } | undefined)?.altius;
+    const parts = [
+      typeof o['code'] === 'string' ? o['code'] : undefined,
+      typeof ext?.code === 'string' ? ext.code : undefined,
+      typeof o['message'] === 'string' ? o['message'] : undefined,
+      typeof ext?.message === 'string' ? ext.message : undefined,
+    ].filter(Boolean);
+    if (parts.length > 0) return parts.join(': ');
+    try {
+      return JSON.stringify(err);
+    } catch {
+      return Object.prototype.toString.call(err);
+    }
+  }
+  return String(err);
+}
+
 async function main(): Promise<void> {
   const isDev = process.env['NODE_ENV'] !== 'production';
 
@@ -449,8 +480,7 @@ async function main(): Promise<void> {
           logger.info(`Seed: created ${obj.type} '${createdId}' (ref: ${obj.ref ?? 'none'}) from pack '${seed.packName}'`);
           seededObjects++;
         } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          logger.warn(`Seed: failed to create ${obj.type} from pack '${seed.packName}': ${msg}`);
+          logger.warn({ err }, `Seed: failed to create ${obj.type} from pack '${seed.packName}': ${describeError(err)}`);
         }
       }
 
@@ -465,12 +495,12 @@ async function main(): Promise<void> {
           await linkManager.createLink(lnk.type, fromId, toId, lnk.fields, seedCtx);
           seededLinks++;
         } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
+          const msg = describeError(err);
           // Duplicate link is expected on re-run — don't warn loudly
           if (msg.includes('already exists') || msg.includes('duplicate') || msg.includes('cardinality')) {
             logger.info(`Seed: link ${lnk.type} ${fromId}→${toId} already exists, skipping`);
           } else {
-            logger.warn(`Seed: failed to create link ${lnk.type} from pack '${seed.packName}': ${msg}`);
+            logger.warn({ err }, `Seed: failed to create link ${lnk.type} from pack '${seed.packName}': ${msg}`);
           }
         }
       }
