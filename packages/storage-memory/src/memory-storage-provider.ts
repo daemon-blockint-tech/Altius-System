@@ -580,6 +580,14 @@ export class MemoryStorageProvider implements StorageProvider {
     const id = genId();
     const timestamp = now();
     const obj: OntologyObject = {
+      // Caller properties FIRST so the system fields below always win. With
+      // the spread last, any `_`-prefixed key in properties silently overrode
+      // the value the provider computed — `_type` let an action declaring one
+      // object type write a row of another (so markings, FGA and consent all
+      // validated a type the row did not end up having, and the audit trail
+      // recorded the declared one), and `_tenantId` let a caller write into
+      // another tenant outright.
+      ...properties,
       _tenantId: ctx.tenantId,
       _type: type,
       _id: id,
@@ -587,7 +595,6 @@ export class MemoryStorageProvider implements StorageProvider {
       _createdAt: timestamp,
       _updatedAt: timestamp,
       _actorId: ctx.actorId,
-      ...properties,
     };
     const key = `${type}:${id}`;
     m.objects.set(key, obj);
