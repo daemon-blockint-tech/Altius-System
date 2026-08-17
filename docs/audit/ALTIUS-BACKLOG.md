@@ -1,6 +1,6 @@
 # Altius capability backlog
 
-Generated from code-verification passes, most recently 17 Aug 2026. **189** capabilities graded: **11 full, 91 partial, 85 absent**.
+Generated from code-verification passes, most recently 17 Aug 2026. **189** capabilities graded: **11 full, 92 partial, 84 absent**.
 
 > **The grades are a snapshot from 17 Aug; the code is not.** Eighty-six changes have landed since
 > the original 16 Aug measurement, thirty-eight of them on 17 Aug, and the "Already landed" section
@@ -101,7 +101,7 @@ These 86 changes landed AFTER the gradings below were taken, so the evidence on 
 - **`subscription-property-filter`** (`361615a`+) — `foosChanged(filter:{status:"DISCHARGED"})` accepted a filter naming a real property, compiled it, and then dropped every event: the payload off the bus carries only `{id,_type}`, so any property key was un-evaluable and failed closed. The documented filter silently matched nothing. The row's other claim — that the stub reached clients behind a non-null full-object SDL type — was already FALSE when written: a `${Type}ChangeEvent.object` field resolver hydrates the delivered payload on demand. Events carrying a property filter are now hydrated per subscriber, after the tenant, FGA and consent gates and never before, so the filter has real values. Only when such a filter exists, and the field resolver reuses what this path produced, so no event is read twice. Filtering runs against the REDACTED object: matching on raw values would make the filter an oracle for a field that reads back null on every pull surface. DELETED events and failed hydration keep the id-only stub and still fail property filters closed. Affects the three live-push rows (`widgets/live-updating-…`, `misc-1/live-data-push-…`, `sync-ingest-ops/live-data-push-…`); the aggregate/object-set refresh half of those rows is untouched and still open.
 - **`age-graph-removed`** (`91c73e6`, `15098b1`) — `CREATE EXTENSION IF NOT EXISTS age` was emitted unconditionally into the DDL that `applySchema` runs inside its migration transaction, so schema application failed outright on any Postgres without the AGE binary — every managed service among them. The graph was provably write-only: the only two `cypher()` call sites both returned `Promise<void>` and discarded the result, and traversal has always resolved paths with SQL JOINs. Made optional, then removed outright (534 lines deleted). Existing deployments are unaffected — nothing DROPs their extension, the platform just stops writing to it, keeping the additive-only DDL rule intact. A regression guard pins that the DDL emits no AGE statement.
 
-- **`web-frontend-package`** (`d76336b`) — Nine backlog rows graded a capability `absent` on the evidence that no frontend package existed — packages/ held thirteen headless libraries and a repo-wide find for *.tsx returned zero files. packages/web is that package: Vite 7 + React 19 + TypeScript, `private: true`, no SSR tier. It has one view, a patient worklist (packages/web/src/App.tsx:85-97), and its only data access is the generated @altius/sdk (packages/web/src/client.ts:48), so FGA filtering, field redaction and consent gating stay server-side rather than being half-reimplemented in a browser. ObjectTable (packages/web/src/components/ObjectTable.tsx) is generic over the SDK's Connection shape, not over one object type; it pages forward on pageInfo.endCursor and serves Previous from a client-side cursor stack because list() accepts only {first, after} and has no `before` (:88-89, :143-156), and a monotonic load ticket discards a slow page that resolves after a newer one (:93, :102). A redacted value and an unset one render differently — the literal string `redacted` when the field is named in _redactedFields, an em dash otherwise (:231-248) — so "you are not allowed to see this" cannot be read as "nobody recorded this"; a test pins the distinction (packages/web/src/components/__tests__/ObjectTable.test.tsx:59). The package needed no turbo change because pnpm-workspace.yaml already globs packages/*, so the root `build`, `typecheck` and `test` tasks reach it; I ran all three at HEAD — vite build and tsc clean, 35 tests across three files green. REMAINING: one hardcoded view with four hardcoded columns, no routing, no create or edit path, no CSS file anywhere in the repo, and nothing installable — @altius/web is an application, not React bindings a pack author could depend on. The B1 blocker note at docs/audit/ALTIUS-BACKLOG.md:127 still closes with "no React bindings (zero .tsx files, no react dependency)", which is now stale on the parenthetical though not on the bindings.
+- **`web-editorial-shell`** (`7f3aaf6`, `be5e396`, `79812a1`) — The web app was a single unstyled patient worklist. It is now a four-column editorial shell (Shell-C design): icon rail (job switcher OP/IN/MO/AD), sidebar (pack switcher, screen list with counts, role switcher), main content area, and a persistent governance rail — plus a footer trace bar showing the eight-stage governed pipeline (validate→authorise→consent→redact→emit→persist→audit→notify). The shell is a controlled component: the parent owns pack/role/job/screen state and the shell renders chrome + receives main content as children (packages/web/src/components/EditorialShell.tsx). A design system exists for the first time: `editorial.css` with `--ed-*` CSS variables, IBM Plex Sans/Mono typography, light/dark mode via `prefers-color-scheme`, greyscale chrome with data-viz colour only for status (healthy #2f6b4f / pressure #9a7b2f / disrupted #a8452c), and responsive collapse of the governance rail under 1200px and sidebar under 768px. The Facilities screen (packages/web/src/components/FacilitiesScreen.tsx) is the anchor: stats strip (visible/total/disrupted/mean utilisation/CDC lag), filter pills + search, an editorial table with status glyphs and utilisation bars, redacted/consent-withheld/empty field distinction, a filtered-out notice ("absent, not refused"), cursor pagination, and CDC live updates coalesced at 250ms via `client.facility.onAnyChange`. The governance rail (GovernanceRail.tsx) shows the signed-in principal (name, email, tenant, sub, relations summary), what the view hides (filtered rows, redacted fields, consent state), and a live event feed. The trace bar (TraceBar.tsx) shows the pipeline stages with the active stage underlined, duration, and audit id. App.tsx wires pack switching (supply-chain ↔ nhs-acute), role switching, and job/screen navigation; the NHS acute patient worklist runs inside the shell via the existing ObjectTable + ActionPanel. 92 tests across 9 files pass; typecheck and Vite build are green. REMAINING: only 2 of 11 screens are wired to live data (Facilities + Patients); the other 9 render placeholders; there is no app-definition persistence, no module builder, no widget library — the shell is a hardcoded React app, not a low-code platform; and no per-user state saving exists.h not on the bindings.
 - **`web-oidc-pkce-login`** (`407bf2a`) — The package shipped with a build-time injected bearer token: a credential baked into the bundle that could not be refreshed and could not be deployed. Replaced with OAuth 2.0 authorization-code + PKCE against the shipped Keycloak, with no new dependency — verifier, S256 challenge and base64url are crypto.getRandomValues plus crypto.subtle.digest (packages/web/src/auth/pkce.ts:49-64). completeLogin refuses to exchange when the returned `state` does not match what beginLogin stored (:147-150), which is what stops an attacker handing the browser a code of their choosing, and it deletes the verifier before the exchange so a code cannot be replayed (:156-157); both are pinned (packages/web/src/auth/__tests__/auth.test.ts:104, :113). Tokens are held in AuthSession memory only, never localStorage (packages/web/src/auth/session.ts:21); concurrent callers collapse onto one refresh promise (:64-71) because with refresh-token rotation each extra call invalidates the previous one, and refresh runs 30s ahead of expiry so a request cannot straddle it (:18, :51). The access token is sent rather than the ID token, and the client id defaults to `altius` (client.ts:30); the commit states both were checked against the mappers in Orion/keycloak/altius-realm.json, and I did not re-verify the realm file. The endpoint also stopped being absolute — it defaults to a relative /graphql (client.ts:27), so one bundle is promotable between environments instead of one build per environment. REMAINING: an unset VITE_OIDC_ISSUER disables OIDC entirely (client.ts:35-37), and that is exactly what the shipped compose stack passes, so the local stack still serves the UI to anonymous callers; a page reload drops the in-memory token and re-runs the full redirect, with no prompt=none silent renew; there is no logout and no revocation on sign-out; and the 12 auth tests cover pkce.ts and session.ts only — no test renders App.tsx, so the redirect-handling branch and the StrictMode double-exchange guard (App.tsx:30, :40) are unexercised.
 - **`web-same-origin-serving`** (`b9a1232`) — Nothing served the bundle, so there was no origin to register as an OIDC redirect URI, nothing for CORS_ALLOWED_ORIGINS to name, and no UI service in the compose stack. packages/web/Dockerfile builds with `pnpm turbo build --filter=@altius/web...` and copies dist into nginx:1.27-alpine; packages/web/nginx.conf listens on 8080 and proxies /graphql and /api/ to http://api-gateway:4000, which matches the container-internal port of the compose service (Orion/docker-compose.yaml:274-275). Serving API and bundle from one origin is what lets the endpoint stay relative and keeps the gateway's CORS policy out of this client's path entirely. The /graphql block forwards Upgrade/Connection through a `map $http_upgrade $connection_upgrade` declared at http scope (nginx.conf:12-15) and raises proxy_read_timeout to 3600s — without both, the graphql-ws subscription socket downgrades or is dropped at the 60s default. /assets/ is cached for a year immutable and index.html is no-store (:25-33), and unknown paths fall through to index.html so the OIDC return lands on the app. A `web` service was added at Orion/docker-compose.yaml:497-526 with a 128M limit, depends_on api-gateway healthy, and VITE_* as build args because vite inlines them at build time. NOT VERIFIED: the commit records that `nginx -t` never ran, and this machine has no nginx binary either, so the config is reviewed and not machine-checked; I did not build the image or boot the stack. REMAINING: nginx sets no security headers at all — no CSP, X-Frame-Options or HSTS — so the helmet defaults the gateway applies to its own responses (packages/api/src/server.ts:1001) do not cover the document that holds the access token in memory; changing the OIDC issuer requires an image rebuild; and the compose service passes an empty VITE_OIDC_ISSUER, so the stack this ships in serves the UI with OIDC off.
 - **`web-live-updating-table`** (`1ccc131`) — ObjectTable read one page and never re-read it, so a worklist looked current while going stale the moment anyone else wrote. It now takes an optional `subscribe` (packages/web/src/components/ObjectTable.tsx:59), wired in App.tsx:96 to the SDK's type-level client.patient.onAnyChange rather than the per-id stream, because a table cares about rows arriving and leaving and a per-id subscription can only report on rows it already holds. A change event triggers a re-read of the current page rather than a merge of the payload (:123-141): page membership is decided by server-side filtering, authorization, redaction and cursor position, and patching from the event payload drifts asymmetrically — it can leave on screen a row the caller is no longer allowed to see. Events coalesce over 250ms (:72, :130-134) so a bulk write that emits one event per row costs one refetch instead of a refresh loop, and the effect reads the cursor through a ref (:120-121) so paging does not tear down and rebuild the socket subscription. Four tests were added (packages/web/src/components/__tests__/ObjectTable.test.tsx:110, :131, :151, :165): an event re-reads and the new value renders, 25 events in a burst produce exactly one refetch, unmount unsubscribes, and a table with no stream never refetches. REMAINING: only the patient worklist subscribes; the refetch is unconditional, so a change to a row on some other page still costs a round trip; nothing tells the user the table refreshed under them; and the aggregate, chart and object-set refresh half of the live-updating rows is untouched.
@@ -184,11 +184,15 @@ back at anyone, and re-read the code before you claim it.
 **The frontend landed (23 rows).** These were graded on some form of "no
 frontend package exists", "no UI layer", "zero .tsx files", or "no react
 dependency in any package.json". `packages/web` is now in the tree: React 19 +
-Vite, an OIDC PKCE login, one object table that pages and live-updates from the
-change stream, and action forms generated from the parameter schema. That is a
-working slice, NOT a widget library and NOT an app builder — most of these rows
-are still `absent` on their actual capability. What changed is that the reason
-given is no longer the reason.
+Vite, an OIDC PKCE login, an editorial shell (icon rail, sidebar, governance
+rail, trace bar), a Facilities screen with stats/filters/table/live-updates,
+and action forms generated from the parameter schema. That is a working slice,
+NOT a widget library and NOT an app builder — most of these rows are still
+`absent` on their actual capability. What changed is that the reason given is
+no longer the reason. **Re-verified 17 Aug (later):** one row moved from
+`absent` to `partial` (`workshop-ui/design-system-theming` — a design system
+now exists). The rest stayed on their grades; see the "Re-grading pass, 17 Aug
+2026 (later)" section above for per-row evidence updates.
 
 - `aip-agents/embedded-ai-copilots-across-platform-applica`
 - `analytics-ts/interactive-graph-visualization-and-explorat`
@@ -465,6 +469,116 @@ Other evidence-only updates not requiring a grade change:
   Python, no repository/test/publish lifecycle, isolation not a security boundary.
 
 **New counts: 11 full, 91 partial, 85 absent** (6 moved from `absent` to `partial`).
+
+## Re-grading pass, 17 Aug 2026 (later — editorial shell)
+
+The editorial shell landed (`7f3aaf6`, `be5e396`, `79812a1`) after the re-grading
+pass above. The web app moved from a single unstyled patient worklist to a
+four-column Shell-C editorial layout with a design system, governance rail,
+trace bar, Facilities screen, and pack/role/job/screen navigation.
+
+**Result: 1 row moved from `absent` to `partial`. No row reached `full`.**
+
+The grade change:
+
+1. `workshop-ui/design-system-theming-unified-component-desi` — `absent` → `partial`.
+   `packages/web/src/editorial.css` is a real design system: `--ed-*` CSS variables
+   (bg, fg, muted, rule, surface, sans, mono, healthy/pressure/disrupted), IBM Plex
+   Sans/Mono typography, light/dark mode via `prefers-color-scheme`, greyscale chrome
+   with colour only for data-viz status, and responsive breakpoints. The shell
+   components (EditorialShell, GovernanceRail, TraceBar, FacilitiesScreen) implement
+   unified component design with consistent class naming (`ed-*` prefix). NOT `full`:
+   no saved module colour palettes, no typography controls, no theme editor, no
+   per-module palette persistence — the design system is hardcoded, not user-configurable.
+
+**Rows whose evidence is stale but whose grade did not change:**
+
+- `workshop-ui/typed-sdk-for-custom-react-application-build` (`partial`): "No React
+  bindings — zero .tsx files, no react dependency" is STALE. `packages/web` is a
+  React 19 app consuming `@altius/sdk` with real fetch/WebSocket transport, and
+  ActionForm renders forms from the SDK's JSON-Schema action descriptors. Still
+  `partial`: no published React hooks/component library (no `useQuery`/`useSubscription`
+  hooks, no dnd-osdk-react equivalent), no React bindings a pack author could depend
+  on — @altius/web is an application, not a library.
+
+- `workshop-ui/low-code-application-builder-workshop-module` (`absent`): "zero
+  .tsx/.html/.css" and "no package named workshop/app/ui exists" are STALE. The
+  editorial shell has a layout (icon rail, sidebar, main, governance rail, trace bar)
+  and navigation (pack/role/job/screen switching). Still `absent`: no Workshop module
+  model (no pages, sections, overlays, templates), no editor, no app-definition
+  persistence, no ApplicationDefinition type — the shell is a hardcoded React app,
+  not a low-code builder.
+
+- `workshop-ui/widget-library-60-widgets-object-tables-list` (`absent`): "No
+  rendering layer of any kind" is STALE. ~6 React components exist (ObjectTable,
+  ActionPanel, ActionForm, FacilitiesScreen, GovernanceRail, TraceBar). Still
+  `absent`: ~6 hardcoded components ≠ a ~60-widget library; no charts, maps, Gantt,
+  pivot, media, comments, or AIP-chat widgets; no per-widget display optimization.
+
+- `widgets/no-code-widget-library-app-building-ui-layer` (`absent`): "zero .tsx"
+  is STALE. Still `absent`: no no-code widget library, no module builder, no
+  configurable widget rendering.
+
+- `widgets/layout-navigation-and-device-capture-widgets` (`absent`): "no UI exists"
+  is STALE — the shell has a header and navigation layout. Still `absent`: no Tabs,
+  Stepper, Markdown, Mobile Navbar, QR Code Reader, camera capture, or geolocation
+  prompt; the shell layout is hardcoded chrome, not configurable widgets.
+
+- `workshop-ui/events-interactivity-system-widget-events-la` (`partial`): "there is
+  no client" is STALE — `packages/web` is a client with CDC live updates via
+  `client.facility.onAnyChange` coalesced at 250ms. Still `partial`: no widget event
+  bus, no variable propagation, no on-load triggers, no auto-refresh intervals —
+  the Facilities screen refetches on change events but there is no declarative
+  event/trigger model.
+
+- `workshop-ui/auto-generated-action-forms-governed-writeba` (`partial`): "No form
+  renderer" is STALE — ActionForm (packages/web/src/components/ActionForm.tsx)
+  renders forms from the JSON-Schema parameter descriptor, with enum dropdowns,
+  date pickers, number inputs, boolean checkboxes, and server-side validation
+  feedback via aria-invalid. Still `partial`: no labels, descriptions, field
+  ordering, prefill from a selected object, conditional visibility; enum options
+  are still erased in the OpenAPI descriptor; no dry-run/preview before submit.
+
+- `workshop-ui/read-only-dashboard-delivery-org-app-access-` (`partial`): "There is
+  nothing to deliver" is partly STALE — the editorial shell is a dashboard-like
+  surface with governed reads. Still `partial`: no kiosk mode, no share-link, no
+  app-access scoping, no full-screen/auto-cycle presentation mode.
+
+- `workshop-ui/mobile-application-support-mobile-app-launch` (`absent`): "No client
+  of any kind exists" is STALE. Still `absent`: no mobile app launcher, no mobile
+  design mode, no nav bar/QR/location widgets, no browser-history navigation — the
+  shell has responsive breakpoints but is not a mobile app.
+
+- `workshop-ui/interactive-graph-visualization-embedding-ve` (`partial`): "no .tsx
+  file anywhere in the repo" is STALE. Still `partial`: no graph renderer, no layouts,
+  no layer styling, no grouping, no saved graph selections, no time panels — the
+  traverse API returns JSON and the user builds every pixel.
+
+- `widgets/object-display-widgets-object-table-object-l` (`partial`): evidence about
+  "no UI layer" is STALE — FacilitiesScreen renders a real object table with the SDK.
+  Still `partial`: no display metadata substrate (the `@display` directive landed but
+  is not consumed by the web app), _createdAt/_updatedAt still absent from normal
+  reads, REST Links returns edge records, REST sort is single-key.
+
+- `widgets/live-updating-widgets-and-event-driven-inter` (`partial`): "No cross-
+  component event/variable bus exists — there is no UI layer" is STALE. Still
+  `partial`: property-level subscription filtering still doesn't work (silently
+  delivers nothing), the SDL promises a full non-null object but the payload carries
+  only id and _type, and there is no Workshop-style event or variable bus — the
+  Facilities screen refetches on change but there is no declarative interactivity
+  model.
+
+- `widgets/action-triggering-widgets-button-group-custo` (`partial`): no explicit
+  "no UI" claim in the evidence, but ActionPanel and ActionForm now exist as
+  client-side action-triggering widgets. Still `partial`: no dry-run over HTTP,
+  no per-object action applicability filtering, no file-upload transport.
+
+- `widgets/audit-and-edit-history-widgets-action-log-ti` (`partial`): no explicit
+  "no UI" claim, but the TraceBar now renders the pipeline stages and the audit id.
+  Still `partial`: GraphQL auditRecords is unpaged at the store, no field-level
+  diff, no edit-history UI widget.
+
+**New counts: 11 full, 92 partial, 84 absent** (1 moved from `absent` to `partial`).
 
 
 ## Repo orientation
@@ -867,11 +981,13 @@ Use the indexed code graph before grepping: `search_graph`, `query_graph`. On a 
 
 ### `workshop-ui/design-system-theming-unified-component-desi` — Design system & theming (unified component design, saved module color palettes, light/dark mode, typography controls)
 
-**Status:** `absent`
+**Status:** `partial`
 
-**Evidence (read 15 Aug):** Case-insensitive grep for theme|palette|dark mode across packages/*/src (excluding tests) returns zero hits. No CSS file exists anywhere in the repo (find for *.css across packages/, Orion/, factory/, tools/ returns nothing). No component library exists to theme.
+> ✅ **RE-VERIFIED against source, 17 Aug 2026 (later).** Evidence below is current, not inherited.
 
-**Gap:** Entirely greenfield and entirely frontend — there are no backend hooks needed or present. Only a per-module palette persistence field would ever touch the backend.
+**Evidence (read 17 Aug later):** A design system now exists. `packages/web/src/editorial.css` (810 lines) defines `--ed-*` CSS variables for the full chrome palette (bg, fg, muted, faint, rule, rule-strong, surface, row-hover, row-active, cell-border, track), data-viz colours (healthy #2f6b4f, pressure #9a7b2f, disrupted #a8452c), and typography (IBM Plex Sans via `--ed-sans`, IBM Plex Mono via `--ed-mono`). Light/dark mode is implemented via `@media (prefers-color-scheme: dark)` overriding every variable. The shell components (EditorialShell, GovernanceRail, TraceBar, FacilitiesScreen) use a unified `ed-*` BEM class naming convention with consistent spacing, density, and typographic hierarchy. Responsive breakpoints collapse the governance rail under 1200px and the sidebar under 768px. The design is greyscale chrome with colour appearing only in data-viz (status glyphs, utilisation bars) — status reads via glyph + weight, not hue. NOT `full`: no saved module colour palettes (the palette is hardcoded in `:root`, not user-configurable), no typography controls (IBM Plex is the only family, no user-selectable fonts), no theme editor, no per-module palette persistence field in any backend type, and no CSS-in-JS or theme-provider abstraction — the design system is a static stylesheet, not a runtime theming engine.
+
+**Gap:** No saved module colour palettes, no typography controls, no theme editor, no per-module palette persistence. The design system is a hardcoded stylesheet — a user cannot customise colours, fonts, or spacing without editing `editorial.css`.
 
 ### `workshop-ui/interactive-graph-visualization-embedding-ve` — Interactive graph visualization & embedding (Vertex graph widget: layouts, layer styling, grouping, saved selections, time panels)
 
@@ -887,9 +1003,11 @@ Use the indexed code graph before grepping: `search_graph`, `query_graph`. On a 
 
 **Status:** `absent`
 
-**Evidence (read 15 Aug):** No app/page/module/layout concept exists. Repo-wide `find` for *.tsx/*.html/*.css/vite.config/next.config across packages/, Orion/, factory/, tools/ returns zero results; no package named workshop/app/ui exists (packages/ = actions, api, cel-evaluator, engine, mcp-server, observability, odl, sdk-typescript, security, spi, storage-memory, storage-postgres, sync). Orion/ is compose+helm+keycloak+openfga only. Case-insensitive grep for 'workshop' across the repo hits nothing outside .claude worktrees. packages/api/src/server.ts serves only GraphQL/REST/FHIR/CDM/MCP JSON.
+> ⚠️ **PARTLY STALE, re-verified 17 Aug 2026 (later).** "Repo-wide `find` for *.tsx/*.html/*.css/vite.config returns zero results" is STALE. `packages/web` has all of those. The editorial shell (EditorialShell.tsx) has a layout (icon rail, sidebar, main, governance rail, trace bar) and navigation (pack/role/job/screen switching). Still `absent`: no Workshop module model (no pages, sections, overlays, templates), no editor, no app-definition persistence, no ApplicationDefinition type — the shell is a hardcoded React app, not a low-code builder.
 
-**Gap:** The entire authoring-and-rendering product: editor, page/section/overlay model, layout engine, template gallery, and persistence of app definitions. Nothing backend-side points at it — there is no ApplicationDefinition type anywhere in packages/spi/src.
+**Evidence (read 15 Aug):** No app/page/module/layout concept exists. ~~Repo-wide `find` for *.tsx/*.html/*.css/vite.config/next.config across packages/, Orion/, factory/, tools/ returns zero results; no package named workshop/app/ui exists~~ STALE: `packages/web` has vite.config.ts, *.tsx, *.css. ~~Case-insensitive grep for 'workshop' across the repo hits nothing outside .claude worktrees.~~ packages/api/src/server.ts serves only GraphQL/REST/FHIR/CDM/MCP JSON.
+
+**Gap:** The entire authoring-and-rendering product: editor, page/section/overlay model, layout engine, template gallery, and persistence of app definitions. Nothing backend-side points at it — there is no ApplicationDefinition type anywhere in packages/spi/src. The editorial shell is a hardcoded layout, not a configurable module model.
 
 ### `workshop-ui/mobile-application-support-mobile-app-launch` — Mobile application support (mobile app launcher, mobile design mode, nav bar/QR/location widgets, browser-history navigation)
 
@@ -921,17 +1039,21 @@ Use the indexed code graph before grepping: `search_graph`, `query_graph`. On a 
 
 > ✅ **RE-VERIFIED against source, 16 Aug 2026.** Evidence below is current, not inherited.
 
-**Evidence (read 16 Aug):** Re-verified against commit 0b263e6 (working tree clean). Blocker B1 is resolved — the SDK is now functional end to end. (1) The published package is populated: packages/sdk-typescript/src/index.ts is 1349 lines with per-type accessors (get/list/onChange), per-action methods, enums, filter types, and security-aware types (@sensitive fields typed as `T | Redacted`). (2) The generator is wired into the CLI: `odl generate sdk <paths...>` at packages/odl/src/cli/index.ts:257 accepts multiple schema directories, merges them, and writes the generated source. (3) Runtime transport is implemented: query/mutate use `fetch` (sdk.ts:411, 433), subscribe uses `WebSocket` (sdk.ts:448-511) — no more "Not implemented" throws (grep confirms zero hits). (4) Prebuild/pretypecheck/pretest scripts generate from all four domain packs (core, nhs-acute, aml, supply-chain), so the SDK matches the server's multi-pack schema. (5) Test surface exists: packages/sdk-typescript/__tests__/sdk-runtime.test.ts (318 lines, 9 tests) covers construction, query, list, mutation, error handling, and subscriptions with mocked fetch/WebSocket. All 9 tests pass. STILL ABSENT: No React bindings — zero .tsx files, no react dependency in any package.json, no dnd-osdk-react equivalent. The SDK is a typed HTTP/WebSocket client, not a React component library.
+> ⚠️ **PARTLY STALE, re-verified 17 Aug 2026 (later).** "No React bindings — zero .tsx files, no react dependency in any package.json" is STALE. `packages/web` is a React 19 app that imports `@altius/sdk` and uses it for real data access (FacilitiesScreen calls `client.facility.list` and `client.facility.onAnyChange`; ObjectTable pages through `Connection` shapes; ActionForm renders from the SDK's JSON-Schema descriptors). Still `partial`: no published React hooks (`useQuery`/`useSubscription`/`useMutation`), no React component library a pack author could depend on, no dnd-osdk-react equivalent — `@altius/web` is an application, not a library.
 
-**Gap:** No React bindings (zero .tsx files, no react dependency). The SDK is a functional typed client with real transport, CLI generation, and tests — a custom app author can use it to call the API, but there are no React components or hooks.
+**Evidence (read 16 Aug):** Re-verified against commit 0b263e6 (working tree clean). Blocker B1 is resolved — the SDK is now functional end to end. (1) The published package is populated: packages/sdk-typescript/src/index.ts is 1349 lines with per-type accessors (get/list/onChange), per-action methods, enums, filter types, and security-aware types (@sensitive fields typed as `T | Redacted`). (2) The generator is wired into the CLI: `odl generate sdk <paths...>` at packages/odl/src/cli/index.ts:257 accepts multiple schema directories, merges them, and writes the generated source. (3) Runtime transport is implemented: query/mutate use `fetch` (sdk.ts:411, 433), subscribe uses `WebSocket` (sdk.ts:448-511) — no more "Not implemented" throws (grep confirms zero hits). (4) Prebuild/pretypecheck/pretest scripts generate from all four domain packs (core, nhs-acute, aml, supply-chain), so the SDK matches the server's multi-pack schema. (5) Test surface exists: packages/sdk-typescript/__tests__/sdk-runtime.test.ts (318 lines, 9 tests) covers construction, query, list, mutation, error handling, and subscriptions with mocked fetch/WebSocket. All 9 tests pass. ~~STILL ABSENT: No React bindings — zero .tsx files, no react dependency in any package.json, no dnd-osdk-react equivalent. The SDK is a typed HTTP/WebSocket client, not a React component library.~~ STALE: React bindings now exist in `packages/web` (React 19 + Vite, consuming `@altius/sdk`), but as an application, not a published hooks/component library.
+
+**Gap:** No published React hooks or component library (no `useQuery`/`useSubscription`, no dnd-osdk-react equivalent). The SDK is a functional typed client with real transport, CLI generation, and tests, and `packages/web` is a React app that consumes it — but a custom app author gets no reusable React bindings, only the raw SDK and a sample app to study.
 
 ### `workshop-ui/widget-library-60-widgets-object-tables-list` — Widget library (~60 widgets: object tables/lists/views, charts, maps, Gantt, pivot, filters, inputs, buttons, media, comments, AIP chat) plus per-widget display optimization
 
 **Status:** `absent`
 
-**Evidence (read 15 Aug):** No rendering layer of any kind (see row 1: zero .tsx/.html/.css). Backing stores for whole widget families are also missing: grep for attachment|blob|upload|multipart|media across packages/api/src, packages/spi/src, packages/engine/src returns only HTTP `Content-Disposition: attachment` export headers (packages/api/src/rest/route-generator.ts:516,528,1647; packages/api/src/cdm/router.ts:344,356) — no object storage, so no media/image/PDF widgets are even possible. No comment entity exists in packages/spi/src/ontology.ts. domain-packs/nhs-acute/pack.yaml:26 declares `widgets: 0` under a `provides:` block that is not a field of PackManifest (packages/api/src/schema-loader.ts:34-52) — that counter is read by nothing.
+> ⚠️ **PARTLY STALE, re-verified 17 Aug 2026 (later).** "No rendering layer of any kind (see row 1: zero .tsx/.html/.css)" is STALE. ~6 React components exist in `packages/web`: ObjectTable, ActionPanel, ActionForm, FacilitiesScreen, GovernanceRail, TraceBar. Still `absent`: ~6 hardcoded components ≠ a ~60-widget library; no charts, maps, Gantt, pivot, media, comments, or AIP-chat widgets; no per-widget display optimization; no widget catalog or registry.
 
-**Gap:** Every widget. Read-side widget classes (table, filter, chart) could in principle be built on the generated REST/GraphQL surface, but media, comments, and AIP-chat widgets have no backend at all: no blob storage, no comment model, no LLM binding.
+**Evidence (read 15 Aug):** ~~No rendering layer of any kind (see row 1: zero .tsx/.html/.css).~~ STALE: `packages/web` has .tsx components. Backing stores for whole widget families are also missing: grep for attachment|blob|upload|multipart|media across packages/api/src, packages/spi/src, packages/engine/src returns only HTTP `Content-Disposition: attachment` export headers (packages/api/src/rest/route-generator.ts:516,528,1647; packages/api/src/cdm/router.ts:344,356) — no object storage, so no media/image/PDF widgets are even possible. No comment entity exists in packages/spi/src/ontology.ts. domain-packs/nhs-acute/pack.yaml:26 declares `widgets: 0` under a `provides:` block that is not a field of PackManifest (packages/api/src/schema-loader.ts:34-52) — that counter is read by nothing.
+
+**Gap:** Every widget. Read-side widget classes (table, filter, chart) could in principle be built on the generated REST/GraphQL surface, but media, comments, and AIP-chat widgets have no backend at all: no blob storage, no comment model, no LLM binding. The ~6 existing React components are a start, not a library.
 
 
 ## Mixed II
