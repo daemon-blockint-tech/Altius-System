@@ -119,7 +119,7 @@ export function App({ config }: { config: WebConfig }): ReactNode {
         load={({ first, after }) =>
           client.patient.list(undefined, after === undefined ? { first } : { first, after })
         }
-        subscribe={onChange => client.patient.onAnyChange(() => onChange())}
+        subscribe={(onChange, onLost) => client.patient.onAnyChange(() => onChange(), undefined, onLost)}
       />
 
       <ActionPanel

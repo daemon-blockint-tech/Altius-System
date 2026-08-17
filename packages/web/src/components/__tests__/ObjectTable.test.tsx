@@ -168,6 +168,28 @@ describe('ObjectTable', () => {
     expect(load).toHaveBeenCalledTimes(2);
   });
 
+  it('says so when the live stream drops, rather than looking current', async () => {
+    // The SDK clears subscriptions on socket close and does not reconnect, so a
+    // table that stays silent here is stale while appearing live — worse than
+    // an error, because there is no signal at all.
+    const load = vi.fn().mockResolvedValue(connection([{ id: 'p-1', name: 'Alice', status: 'ACTIVE' }]));
+    let lose = () => {};
+    const subscribe = vi.fn((_onChange: () => void, onLost: () => void) => {
+      lose = onLost;
+      return { unsubscribe: vi.fn() };
+    });
+
+    const { container } = render(
+      <ObjectTable caption="Patients" columns={COLUMNS} load={load} subscribe={subscribe} />,
+    );
+    await waitFor(() => expect(screen.getByText('Alice')).toBeDefined());
+    expect(container.querySelector('[data-live-lost]')).toBeNull();
+
+    lose();
+    await waitFor(() => expect(container.querySelector('[data-live-lost]')).not.toBeNull());
+    expect(screen.getByText(/may be out of date/)).toBeDefined();
+  });
+
   it('unsubscribes on unmount so a closed table stops holding the stream', async () => {
     const load = vi.fn().mockResolvedValue(connection([{ id: 'p-1', name: 'Alice', status: 'ACTIVE' }]));
     const unsubscribe = vi.fn();

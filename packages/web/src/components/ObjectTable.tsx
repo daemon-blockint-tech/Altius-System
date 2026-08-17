@@ -56,7 +56,7 @@ export interface ObjectTableProps<T> {
    * patching a row in place would drift from what the server would actually
    * return — including showing a row the caller may no longer see.
    */
-  subscribe?: (onChange: () => void) => { unsubscribe(): void };
+  subscribe?: (onChange: () => void, onLost: () => void) => { unsubscribe(): void };
 }
 
 type Status = 'loading' | 'ready' | 'error';
@@ -82,6 +82,8 @@ export function ObjectTable<T extends RowMetadata>({
   const [status, setStatus] = useState<Status>('loading');
   const [error, setError] = useState<string | null>(null);
   const [connection, setConnection] = useState<ConnectionLike<T> | null>(null);
+  /** False once a live stream has dropped; there is no reconnect. */
+  const [live, setLive] = useState(true);
 
   // Cursors of the pages BEFORE the current one. Pushed on next, popped on
   // previous. `undefined` at the bottom is the first page.
@@ -124,6 +126,7 @@ export function ObjectTable<T extends RowMetadata>({
     if (!subscribe) return;
 
     let pending: ReturnType<typeof setTimeout> | null = null;
+    setLive(true);
     const subscription = subscribe(() => {
       // Coalesce: a bulk write emits one event per row, and refetching per
       // event would put the table into a refresh loop under load.
@@ -132,6 +135,10 @@ export function ObjectTable<T extends RowMetadata>({
         pending = null;
         void fetchPage(cursorRef.current);
       }, LIVE_COALESCE_MS);
+    }, () => {
+      // The stream is gone and the client does not reconnect. Saying so beats a
+      // table that silently stops updating while still looking current.
+      setLive(false);
     });
 
     return () => {
@@ -199,6 +206,12 @@ export function ObjectTable<T extends RowMetadata>({
 
       {/* Announced politely so a screen reader hears the page change without
           losing the user's place in the table. */}
+      {subscribe && !live ? (
+        <p role="status" data-live-lost="true">
+          Live updates disconnected — this list may be out of date. Reload to resume.
+        </p>
+      ) : null}
+
       <p aria-live="polite">
         {status === 'loading' ? 'Loading…' : rows.length === 0 ? `No ${caption} to show.` : ''}
       </p>
