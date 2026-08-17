@@ -1,0 +1,139 @@
+/*
+ * The app shipped with no stylesheet at all. That is not merely plain: with no
+ * background declared, the browser's own canvas shows through, and in dark mode
+ * the default black text lands on it — every screen unreadable for anyone whose
+ * OS prefers dark. It renders without erroring, so no test caught it, and
+ * anyone checking in light mode would never see it.
+ *
+ * So: declare both schemes explicitly rather than inheriting either. The markup
+ * is classless semantic HTML, so this is too — the components stay presentation-free.
+ */
+
+:root {
+  color-scheme: light dark;
+
+  --bg: #ffffff;
+  --fg: #16191d;
+  --muted: #5b6470;
+  --border: #d6dae0;
+  --surface: #f6f7f9;
+  --accent: #1c5fd6;
+  --accent-fg: #ffffff;
+  --danger: #b3261e;
+  --focus: #1c5fd6;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14171a;
+    --fg: #e8eaed;
+    --muted: #a3abb5;
+    --border: #333a42;
+    --surface: #1d2126;
+    --accent: #5b9dff;
+    --accent-fg: #0d1013;
+    --danger: #ff8a80;
+    --focus: #5b9dff;
+  }
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  /* Explicit, not inherited: the transparent default was the whole bug. */
+  background: var(--bg);
+  color: var(--fg);
+  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+main {
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: 1.5rem 1.25rem 4rem;
+}
+
+h1 { font-size: 1.5rem; margin: 0 0 1.25rem; letter-spacing: -0.01em; }
+h2 { font-size: 1.125rem; margin: 2rem 0 0.75rem; }
+
+section { margin-bottom: 2rem; }
+
+/* ── Controls ───────────────────────────────────────────────── */
+
+button {
+  font: inherit;
+  padding: 0.4rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--fg);
+  cursor: pointer;
+}
+button:hover:not(:disabled) { border-color: var(--muted); }
+/* Disabled buttons carry meaning here — a paging boundary, an in-flight
+   submit — so they must read as unavailable rather than merely dimmed. */
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+form button[type='submit'] {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-color: transparent;
+  font-weight: 500;
+}
+
+input, select {
+  font: inherit;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+  max-width: 100%;
+}
+
+label {
+  display: block;
+  margin-bottom: 0.75rem;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+label input, label select { display: block; margin-top: 0.25rem; min-width: 16rem; }
+
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+/* ── Table ──────────────────────────────────────────────────── */
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.9375rem;
+}
+caption {
+  text-align: left;
+  font-weight: 600;
+  padding-bottom: 0.5rem;
+}
+th, td {
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+th { color: var(--muted); font-weight: 600; font-size: 0.8125rem; text-transform: uppercase; letter-spacing: 0.03em; }
+tbody tr:hover { background: var(--surface); }
+
+/* ── Status ─────────────────────────────────────────────────── */
+
+/* A failure must not be mistakable for an empty result — the distinction the
+   components go to some length to make is worth carrying into the styling. */
+[role='alert'] {
+  color: var(--danger);
+  border-left: 3px solid var(--danger);
+  padding: 0.5rem 0 0.5rem 0.75rem;
+  margin: 0.5rem 0;
+}
+[role='status'] { color: var(--muted); }
+
+nav { display: flex; gap: 0.5rem; align-items: center; margin-top: 0.75rem; }
+
+ul { list-style: none; padding: 0; display: flex; flex-wrap: wrap; gap: 0.5rem; }
