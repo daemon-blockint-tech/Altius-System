@@ -32,14 +32,24 @@ RUN --mount=type=cache,id=gomod,target=/go/pkg/mod \
 # does not reach it. x/net is the proof: go.mod moved to v0.56.0 for
 # CVE-2026-46600 and the scan still reported v0.55.0, because it was reading
 # this binary, not the server. Keep these in step with go.mod.
+#
+# One `go get` for all of them, not one per line. The module has no source, so
+# there is no import graph for `go get` to compute build sums from: a later
+# call bumps a transitive dep in go.mod and leaves its go.sum entry unwritten,
+# and the build then dies on `missing go.sum entry for golang.org/x/sys/unix`.
+# Four sequential calls did exactly that; a single resolution pass writes a
+# consistent go.sum. Reproduced and fixed against go1.25.13 specifically —
+# go1.26 tolerates the sequential form, so a newer local toolchain will not
+# show the failure.
 RUN --mount=type=cache,id=gomod,target=/go/pkg/mod \
     --mount=type=cache,id=gobuild,target=/root/.cache/go-build \
     mkdir -p /tools && cd /tools \
     && go mod init tools \
-    && GOFLAGS=-mod=mod go get github.com/grpc-ecosystem/grpc-health-probe@v0.4.53 \
-    && GOFLAGS=-mod=mod go get google.golang.org/grpc@v1.82.1 \
-    && GOFLAGS=-mod=mod go get golang.org/x/text@v0.39.0 \
-    && GOFLAGS=-mod=mod go get golang.org/x/net@v0.56.0 \
+    && GOFLAGS=-mod=mod go get \
+         github.com/grpc-ecosystem/grpc-health-probe@v0.4.53 \
+         google.golang.org/grpc@v1.82.1 \
+         golang.org/x/text@v0.39.0 \
+         golang.org/x/net@v0.56.0 \
     && CGO_ENABLED=0 GOOS=linux go build -o /usr/local/bin/grpc-health-probe \
        github.com/grpc-ecosystem/grpc-health-probe
 
