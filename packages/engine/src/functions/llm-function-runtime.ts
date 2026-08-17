@@ -209,7 +209,7 @@ function schemaForFieldType(typeRef: FieldTypeRef): LLMSchema {
  * tenant and a synthetic trace id so the call is still scoped and
  * correlated in logs.
  */
-function requestContextFor(ctx: FunctionRuntimeContext): RequestContext {
+function requestContextFor(_ctx: FunctionRuntimeContext): RequestContext {
   // The runtime context does not currently carry a tenant; the host binds
   // ontology reads to the caller, and the LLM call inherits that scope. We
   // use a stable placeholder so metrics and audit can correlate.

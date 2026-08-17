@@ -57,6 +57,11 @@ import {
   CelFunctionRuntime,
   ComputedFieldEvaluator,
   createLLMClient,
+  LLMFunctionRuntime,
+  WorkflowGraphBuilder,
+  WorkflowMonitor,
+  InMemoryWorkflowEventStore,
+  InMemoryLineageStore,
 } from '@altius/engine';
 import { ActionExecutor, CelClient, SideEffectExecutor } from '@altius/actions';
 import type { SecurityLayer, CelEvaluator, EventBus as SideEffectEventBus, HttpClient as SideEffectHttpClient, LinkTupleMap } from '@altius/actions';
@@ -70,6 +75,7 @@ import { writeReadAuditFor } from './rest/audit-read.js';
 import { isTypeVisible, missingMarkings } from './markings/enforce.js';
 import { invokeFunction } from './functions/invoke-function.js';
 import { generateAuditRoutes } from './rest/audit-routes.js';
+import { generateLlmRoutes, generateWorkflowRoutes } from './rest/index.js';
 import { generateTraverseRoutes } from './rest/traverse-route.js';
 import { readPlatformVersion } from './version.js';
 import { createFhirRouter } from './fhir/index.js';
@@ -412,6 +418,12 @@ async function main(): Promise<void> {
       new IsolatedNodeFunctionRuntime({ name: 'node', packDir: packInfos[0]?.packDir }),
       new CelFunctionRuntime(),
     ],
+    // AI-driven logic building: when an LLM provider is configured, functions
+    // declared with `@function(runtime: "llm")` are executable through the
+    // LLMFunctionRuntime. Without a provider the runtime is not registered,
+    // and an AI function fails at invocation with a clear error rather than
+    // silently no-op'ing.
+    llmRuntime: new LLMFunctionRuntime({ client: createLLMClient() }),
   });
   if (schema.functionTypes.length > 0) {
     logger.info(`Functions: ${schema.functionTypes.length} function type(s) declared`);
@@ -800,6 +812,26 @@ async function main(): Promise<void> {
     logger.warn('Audit: in-memory (development mode)');
   }
 
+  // ── Workflow visualization & monitoring ──
+  // The graph builder derives a provenance graph from the lineage and audit
+  // stores. Both are required: a graph from lineage alone misses actions that
+  // read without writing, and a graph from audit alone misses the field-level
+  // provenance that links a function output to a specific object field.
+  //
+  // The monitor is an in-memory event store for MVP; a production deployment
+  // backs it with the audit table. Both are tenant-scoped and opt-in: a
+  // deployment without an audit store or lineage store does not register the
+  // workflow routes (the deps are undefined and the routes return
+  // "not configured" rather than 500'ing).
+  const workflowLineageStore = lineageRecorder
+    ? (lineageRecorder as unknown as { store: import('@altius/engine').LineageStore }).store
+    : new InMemoryLineageStore();
+  const workflowGraphBuilder = new WorkflowGraphBuilder({
+    lineageStore: workflowLineageStore,
+    auditStore,
+  });
+  const workflowMonitor = new WorkflowMonitor({ store: new InMemoryWorkflowEventStore() });
+
   // ── Consent Service (Section 7.3) ──
   // PostgresConsentStore accepts a constructor-level default tenantId but all
   // methods also accept per-call tenantId, threaded from RequestContext by each
@@ -976,6 +1008,11 @@ async function main(): Promise<void> {
     // Selected from LLM_PROVIDER; the no-op when it is unset, so a platform
     // with no provider still boots and answers 503 on the LLM routes.
     llmClient: createLLMClient(),
+    // Workflow visualization & monitoring surfaces. Both are opt-in: a
+    // deployment without an audit store or lineage store does not register
+    // the workflow routes.
+    ...(workflowGraphBuilder ? { workflowGraphBuilder } : {}),
+    workflowMonitor,
   };
 
   // ── Express + HTTP Server ──
@@ -1276,6 +1313,8 @@ async function main(): Promise<void> {
     ...generateTraverseRoutes(deps),
     ...generateRelationshipRoutes(deps, grantAllowlist),
     ...generateConsentRoutes(deps),
+    ...generateLlmRoutes(deps),
+    ...generateWorkflowRoutes(deps),
   ];
   for (const route of restRoutes) {
     const method = route.method.toLowerCase() as 'get' | 'post' | 'put' | 'delete';

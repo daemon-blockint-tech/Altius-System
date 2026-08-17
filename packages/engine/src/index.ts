@@ -97,8 +97,6 @@ export {
   type WebhookPipelineMapping,
   type WebhookResult,
   type WebhookProvider,
-  LLMFunctionRuntime,
-  type LLMFunctionRuntimeConfig,
 } from './functions/index.js';
 
 // LLM Client
@@ -127,3 +125,27 @@ export {
   schemaForFunction,
   renderPrompt,
 } from './functions/llm-function-runtime.js';
+
+// Workflow visualization & monitoring
+export {
+  WorkflowGraphBuilder,
+  type WorkflowGraphBuilderConfig,
+  type WorkflowGraph,
+  type WorkflowNode,
+  type WorkflowNodeKind,
+  type WorkflowEdge,
+  type WorkflowEdgeKind,
+  objectNodeId,
+  actionNodeId,
+  functionNodeId,
+  applicationNodeId,
+  WorkflowMonitor,
+  type WorkflowMonitorConfig,
+  type WorkflowEvent,
+  type WorkflowEventKind,
+  type WorkflowOutcome,
+  type WorkflowSummary,
+  type WorkflowEventStore,
+  InMemoryWorkflowEventStore,
+  newWorkflowId,
+} from './workflow/index.js';

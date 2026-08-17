@@ -1,4 +1,4 @@
-import type { ObjectManager, LinkManager, ObjectSetManager, FunctionExecutor, FunctionRegistry } from '@altius/engine';
+import type { ObjectManager, LinkManager, ObjectSetManager, FunctionExecutor, FunctionRegistry, WorkflowGraphBuilder, WorkflowMonitor } from '@altius/engine';
 import type { FunctionAuthzMapping } from '@altius/odl';
 import type { ActionExecutor, ActionManifest } from '@altius/actions';
 import type {
@@ -126,6 +126,20 @@ export interface ApiDependencies {
    * is authorized per-object (like actions) rather than by role alone.
    */
   functionAuthzMappings?: Map<string, FunctionAuthzMapping>;
+  /**
+   * Workflow graph builder for the provenance visualization surface
+   * (GET /api/v1/workflow/graph, GraphQL workflowGraph query). When absent,
+   * the workflow graph endpoints are not registered. Requires both an
+   * auditStore and a lineage store to be useful.
+   */
+  workflowGraphBuilder?: WorkflowGraphBuilder;
+  /**
+   * Workflow monitor for the workflow event log and metrics surface
+   * (GET /api/v1/workflow/events, GET /api/v1/workflow/workflows/:id,
+   * GraphQL workflowEvents/workflowLog queries). When absent, the workflow
+   * monitoring endpoints are not registered.
+   */
+  workflowMonitor?: WorkflowMonitor;
 }
 
 /**

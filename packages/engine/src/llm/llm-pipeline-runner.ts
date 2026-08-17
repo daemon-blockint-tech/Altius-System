@@ -117,8 +117,6 @@ export async function runLLMPipelineStep<T = unknown>(
   const startMs = Date.now();
   let attempt = 0;
   let lastError: string | undefined;
-  let lastResponse: LLMResponse | undefined;
-  let lastText: string | undefined;
 
   while (attempt <= maxRetries) {
     if (attempt > 0) {
@@ -149,8 +147,6 @@ export async function runLLMPipelineStep<T = unknown>(
     metrics?.llmCalls.add(1);
     metrics?.llmDuration.record(Date.now() - callStart);
     metrics?.llmTokens.add(response.totalTokens);
-    lastResponse = response;
-    lastText = response.text;
 
     // No schema → text result is the output.
     if (!schema) {
