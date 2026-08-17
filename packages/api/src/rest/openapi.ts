@@ -174,19 +174,87 @@ function objectPaths(obj: ObjectType): Record<string, unknown> {
     },
   };
 
-  // GET /api/v1/{plural}/aggregate
+  // POST /api/v1/{plural}/aggregate
+  // A read expressed as POST because the query travels in the body; the
+  // handler audits it as a read. Documented as GET until it was checked
+  // against the router, which sends spec-following clients to a 405.
   paths[`/api/v1/${plural}/aggregate`] = {
-    get: {
+    post: {
       tags: [tag],
       summary: `Aggregate ${obj.name} objects`,
       operationId: `aggregate${obj.name}s`,
-      parameters: [
-        { name: 'fields', in: 'query', required: true, schema: { type: 'string' }, description: 'Comma-separated field:function pairs (e.g. age:avg,salary:sum)' },
-        { name: 'groupBy', in: 'query', schema: { type: 'string' }, description: 'Field to group by' },
-      ],
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              required: ['fields'],
+              properties: {
+                fields: {
+                  type: 'array',
+                  description: 'Aggregations to compute.',
+                  items: {
+                    type: 'object',
+                    required: ['field', 'fn'],
+                    properties: {
+                      field: { type: 'string' },
+                      fn: { type: 'string', enum: ['count', 'sum', 'avg', 'min', 'max'] },
+                      alias: { type: 'string' },
+                    },
+                  },
+                },
+                groupBy: { type: 'array', items: { type: 'string' } },
+                buckets: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    required: ['field', 'interval'],
+                    properties: {
+                      field: { type: 'string' },
+                      interval: { type: 'string' },
+                      alias: { type: 'string' },
+                    },
+                  },
+                },
+                filter: { type: 'object', description: 'Filter expression applied before aggregating.' },
+              },
+            },
+          },
+        },
+      },
       responses: {
         '200': { description: 'Aggregation result', content: { 'application/json': { schema: { type: 'object' } } } },
         '401': { $ref: '#/components/responses/Unauthorized' },
+        '429': { $ref: '#/components/responses/RateLimited' },
+      },
+    },
+  };
+
+  // GET /api/v1/{plural}/export
+  paths[`/api/v1/${plural}/export`] = {
+    get: {
+      tags: [tag],
+      summary: `Export ${obj.name} objects`,
+      description:
+        'Streams permission-scoped, redacted and consent-filtered records. ' +
+        'Results are capped server-side; check the response for a truncation marker.',
+      operationId: `export${obj.name}s`,
+      parameters: [
+        { name: 'format', in: 'query', schema: { type: 'string', enum: ['ndjson', 'csv'], default: 'ndjson' } },
+        { name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1 } },
+      ],
+      responses: {
+        '200': {
+          description: 'Exported records',
+          content: {
+            'application/x-ndjson': { schema: { type: 'string' } },
+            'text/csv': { schema: { type: 'string' } },
+          },
+        },
+        '400': { description: 'Unsupported export format' },
+        '401': { $ref: '#/components/responses/Unauthorized' },
+        '429': { $ref: '#/components/responses/RateLimited' },
       },
     },
   };
@@ -227,6 +295,97 @@ function objectPaths(obj: ObjectType): Record<string, unknown> {
         },
         '401': { $ref: '#/components/responses/Unauthorized' },
         '404': { description: 'Not found' },
+      },
+    },
+    put: {
+      tags: [tag],
+      summary: `Update ${obj.name} by ID`,
+      description:
+        'Supports optimistic concurrency: send `If-Match` with the version last read, ' +
+        'and the update is rejected with 412 if the object has moved on since.',
+      operationId: `update${obj.name}`,
+      parameters: [
+        { name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
+        {
+          name: 'If-Match',
+          in: 'header',
+          schema: { type: 'integer' },
+          description: 'Version the caller expects. Omit to update unconditionally.',
+        },
+      ],
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              description: 'Properties to set. System fields (leading underscore) are ignored.',
+            },
+          },
+        },
+      },
+      responses: {
+        '200': {
+          description: `Updated ${obj.name}`,
+          content: { 'application/json': { schema: { type: 'object', properties: { data: { $ref: ref } } } } },
+        },
+        '400': { description: 'Validation error' },
+        '401': { $ref: '#/components/responses/Unauthorized' },
+        '403': { description: 'Not permitted to edit this object' },
+        '404': { description: 'Not found' },
+        '412': { description: 'Version conflict — the object changed since the version in If-Match' },
+        '429': { $ref: '#/components/responses/RateLimited' },
+      },
+    },
+    delete: {
+      tags: [tag],
+      summary: `Delete ${obj.name} by ID`,
+      operationId: `delete${obj.name}`,
+      parameters: [
+        { name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
+        {
+          name: 'If-Match',
+          in: 'header',
+          schema: { type: 'integer' },
+          description: 'Version the caller expects. Omit to delete unconditionally.',
+        },
+      ],
+      responses: {
+        '204': { description: 'Deleted' },
+        '401': { $ref: '#/components/responses/Unauthorized' },
+        '403': { description: 'Not permitted to delete this object' },
+        '404': { description: 'Not found' },
+        '412': { description: 'Version conflict — the object changed since the version in If-Match' },
+        '429': { $ref: '#/components/responses/RateLimited' },
+      },
+    },
+  };
+
+  // POST /api/v1/{plural}/{id}/traverse
+  paths[`/api/v1/${plural}/{id}/traverse`] = {
+    post: {
+      tags: [tag],
+      summary: `Traverse the link graph from a ${obj.name}`,
+      operationId: `traverse${obj.name}`,
+      parameters: [
+        { name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
+      ],
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              description: 'Traversal specification: which link types to follow, and how deep.',
+            },
+          },
+        },
+      },
+      responses: {
+        '200': { description: 'Traversal result', content: { 'application/json': { schema: { type: 'object' } } } },
+        '401': { $ref: '#/components/responses/Unauthorized' },
+        '404': { description: 'Not found' },
+        '429': { $ref: '#/components/responses/RateLimited' },
       },
     },
   };
@@ -317,6 +476,146 @@ function actionPath(action: ActionType): Record<string, unknown> {
  * Mounted unconditionally in server.ts; documented here so client generation and
  * contract checks see the full REST surface.
  */
+/**
+ * Endpoints that exist per-deployment rather than per-ObjectType: the saved
+ * object-set CRUD, the action catalogue, and the LLM endpoints. Served since
+ * they were written, and undocumented for just as long.
+ */
+function platformPaths(): Record<string, unknown> {
+  const objectSetId = { name: 'id', in: 'path', required: true, schema: { type: 'string' } };
+  const unauthorized = { $ref: '#/components/responses/Unauthorized' };
+  const jsonObject = { 'application/json': { schema: { type: 'object' } } };
+
+  return {
+    '/api/v1/object-sets': {
+      get: {
+        tags: ['ObjectSet'],
+        summary: 'List saved object sets',
+        operationId: 'listObjectSets',
+        responses: {
+          '200': { description: 'Saved object sets', content: jsonObject },
+          '401': unauthorized,
+        },
+      },
+      post: {
+        tags: ['ObjectSet'],
+        summary: 'Create a saved object set',
+        operationId: 'createObjectSet',
+        requestBody: { required: true, content: jsonObject },
+        responses: {
+          '201': { description: 'Created', content: jsonObject },
+          '400': { description: 'Validation error' },
+          '401': unauthorized,
+        },
+      },
+    },
+    '/api/v1/object-sets/{id}': {
+      get: {
+        tags: ['ObjectSet'],
+        summary: 'Get a saved object set',
+        operationId: 'getObjectSet',
+        parameters: [objectSetId],
+        responses: {
+          '200': { description: 'Object set', content: jsonObject },
+          '401': unauthorized,
+          '404': { description: 'Not found' },
+        },
+      },
+      put: {
+        tags: ['ObjectSet'],
+        summary: 'Update a saved object set',
+        operationId: 'updateObjectSet',
+        parameters: [objectSetId],
+        requestBody: { required: true, content: jsonObject },
+        responses: {
+          '200': { description: 'Updated', content: jsonObject },
+          '400': { description: 'Validation error' },
+          '401': unauthorized,
+          '404': { description: 'Not found' },
+        },
+      },
+      delete: {
+        tags: ['ObjectSet'],
+        summary: 'Delete a saved object set',
+        operationId: 'deleteObjectSet',
+        parameters: [objectSetId],
+        responses: {
+          '204': { description: 'Deleted' },
+          '401': unauthorized,
+          '404': { description: 'Not found' },
+        },
+      },
+    },
+    '/api/v1/object-sets/{id}/execute': {
+      get: {
+        tags: ['ObjectSet'],
+        summary: 'Execute a saved object set and return matching objects',
+        operationId: 'executeObjectSet',
+        parameters: [objectSetId],
+        responses: {
+          '200': { description: 'Matching objects', content: jsonObject },
+          '401': unauthorized,
+          '404': { description: 'Not found' },
+        },
+      },
+    },
+    '/api/v1/object-sets/{id}/aggregate': {
+      get: {
+        tags: ['ObjectSet'],
+        summary: 'Aggregate over a saved object set',
+        operationId: 'aggregateObjectSet',
+        parameters: [objectSetId],
+        responses: {
+          '200': { description: 'Aggregation result', content: jsonObject },
+          '401': unauthorized,
+          '404': { description: 'Not found' },
+        },
+      },
+    },
+    '/api/v1/actions': {
+      get: {
+        tags: ['Action'],
+        summary: 'List the action types this deployment exposes',
+        operationId: 'listActions',
+        responses: {
+          '200': { description: 'Action catalogue', content: jsonObject },
+          '401': unauthorized,
+        },
+      },
+    },
+    '/api/v1/llm/generate': {
+      post: {
+        tags: ['LLM'],
+        summary: 'Generate a completion',
+        operationId: 'llmGenerate',
+        requestBody: { required: true, content: jsonObject },
+        responses: {
+          '200': { description: 'Completion', content: jsonObject },
+          '400': { description: 'Validation error' },
+          '401': unauthorized,
+          '429': { $ref: '#/components/responses/RateLimited' },
+          '503': { description: 'No LLM client is configured for this deployment' },
+        },
+      },
+    },
+    '/api/v1/llm/embed': {
+      post: {
+        tags: ['LLM'],
+        summary: 'Embed one or more texts',
+        operationId: 'llmEmbed',
+        requestBody: { required: true, content: jsonObject },
+        responses: {
+          '200': { description: 'Embeddings', content: jsonObject },
+          '400': { description: 'Validation error' },
+          '401': unauthorized,
+          '429': { $ref: '#/components/responses/RateLimited' },
+          '503': { description: 'No LLM client is configured for this deployment' },
+        },
+      },
+    },
+  };
+}
+
 function governancePaths(): Record<string, unknown> {
   const errorContent = { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } };
   const relationshipBody = {
@@ -418,6 +717,8 @@ export function generateOpenApiSpec(schema: ParsedSchema, version = '1.0.0'): Re
   }
   // Governance APIs (A1 relationships, A2 consent) — not ODL-derived.
   paths = { ...paths, ...governancePaths() };
+  // Object sets, action catalogue, LLM — per-deployment, also not ODL-derived.
+  paths = { ...paths, ...platformPaths() };
 
   // Component schemas
   const schemas: Record<string, unknown> = {};
