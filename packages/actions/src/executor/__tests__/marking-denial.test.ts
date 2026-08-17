@@ -126,3 +126,75 @@ describe('markings on the write path', () => {
     expect(result.errors.some(e => e.code === 'MARKING_DENIED')).toBe(false);
   });
 });
+
+/**
+ * The @param type is not the only type an action touches.
+ *
+ * checkMarkings originally looked only at ObjectType-typed @params — the same
+ * parameter the ReBAC layer authorises against. But an effect names its own
+ * target: `createObject` declares an `objectType` outright, and a link effect
+ * names a `linkType` whose endpoints the schema resolves to object types.
+ *
+ * So an action could declare `@param Ward`, satisfy every control, and create
+ * a Patient the caller may not see — the marking holding on all five read
+ * surfaces and silently absent on the one that writes.
+ */
+describe('markings cover what an action WRITES, not just its @param', () => {
+  const wideSchema = parseOdl(`
+extend schema @namespace(name: "test", version: "0.1.0")
+
+type Patient @objectType { id: ID! @primary  status: String }
+type Ward @objectType { id: ID! @primary  name: String }
+
+type AdmittedTo @linkType(from: "Patient", to: "Ward", cardinality: MANY_TO_ONE) { id: ID! @primary }
+
+type SeedPatient @actionType { ward: Ward! @param }
+type LinkThem @actionType { ward: Ward! @param }
+`);
+
+  const withEffects = (action: string, effects: unknown[]): ActionManifest => ({
+    action, preconditions: [], effects, sideEffects: [],
+  } as unknown as ActionManifest);
+
+  const createsPatient = [
+    { type: 'createObject', objectType: 'Patient', properties: { status: 'new' } },
+  ];
+
+  it('refuses when a createObject effect targets a marked type', async () => {
+    const result = await executor().execute(
+      withEffects('SeedPatient', createsPatient), { ward: 'w-1' }, actor([]), ctx, wideSchema,
+    );
+
+    expect(result.errors[0]?.code).toBe('MARKING_DENIED');
+  });
+
+  it('allows the same action once the caller holds the marking', async () => {
+    const result = await executor().execute(
+      withEffects('SeedPatient', createsPatient), { ward: 'w-1' }, actor(['PII']), ctx, wideSchema,
+    );
+
+    expect(result.errors.some(e => e.code === 'MARKING_DENIED')).toBe(false);
+  });
+
+  it('refuses when a link effect has a marked endpoint', async () => {
+    const result = await executor().execute(
+      withEffects('LinkThem', [
+        { type: 'createLink', linkType: 'AdmittedTo', from: 'params.patient', to: 'params.ward' },
+      ]),
+      { ward: 'w-1' }, actor([]), ctx, wideSchema,
+    );
+
+    expect(result.errors[0]?.code).toBe('MARKING_DENIED');
+  });
+
+  it('leaves an action alone when nothing it touches is marked', async () => {
+    const result = await executor().execute(
+      withEffects('SeedPatient', [
+        { type: 'createObject', objectType: 'Ward', properties: { name: 'B' } },
+      ]),
+      { ward: 'w-1' }, actor([]), ctx, wideSchema,
+    );
+
+    expect(result.errors.some(e => e.code === 'MARKING_DENIED')).toBe(false);
+  });
+});

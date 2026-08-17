@@ -327,7 +327,7 @@ export class ActionExecutor {
     // is unknown tells them nothing they did not supply themselves, while a
     // clear refusal is what an operator needs to diagnose a failed write.
     // ------------------------------------------------------------------
-    const markingDenial = this.checkMarkings(actionTypeDef, actor, schema);
+    const markingDenial = this.checkMarkings(actionTypeDef, manifest, actor, schema);
     if (markingDenial) {
       return {
         success: false,
@@ -718,33 +718,74 @@ export class ActionExecutor {
    */
   private checkMarkings(
     actionTypeDef: ActionType | undefined,
+    manifest: ActionManifest,
     actor: ActionActor,
     schema: ParsedSchema,
   ): ActionError | null {
     const policy = this.config.markingPolicy;
-    if (!policy || policy.isEmpty || !actionTypeDef) return null;
+    if (!policy || policy.isEmpty) return null;
 
-    const objectTypeNames = new Set(schema.objectTypes.map((o) => o.name));
     const held = actor.markings ?? [];
+    const name = actionTypeDef?.name ?? manifest.action;
 
-    for (const field of actionTypeDef.fields) {
-      if (!field.directives.some((d) => d.kind === 'param')) continue;
-      if (!objectTypeNames.has(field.type.name)) continue;
-
-      const required = policy.requiredFor(field.type.name);
+    for (const objectType of this.touchedObjectTypes(actionTypeDef, manifest, schema)) {
+      const required = policy.requiredFor(objectType);
       if (required.length === 0) continue;
 
-      const decision = policy.check(held, required);
-      if (!decision.allowed) {
+      if (!policy.check(held, required).allowed) {
         return {
           code: 'MARKING_DENIED',
           message:
-            `Action "${actionTypeDef.name}" operates on ${field.type.name}, which is restricted by ` +
+            `Action "${name}" operates on ${objectType}, which is restricted by ` +
             `mandatory markings the caller does not satisfy.`,
         };
       }
     }
     return null;
+  }
+
+  /**
+   * Every ObjectType this action touches, as far as the declaration reveals.
+   *
+   * The @param types alone are not enough. An effect names its own target: a
+   * `createObject` declares an `objectType` outright, and a link effect names
+   * a `linkType` whose endpoints the schema resolves to object types. Checking
+   * only @param let an action declare `@param Ward`, pass every control, and
+   * create a Patient the caller may not see — the marking holding on all five
+   * read surfaces and silently absent on the one that writes.
+   *
+   * `updateObject`/`deleteObject` targets are expressions naming a param, so
+   * their type is already covered by the @param pass.
+   */
+  private touchedObjectTypes(
+    actionTypeDef: ActionType | undefined,
+    manifest: ActionManifest,
+    schema: ParsedSchema,
+  ): Set<string> {
+    const objectTypeNames = new Set(schema.objectTypes.map((o) => o.name));
+    const touched = new Set<string>();
+
+    for (const field of actionTypeDef?.fields ?? []) {
+      if (!field.directives.some((d) => d.kind === 'param')) continue;
+      if (objectTypeNames.has(field.type.name)) touched.add(field.type.name);
+    }
+
+    for (const effect of manifest.effects ?? []) {
+      if (effect.type === 'createObject' && objectTypeNames.has(effect.objectType)) {
+        touched.add(effect.objectType);
+        continue;
+      }
+      if (effect.type === 'createLink' || effect.type === 'deleteLink' || effect.type === 'updateLink') {
+        // A link touches both endpoints, and either may be the marked one.
+        const linkDef = schema.linkTypes.find((lt) => lt.name === effect.linkType);
+        if (!linkDef) continue;
+        for (const endpoint of [linkDef.from, linkDef.to]) {
+          if (objectTypeNames.has(endpoint)) touched.add(endpoint);
+        }
+      }
+    }
+
+    return touched;
   }
 
   private validateParams(
