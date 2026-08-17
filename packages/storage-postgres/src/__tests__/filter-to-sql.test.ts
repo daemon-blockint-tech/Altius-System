@@ -18,9 +18,15 @@ describe('filterToSql', () => {
       expect(result.params).toEqual(['Alice']);
     });
 
-    it('neq', () => {
+    it('neq — NULL-inclusive, so a row with no value is not silently dropped', () => {
+      // Bare `col != $1` is NULL when the column is NULL and the WHERE drops
+      // the row, so "status not archived" omitted every object whose status was
+      // never set — while the memory provider's `!==` kept them. The SPI now
+      // states the JS reading as the contract (absent is not equal to a value)
+      // and this is Postgres matching it. Updated deliberately: this assertion
+      // pinned the divergence.
       const result = filterToSql({ field: 'status', operator: 'neq', value: 'inactive' });
-      expect(result.text).toBe('"status" != $1');
+      expect(result.text).toBe('("status" IS NULL OR "status" != $1)');
       expect(result.params).toEqual(['inactive']);
     });
 
@@ -125,12 +131,14 @@ describe('filterToSql', () => {
       expect(result.params).toEqual(['active', 'pending']);
     });
 
-    it('NOT composition', () => {
+    it('NOT composition — COALESCE, because NOT(NULL) is NULL rather than TRUE', () => {
+      // Same NULL asymmetry one level up: a row the inner predicate could not
+      // evaluate was dropped rather than negated. See the neq case above.
       const filter: FilterExpression = {
         not: { field: 'deleted', operator: 'eq', value: true },
       };
       const result = filterToSql(filter);
-      expect(result.text).toBe('NOT ("deleted" = $1)');
+      expect(result.text).toBe('COALESCE(NOT ("deleted" = $1), TRUE)');
       expect(result.params).toEqual([true]);
     });
 

@@ -511,5 +511,103 @@ export function registerQueryTests(name: string, factory: ProviderFactory): void
         expect(page.items).toHaveLength(0);
       });
     });
+
+    // ─── Range operators on non-numeric and string-typed operands ───
+
+    describe('range filters compare more than JS numbers', () => {
+      // The suite only ever exercised gt/gte/lt/lte with a numeric column AND a
+      // numeric literal, so two whole classes of range filter were untested and
+      // diverged: the memory provider required both operands to be JS numbers,
+      // Postgres cast whatever it was given.
+      //
+      // Both matter in production. REST query-string values are strings, so
+      // `?filter[age][gt]=30` sends '30'; and the codegen offers range
+      // operators on Date/DateTime, whose values are ISO strings.
+
+      it('compares a numeric column against the string REST would send', async () => {
+        await provider.createObject(tenantA, 'Patient', { name: 'Young', age: 20 });
+        await provider.createObject(tenantA, 'Patient', { name: 'Old', age: 40 });
+
+        const result = await provider.queryObjects(tenantA, 'Patient', { field: 'age', operator: 'gt', value: '30' as unknown as number });
+
+        expect(result.items.map((i) => i['name'])).toEqual(['Old']);
+      });
+
+      it('orders DateTime values, which are ISO strings', async () => {
+        await provider.createObject(tenantA, 'Patient', {
+          name: 'Early', lastVisit: '2020-01-01T00:00:00.000Z',
+        });
+        await provider.createObject(tenantA, 'Patient', {
+          name: 'Late', lastVisit: '2026-01-01T00:00:00.000Z',
+        });
+
+        const result = await provider.queryObjects(tenantA, 'Patient', { field: 'lastVisit', operator: 'gte', value: '2025-01-01T00:00:00.000Z' });
+
+        expect(result.items.map((i) => i['name'])).toEqual(['Late']);
+      });
+
+      it('orders plain strings lexicographically', async () => {
+        await provider.createObject(tenantA, 'Patient', { name: 'Alpha', status: 'aaa' });
+        await provider.createObject(tenantA, 'Patient', { name: 'Zulu', status: 'zzz' });
+
+        const result = await provider.queryObjects(tenantA, 'Patient', { field: 'status', operator: 'gt', value: 'mmm' });
+
+        expect(result.items.map((i) => i['name'])).toEqual(['Zulu']);
+      });
+
+      it('excludes a row whose field is unset', async () => {
+        // SQL drops it (a comparison against NULL is NULL), so memory must too.
+        await provider.createObject(tenantA, 'Patient', { name: 'NoAge' });
+        await provider.createObject(tenantA, 'Patient', { name: 'HasAge', age: 50 });
+
+        const result = await provider.queryObjects(tenantA, 'Patient', { field: 'age', operator: 'gt', value: 10 });
+
+        expect(result.items.map((i) => i['name'])).toEqual(['HasAge']);
+      });
+    });
+
+
+    describe('neq and NOT include rows whose field is unset', () => {
+      // SQL three-valued logic makes this the asymmetric case: `col != 'x'`
+      // and `NOT (col = 'x')` are both NULL when the column is NULL, so
+      // Postgres dropped those rows while the memory provider's `!==` kept
+      // them. Same query, different answer, production only — "patients not
+      // archived" silently omitted every patient whose status was never set.
+
+      it('neq keeps a row with no value for the field', async () => {
+        await provider.createObject(tenantA, 'Patient', { name: 'Unset' });
+        await provider.createObject(tenantA, 'Patient', { name: 'Active', status: 'active' });
+        await provider.createObject(tenantA, 'Patient', { name: 'Archived', status: 'archived' });
+
+        const result = await provider.queryObjects(tenantA, 'Patient', {
+          field: 'status', operator: 'neq', value: 'archived',
+        });
+
+        expect(result.items.map((i) => i['name']).sort()).toEqual(['Active', 'Unset']);
+      });
+
+      it('a negated predicate keeps it too', async () => {
+        await provider.createObject(tenantA, 'Patient', { name: 'Unset2' });
+        await provider.createObject(tenantA, 'Patient', { name: 'Archived2', status: 'archived' });
+
+        const result = await provider.queryObjects(tenantA, 'Patient', {
+          not: { field: 'status', operator: 'eq', value: 'archived' },
+        });
+
+        expect(result.items.map((i) => i['name'])).toEqual(['Unset2']);
+      });
+
+      it('but a range filter still excludes it — "greater than" has no meaning for an absent value', async () => {
+        await provider.createObject(tenantA, 'Patient', { name: 'NoScore' });
+        await provider.createObject(tenantA, 'Patient', { name: 'Scored', score: 9.5 });
+
+        const result = await provider.queryObjects(tenantA, 'Patient', {
+          field: 'score', operator: 'gt', value: 1,
+        });
+
+        expect(result.items.map((i) => i['name'])).toEqual(['Scored']);
+      });
+    });
+
   });
 }

@@ -50,7 +50,12 @@ function fieldPredicateToSql(pred: FieldPredicate, offset: number): SqlFragment 
     case 'eq':
       return { text: `${col} = $${offset}`, params: [pred.value] };
     case 'neq':
-      return { text: `${col} != $${offset}`, params: [pred.value] };
+      // A row whose column IS NULL must satisfy `neq`. Bare `col != $1` is
+      // NULL for those rows and the WHERE drops them, so "patients not
+      // archived" silently omitted every patient whose status was never set —
+      // while the memory provider, using JS `!==`, included them. Absent is
+      // not equal to a value, and that is the reading a caller expects.
+      return { text: `(${col} IS NULL OR ${col} != $${offset})`, params: [pred.value] };
     case 'gt':
       return { text: `${col} > $${offset}`, params: [pred.value] };
     case 'gte':
@@ -107,7 +112,11 @@ function logicalPredicateToSql(pred: LogicalPredicate, offset: number): SqlFragm
   }
   if (pred.not) {
     const inner = filterToSql(pred.not, offset);
-    return { text: `NOT (${inner.text})`, params: inner.params };
+    // Same NULL asymmetry one level up: NOT(NULL) is NULL, not TRUE, so a row
+    // the inner predicate could not evaluate was dropped rather than negated.
+    // COALESCE gives negation the JS meaning the memory provider already had —
+    // if the inner test did not hold, the negation does.
+    return { text: `COALESCE(NOT (${inner.text}), TRUE)`, params: inner.params };
   }
   return { text: 'TRUE', params: [] };
 }

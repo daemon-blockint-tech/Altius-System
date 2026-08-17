@@ -44,6 +44,21 @@ export interface OntologyLink {
 
 export type FilterExpression = FieldPredicate | LogicalPredicate;
 
+/**
+ * Comparison semantics every provider must implement identically.
+ *
+ * `neq` and a negated predicate INCLUDE rows whose field is unset. SQL's
+ * three-valued logic makes that the surprising case — `col != 'x'` and
+ * `NOT (col = 'x')` are both NULL when the column is NULL, so those rows are
+ * dropped — and Postgres did exactly that while the memory provider's `!==`
+ * included them. "Not archived" must not silently omit every object whose
+ * status was never set, so the JS reading is the contract and Postgres wraps
+ * accordingly.
+ *
+ * The range operators (gt/gte/lt/lte) go the other way: a row with an unset
+ * field is EXCLUDED, because "greater than" has no meaning for a value that is
+ * not there. That matches SQL without help.
+ */
 export interface FieldPredicate {
   field: string;
   operator:

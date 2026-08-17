@@ -104,6 +104,61 @@ function evaluateFilter(obj: Record<string, unknown>, filter: FilterExpression):
   return true;
 }
 
+/**
+ * Order two values for a range predicate, or undefined when they cannot be
+ * ordered at all.
+ *
+ * The four range operators previously required BOTH operands to be JS numbers,
+ * which made them match nothing in two common cases:
+ *
+ *  - REST. Query-string values are strings and coerceFilterValue only converts
+ *    `in` and `exists`, so `?filter[age][gt]=30` arrives as '30' and every row
+ *    failed the typeof check. Postgres casts the parameter against an integer
+ *    column, so the same request worked there and returned nothing here — and
+ *    memory is the default provider when POSTGRES_URL is unset, i.e. the dev
+ *    and test path.
+ *  - Dates and strings. filter-to-sql emits a bare `col > $1` with no type
+ *    gate, and the codegen assigns the range operators to Date/DateTime, so
+ *    every generated schema offers a date range that only worked on Postgres.
+ *
+ * Strings compare lexicographically, which is the correct ordering for the ISO
+ * forms the platform uses for Date ('YYYY-MM-DD') and DateTime. A numeric
+ * string against a number compares numerically — that is the REST case, and
+ * treating '30' as text against 30 would be its own wrong answer.
+ *
+ * Anything else — null, undefined, booleans, objects, a non-numeric string
+ * against a number — is incomparable and excluded, matching SQL, where a
+ * comparison against NULL is NULL and the row is dropped.
+ */
+function compareForRange(a: unknown, b: unknown): number | undefined {
+  if (a === null || a === undefined || b === null || b === undefined) return undefined;
+
+  const aNum = typeof a === 'number' ? a : undefined;
+  const bNum = typeof b === 'number' ? b : undefined;
+
+  if (aNum !== undefined && bNum !== undefined) {
+    return Number.isNaN(aNum) || Number.isNaN(bNum) ? undefined : aNum - bNum;
+  }
+
+  // One side numeric, the other a string: only meaningful if the string is a
+  // number. Number('') is 0 and Number(' ') is 0, so an empty string must not
+  // silently become zero.
+  if (aNum !== undefined && typeof b === 'string') {
+    const parsed = b.trim() === '' ? NaN : Number(b);
+    return Number.isNaN(parsed) ? undefined : aNum - parsed;
+  }
+  if (bNum !== undefined && typeof a === 'string') {
+    const parsed = a.trim() === '' ? NaN : Number(a);
+    return Number.isNaN(parsed) ? undefined : parsed - bNum;
+  }
+
+  if (typeof a === 'string' && typeof b === 'string') {
+    return a < b ? -1 : a > b ? 1 : 0;
+  }
+
+  return undefined;
+}
+
 function evaluateFieldPredicate(obj: Record<string, unknown>, pred: FieldPredicate): boolean {
   const val = obj[pred.field];
   switch (pred.operator) {
@@ -111,14 +166,22 @@ function evaluateFieldPredicate(obj: Record<string, unknown>, pred: FieldPredica
       return val === pred.value;
     case 'neq':
       return val !== pred.value;
-    case 'gt':
-      return typeof val === 'number' && typeof pred.value === 'number' && val > pred.value;
-    case 'gte':
-      return typeof val === 'number' && typeof pred.value === 'number' && val >= pred.value;
-    case 'lt':
-      return typeof val === 'number' && typeof pred.value === 'number' && val < pred.value;
-    case 'lte':
-      return typeof val === 'number' && typeof pred.value === 'number' && val <= pred.value;
+    case 'gt': {
+      const c = compareForRange(val, pred.value);
+      return c !== undefined && c > 0;
+    }
+    case 'gte': {
+      const c = compareForRange(val, pred.value);
+      return c !== undefined && c >= 0;
+    }
+    case 'lt': {
+      const c = compareForRange(val, pred.value);
+      return c !== undefined && c < 0;
+    }
+    case 'lte': {
+      const c = compareForRange(val, pred.value);
+      return c !== undefined && c <= 0;
+    }
     case 'in':
       return Array.isArray(pred.value) && (pred.value as unknown[]).includes(val);
     case 'contains':
