@@ -676,6 +676,37 @@ describe('Generated SDK runtime', () => {
       vi.useRealTimers();
     });
 
+    it('one throwing subscriber does not stop the others receiving', async () => {
+      // The close and resume handlers are already guarded; the DATA callback
+      // was not. A subscriber that throws — a render error in a live table is
+      // the obvious way — propagated out of the socket message listener, so
+      // every other subscription on that socket stopped being delivered while
+      // the connection stayed up and looked healthy.
+      vi.useFakeTimers();
+      const client = new Altius({ endpoint: 'http://localhost:3000/graphql', token: 't' });
+
+      const good = vi.fn();
+      client.patient.onAnyChange(() => { throw new Error('render blew up'); });
+      client.ward.onAnyChange(good);
+      await vi.advanceTimersByTimeAsync(10);
+      const ws = MockWebSocket.instances[0]!;
+      ws._receive(JSON.stringify({ type: 'connection_ack' }));
+
+      const ids = ws.sent
+        .filter(m => m.includes('"subscribe"'))
+        .map(m => JSON.parse(m).id as string);
+
+      ws._receive(JSON.stringify({
+        type: 'next', id: ids[0], payload: { data: { patientsChanged: { changeType: 'UPDATED' } } },
+      }));
+      ws._receive(JSON.stringify({
+        type: 'next', id: ids[1], payload: { data: { wardsChanged: { changeType: 'UPDATED' } } },
+      }));
+
+      expect(good).toHaveBeenCalledTimes(1);
+      vi.useRealTimers();
+    });
+
     it('does not reconnect after the caller unsubscribes', async () => {
       // Letting go of a stream is not losing one; reconnecting here would
       // resurrect a subscription the caller has already abandoned.

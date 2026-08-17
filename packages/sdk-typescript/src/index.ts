@@ -1183,7 +1183,12 @@ export class Altius {
         }
       } else if (msg.type === 'next' && msg.id) {
         const handler = this.wsSubscriptions.get(msg.id);
-        if (handler) handler(msg.payload);
+        // Guarded like the close and resume handlers. A subscriber that
+        // throws — a render error in a live table being the obvious way —
+        // otherwise propagates out of the message listener and every OTHER
+        // subscription on this socket stops being delivered, while the
+        // connection stays up and looks healthy.
+        if (handler) { try { handler(msg.payload); } catch { /* one subscriber must not silence the rest */ } }
       } else if ((msg.type === 'error' || msg.type === 'complete') && msg.id) {
         // The SERVER ended this one — auth expiry, revoked permission, a
         // filter it will not accept. Forgetting only the message handler
