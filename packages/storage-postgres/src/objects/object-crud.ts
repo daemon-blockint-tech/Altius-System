@@ -142,8 +142,18 @@ export async function createObject(
   const id = genId();
   const timestamp = now();
 
-  // Build column names and values for user properties
-  const propEntries = Object.entries(properties);
+  // Build column names and values for user properties.
+  //
+  // System fields are dropped rather than written. A caller-supplied `_type`
+  // or `_tenantId` must never reach the row: the memory provider used to let
+  // them override the computed values, which meant a row could report a type
+  // it was not stored as, or claim another tenant. Postgres happened to refuse
+  // them already — snakeCase strips the leading underscore, so `_type` became
+  // a `type` column that does not exist and the insert raised 42703 — but that
+  // is an accident of naming, not a decision, and it would stop protecting the
+  // moment a type declared a property called `type`. Both providers now ignore
+  // them, deliberately and for the same reason.
+  const propEntries = Object.entries(properties).filter(([k]) => !k.startsWith('_'));
   const systemCols = ['"_tenant_id"', '"_id"', '"_type"', '"_version"', '"_created_at"', '"_updated_at"', '"_actor_id"'];
   const systemVals = [ctx.tenantId, id, type, 1, timestamp, timestamp, ctx.actorId ?? null];
 
