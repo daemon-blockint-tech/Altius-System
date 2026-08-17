@@ -35,6 +35,44 @@ export interface Edge<T> {
 /** Matches the SDL `enum SortDirection`. */
 export type SortDirection = 'ASC' | 'DESC';
 
+/**
+ * A request that reached the gateway and came back a failure.
+ *
+ * Carries the HTTP status and any GraphQL `extensions.code` values, because
+ * callers have to tell WHY it failed apart to respond correctly: a 401 means
+ * the credential is the problem and retrying produces the same answer
+ * forever, while a 500 or a network blip is worth a Retry button. Without
+ * these fields the only signal is the message, and reading a status back out
+ * of prose is a regex that breaks the day the wording changes.
+ *
+ * The message is unchanged from what this SDK has always thrown, so anything
+ * matching on it keeps working.
+ */
+export class AltiusRequestError extends Error {
+  /** HTTP status, absent when the failure arrived as a GraphQL error body on a 200. */
+  readonly status?: number;
+  /** `extensions.code` values from the GraphQL error array, in order. */
+  readonly codes: readonly string[];
+
+  constructor(message: string, init?: { status?: number; codes?: readonly string[] }) {
+    super(message);
+    this.name = 'AltiusRequestError';
+    if (init?.status !== undefined) this.status = init.status;
+    this.codes = init?.codes ?? [];
+  }
+
+  /**
+   * The caller was not authenticated.
+   *
+   * 403 is deliberately NOT included: it means the caller IS identified and
+   * lacks permission, so sending them back to sign in would loop them
+   * through a login that changes nothing.
+   */
+  get isUnauthenticated(): boolean {
+    return this.status === 401 || this.codes.includes('UNAUTHENTICATED');
+  }
+}
+
 export interface ActionError {
   code: string;
   message: string;
@@ -1249,11 +1287,11 @@ export class Altius {
       body: JSON.stringify({ query, variables }),
     });
     if (!response.ok) {
-      throw new Error(`GraphQL request failed: ${response.status} ${response.statusText}`);
+      throw new AltiusRequestError(`GraphQL request failed: ${response.status} ${response.statusText}`, { status: response.status });
     }
-    const json = (await response.json()) as { data?: T; errors?: Array<{ message: string }> };
+    const json = (await response.json()) as { data?: T; errors?: Array<{ message: string; extensions?: { code?: string } }> };
     if (json.errors && json.errors.length > 0) {
-      throw new Error(`GraphQL errors: ${json.errors.map((e) => e.message).join("; ")}`);
+      throw new AltiusRequestError(`GraphQL errors: ${json.errors.map((e) => e.message).join("; ")}`, { codes: json.errors.map((e) => e.extensions?.code).filter((c): c is string => typeof c === "string") });
     }
     return (json.data ?? null) as T;
   }
@@ -1271,11 +1309,11 @@ export class Altius {
       body: JSON.stringify({ query: mutation, variables: { input } }),
     });
     if (!response.ok) {
-      throw new Error(`GraphQL mutation failed: ${response.status} ${response.statusText}`);
+      throw new AltiusRequestError(`GraphQL mutation failed: ${response.status} ${response.statusText}`, { status: response.status });
     }
-    const json = (await response.json()) as { data?: Record<string, T>; errors?: Array<{ message: string }> };
+    const json = (await response.json()) as { data?: Record<string, T>; errors?: Array<{ message: string; extensions?: { code?: string } }> };
     if (json.errors && json.errors.length > 0) {
-      throw new Error(`GraphQL errors: ${json.errors.map((e) => e.message).join("; ")}`);
+      throw new AltiusRequestError(`GraphQL errors: ${json.errors.map((e) => e.message).join("; ")}`, { codes: json.errors.map((e) => e.extensions?.code).filter((c): c is string => typeof c === "string") });
     }
     return (json.data?.[field] ?? null) as T;
   }

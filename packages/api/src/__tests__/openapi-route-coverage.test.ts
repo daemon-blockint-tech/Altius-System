@@ -82,6 +82,10 @@ describe('OpenAPI spec covers the REST routes', () => {
     ...generateTraverseRoutes(deps),
     ...generateRelationshipRoutes(deps, new Map()),
     ...generateConsentRoutes(deps),
+    // The function pipeline webhook is mounted directly in server.ts (not via
+    // a route generator) but is documented in the OpenAPI spec, so include it
+    // here to avoid a false "phantom route" finding.
+    { method: 'POST', pattern: '/api/v1/functions-lifecycle/webhook', handler: async () => ({ status: 503, body: {} }) },
   ];
   const spec = generateOpenApiSpec(parsed) as { paths: Record<string, Record<string, unknown>> };
 

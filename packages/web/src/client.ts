@@ -90,10 +90,22 @@ export function readConfig(
 
   const issuer = env['VITE_OIDC_ISSUER'];
   const clientId = env['VITE_OIDC_CLIENT_ID'] ?? 'altius';
-  // Absent OIDC config is legitimate against the dev stack, which runs with
-  // NODE_ENV=development and accepts unauthenticated requests. Returning null
-  // rather than throwing keeps `pnpm dev` working without a Keycloak, while
-  // production is covered by the gateway refusing anonymous callers.
+  // Absent OIDC config means this app has NO WAY to authenticate. It does not
+  // mean requests will be accepted: the gateway refuses anonymous callers in
+  // every environment, dev included —
+  //   POST localhost:4099/graphql {"query":"{__typename}"}
+  //   → {"errors":[{"message":"Authentication required",
+  //                 "extensions":{"code":"UNAUTHENTICATED"}}]}
+  // The only dev bypass that exists is MCP-only
+  // (ALTIUS_MCP_DEV_AUTH_BYPASS, security/src/auth/dev-bypass.ts); nothing
+  // equivalent gates GraphQL or REST.
+  //
+  // This used to claim the opposite — that the dev stack accepts
+  // unauthenticated requests — and on that premise the app rendered its data
+  // views and let every one of them fail 401, which reads as a broken app
+  // rather than an unconfigured one. Null is still returned rather than
+  // throwing, so the caller can say WHICH it is (see App's unconfigured
+  // branch); it is a configuration state to report, not a crash.
   const oidc: OidcConfig | null = issuer
     ? { issuer, clientId, redirectUri: env['VITE_OIDC_REDIRECT_URI'] ?? origin }
     : null;

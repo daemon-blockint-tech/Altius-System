@@ -14,11 +14,13 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
+    "build:sandbox": "bash scripts/build-sandbox-preload.sh",
+    "build:all": "pnpm build && pnpm build:sandbox",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "clean": "rm -rf dist coverage"
   },
-  "files": ["dist"],
+  "files": ["dist", "scripts/build-sandbox-preload.sh", "src/functions/sandbox-preload.c"],
   "license": "Apache-2.0",
   "dependencies": {
     "@altius/spi": "workspace:*",

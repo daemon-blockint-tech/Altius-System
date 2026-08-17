@@ -49,6 +49,10 @@ import {
   InMemoryObjectSetStore,
   ObjectSetManager,
   FunctionExecutor,
+  FunctionRegistry,
+  FunctionPipeline,
+  GitFunctionSource,
+  WebhookPipelineTrigger,
   IsolatedNodeFunctionRuntime,
   CelFunctionRuntime,
   ComputedFieldEvaluator,
@@ -92,7 +96,7 @@ import {
 import type { ActionAuthzMapping } from './config.js';
 import { createActionEventPublisher } from './events/action-event-publisher.js';
 import { loadDomainPacks } from './schema-loader.js';
-import { generateOpenFGASchema, mergeOpenFGAOverrides, deriveActionAuthzMapping, InMemorySchemaRegistry } from '@altius/odl';
+import { generateOpenFGASchema, mergeOpenFGAOverrides, deriveActionAuthzMapping, deriveFunctionAuthzMapping, InMemorySchemaRegistry } from '@altius/odl';
 import type { SchemaRegistry } from '@altius/odl';
 import { recordSchemaVersion, BreakingSchemaChangeError } from './schema-registry-boot.js';
 import { SlidingWindowRateLimiter, RedisRateLimiter } from './governance/index.js';
@@ -412,6 +416,26 @@ async function main(): Promise<void> {
   if (schema.functionTypes.length > 0) {
     logger.info(`Functions: ${schema.functionTypes.length} function type(s) declared`);
   }
+
+  // ── Function Lifecycle Registry ──
+  // Manages draft/publish/test/rollback revisions for user-authored functions.
+  // The REST lifecycle routes at /api/v1/functions-lifecycle/* and the GraphQL
+  // lifecycle mutations delegate to this registry.
+  const functionRegistry = new FunctionRegistry();
+
+  // ── Function Pipeline + Webhook Trigger ──
+  // The pipeline orchestrates source→draft→test→publish. The webhook trigger
+  // receives Git push events and runs the pipeline for matching functions.
+  // Enabled when FUNCTION_WEBHOOK_SECRET is set; otherwise advisory-only.
+  const gitSource = new GitFunctionSource(process.env['FUNCTION_GIT_BASE_DIR'] ?? '/tmp/altius-git');
+  const functionPipeline = new FunctionPipeline(gitSource, functionRegistry, functionExecutor, schema);
+  const webhookSecret = process.env['FUNCTION_WEBHOOK_SECRET'];
+  const webhookTrigger = webhookSecret
+    ? new WebhookPipelineTrigger(functionPipeline, {
+        secret: webhookSecret,
+        pipelines: [], // Configured per-deployment via FUNCTION_WEBHOOK_PIPELINES env
+      })
+    : undefined;
 
   // ── Computed Field Evaluator ──
   // Bridges @computed fields to built-ins (countLinks, lookupField) and
@@ -751,6 +775,18 @@ async function main(): Promise<void> {
     security = { async checkPermission() { return { allowed: true }; } };
   }
 
+  // ── Function ReBAC mappings ──
+  // Derive per-function FGA mappings from schema functionTypes, mirroring
+  // actionMappings. A function with an ObjectType-typed @param (e.g.
+  // ComputeTriageScore with patient: Patient! @param) gets a mapping so
+  // invokeFunction checks can_compute_triage_score on patient:<id> before
+  // the role-membership gate. Functions without an ObjectType @param have
+  // no mapping and fall through to role-only authz.
+  const functionAuthzMappings = deriveFunctionAuthzMappings(schema);
+  if (functionAuthzMappings.size > 0) {
+    logger.info({ count: functionAuthzMappings.size }, 'Function ReBAC mappings derived');
+  }
+
   // ── Audit Trail ──
   const auditStore = (storage instanceof PostgresStorageProvider)
     ? new PostgresAuditStore(storage.pool)
@@ -926,6 +962,8 @@ async function main(): Promise<void> {
     manifestRegistry,
     objectSetManager,
     functionExecutor,
+    functionAuthzMappings,
+    functionRegistry,
     auditWriter: securityAuditWriter,
     auditStore,
     grantAllowlist,
@@ -1557,6 +1595,49 @@ async function main(): Promise<void> {
     logger.info('Ingest webhook disabled (set INGEST_SECRET to enable)');
   }
 
+  // ── Function Pipeline Webhook ──
+  // Receives Git push events (GitHub/GitLab) and triggers the function
+  // pipeline for matching functions. Signature-verified with HMAC-SHA256
+  // (GitHub) or token (GitLab). Disabled when FUNCTION_WEBHOOK_SECRET is unset.
+  if (webhookTrigger) {
+    app.post('/api/v1/functions-lifecycle/webhook', express.json({ limit: '5mb' }), async (req, res) => {
+      try {
+        const headers = req.headers as Record<string, string>;
+        const body = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
+        // Detect provider from headers
+        const isGitHub = 'x-hub-signature-256' in headers || 'x-github-event' in headers;
+        const isGitLab = 'x-gitlab-token' in headers || 'x-gitlab-event' in headers;
+        let result;
+        if (isGitHub) {
+          result = await webhookTrigger.handleGitHubWebhook(headers, body);
+        } else if (isGitLab) {
+          result = await webhookTrigger.handleGitLabWebhook(headers, body);
+        } else {
+          // Generic: requires repoUrl + ref in the body
+          const payload = typeof req.body === 'object' ? req.body : JSON.parse(body);
+          result = await webhookTrigger.handleGenericWebhook(
+            payload['repoUrl'] as string,
+            payload['ref'] as string | undefined,
+          );
+        }
+        if (!result.verified) {
+          res.status(401).json({ error: { code: 'UNAUTHORIZED', message: result.error ?? 'Webhook verification failed' } });
+          return;
+        }
+        res.status(200).json({
+          processed: result.processed,
+          results: result.results,
+        });
+      } catch (err) {
+        logger.error({ err: err instanceof Error ? err.message : 'unknown' }, 'Function webhook error');
+        res.status(500).json({ error: { code: 'INTERNAL', message: 'Webhook processing failed' } });
+      }
+    });
+    logger.info('Function pipeline webhook mounted at /api/v1/functions-lifecycle/webhook');
+  } else {
+    logger.info('Function pipeline webhook disabled (set FUNCTION_WEBHOOK_SECRET to enable)');
+  }
+
   // ── Graceful shutdown ──
   const SHUTDOWN_TIMEOUT_MS = 5_000;
 
@@ -1764,6 +1845,24 @@ function deriveActionAuthzMappings(
     if (mapping) mappings.set(action.name, mapping);
   }
 
+  return mappings;
+}
+
+/**
+ * Derive per-function ReBAC mappings from schema functionTypes.
+ * Mirrors deriveActionAuthzMappings but for functions: a function with an
+ * ObjectType-typed @param gets a FunctionAuthzMapping so invokeFunction
+ * checks the FGA relation on the target object before the role gate.
+ */
+function deriveFunctionAuthzMappings(
+  schema: import('@altius/odl').ParsedSchema,
+): Map<string, import('@altius/odl').FunctionAuthzMapping> {
+  const mappings = new Map<string, import('@altius/odl').FunctionAuthzMapping>();
+  const objectTypeNames = new Set(schema.objectTypes.map(o => o.name));
+  for (const fn of schema.functionTypes) {
+    const mapping = deriveFunctionAuthzMapping(fn, objectTypeNames);
+    if (mapping) mappings.set(fn.name, mapping);
+  }
   return mappings;
 }
 

@@ -8,6 +8,7 @@ import { createClient } from './client.js';
 import type { WebConfig } from './client.js';
 import { AuthSession } from './auth/session.js';
 import { beginLogin, completeLogin } from './auth/pkce.js';
+import { isAuthFailure } from './auth/auth-failure.js';
 
 type AuthState = 'checking' | 'anonymous' | 'signed-in' | 'error';
 
@@ -76,11 +77,31 @@ export function App({ config }: { config: WebConfig }): ReactNode {
   // reconnects it when the server drops it — while nothing references it.
   useEffect(() => () => client.close(), [client]);
 
+  /**
+   * Send an identity failure back to the signed-out view instead of letting it
+   * surface as a data error.
+   *
+   * A credential that has stopped working fails every widget at once, and each
+   * one would offer its own Retry sending the same dead token — a screenful of
+   * buttons that cannot succeed. The session's own expiry callback covers a
+   * token that expires on the clock; this covers the rest (revoked mid-session,
+   * or a clock the client and issuer disagree about), where the first the app
+   * hears of it is a 401 on a read.
+   *
+   * Rethrown after: the widget still needs its promise to reject, and this only
+   * decides what the user is shown.
+   */
+  const guardAuth = <R,>(p: Promise<R>): Promise<R> =>
+    p.catch((err: unknown) => {
+      if (isAuthFailure(err)) setAuthState('anonymous');
+      throw err;
+    });
+
   // Memoised so ActionPanel refetches only when the client actually changes,
   // not on every render of this component.
   const loadActions = useMemo(
     () => async (): Promise<ActionSchema[]> => {
-      const tools = await client.actions.available({ kind: 'ACTION' });
+      const tools = await guardAuth(client.actions.available({ kind: 'ACTION' }));
       return tools.map(t => ({
         name: t.name,
         description: t.description,
@@ -89,6 +110,26 @@ export function App({ config }: { config: WebConfig }): ReactNode {
     },
     [client],
   );
+
+  // No OIDC configured means there is no way to obtain a credential, and the
+  // gateway refuses anonymous callers in every environment (see client.ts).
+  // Every data view below would load and fail 401 behind a Retry that can never
+  // succeed — an app that reads as broken when it is merely unconfigured. Said
+  // once, here, instead of once per widget.
+  if (!config.oidc) {
+    return (
+      <main>
+        <h1>Altius</h1>
+        <div role="alert">
+          <p>Sign-in is not configured, so this app cannot load any data.</p>
+          <p>
+            Set <code>VITE_OIDC_ISSUER</code> (and <code>VITE_OIDC_CLIENT_ID</code> if it is not
+            <code> altius</code>) to point at your identity provider, then reload.
+          </p>
+        </div>
+      </main>
+    );
+  }
 
   if (authState === 'checking') return <p>Signing in…</p>;
 
@@ -129,14 +170,14 @@ export function App({ config }: { config: WebConfig }): ReactNode {
           { key: 'triageCategory', header: 'Triage', sortable: true },
         ]}
         load={({ first, after, orderBy }) =>
-          client.patient.list(
+          guardAuth(client.patient.list(
             undefined,
             after === undefined ? { first } : { first, after },
             undefined,
             // { field: 'ASC' } is the shape PatientOrderBy takes; the table
             // reports one active key at a time.
             orderBy ? { [orderBy.key]: orderBy.direction } : undefined,
-          )
+          ))
         }
         subscribe={(onChange, onLost, onResumed) =>
           client.patient.onAnyChange(() => onChange(), undefined, onLost, onResumed)
@@ -145,7 +186,7 @@ export function App({ config }: { config: WebConfig }): ReactNode {
 
       <ActionPanel
         loadActions={loadActions}
-        submit={(name, input) => client.actions.invoke(name, input)}
+        submit={(name, input) => guardAuth(client.actions.invoke(name, input))}
       />
     </main>
   );

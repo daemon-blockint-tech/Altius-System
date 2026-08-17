@@ -713,6 +713,20 @@ function platformPaths(): Record<string, unknown> {
         },
       },
     },
+    '/api/v1/functions-lifecycle/webhook': {
+      post: {
+        tags: ['Functions'],
+        summary: 'Git push webhook trigger for the function pipeline',
+        description: 'Receives GitHub/GitLab push webhooks, verifies the signature, and runs the function pipeline for matching functions. Requires FUNCTION_WEBHOOK_SECRET to be set.',
+        operationId: 'functionPipelineWebhook',
+        requestBody: { required: true, content: jsonObject },
+        responses: {
+          '200': { description: 'Webhook processed', content: jsonObject },
+          '401': { description: 'Invalid signature or token' },
+          '503': { description: 'Webhook trigger not configured' },
+        },
+      },
+    },
   };
 }
 

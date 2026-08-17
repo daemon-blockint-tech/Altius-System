@@ -26,6 +26,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <stdarg.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <netinet/in.h>
@@ -109,7 +110,7 @@ int open(const char *pathname, int flags, ...) {
     if (flags & O_CREAT) {
         va_list args;
         va_start(args, flags);
-        mode = va_arg(args, mode_t);
+        mode = (mode_t)va_arg(args, int);
         va_end(args);
     }
 
@@ -148,7 +149,7 @@ int openat(int dirfd, const char *pathname, int flags, ...) {
     if (flags & O_CREAT) {
         va_list args;
         va_start(args, flags);
-        mode = va_arg(args, mode_t);
+        mode = (mode_t)va_arg(args, int);
         va_end(args);
     }
 
