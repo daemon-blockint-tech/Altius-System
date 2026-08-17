@@ -1,22 +1,29 @@
 /**
- * ADVERSARIAL: the createObject half of the marking check trusts
- * `effect.objectType` as the type that will be written. It is not.
+ * REGRESSION (was ADVERSARIAL): the createObject half of the marking check
+ * trusts `effect.objectType` as the type that will be written.
  *
- * `executeCreateObject` calls `txn.createObject(effect.objectType, properties)`
- * with the manifest's properties unfiltered, and the memory provider builds the
- * row as `{ _tenantId, _type: type, _id, ..., ...properties }` — properties
- * spread LAST. A manifest property literally named `_type` therefore overwrites
- * the stamped type after the fact.
+ * The exploit: `executeCreateObject` calls
+ * `txn.createObject(effect.objectType, properties)` with the manifest's
+ * properties unfiltered, and the memory provider built the row as
+ * `{ _tenantId, _type: type, _id, ..., ...properties }` — properties spread
+ * LAST, so a manifest property literally named `_type` overwrote the stamped
+ * type after the fact. `touchedObjectTypes` saw "Note", found it unmarked, and
+ * the caller sailed through; the row then answered to
+ * `queryObjects(ctx, 'Patient', ...)`, which filters on `obj._type`, not on the
+ * key it was stored under.
  *
- * Nothing upstream stops it: the manifest parser accepts any property key, and
- * `validateSchemaFields` only walks fields the type declares, so an undeclared
- * `_type` is not rejected. `touchedObjectTypes` sees "Note", finds it unmarked,
- * and the caller sails through.
+ * Closed at three layers, each independently sufficient:
+ *   1. storage-memory `_doCreateObject` spreads caller properties FIRST, so the
+ *      computed `_type`/`_tenantId` win.
+ *   2. storage-postgres `createObject` drops `_`-prefixed keys before building
+ *      the INSERT (it used to refuse them only by accident — `snakeCase`
+ *      stripped the underscore and the column did not exist).
+ *   3. `executeCreateObject` now throws on a `_`-prefixed manifest property
+ *      rather than letting the provider drop it silently, so a manifest that
+ *      asks for this is named, not quietly reinterpreted.
  *
- * The row then answers to `queryObjects(ctx, 'Patient', ...)`, which filters on
- * `obj._type`, not on the key it was stored under. So an actor holding no PII
- * marking has put a row into the Patient collection every PII-cleared reader
- * sees — the type name never named literally, resolved from a property value.
+ * The assertions below are inverted from the original exploit on purpose: they
+ * pin the write to the type the manifest declared and the marking check saw.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -113,33 +120,35 @@ describe('createObject: the written type is not always the declared one', () => 
     expect((await storage.queryObjects(REQ_CTX, 'Patient', ALL)).items).toHaveLength(0);
   });
 
-  it('lets an uncleared caller put a row into Patient via a forged _type property', async () => {
+  it('refuses a manifest that sets a system field rather than dropping it', async () => {
     const { storage, executor } = await harness();
     const { manifest } = parseActionManifest(FORGED_YAML);
 
     const result = await executor.execute(manifest!, { text: 'forged' }, uncleared, ctx, schema);
 
-    // The marking check saw only "Note".
-    expect(result.errors.some((e) => e.code === 'MARKING_DENIED')).toBe(false);
-    expect(result.success).toBe(true);
+    expect(result.success).toBe(false);
+    expect(result.errors[0]?.message).toContain('_type');
 
-    // The load-bearing assertion: the platform now serves this row as a
-    // Patient, to readers gated on the PII marking the writer never held.
-    const patients = await storage.queryObjects(REQ_CTX, 'Patient', ALL);
-    expect(patients.items).toHaveLength(1);
-    expect(patients.items[0]!['text']).toBe('forged');
-    expect(patients.items[0]!._type).toBe('Patient');
-
-    // And it is not in Note at all — it did not merely leak, it moved.
+    // Nothing written under either name.
+    expect((await storage.queryObjects(REQ_CTX, 'Patient', ALL)).items).toHaveLength(0);
     expect((await storage.queryObjects(REQ_CTX, 'Note', ALL)).items).toHaveLength(0);
   });
 
-  it('audits the write as Note, so the trail never names Patient either', async () => {
-    const { executor } = await harness();
-    const { manifest } = parseActionManifest(FORGED_YAML);
+  it('stamps the declared type even if the provider is handed a forged _type', async () => {
+    // Straight at the provider, bypassing the executor guard above: the
+    // storage layer must fail closed on its own, because the executor is not
+    // the only writer (sync, bulk load, and the ingest path all reach it).
+    const { storage } = await harness();
 
-    const result = await executor.execute(manifest!, { text: 'forged' }, uncleared, ctx, schema);
+    const created = await storage.createObject(REQ_CTX, 'Note', {
+      text: 'forged',
+      _type: 'Patient',
+      _tenantId: 'other-tenant',
+    } as never);
 
-    expect(result.affectedObjects.map((a) => a.type)).toEqual(['Note']);
+    expect(created._type).toBe('Note');
+    expect(created._tenantId).toBe(REQ_CTX.tenantId);
+    expect((await storage.queryObjects(REQ_CTX, 'Patient', ALL)).items).toHaveLength(0);
+    expect((await storage.queryObjects(REQ_CTX, 'Note', ALL)).items).toHaveLength(1);
   });
 });

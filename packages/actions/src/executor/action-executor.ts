@@ -283,8 +283,38 @@ export const __stripSystemFieldsForTest = stripSystemFields;
 // ActionExecutor
 // ---------------------------------------------------------------------------
 
+/** Outcome of resolving an effect target against the action context. */
+type TargetResolution =
+  /** Resolved to an object the platform itself loaded or created. */
+  | { kind: 'object'; object: OntologyObject }
+  /** Path leads nowhere — an optional link with no row, or an unset key. */
+  | { kind: 'absent' }
+  /** Path leads to an object-shaped value the platform never read. */
+  | { kind: 'forged'; path: string };
+
+const ABSENT: TargetResolution = { kind: 'absent' };
+
 export class ActionExecutor {
   private readonly config: ActionExecutorConfig;
+
+  /**
+   * Every object this executor loaded from storage (or created through a
+   * transaction). An effect target MUST be one of these.
+   *
+   * `resolveTarget` walks the CEL context, and the context holds the raw
+   * caller params under `params` — so a dotted target like `params.bed` reads
+   * request JSON, and whatever shape the caller put there was written as if
+   * the platform had read it: `txn.updateObject(target._type, target._id, …)`
+   * takes both the type and the id from the payload. That is a write
+   * primitive over every type and id in the ontology, not merely a way past
+   * one marking, so the guard belongs here rather than in the marking check
+   * alone — every effect resolves its target through this path.
+   *
+   * A WeakSet keyed on identity, not a marker property: a marker would ride
+   * along into CEL context, audit snapshots and provenance, and could be
+   * forged by a caller sending the same key.
+   */
+  private readonly platformObjects = new WeakSet<object>();
 
   constructor(config: ActionExecutorConfig) {
     this.config = config;
@@ -449,6 +479,7 @@ export class ActionExecutor {
       actor,
       schema,
       reqCtx,
+      actionTypeDef,
     );
     if (runtimeMarkingDenial) {
       return failResult(actionId, [runtimeMarkingDenial]);
@@ -807,6 +838,7 @@ export class ActionExecutor {
     actor: ActionActor,
     schema: ParsedSchema,
     reqCtx: RequestContext,
+    actionTypeDef: ActionType | undefined,
   ): Promise<ActionError | null> {
     const policy = this.config.markingPolicy;
     if (!policy || policy.isEmpty) return null;
@@ -816,23 +848,118 @@ export class ActionExecutor {
     for (const effect of manifest.effects) {
       if (effect.type !== 'updateObject' && effect.type !== 'deleteObject') continue;
 
-      const target = await this.resolveTarget(effect.target, context, schema, reqCtx);
-      if (!target || typeof target._type !== 'string') continue;
+      // Structural-only mode (no ActionType in the schema) has no declared
+      // types to walk, so the static half is skipped there and the runtime
+      // half below carries the check on its own.
+      if (actionTypeDef) {
+        const staticType = this.staticTargetType(effect.target, actionTypeDef, manifest, schema);
+        if (!staticType) {
+          // Refused, not skipped. An undeclared root (`params.patientId`) or a
+          // segment that is not a @link hop means the type this effect writes
+          // cannot be known before it runs — and an unknown type cannot be
+          // shown to carry no marking. Passing it through would make "no
+          // marking required" and "no type derivable" the same answer.
+          return {
+            code: 'MARKING_DENIED',
+            message:
+              `Action "${manifest.action}" targets "${effect.target}", whose ObjectType ` +
+              `cannot be derived from the schema, so its mandatory markings cannot be checked.`,
+          };
+        }
+        const denial = this.denyForMarkings(policy, held, staticType, manifest.action);
+        if (denial) return denial;
+      }
 
-      const required = policy.requiredFor(target._type);
-      if (required.length === 0) continue;
-
-      if (!policy.check(held, required).allowed) {
+      const resolution = await this.resolveTargetDetailed(effect.target, context, schema, reqCtx);
+      if (resolution.kind === 'forged') {
         return {
           code: 'MARKING_DENIED',
           message:
-            `Action "${manifest.action}" operates on ${target._type}, which is restricted by ` +
-            `mandatory markings the caller does not satisfy.`,
+            `Action "${manifest.action}" targets "${resolution.path}", which resolved to a ` +
+            `caller-supplied value rather than an object the platform read. The written type ` +
+            `and id would be the caller's, so no marking on them can be trusted.`,
         };
       }
+      if (resolution.kind === 'absent') continue;
+
+      const target = resolution.object;
+      if (typeof target._type !== 'string') continue;
+
+      // The runtime type, which may differ from the declared one: a stored
+      // link row's `_toType` need not match the schema's endpoint.
+      const denial = this.denyForMarkings(policy, held, target._type, manifest.action);
+      if (denial) return denial;
     }
 
     return null;
+  }
+
+  private denyForMarkings(
+    policy: NonNullable<ActionExecutorConfig['markingPolicy']>,
+    held: readonly string[],
+    objectType: string,
+    actionName: string,
+  ): ActionError | null {
+    const required = policy.requiredFor(objectType);
+    if (required.length === 0) return null;
+    if (policy.check(held, required).allowed) return null;
+    return {
+      code: 'MARKING_DENIED',
+      message:
+        `Action "${actionName}" operates on ${objectType}, which is restricted by ` +
+        `mandatory markings the caller does not satisfy.`,
+    };
+  }
+
+  /**
+   * The ObjectType an update/delete target will write, derived from the
+   * declaration alone — no storage, no caller input.
+   *
+   * The root segment must name an ObjectType-typed `@param` or an object a
+   * `createObject` effect binds into the context; every later segment must be
+   * a `@link` field on the type before it. Anything else returns undefined,
+   * which the caller treats as a refusal rather than as "unmarked".
+   */
+  private staticTargetType(
+    target: string,
+    actionTypeDef: ActionType,
+    manifest: ActionManifest,
+    schema: ParsedSchema,
+  ): string | undefined {
+    const [root, ...rest] = target.split('.');
+    if (!root) return undefined;
+
+    const objectTypeNames = new Set(schema.objectTypes.map((o) => o.name));
+
+    const param = actionTypeDef.fields.find(
+      (f) => f.name === root && f.directives.some((d) => d.kind === 'param'),
+    );
+    let currentType = param && objectTypeNames.has(param.type.name) ? param.type.name : undefined;
+
+    if (!currentType) {
+      // `executeCreateObject` binds each created object under the camelCase of
+      // its type name so a later effect can reach it.
+      for (const effect of manifest.effects) {
+        if (effect.type !== 'createObject') continue;
+        const key = effect.objectType[0]!.toLowerCase() + effect.objectType.slice(1);
+        if (key === root && objectTypeNames.has(effect.objectType)) {
+          currentType = effect.objectType;
+          break;
+        }
+      }
+    }
+
+    if (!currentType) return undefined;
+
+    for (const part of rest) {
+      const typeDef = schema.objectTypes.find((ot) => ot.name === currentType);
+      const field = typeDef?.fields.find((f) => f.name === part);
+      const linkDir = field?.directives.find((d) => d.kind === 'link');
+      if (!linkDir || !objectTypeNames.has(field!.type.name)) return undefined;
+      currentType = field!.type.name;
+    }
+
+    return currentType;
   }
 
   /**
@@ -965,7 +1092,9 @@ export class ActionExecutor {
           field.type.name,
           paramValue,
         );
-        resolved[field.name] = obj ? addIdAlias(obj, primaryFieldName(schema, field.type.name)) : null;
+        resolved[field.name] = obj
+          ? this.trackPlatformObject(addIdAlias(obj, primaryFieldName(schema, field.type.name)))
+          : null;
       } else {
         // Scalar param — pass through
         resolved[field.name] = paramValue;
@@ -1348,6 +1477,17 @@ export class ActionExecutor {
     // Resolve property values
     const properties: Record<string, unknown> = {};
     for (const [key, expr] of Object.entries(effect.properties)) {
+      // System fields are the provider's to compute. Both providers already
+      // refuse them (`_type` here decided which collection the row joined,
+      // while every control upstream had checked `effect.objectType`), but
+      // they refuse by ignoring: the manifest says one thing and the row is
+      // another, silently. Name it instead.
+      if (key.startsWith('_')) {
+        throw new Error(
+          `createObject effect on "${effect.objectType}" sets system field "${key}". ` +
+            `System fields are platform-managed and cannot be written by a manifest.`,
+        );
+      }
       properties[key] = this.resolveExpression(expr, context);
     }
 
@@ -1378,6 +1518,7 @@ export class ActionExecutor {
 
     const created = await txn.createObject(effect.objectType, properties);
     addIdAlias(created, primaryFieldName(schema, effect.objectType));
+    this.trackPlatformObject(created);
 
     // Inject created object into context so subsequent effects (e.g. createLink)
     // can reference it. Key is the camelCase form of the objectType name:
@@ -1734,12 +1875,38 @@ export class ActionExecutor {
     schema?: ParsedSchema,
     reqCtx?: RequestContext,
   ): Promise<OntologyObject | null> {
+    const resolution = await this.resolveTargetDetailed(target, context, schema, reqCtx);
+    return resolution.kind === 'object' ? resolution.object : null;
+  }
+
+  /** Register an object the platform itself read or wrote. See `platformObjects`. */
+  private trackPlatformObject<T extends object>(obj: T): T {
+    this.platformObjects.add(obj);
+    return obj;
+  }
+
+  /**
+   * `resolveTarget` with the reason kept.
+   *
+   * `absent` and `forged` both resolve to no usable object, but they are not
+   * the same event and must not answer the same way: a conditional effect on
+   * an optional link (`patient.currentBed` when there is no bed) is absent and
+   * routine, while a caller-supplied object literal is an attempt to choose
+   * the written row. Collapsing them either breaks every optional-link action
+   * or lets the forgery through as an ordinary "not found".
+   */
+  private async resolveTargetDetailed(
+    target: string,
+    context: Record<string, unknown>,
+    schema?: ParsedSchema,
+    reqCtx?: RequestContext,
+  ): Promise<TargetResolution> {
     const parts = target.split('.');
     let current: unknown = context;
 
     for (const part of parts) {
-      if (current === null || current === undefined) return null;
-      if (typeof current !== 'object') return null;
+      if (current === null || current === undefined) return ABSENT;
+      if (typeof current !== 'object') return ABSENT;
 
       const next = (current as Record<string, unknown>)[part];
       if (next !== undefined) {
@@ -1773,6 +1940,7 @@ export class ActionExecutor {
               const resolved = await this.config.storage.getObject(reqCtx, targetType, targetId);
               if (resolved) {
                 addIdAlias(resolved, primaryFieldName(schema, targetType));
+                this.trackPlatformObject(resolved);
                 // Cache in context so subsequent references don't re-query
                 (current as Record<string, unknown>)[part] = resolved;
                 current = resolved;
@@ -1780,13 +1948,13 @@ export class ActionExecutor {
               }
             }
             // Link doesn't exist (e.g. patient has no current bed)
-            return null;
+            return ABSENT;
           }
         }
       }
 
       // Truly not found
-      return null;
+      return ABSENT;
     }
 
     if (
@@ -1796,9 +1964,15 @@ export class ActionExecutor {
       '_id' in (current as Record<string, unknown>) &&
       '_type' in (current as Record<string, unknown>)
     ) {
-      return current as OntologyObject;
+      // Shaped like an object, but shape is not provenance: `{_id, _type}` is
+      // two keys any request body can carry. Only an object the platform read
+      // or wrote may be written to.
+      if (!this.platformObjects.has(current)) {
+        return { kind: 'forged', path: target };
+      }
+      return { kind: 'object', object: current as OntologyObject };
     }
 
-    return null;
+    return ABSENT;
   }
 }
