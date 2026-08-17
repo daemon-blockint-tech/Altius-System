@@ -18,7 +18,7 @@ import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { resolve, dirname, delimiter } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse as parseYaml } from 'yaml';
-import { parseOdl } from '@altius/odl';
+import { parseOdl, mergeInterfaceFields } from '@altius/odl';
 import type { ParsedSchema, ObjectType, LinkType } from '@altius/odl';
 import { parseActionManifest, crossReferenceManifest } from '@altius/actions';
 import { logger } from './logger.js';
@@ -908,7 +908,7 @@ function convertObjectType(objType: ObjectType): ObjectTypeDefinition {
     // Skip 'id' — handled as system column _id
     if (field.directives.some(d => d.kind === 'primary')) continue;
     // Skip computed fields — not stored
-    if (field.directives.some(d => d.kind === 'computed')) continue;
+    if (field.directives.some(d => d.kind === 'computed' || d.kind === 'reducer')) continue;
     // Skip @link virtual fields — resolved at query time
     if (field.directives.some(d => d.kind === 'link')) continue;
 
@@ -1126,7 +1126,7 @@ export async function loadDomainPacks(
     loadPackSeeds(packDir, manifest, seedManifests);
   }
 
-  const merged = mergeSchemas(parsedSchemas);
+  const merged = mergeInterfaceFields(mergeSchemas(parsedSchemas));
   const spiSchema = toOntologySchema(merged);
 
   // Phase 2: Load action manifests (structural validation only — cross-ref checked in Phase 3)

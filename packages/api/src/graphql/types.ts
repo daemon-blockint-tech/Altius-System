@@ -10,7 +10,7 @@ import type {
   MarkingPolicy,
 } from '@altius/security';
 import type { ParsedSchema } from '@altius/odl';
-import type { RequestContext, StorageProvider, LLMClient } from '@altius/spi';
+import type { RequestContext, StorageProvider, LLMClient, BlobStore } from '@altius/spi';
 import { DataPurpose } from '@altius/spi';
 
 /**
@@ -140,6 +140,16 @@ export interface ApiDependencies {
    * monitoring endpoints are not registered.
    */
   workflowMonitor?: WorkflowMonitor;
+  /**
+   * Blob store for media/attachment properties. When present, the REST
+   * upload/download endpoints are registered:
+   *   POST   /api/v1/attachments         (multipart upload)
+   *   GET    /api/v1/attachments/:blobId (download)
+   *   DELETE /api/v1/attachments/:blobId (delete)
+   * Absent → attachment endpoints are not registered and Attachment
+   * properties cannot be written with actual blob content.
+   */
+  blobStore?: BlobStore;
 }
 
 /**

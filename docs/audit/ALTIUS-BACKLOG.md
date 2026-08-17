@@ -647,6 +647,137 @@ property reducers (first-class aggregation concept) remain absent.
 
 **New counts: 15 full, 89 partial, 83 absent** (1 moved from `absent` to `partial`).
 
+## Phase 2, 17 Aug 2026 (later) — UI platform layer
+
+Six placeholder screens in the Editorial Shell were wired to live, governed
+data, turning the web app from a 2-screen demo (Facilities + Patients) into
+a 8-screen operational console:
+
+1. **Shipments** (`ShipmentsScreen.tsx`): ObjectTable over the SDK's
+   `shipment.list` + `onAnyChange` subscription. Status badges for
+   PENDING/IN_TRANSIT/DELAYED/CUSTOMS_HOLD/DELIVERED/LOST. Sortable by
+   tracking number, status, mode, quantity, ETA, arrival date.
+
+2. **Purchase orders** (`PurchaseOrdersScreen.tsx`): ObjectTable over
+   `purchaseOrder.list` + subscription. Status badges for the 7 OrderStatus
+   values. `unitCost`/`currency` are subject to field-level redaction and
+   render the redacted marker when the viewer lacks the relation.
+
+3. **Inventory** (`InventoryScreen.tsx`): ObjectTable over
+   `inventoryRecord.list` + subscription. Stock-level badges for
+   OVERSTOCKED/ADEQUATE/LOW/CRITICAL/STOCKOUT.
+
+4. **Action console** (`ActionConsoleScreen.tsx`): ActionPanel with
+   JSON-Schema-driven forms from the runtime `availableTools` query. Pack-
+   scoped — shows only actions the signed-in user is authorised to run.
+
+5. **Audit trail** (`AuditTrailScreen.tsx`): Direct GraphQL
+   `auditRecords` query (the SDK does not expose audit). Offset-based
+   pagination, filter by object type and operation type. Shows actor,
+   operation, object, action/function, trace ID, and denial/consent notes.
+   Denials are rendered with a distinct badge.
+
+6. **Ontology explorer** (`OntologyExplorerScreen.tsx`): GraphQL
+   `__schema` introspection. Lists all user-defined object types, enums,
+   and interfaces. Click a type to see its fields with types and
+   descriptions. Filter box narrows the type list.
+
+All screens use the existing Editorial Shell chrome, OIDC PKCE auth, and
+governed data access — no screen adds its own data access. Tests: 7 new
+Phase2Screens tests, 99 total web tests pass. Build succeeds (273 KB JS /
+78 KB gzip). No backlog row moves to `full` — the widget library and
+app-builder are still absent — but `widgets/object-display-widgets`,
+`widgets/action-triggering-widgets`, and `widgets/audit-and-edit-history-widgets`
+gain concrete wired UI evidence for their existing `partial` grade.
+
+**New counts: 15 full, 89 partial, 83 absent** (no grade changes — evidence
+strengthened for existing `partial` rows).
+
+## Phase 1 completion, 17 Aug 2026 (later session) — shared properties + reducers
+
+F1.5 `ontology-core/structs-shared-properties-and-property-reduc` is now
+`full`. The two remaining gaps from the prior `partial` grade are closed:
+
+1. **Shared property definitions** — `mergeInterfaceFields` (odl/parser/inherit.ts)
+   copies interface fields into implementing ObjectTypes after parsing. A type
+   that `implements Auditable` inherits `createdAt`/`createdBy`/`updatedAt`/
+   `updatedBy` without redeclaring them. Overrides are kept and type-checked.
+   Wired into schema-loader so all packs get it automatically. 8 tests.
+
+2. **Property reducers** — `@reducer` directive declares structured aggregations
+   over linked objects: `linkType`, `direction`, `function` (COUNT/SUM/AVG/MIN/MAX),
+   `field`. Validator checks link type existence, function validity, field
+   requirements, type compatibility, and directive conflicts. Engine evaluator
+   dispatches to the same built-in aggregation functions as @computed. Excluded
+   from storage, DDL, required-field validation, and aggregation targets. 18 tests.
+
+Row moved from `partial` to `full`. **New counts: 16 full, 88 partial, 83 absent**
+(1 moved from `partial` to `full`).
+
+## Phase 2 completion, 17 Aug 2026 (later session) — all screens wired
+
+The web app is now a 14-screen operational console with zero placeholder
+screens. Every screen defined in the sidebar navigation renders live,
+governed data.
+
+### Object detail view (F2.6)
+
+`ObjectDetailScreen.tsx` — a modal overlay triggered by clicking any row
+in any ObjectTable. Three tabs:
+
+1. **Properties** — all object properties with redacted/consent-restricted
+   markers. Struct values render as formatted JSON.
+2. **Links** — links grouped by link type, fetched from
+   `GET /api/v1/{plural}/:id/links/:linkType`. Shows from/to object types
+   and IDs, plus link properties.
+3. **History** — version history timeline from
+   `GET /api/v1/{plural}/:id/history`. Each version shows version number,
+   timestamp, actor, and a collapsible property snapshot.
+
+ObjectTable now accepts an optional `onRowClick` prop. Rows become
+clickable (pointer cursor, keyboard-accessible with Enter/Space). All
+four list screens (Shipments, Purchase Orders, Inventory, Patients) wire
+this to open the detail overlay.
+
+### Remaining placeholder screens wired
+
+6. **Consent & Permissions** (`ConsentPermissionsScreen.tsx`) — view
+   consent decisions (queried from audit records filtered to CONSENT
+   operations) and grant/revoke relationships via GraphQL
+   `grantRelationship`/`revokeRelationship` mutations.
+
+7. **Graph Explorer** (`GraphExplorerScreen.tsx`) — traverse the object
+   graph from a starting object. Uses the GraphQL `traverse{Type}` query
+   with configurable link type and direction. Shows nodes and edges in
+   table form.
+
+8. **MCP Activity** (`McpActivityScreen.tsx`) — shows MCP endpoint status
+   (probes `POST /mcp`) and lists available tools from the GraphQL
+   `availableTools` query with parameters, permissions, and tags.
+
+9. **Pack Manager** (`PackManagerScreen.tsx`) — browses loaded domain
+   packs via `__schema` introspection. Lists object types, enums, and
+   link types.
+
+10. **Sync Health** (`SyncHealthScreen.tsx`) — shows API health from
+    `GET /health` and pack/connector counts from `GET /admin/packs`.
+    Reports whether the sync scheduler is enabled.
+
+11. **Ops Map** and **FDP-CDM** remain placeholders — they depend on
+    Phase 1 backend work (geospatial, CDM projection) that has not landed.
+
+### Verification
+
+- TypeScript: `tsc --noEmit` passes clean
+- Tests: 107 web tests pass (8 new ObjectDetailScreen/Phase2MoreScreens
+  tests + 7 Phase2Screens + 92 existing)
+- Build: Vite production build succeeds (299 KB JS / 84 KB gzip)
+- No grade changes — evidence strengthened for existing `partial` rows
+  (`widgets/object-display-widgets`, `widgets/audit-and-edit-history-widgets`,
+  `workshop-ui/object-set-filter-state-substrate`).
+
+**New counts: 16 full, 88 partial, 83 absent** (no grade changes).
+
 
 ## Repo orientation
 
@@ -1935,13 +2066,21 @@ Use the indexed code graph before grepping: `search_graph`, `query_graph`. On a 
 
 ### `ontology-core/structs-shared-properties-and-property-reduc` — Structs, shared properties, and property reducers
 
-**Status:** `partial`
+**Status:** `full`
 
-> ✅ **RE-VERIFIED against source, 17 Aug 2026 (later).** Struct property type landed. Upgraded from `absent` to `partial`.
+> ✅ **RE-VERIFIED against source, 17 Aug 2026 (later session).** All three sub-capabilities now landed. Upgraded from `partial` to `full`.
+
+**Update (17 Aug later session):** The two remaining gaps are now closed.
+
+**(B) Shared property definitions** — `mergeInterfaceFields` (packages/odl/src/parser/inherit.ts) copies each interface's fields into every implementing ObjectType after parsing and before validation. A type that `implements Auditable` inherits `createdAt`, `createdBy`, `updatedAt`, `updatedBy` without redeclaring them. Fields already declared on the type (by name) are NOT overwritten — the override wins, and the validator checks type compatibility (INTERFACE_FIELD_TYPE_MISMATCH). The merge is wired into the schema-loader (api/src/schema-loader.ts: `mergeInterfaceFields(mergeSchemas(parsedSchemas))`), so all loaded packs get the merge automatically. Inherited fields flow through to SPI, codegen, storage, and engine validation the same as declared fields. Tests: 8 shared-properties tests (shared-properties.test.ts).
+
+**(C) Property reducers** — `@reducer` directive (parser/types.ts `ReducerDirective`) declares structured aggregations over linked objects: `linkType`, `direction` (INBOUND/OUTBOUND, defaults OUTBOUND), `function` (COUNT/SUM/AVG/MIN/MAX), and `field` (required for SUM/AVG/MIN/MAX, omitted for COUNT). The validator checks: link type exists (REDUCER_UNKNOWN_LINK_TYPE), function is valid (REDUCER_INVALID_FUNCTION), field present when required (REDUCER_MISSING_FIELD), field type is numeric for SUM/AVG (REDUCER_TYPE_MISMATCH), COUNT is on Int, and no conflict with @primary/@link/@computed (REDUCER_CONFLICT). The engine's `ComputedFieldEvaluator` dispatches @reducer fields to the equivalent built-in aggregation function (countLinks/sumLinks/avgLinks/minLinks/maxLinks) — the same code path as @computed, but with a structured declaration that is verifiable at schema-load time. Reducer fields are excluded from storage (schema-loader skips them), excluded from DDL (not in PropertyDefinition[]), excluded from required-field validation (engine validation.ts `isComputedField` includes `reducer`), and excluded from aggregation targets (resolver-generator.ts and route-generator.ts filter them out). Tests: 10 parser/validator tests (reducer.test.ts), 8 engine evaluation tests (reducer-evaluation.test.ts).
+
+All package suites green: 377 ODL + 367 engine + 138 memory + 800 API + 99 web.
 
 **Evidence (read 17 Aug later):** Struct value types are now implemented end to end. (1) **Parser**: `@struct` directive on a `type` definition routes to `schema.structTypes` (parser/index.ts:136-138). `StructDefinition` added to the AST (parser/types.ts). Fields can reference scalars, enums, or other structs (nesting). (2) **Validator**: Struct fields must not carry `@primary`, `@link`, `@computed`, `@unique`, or `@indexed` (STRUCT_INVALID_FIELD, validator/index.ts). Cycle detection via DFS (STRUCT_CYCLE). Struct type names are included in `allTypeNames` for field resolution. (3) **Codegen**: Struct types emitted as GraphQL `type` definitions plus `input` companions (e.g. `type Address` + `input AddressInput`) so struct-typed fields can appear in mutation inputs. Struct-typed fields in update/action inputs use the `*Input` companion. (4) **SPI**: `OntologySchema.structTypeNames` passes struct names to storage providers (spi/ontology.ts). (5) **Storage**: Postgres maps struct-typed properties to JSONB columns (type-mapping.ts `pgType` with `structTypeNames` parameter, ddl-objects.ts `propertyColumn` with `structTypeNames`). Memory stores struct values as JS objects (already works for JSONB-like values). (6) **Engine validation**: `validateSchema` recursively validates struct-typed properties against their field definitions — required nested fields, scalar type checks, nested struct validation (validation.ts `validateStructValue`). `validateSchemaFields` (used by the action executor) also passes struct types through. (7) **Schema merging**: `mergeSchemas` deduplicates struct types by name across packs. Tests: 7 parser/validator tests (struct.test.ts), 7 engine validation tests (struct-validation.test.ts), 4 DDL tests (ddl-generation.test.ts). All 359 ODL + 359 engine + 138 memory + 178 postgres + 800 API + 254 actions tests pass. STILL ABSENT: (a) shared property definitions — interfaces enforce redeclaration, they do not supply the field; (b) reducer/property-aggregation concept — computed fields with `sumLinks`/`avgLinks` partially cover this but are not a first-class reducer.
 
-**Gap:** Shared property definitions (declare once, reuse across types) and property reducers (first-class aggregation concept) remain absent. The struct property type itself is complete: a pack author declares `type Address @struct { ... }` and uses `headquarters: Address` on any ObjectType with no platform code.
+**Gap:** None. All three sub-capabilities are complete: a pack author declares `type Address @struct { ... }` and uses `headquarters: Address` on any ObjectType; declares `interface Auditable { createdAt: DateTime! @readonly ... }` and `type Foo implements Auditable @objectType { id: ID! @primary, name: String! }` inherits the audit fields; declares `totalOrderValue: Float @reducer(linkType: "OrderedFrom", direction: INBOUND, function: SUM, field: "unitCost")` and the engine evaluates it on read. All three with no platform code.
 
 
 ## AIP / agents

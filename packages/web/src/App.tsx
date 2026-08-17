@@ -13,6 +13,18 @@ import { EditorialShell } from './components/EditorialShell.js';
 import type { JobKey, JobGroup, PackOption, RoleOption } from './components/EditorialShell.js';
 import { FacilitiesScreen } from './components/FacilitiesScreen.js';
 import type { ActiveFilter, FacilityStats } from './components/FacilitiesScreen.js';
+import { ShipmentsScreen } from './components/ShipmentsScreen.js';
+import { PurchaseOrdersScreen } from './components/PurchaseOrdersScreen.js';
+import { InventoryScreen } from './components/InventoryScreen.js';
+import { ActionConsoleScreen } from './components/ActionConsoleScreen.js';
+import { AuditTrailScreen } from './components/AuditTrailScreen.js';
+import { OntologyExplorerScreen } from './components/OntologyExplorerScreen.js';
+import { ObjectDetailScreen } from './components/ObjectDetailScreen.js';
+import { ConsentPermissionsScreen } from './components/ConsentPermissionsScreen.js';
+import { GraphExplorerScreen } from './components/GraphExplorerScreen.js';
+import { McpActivityScreen } from './components/McpActivityScreen.js';
+import { PackManagerScreen } from './components/PackManagerScreen.js';
+import { SyncHealthScreen } from './components/SyncHealthScreen.js';
 import type { TraceState } from './components/TraceBar.js';
 
 type AuthState = 'checking' | 'anonymous' | 'signed-in' | 'error';
@@ -149,6 +161,7 @@ export function App({ config }: { config: WebConfig }): ReactNode {
   const [activeJob, setActiveJob] = useState<JobKey>('OP');
   const [activeScreen, setActiveScreen] = useState('facilities');
   const [activeRole, setActiveRole] = useState('warehouse_manager');
+  const [detailObject, setDetailObject] = useState<{ type: string; id: string } | null>(null);
   const [activeFilters, setActiveFilters] = useState<ActiveFilter[]>([
     { field: 'country', values: ['DE', 'NL', 'GB'] },
   ]);
@@ -230,6 +243,7 @@ export function App({ config }: { config: WebConfig }): ReactNode {
   // ── Render the active screen inside the shell ────────────────
 
   return (
+    <>
     <EditorialShell
       packs={PACKS}
       activePack={activePack}
@@ -301,8 +315,22 @@ export function App({ config }: { config: WebConfig }): ReactNode {
         handleAddFilter,
         guardAuth,
         loadActions,
+        config,
+        session,
+        authState,
+        (type: string, id: string) => setDetailObject({ type, id }),
       )}
     </EditorialShell>
+
+    {detailObject && (
+      <ObjectDetailScreen
+        objectType={detailObject.type}
+        objectId={detailObject.id}
+        getToken={session && authState === 'signed-in' ? session.getAccessToken : null}
+        onClose={() => setDetailObject(null)}
+      />
+    )}
+    </>
   );
 
   async function startLogin(): Promise<void> {
@@ -329,6 +357,10 @@ function renderScreen(
   onAddFilter: (field: string) => void,
   guardAuth: <R>(p: Promise<R>) => Promise<R>,
   loadActions: () => Promise<ActionSchema[]>,
+  config: WebConfig,
+  session: AuthSession | null,
+  authState: AuthState,
+  onRowClick: (type: string, id: string) => void,
 ): ReactNode {
   // Supply-chain Facilities — the anchor screen, fully wired.
   if (screenId === 'facilities' && packId === 'supply-chain') {
@@ -341,6 +373,74 @@ function renderScreen(
         onAddFilter={onAddFilter}
       />
     );
+  }
+
+  // Supply-chain Shipments — live shipment worklist.
+  if (screenId === 'shipments' && packId === 'supply-chain') {
+    return <ShipmentsScreen client={client} onRowClick={(id) => onRowClick('Shipment', id)} />;
+  }
+
+  // Supply-chain Purchase orders — live PO worklist.
+  if (screenId === 'purchase-orders' && packId === 'supply-chain') {
+    return <PurchaseOrdersScreen client={client} onRowClick={(id) => onRowClick('PurchaseOrder', id)} />;
+  }
+
+  // Supply-chain Inventory — live inventory record worklist.
+  if (screenId === 'inventory' && packId === 'supply-chain') {
+    return <InventoryScreen client={client} onRowClick={(id) => onRowClick('InventoryRecord', id)} />;
+  }
+
+  // Action console — governed action panel for the active pack.
+  if (screenId === 'action-console') {
+    return (
+      <ActionConsoleScreen
+        packLabel={packId}
+        loadActions={loadActions}
+        submit={(name, input) => guardAuth(client.actions.invoke(name, input))}
+      />
+    );
+  }
+
+  // Audit trail — governed audit log viewer.
+  if (screenId === 'audit-trail') {
+    const getToken = session && authState === 'signed-in' ? session.getAccessToken : null;
+    return <AuditTrailScreen endpoint={config.endpoint} getToken={getToken} />;
+  }
+
+  // Ontology explorer — schema browser.
+  if (screenId === 'ontology-explorer') {
+    const getToken = session && authState === 'signed-in' ? session.getAccessToken : null;
+    return <OntologyExplorerScreen endpoint={config.endpoint} getToken={getToken} />;
+  }
+
+  // Consent & permissions — consent records and relationship grants.
+  if (screenId === 'consent-permissions') {
+    const getToken = session && authState === 'signed-in' ? session.getAccessToken : null;
+    return <ConsentPermissionsScreen endpoint={config.endpoint} getToken={getToken} />;
+  }
+
+  // Graph explorer — traverse the object graph.
+  if (screenId === 'graph-explorer') {
+    const getToken = session && authState === 'signed-in' ? session.getAccessToken : null;
+    return <GraphExplorerScreen endpoint={config.endpoint} getToken={getToken} />;
+  }
+
+  // MCP activity — MCP server status and available tools.
+  if (screenId === 'mcp-activity') {
+    const getToken = session && authState === 'signed-in' ? session.getAccessToken : null;
+    return <McpActivityScreen endpoint={config.endpoint} getToken={getToken} />;
+  }
+
+  // Pack manager — browse loaded domain packs.
+  if (screenId === 'pack-manager') {
+    const getToken = session && authState === 'signed-in' ? session.getAccessToken : null;
+    return <PackManagerScreen endpoint={config.endpoint} getToken={getToken} />;
+  }
+
+  // Sync health — API health and connector status.
+  if (screenId === 'sync-health') {
+    const getToken = session && authState === 'signed-in' ? session.getAccessToken : null;
+    return <SyncHealthScreen getToken={getToken} />;
   }
 
   // NHS acute — patient worklist (the existing screen, in the shell).
@@ -375,6 +475,7 @@ function renderScreen(
             subscribe={(onChange, onLost, onResumed) =>
               client.patient.onAnyChange(() => onChange(), undefined, onLost, onResumed)
             }
+            onRowClick={(id) => onRowClick('Patient', id)}
           />
         </div>
         <div style={{ padding: '0 44px 40px', maxWidth: 1180 }}>
@@ -387,7 +488,7 @@ function renderScreen(
     );
   }
 
-  // Placeholder for the other nine screens.
+  // Placeholder for the remaining screens.
   const allScreens = JOBS.flatMap(j => j.screens);
   const match = allScreens.find(s => s.id === screenId);
   return (

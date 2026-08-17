@@ -9,7 +9,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { ReactNode } from 'react';
+import type { ReactNode, KeyboardEvent } from 'react';
 
 /** Fields every read surface stamps on a row (see objectToGraphQL). */
 export interface RowMetadata {
@@ -98,6 +98,11 @@ export interface ObjectTableProps<T> {
     onLost: () => void,
     onResumed: () => void,
   ) => { unsubscribe(): void };
+  /**
+   * Called when a row is clicked. If provided, rows are clickable and render
+   * with a pointer cursor. The row's identity (from rowKey) is passed.
+   */
+  onRowClick?: (rowId: string) => void;
 }
 
 type Status = 'loading' | 'ready' | 'error';
@@ -119,6 +124,7 @@ export function ObjectTable<T extends RowMetadata>({
   pageSize = DEFAULT_PAGE_SIZE,
   rowKey,
   subscribe,
+  onRowClick,
 }: ObjectTableProps<T>): ReactNode {
   const [status, setStatus] = useState<Status>('loading');
   const [error, setError] = useState<string | null>(null);
@@ -304,7 +310,23 @@ export function ObjectTable<T extends RowMetadata>({
         </thead>
         <tbody>
           {rows.map(({ node }) => (
-            <tr key={identity(node)}>
+            <tr
+              key={identity(node)}
+              {...(onRowClick
+                ? {
+                    onClick: () => onRowClick(identity(node)),
+                    style: { cursor: 'pointer' },
+                    role: 'button',
+                    tabIndex: 0,
+                    onKeyDown: (e: KeyboardEvent) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        onRowClick(identity(node));
+                      }
+                    },
+                  }
+                : {})}
+            >
               {columns.map(col => (
                 <td key={col.key}>{renderCell(node, col)}</td>
               ))}

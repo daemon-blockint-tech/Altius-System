@@ -14,6 +14,7 @@ import type {
   FieldTypeRef,
   InterfaceDefinition,
   StructDefinition,
+  ReducerDirective,
 } from '../parser/types.js';
 
 import type { ValidationResult, ValidationIssue } from './types.js';
@@ -23,6 +24,8 @@ const BUILTIN_SCALARS = new Set([
   'ID', 'String', 'Int', 'Float', 'Boolean',
   // ODL spec scalars
   'Date', 'DateTime', 'Duration', 'GeoPoint', 'JSON', 'URI',
+  // Media/attachment scalar — stores an AttachmentRef (blobId + metadata)
+  'Attachment',
 ]);
 
 // Scalar types on which @unique is meaningful.
@@ -205,6 +208,11 @@ export function validateSchema(schema: ParsedSchema): ValidationResult {
     validateStructFields(st, allTypeNames, errors);
   }
   validateStructCycles(schema.structTypes ?? [], errors);
+
+  // ─── Rule 18: @reducer directives reference valid link types and functions ───
+  for (const ot of schema.objectTypes) {
+    validateReducers(ot, linkTypeMap, errors);
+  }
 
   return {
     valid: errors.length === 0,
@@ -862,6 +870,105 @@ function validateStructCycles(
 
   for (const st of structTypes) {
     dfs(st.name);
+  }
+}
+
+/**
+ * Rule 18: @reducer directives must reference a valid link type, use a
+ * valid aggregation function, and specify a field for SUM/AVG/MIN/MAX
+ * (COUNT does not need one). The reducer's field type must be numeric for
+ * SUM/AVG and numeric/orderable for MIN/MAX.
+ */
+function validateReducers(
+  ot: ObjectType,
+  linkTypeMap: Map<string, LinkType>,
+  errors: ValidationIssue[],
+): void {
+  for (const field of ot.fields) {
+    const reducer = field.directives.find(
+      (d): d is ReducerDirective => d.kind === 'reducer',
+    );
+    if (!reducer) continue;
+
+    // Check link type exists
+    if (!reducer.linkType) {
+      errors.push({
+        severity: 'error',
+        code: 'REDUCER_MISSING_LINK_TYPE',
+        message: `@reducer on "${ot.name}.${field.name}" must specify linkType.`,
+        typeName: ot.name,
+        fieldName: field.name,
+      });
+    } else if (!linkTypeMap.has(reducer.linkType)) {
+      errors.push({
+        severity: 'error',
+        code: 'REDUCER_UNKNOWN_LINK_TYPE',
+        message: `@reducer on "${ot.name}.${field.name}" references unknown link type "${reducer.linkType}".`,
+        typeName: ot.name,
+        fieldName: field.name,
+      });
+    }
+
+    // Check function is valid
+    const validFunctions = new Set(['COUNT', 'SUM', 'AVG', 'MIN', 'MAX']);
+    if (!validFunctions.has(reducer.function)) {
+      errors.push({
+        severity: 'error',
+        code: 'REDUCER_INVALID_FUNCTION',
+        message: `@reducer on "${ot.name}.${field.name}" has invalid function "${reducer.function}". Valid: COUNT, SUM, AVG, MIN, MAX.`,
+        typeName: ot.name,
+        fieldName: field.name,
+      });
+    }
+
+    // SUM/AVG/MIN/MAX require a field; COUNT does not
+    if (reducer.function !== 'COUNT' && !reducer.field) {
+      errors.push({
+        severity: 'error',
+        code: 'REDUCER_MISSING_FIELD',
+        message: `@reducer on "${ot.name}.${field.name}" with function ${reducer.function} requires a field to aggregate.`,
+        typeName: ot.name,
+        fieldName: field.name,
+      });
+    }
+
+    // The reducer field type should be numeric for SUM/AVG
+    if (reducer.function === 'SUM' || reducer.function === 'AVG') {
+      if (field.type.name !== 'Int' && field.type.name !== 'Float') {
+        errors.push({
+          severity: 'error',
+          code: 'REDUCER_TYPE_MISMATCH',
+          message: `@reducer on "${ot.name}.${field.name}" with function ${reducer.function} must be on a numeric field (Int or Float), got ${field.type.name}.`,
+          typeName: ot.name,
+          fieldName: field.name,
+        });
+      }
+    }
+
+    // COUNT should be on Int
+    if (reducer.function === 'COUNT' && field.type.name !== 'Int') {
+      errors.push({
+        severity: 'error',
+        code: 'REDUCER_TYPE_MISMATCH',
+        message: `@reducer on "${ot.name}.${field.name}" with function COUNT must be on an Int field, got ${field.type.name}.`,
+        typeName: ot.name,
+        fieldName: field.name,
+      });
+    }
+
+    // @reducer and @primary/@link/@computed are mutually exclusive
+    const conflicting = field.directives.find(
+      d => d.kind === 'primary' || d.kind === 'link' || d.kind === 'computed',
+    );
+    if (conflicting) {
+      errors.push({
+        severity: 'error',
+        code: 'REDUCER_CONFLICT',
+        message: `@reducer on "${ot.name}.${field.name}" conflicts with @${conflicting.kind}. A reducer field cannot also be a primary key, link, or computed field.`,
+        typeName: ot.name,
+        fieldName: field.name,
+      });
+    }
   }
 }
 

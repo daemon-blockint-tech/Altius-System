@@ -20,6 +20,7 @@ import type {
   ParsedSchema,
   FieldDefinition,
   ComputedDirective,
+  ReducerDirective,
   DirectiveArgValue,
 } from '@altius/odl';
 import type { FunctionExecutor } from '../functions/function-executor.js';
@@ -263,7 +264,7 @@ export class ComputedFieldEvaluator {
   }
 
   /**
-   * Evaluate a single computed field.
+   * Evaluate a single computed field or reducer field.
    */
   async evaluate(
     objectType: string,
@@ -281,11 +282,19 @@ export class ComputedFieldEvaluator {
       throw new Error(`Unknown field: ${objectType}.${fieldName}`);
     }
 
+    // @reducer directive — translate to the equivalent built-in function call
+    const reducerDirective = fieldDef.directives.find(
+      (d): d is ReducerDirective => d.kind === 'reducer',
+    );
+    if (reducerDirective) {
+      return this.evaluateReducer(reducerDirective, objectType, objectId, ctx);
+    }
+
     const computedDirective = fieldDef.directives.find(
       (d): d is ComputedDirective => d.kind === 'computed',
     );
     if (!computedDirective) {
-      throw new Error(`Field ${objectType}.${fieldName} is not a computed field`);
+      throw new Error(`Field ${objectType}.${fieldName} is not a computed or reducer field`);
     }
 
     // Dispatch to FunctionExecutor when the fn name matches a declared
@@ -319,6 +328,48 @@ export class ComputedFieldEvaluator {
   }
 
   /**
+   * Evaluate a @reducer directive by dispatching to the equivalent
+   * built-in aggregation function.
+   *
+   * A reducer is a structured declaration of what @computed(fn: "sumLinks")
+   * expresses opaquely: which link type, which direction, which aggregation
+   * function, and which target field. The evaluation path is the same —
+   * the built-in functions already page through all links and aggregate.
+   */
+  private async evaluateReducer(
+    reducer: ReducerDirective,
+    objectType: string,
+    objectId: string,
+    ctx: RequestContext,
+  ): Promise<unknown> {
+    const fnName = reducer.function === 'COUNT'
+      ? 'countLinks'
+      : `${reducer.function.toLowerCase()}Links`;
+
+    const fn = BUILT_IN_FUNCTIONS[fnName];
+    if (!fn) {
+      throw new Error(`Unknown reducer function: ${reducer.function}`);
+    }
+
+    // Build the args object the built-in function expects
+    const args: Record<string, unknown> = {
+      type: reducer.linkType,
+      direction: reducer.direction,
+    };
+    if (reducer.field) {
+      args['field'] = reducer.field;
+      args['linkType'] = reducer.linkType;
+    }
+
+    return fn(args as DirectiveArgValue, {
+      storage: this.storage,
+      ctx,
+      objectType,
+      objectId,
+    });
+  }
+
+  /**
    * Get all computed fields for a given object type that should be evaluated
    * on read. Returns field definitions that have @computed with cache LAZY,
    * EAGER, or no cache (LAZY is the default).
@@ -334,6 +385,13 @@ export class ComputedFieldEvaluator {
     if (!typeDef) return [];
 
     return typeDef.fields.filter((field) => {
+      // @reducer fields are always evaluated on read (LAZY by default)
+      const reducer = field.directives.find(d => d.kind === 'reducer');
+      if (reducer) {
+        const r = reducer as ReducerDirective;
+        return !r.cache || r.cache === 'LAZY' || r.cache === 'EAGER';
+      }
+
       const computed = field.directives.find(
         (d): d is ComputedDirective => d.kind === 'computed',
       );

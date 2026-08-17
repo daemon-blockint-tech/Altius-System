@@ -24,6 +24,10 @@ const ODL_TO_PG: Record<string, string> = {
   // string, diverging from memory on every read.
   GeoPoint: 'JSONB',
 
+  // Attachment scalar — stores an AttachmentRef {blobId, filename, contentType,
+  // size, ...} as JSONB. The blob bytes live in a separate BlobStore.
+  Attachment: 'JSONB',
+
   // NHS-specific scalars mapped to TEXT (stored as validated strings)
   NHSNumber: 'TEXT',
   ODS: 'TEXT',

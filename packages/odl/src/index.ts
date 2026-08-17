@@ -6,7 +6,7 @@
  * and generates GraphQL API schemas per the Altius spec.
  */
 
-export { parseOdl } from './parser/index.js';
+export { parseOdl, mergeInterfaceFields } from './parser/index.js';
 export { validateSchema } from './validator/index.js';
 export { generateGraphQLSchema } from './codegen/index.js';
 export { diff, classify, reverseDiff } from './diff/index.js';
@@ -59,6 +59,7 @@ export type {
   EnumValue,
   InterfaceDefinition,
   ScalarDefinition,
+  StructDefinition,
   FieldDefinition,
   FieldTypeRef,
   FieldDirective,
@@ -76,6 +77,8 @@ export type {
   ParamDirective,
   LinkDirective,
   ComputedDirective,
+  ReducerDirective,
+  ReducerFunction,
   ConstraintDirective,
   DefaultDirective,
   DeprecatedDirective,

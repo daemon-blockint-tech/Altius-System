@@ -268,7 +268,7 @@ describe('Computed Fields', () => {
 
       await expect(
         evaluator.evaluate('Ward', 'id-1', 'name', ctx),
-      ).rejects.toThrow('not a computed field');
+      ).rejects.toThrow('is not a computed or reducer field');
     });
 
     it('returns empty map for type with no computed fields', async () => {

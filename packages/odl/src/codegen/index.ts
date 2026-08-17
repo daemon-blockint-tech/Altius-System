@@ -31,12 +31,13 @@ const SCALAR_MAP: Record<string, string> = {
   GeoPoint: 'GeoPoint',
   JSON: 'JSON',
   URI: 'URI',
+  Attachment: 'Attachment',
 };
 
 const BUILTIN_SCALARS = new Set(Object.keys(SCALAR_MAP));
 
 // ODL custom scalars that need explicit declaration in GraphQL
-const CUSTOM_SCALARS = ['Date', 'DateTime', 'Duration', 'GeoPoint', 'JSON', 'URI'];
+const CUSTOM_SCALARS = ['Date', 'DateTime', 'Duration', 'GeoPoint', 'JSON', 'URI', 'Attachment'];
 
 // ─── Filter operator types by scalar category ───
 
@@ -79,7 +80,7 @@ function isLinkField(field: FieldDefinition): boolean {
 }
 
 function isComputedField(field: FieldDefinition): boolean {
-  return field.directives.some(d => d.kind === 'computed');
+  return field.directives.some(d => d.kind === 'computed' || d.kind === 'reducer');
 }
 
 /** Get scalar fields (non-link, non-computed) suitable for filters. */
@@ -336,6 +337,15 @@ function generateScalarFilter(typeName: string): string {
     return [
       'input GeoPointFilter {',
       '  within: GeoBoundingBoxInput',
+      '  exists: Boolean',
+      '}',
+    ].join('\n');
+  }
+  // Attachment is a JSONB blob reference; scalar comparison is meaningless.
+  // Expose only presence checking.
+  if (typeName === 'Attachment') {
+    return [
+      'input AttachmentFilter {',
       '  exists: Boolean',
       '}',
     ].join('\n');

@@ -42,6 +42,7 @@ import type {
   Cardinality,
   Direction,
   CacheStrategy,
+  ReducerFunction,
 } from './types.js';
 
 /**
@@ -351,6 +352,15 @@ function parseFieldDirective(d: DirectiveNode): FieldDirective | null {
         cache: getEnumArg(d, 'cache') as CacheStrategy | undefined,
         ttl: getStringArg(d, 'ttl') ?? undefined,
       };
+    case 'reducer':
+      return {
+        kind: 'reducer',
+        linkType: getStringArg(d, 'linkType') ?? '',
+        direction: (getEnumArg(d, 'direction') ?? 'OUTBOUND') as Direction,
+        function: (getEnumArg(d, 'function') ?? 'COUNT') as ReducerFunction,
+        field: getStringArg(d, 'field') ?? undefined,
+        cache: getEnumArg(d, 'cache') as CacheStrategy | undefined,
+      };
     case 'constraint':
       return {
         kind: 'constraint',
@@ -546,6 +556,7 @@ export type {
   EnumDefinition,
   InterfaceDefinition,
   ScalarDefinition,
+  StructDefinition,
   FieldDefinition,
   FieldTypeRef,
   FieldDirective,
@@ -554,3 +565,6 @@ export type {
   Direction,
   CacheStrategy,
 } from './types.js';
+
+// Re-export interface field inheritance (shared property definitions)
+export { mergeInterfaceFields } from './inherit.js';

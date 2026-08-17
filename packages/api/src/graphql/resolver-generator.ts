@@ -1333,12 +1333,13 @@ function generateAggregateResolver(
 
       // Field validation: a field name the schema does not have must be
       // refused here, because the two providers disagree on what to do with
-      // it (Postgres raises, memory returns a null group). @computed and @link
-      // fields have no stored column. orderBy may reference an aggregate alias
-      // instead of a schema field, so aliases are excluded from this check.
+      // it (Postgres raises, memory returns a null group). @computed, @reducer
+      // and @link fields have no stored column. orderBy may reference an
+      // aggregate alias instead of a schema field, so aliases are excluded
+      // from this check.
       const aggregatable = new Set(
         obj.fields
-          .filter(f => !f.directives.some(d => d.kind === 'link' || d.kind === 'computed'))
+          .filter(f => !f.directives.some(d => d.kind === 'link' || d.kind === 'computed' || d.kind === 'reducer'))
           .map(f => f.name),
       );
       const aliasNames = new Set<string>();

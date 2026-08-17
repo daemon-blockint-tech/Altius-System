@@ -410,9 +410,12 @@ importers:
         specifier: workspace:*
         version: link:../spi
     devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.19.10
       vitest:
         specifier: ^3.0.0
-        version: 3.2.4(@types/node@25.2.2)(jsdom@25.0.1)(tsx@4.21.0)(yaml@2.8.2)
+        version: 3.2.4(@types/node@22.19.10)(jsdom@25.0.1)(tsx@4.21.0)(yaml@2.8.2)
 
   packages/storage-postgres:
     dependencies:

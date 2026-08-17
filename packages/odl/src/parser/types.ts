@@ -58,6 +58,43 @@ export interface ComputedDirective {
   ttl?: string;
 }
 
+/**
+ * A reducer is a first-class aggregation over linked objects.
+ *
+ * Unlike `@computed(fn: "sumLinks", args: {...})` which references a
+ * function by name, `@reducer` declares the aggregation structurally:
+ * which link type to aggregate over, which direction, which function
+ * (COUNT/SUM/AVG/MIN/MAX), and which target property to aggregate.
+ *
+ * Example ODL:
+ *   totalOrderValue: Float @reducer(
+ *     linkType: "OrderedFrom",
+ *     direction: OUTBOUND,
+ *     function: SUM,
+ *     field: "unitCost"
+ *   )
+ *
+ * The engine evaluates reducers the same way as computed fields — at read
+ * time (LAZY) — but the structured declaration makes the aggregation
+ * intent explicit and verifiable at schema-load time, rather than opaque
+ * inside a function name + args blob.
+ */
+export interface ReducerDirective {
+  kind: 'reducer';
+  /** The link type to traverse. */
+  linkType: string;
+  /** Direction of traversal: INBOUND (links pointing TO this object) or OUTBOUND. */
+  direction: Direction;
+  /** Aggregation function: COUNT, SUM, AVG, MIN, MAX. */
+  function: ReducerFunction;
+  /** The property on the linked object to aggregate. Required for SUM/AVG/MIN/MAX; omitted for COUNT. */
+  field?: string;
+  /** Cache strategy (same as @computed). Defaults to LAZY. */
+  cache?: CacheStrategy;
+}
+
+export type ReducerFunction = 'COUNT' | 'SUM' | 'AVG' | 'MIN' | 'MAX';
+
 export interface ConstraintDirective {
   kind: 'constraint';
   expr: string;
@@ -122,6 +159,7 @@ export type FieldDirective =
   | ParamDirective
   | LinkDirective
   | ComputedDirective
+  | ReducerDirective
   | ConstraintDirective
   | DefaultDirective
   | DeprecatedDirective

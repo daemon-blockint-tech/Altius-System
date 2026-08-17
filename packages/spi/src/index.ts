@@ -65,6 +65,9 @@ export type { Transaction } from './transaction.js';
 // Storage Provider (Section 3.1)
 export type { StorageProvider } from './storage-provider.js';
 
+// Blob Store (media/attachment properties)
+export type { BlobStore, AttachmentRef, BlobPutResult, BlobContent } from './blob-store.js';
+
 // LLM Client (Section AIP)
 export type {
   LLMClient,

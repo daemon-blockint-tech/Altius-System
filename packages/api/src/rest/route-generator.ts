@@ -140,7 +140,7 @@ type ParseResult<T> = { ok: true; value: T } | { ok: false; message: string };
 function queryableFields(obj: ObjectType): Set<string> {
   return new Set(
     obj.fields
-      .filter(f => !f.directives.some(d => d.kind === 'link' || d.kind === 'computed'))
+      .filter(f => !f.directives.some(d => d.kind === 'link' || d.kind === 'computed' || d.kind === 'reducer'))
       .map(f => f.name),
   );
 }
@@ -740,7 +740,7 @@ function generateExportRoute(
 
         if (format === 'csv') {
           // Derive columns from the object type's scalar fields + system fields.
-          const scalarFields = obj.fields.filter(f => !f.directives.some(d => d.kind === 'link') && !f.directives.some(d => d.kind === 'computed'));
+          const scalarFields = obj.fields.filter(f => !f.directives.some(d => d.kind === 'link') && !f.directives.some(d => d.kind === 'computed') && !f.directives.some(d => d.kind === 'reducer'));
           const columns = [
             ...scalarFields.map(f => f.name),
             '_id', '_version', '_createdAt', '_updatedAt',
@@ -1381,7 +1381,7 @@ function generateAggregateRoute(
         // depend on which backend is configured.
         const aggregatable = new Set(
           obj.fields
-            .filter(f => !f.directives.some(d => d.kind === 'link' || d.kind === 'computed'))
+            .filter(f => !f.directives.some(d => d.kind === 'link' || d.kind === 'computed' || d.kind === 'reducer'))
             .map(f => f.name),
         );
         // orderBy may reference either a groupBy key (a schema field) or an

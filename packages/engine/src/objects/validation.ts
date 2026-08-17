@@ -110,6 +110,25 @@ function isValidGeoPoint(v: unknown): boolean {
 }
 
 /**
+ * An Attachment is a reference to a stored blob. The shape must include
+ * a blobId, filename, contentType, and size — the minimum a client needs
+ * to render a preview or download link without a second round-trip.
+ */
+function isValidAttachment(v: unknown): boolean {
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) return false;
+  const p = v as Record<string, unknown>;
+  if (typeof p['blobId'] !== 'string' || p['blobId'].length === 0) return false;
+  if (typeof p['filename'] !== 'string') return false;
+  if (typeof p['contentType'] !== 'string') return false;
+  if (typeof p['size'] !== 'number' || p['size'] < 0 || !Number.isFinite(p['size'])) return false;
+  if (p['uploadedAt'] !== undefined && typeof p['uploadedAt'] !== 'string') return false;
+  if (p['sha256'] !== undefined && typeof p['sha256'] !== 'string') return false;
+  if (p['thumbnailBlobId'] !== undefined && typeof p['thumbnailBlobId'] !== 'string') return false;
+  if (p['uploadedBy'] !== undefined && typeof p['uploadedBy'] !== 'string') return false;
+  return true;
+}
+
+/**
  * Built-in scalar type names recognized by the engine.
  *
  * These are FORMAT checks, not just `typeof` checks, and that distinction is
@@ -135,6 +154,7 @@ const SCALAR_TYPE_CHECKS: Record<string, (v: unknown) => boolean> = {
   GeoPoint: isValidGeoPoint,
   JSON: (_v) => true,
   URI: isValidUri,
+  Attachment: isValidAttachment,
 };
 
 /**
@@ -798,9 +818,9 @@ function isSystemField(field: FieldDefinition): boolean {
   return field.directives.some((d) => d.kind === 'primary');
 }
 
-/** Check if a field is computed. */
+/** Check if a field is computed (including @reducer fields). */
 function isComputedField(field: FieldDefinition): boolean {
-  return field.directives.some((d) => d.kind === 'computed');
+  return field.directives.some((d) => d.kind === 'computed' || d.kind === 'reducer');
 }
 
 /** Check if a field is a link reference. */
