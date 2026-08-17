@@ -25,6 +25,28 @@ export function registerCrudTests(name: string, factory: ProviderFactory): void 
         expect(obj._type).toBe('Patient');
       });
 
+      it('reports the declared type, not one forged in properties', async () => {
+        // A caller-supplied `_type` used to override the argument on the memory
+        // provider, so the row REPORTED a type it was not stored under. Rows
+        // are keyed by the argument, so a query by type still behaved — which
+        // is why this has to assert what the object says about itself. Every
+        // consumer that trusts _type (markings, consent, redaction, the audit
+        // trail) was reading the forged value.
+        //
+        // Postgres refused the write outright before it was fixed, so both
+        // providers are exercised: either the create is rejected, or it
+        // succeeds reporting the declared type. What neither may do is succeed
+        // while claiming to be something else.
+        const created = await provider
+          .createObject(tenantA, 'Patient', { name: 'x', _type: 'Ward', _tenantId: 'other' })
+          .catch(() => null);
+
+        if (created) {
+          expect(created._type).toBe('Patient');
+          expect(created._tenantId).toBe(tenantA.tenantId);
+        }
+      });
+
       it('assigns auto-generated _id', async () => {
         const obj = await provider.createObject(tenantA, 'Patient', { name: 'Alice' });
         expect(obj._id).toBeDefined();
