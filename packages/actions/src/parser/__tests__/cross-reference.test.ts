@@ -54,6 +54,15 @@ type DischargePatient @actionType {
   notes: String @param
 }
 
+type Note @objectType {
+  id: ID! @primary
+  body: String!
+}
+
+type HasNote @linkType(from: "Patient", to: "Note", cardinality: ONE_TO_MANY) {
+  id: ID! @primary
+}
+
 enum PatientStatus { ACTIVE DISCHARGED }
 enum BedStatus { AVAILABLE OCCUPIED CLEANING }
 `;
@@ -126,5 +135,59 @@ describe('crossReferenceManifest — real drift is still caught', () => {
     const issues = crossReferenceManifest(manifest(UNKNOWN_ROOT), schema());
     expect(issues.some(i => i.code === 'UNKNOWN_CEL_VARIABLE')).toBe(true);
     expect(issues.some(i => i.message.includes('clinician'))).toBe(true);
+  });
+});
+
+const CREATED_BINDING = `
+action: DischargePatient
+version: 1
+reversible: false
+preconditions: []
+effects:
+  - type: createObject
+    objectType: "Note"
+    properties:
+      body: "params.notes"
+  - type: createLink
+    linkType: "HasNote"
+    from: "patient"
+    to: "note"
+sideEffects: []
+`;
+
+const FORWARD_BINDING = `
+action: DischargePatient
+version: 1
+reversible: false
+preconditions: []
+effects:
+  - type: createLink
+    linkType: "HasNote"
+    from: "patient"
+    to: "note"
+  - type: createObject
+    objectType: "Note"
+    properties:
+      body: "params.notes"
+sideEffects: []
+`;
+
+describe('crossReferenceManifest — objects created by earlier effects', () => {
+  // executeCreateObject injects the created object back into the executor
+  // context under the camelCase form of its type name, and that binding is the
+  // only way to link an object the action itself creates. Checking effect
+  // references against @param names alone reported every such manifest as
+  // broken — the shipped AIP pack logged UNKNOWN_PARAM_REF for `chatMessage` on
+  // every boot, for an action that runs correctly.
+
+  it('accepts a link to an object an earlier effect created', () => {
+    const issues = crossReferenceManifest(manifest(CREATED_BINDING), schema());
+    expect(issues.filter(i => i.code === 'UNKNOWN_PARAM_REF')).toEqual([]);
+  });
+
+  it('still flags a reference to an object created by a LATER effect', () => {
+    // Effects run in manifest order, so this one really is unbound at link time.
+    const issues = crossReferenceManifest(manifest(FORWARD_BINDING), schema());
+    expect(issues.some(i => i.code === 'UNKNOWN_PARAM_REF' && i.path === 'effects[0].to')).toBe(true);
   });
 });

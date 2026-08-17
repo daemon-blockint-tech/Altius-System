@@ -938,6 +938,18 @@ function crossReferenceSchema(
   }
 
   // 3. Validate effects reference valid types
+  //
+  // `known` is the executor's context, not just the params. executeCreateObject
+  // injects each created object back under the camelCase form of its type name
+  // ("ChatMessage" -> "chatMessage") precisely so a later effect can link to it,
+  // and that is the only way to link an object an action creates. Validating
+  // against paramNames alone reported every such manifest as broken —
+  // SendMessage's `to: "chatMessage"` was flagged UNKNOWN_PARAM_REF on every
+  // boot, for an action that runs correctly.
+  //
+  // Bindings accumulate in manifest order because effects execute in manifest
+  // order: referencing an object created by a *later* effect is still unknown.
+  const known = new Set(paramNames);
   for (let i = 0; i < manifest.effects.length; i++) {
     const effect = manifest.effects[i]!;
     const path = `effects[${i}]`;
@@ -948,7 +960,7 @@ function crossReferenceSchema(
         // (`patient.currentBed`), which the executor pre-resolves before
         // effects run — see preResolveLinkPaths in the executor.
         const targetRoot = effect.target.split('.')[0]!;
-        if (actionType && paramNames.size > 0 && !paramNames.has(targetRoot)) {
+        if (actionType && paramNames.size > 0 && !known.has(targetRoot)) {
           warnings.push({
             severity: 'warning',
             code: 'UNKNOWN_PARAM_REF',
@@ -969,7 +981,7 @@ function crossReferenceSchema(
         }
         // from/to should reference @param variables
         if (actionType && paramNames.size > 0) {
-          if (!paramNames.has(effect.from)) {
+          if (!known.has(effect.from)) {
             warnings.push({
               severity: 'warning',
               code: 'UNKNOWN_PARAM_REF',
@@ -977,7 +989,7 @@ function crossReferenceSchema(
               path: `${path}.from`,
             });
           }
-          if (!paramNames.has(effect.to)) {
+          if (!known.has(effect.to)) {
             warnings.push({
               severity: 'warning',
               code: 'UNKNOWN_PARAM_REF',
@@ -1010,7 +1022,7 @@ function crossReferenceSchema(
         }
         // filter.from / filter.to should reference @param variables
         if (actionType && paramNames.size > 0) {
-          if (effect.filter.from && !paramNames.has(effect.filter.from)) {
+          if (effect.filter.from && !known.has(effect.filter.from)) {
             warnings.push({
               severity: 'warning',
               code: 'UNKNOWN_PARAM_REF',
@@ -1018,7 +1030,7 @@ function crossReferenceSchema(
               path: `${path}.filter.from`,
             });
           }
-          if (effect.filter.to && !paramNames.has(effect.filter.to)) {
+          if (effect.filter.to && !known.has(effect.filter.to)) {
             warnings.push({
               severity: 'warning',
               code: 'UNKNOWN_PARAM_REF',
@@ -1038,6 +1050,10 @@ function crossReferenceSchema(
             path: `${path}.objectType`,
           });
         }
+        // Bind it for later effects, exactly as executeCreateObject does —
+        // camelCase of the type name, and first write wins.
+        const binding = effect.objectType[0]!.toLowerCase() + effect.objectType.slice(1);
+        known.add(binding);
         break;
       }
     }
