@@ -44,10 +44,37 @@ export function isDockerAvailable(): boolean {
  * Uses `docker compose up -d --wait` which blocks until health checks pass.
  */
 export function dockerComposeUp(): void {
-  execSync(
-    `docker compose ${COMPOSE_FILES} up -d --wait`,
-    { ...EXEC_OPTS, timeout: 300_000, stdio: 'inherit' },
-  );
+  try {
+    execSync(
+      `docker compose ${COMPOSE_FILES} up -d --wait`,
+      { ...EXEC_OPTS, timeout: 300_000, stdio: 'inherit' },
+    );
+  } catch (err) {
+    // Print the containers' own logs before rethrowing.
+    //
+    // `up --wait` reports only "container X exited (1)"; the reason lives in
+    // that container's log. The caller's afterAll then runs `down -v`, which
+    // deletes it. Four integration jobs stayed red for twenty CI runs saying
+    // nothing more than the exit code, because every trace of the cause was
+    // destroyed microseconds after it was produced — and a job-level dump
+    // cannot help, since the containers are already gone by then.
+    //
+    // Here is the one point every spec's startup routes through, and the last
+    // moment the evidence still exists.
+    try {
+      execSync(
+        `docker compose ${COMPOSE_FILES} ps -a`,
+        { ...EXEC_OPTS, timeout: 30_000, stdio: 'inherit' },
+      );
+      execSync(
+        `docker compose ${COMPOSE_FILES} logs --no-color --tail 150`,
+        { ...EXEC_OPTS, timeout: 60_000, stdio: 'inherit' },
+      );
+    } catch {
+      // Diagnostics are best-effort; never mask the original failure.
+    }
+    throw err;
+  }
 }
 
 /**
