@@ -518,6 +518,28 @@ describe('Generated SDK runtime', () => {
     });
 
 
+    it('reports an unauthenticable socket once and does not retry it', async () => {
+      // AuthSession throws once a session cannot be renewed. Retrying re-resolves
+      // the same failing token forever, so this must be reported and stopped —
+      // not treated as a dropped transport.
+      vi.useFakeTimers();
+      const onClose = vi.fn();
+      const client = new Altius({
+        endpoint: 'http://localhost:3000/graphql',
+        token: () => Promise.reject(new Error('session expired')),
+      });
+
+      client.patient.onAnyChange(() => {}, undefined, onClose);
+      await vi.advanceTimersByTimeAsync(50);
+
+      expect(onClose).toHaveBeenCalledTimes(1);
+
+      // No retry storm: the backoff window passes without another socket.
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(MockWebSocket.instances).toHaveLength(1);
+      vi.useRealTimers();
+    });
+
     it('does not reconnect after the caller unsubscribes', async () => {
       // Letting go of a stream is not losing one; reconnecting here would
       // resurrect a subscription the caller has already abandoned.

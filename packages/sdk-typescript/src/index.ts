@@ -1006,6 +1006,10 @@ export class Altius {
   /** without re-reading is the silent-staleness bug wearing a fix. */
   private readonly wsResumeHandlers = new Map<string, () => void>();
   private wsReconnectAttempt = 0;
+  /** Set when the token provider refuses. A dropped transport is worth
+   *  retrying; a credential that will not resolve is not — retrying just
+   *  re-resolves the same failure on a timer. */
+  private wsAuthFailed = false;
   private wsSocket: WebSocket | null = null;
   private wsReady = false;
   private wsReadyQueue: Array<() => void> = [];
@@ -1117,14 +1121,11 @@ export class Altius {
         if (socket.readyState !== WebSocket.OPEN) return;
         socket.send(JSON.stringify({ type: 'connection_init', payload: { Authorization: token ? `Bearer ${token}` : '' } }));
       }).catch(() => {
-        // KNOWN GAP: the provider refused (an expired session throws here).
-        // Swallowed only to stop an unhandled rejection. connection_init is
-        // never sent, so the socket sits until the server times it out and
-        // the caller is not told. Closing it here would be reported, but a
-        // close schedules a reconnect that re-resolves the same failing
-        // token and loops. Fixing it properly means distinguishing "cannot
-        // authenticate" from "transport dropped" so the first does not
-        // retry — a design change, not a patch.
+        // The provider refused — an expired session is the usual reason.
+        // Flagged so the close below reports the loss WITHOUT scheduling a
+        // reconnect: the retry would re-resolve the same failing token.
+        this.wsAuthFailed = true;
+        try { socket.close(); } catch { /* already gone */ }
       });
     });
     socket.addEventListener('message', (event) => {
@@ -1179,7 +1180,13 @@ export class Altius {
       // retry queue a second copy and the eventual ack send the same
       // subscribe twice under one id.
       this.wsReadyQueue = [];
-      if (this.wsResubscribers.size > 0) this.scheduleReconnect();
+      if (this.wsAuthFailed) {
+        // Cleared so a later subscribe (after the caller re-authenticates)
+        // is free to try again; it simply is not retried on a timer.
+        this.wsAuthFailed = false;
+      } else if (this.wsResubscribers.size > 0) {
+        this.scheduleReconnect();
+      }
       this.wsSocket = null;
       this.wsReady = false;
       this.wsSubscriptions.clear();
@@ -1229,8 +1236,6 @@ export class Altius {
       const socket = this.ensureWebSocket();
       const payload = filter && id === null ? { query, variables: { filter } } : { query };
       socket.send(JSON.stringify({ id: subId, type: 'subscribe', payload }));
-      if (onClose) this.wsCloseHandlers.set(subId, onClose);
-      if (onResume) this.wsResumeHandlers.set(subId, onResume);
       this.wsSubscriptions.set(subId, (raw) => {
         // graphql-ws `next` carries an ExecutionResult envelope, not the
         // event itself. Handing the envelope to the callback would satisfy
@@ -1242,7 +1247,12 @@ export class Altius {
         }
       });
     };
+    // Registered here rather than inside sendSubscribe, which only runs
+    // after connection_ack: a socket that fails before then still has to
+    // be reportable, and that is exactly the auth-failure case.
     this.wsResubscribers.set(subId, sendSubscribe);
+    if (onClose) this.wsCloseHandlers.set(subId, onClose);
+    if (onResume) this.wsResumeHandlers.set(subId, onResume);
     if (this.wsReady) {
       sendSubscribe();
     } else {
