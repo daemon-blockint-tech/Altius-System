@@ -623,6 +623,96 @@ function platformPaths(): Record<string, unknown> {
         },
       },
     },
+    // ─── Function Lifecycle ───
+    '/api/v1/functions-lifecycle/revisions': {
+      post: {
+        tags: ['Functions'],
+        summary: 'Create a function revision draft',
+        operationId: 'createFunctionRevision',
+        requestBody: { required: true, content: jsonObject },
+        responses: {
+          '201': { description: 'Created revision', content: jsonObject },
+          '401': unauthorized,
+          '503': { description: 'Function registry not configured' },
+        },
+      },
+      get: {
+        tags: ['Functions'],
+        summary: 'List revisions for a function',
+        operationId: 'listFunctionRevisions',
+        parameters: [
+          { name: 'functionName', in: 'query', required: true, schema: { type: 'string' } },
+        ],
+        responses: {
+          '200': { description: 'Revisions', content: jsonObject },
+          '400': { description: 'Missing functionName' },
+          '401': unauthorized,
+          '503': { description: 'Function registry not configured' },
+        },
+      },
+    },
+    '/api/v1/functions-lifecycle/revisions/{id}': {
+      get: {
+        tags: ['Functions'],
+        summary: 'Get a function revision by ID',
+        operationId: 'getFunctionRevision',
+        parameters: [
+          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
+        ],
+        responses: {
+          '200': { description: 'Revision', content: jsonObject },
+          '404': { description: 'Not found' },
+          '401': unauthorized,
+          '503': { description: 'Function registry not configured' },
+        },
+      },
+    },
+    '/api/v1/functions-lifecycle/revisions/{id}/publish': {
+      post: {
+        tags: ['Functions'],
+        summary: 'Publish a draft function revision',
+        operationId: 'publishFunctionRevision',
+        parameters: [
+          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
+        ],
+        responses: {
+          '200': { description: 'Published revision', content: jsonObject },
+          '404': { description: 'Not found' },
+          '401': unauthorized,
+          '503': { description: 'Function registry not configured' },
+        },
+      },
+    },
+    '/api/v1/functions-lifecycle/revisions/{id}/test': {
+      post: {
+        tags: ['Functions'],
+        summary: 'Run tests for a function revision',
+        operationId: 'testFunctionRevision',
+        parameters: [
+          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
+        ],
+        responses: {
+          '200': { description: 'Test results', content: jsonObject },
+          '404': { description: 'Not found' },
+          '401': unauthorized,
+          '503': { description: 'Function registry/executor not configured' },
+        },
+      },
+    },
+    '/api/v1/functions-lifecycle/rollback': {
+      post: {
+        tags: ['Functions'],
+        summary: 'Rollback a function to a previous revision',
+        operationId: 'rollbackFunction',
+        requestBody: { required: true, content: jsonObject },
+        responses: {
+          '200': { description: 'Rolled-back revision', content: jsonObject },
+          '404': { description: 'Not found' },
+          '401': unauthorized,
+          '503': { description: 'Function registry not configured' },
+        },
+      },
+    },
   };
 }
 
