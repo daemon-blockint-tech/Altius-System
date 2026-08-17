@@ -567,6 +567,36 @@ describe('Generated SDK runtime', () => {
     });
 
 
+    it('does not announce a resume to a subscription that never dropped', async () => {
+      // wsReconnectAttempt is only reset inside the ack handler. If a retry is
+      // scheduled and then every subscription is dropped, the timer returns
+      // early and the counter stays raised — so the NEXT fresh subscribe acks
+      // with attempt > 0 and is told it "resumed". ObjectTable answers a resume
+      // by re-reading, so a brand-new table immediately refetches the page it
+      // has just loaded.
+      vi.useFakeTimers();
+      const onResume = vi.fn();
+      const client = new Altius({ endpoint: 'http://localhost:3000/graphql', token: 't' });
+
+      const first = client.patient.onAnyChange(() => {});
+      await vi.advanceTimersByTimeAsync(10);
+      MockWebSocket.instances[0]!._receive(JSON.stringify({ type: 'connection_ack' }));
+
+      // Drop happens, then the caller lets go before the retry fires.
+      MockWebSocket.instances[0]!.close();
+      first.unsubscribe();
+      await vi.advanceTimersByTimeAsync(3000);
+
+      // A completely new subscription, on a connection that never dropped.
+      client.ward.onAnyChange(() => {}, undefined, undefined, onResume);
+      await vi.advanceTimersByTimeAsync(10);
+      const fresh = MockWebSocket.instances[MockWebSocket.instances.length - 1]!;
+      fresh._receive(JSON.stringify({ type: 'connection_ack' }));
+
+      expect(onResume).not.toHaveBeenCalled();
+      vi.useRealTimers();
+    });
+
     it('does not reconnect after the caller unsubscribes', async () => {
       // Letting go of a stream is not losing one; reconnecting here would
       // resurrect a subscription the caller has already abandoned.
