@@ -1,9 +1,45 @@
-# AIP role model — users can manage their own conversations
+# AIP role model — users can manage their own conversations.
+#
+# A pack override REPLACES the generated type block wholesale
+# (mergeOpenFGAOverrides keys by type name), so this file must re-declare
+# EVERY relation the runtime checks, not just the ones the pack adds.
+#
+# The previous version declared only `user` and `admin`, which deleted the
+# generated `viewer` from `conversation`. assertFgaModelCoverage requires
+# every ObjectType to declare `viewer`: in development that is a warning, but
+# under NODE_ENV=production it throws and the gateway exits 1 — which is why
+# the production security E2E could never bring the stack up.
+#
+# It also spelled the second type `chatmessage`. The generated name is
+# `chat_message` (toSnakeCase), so that block matched nothing and this half of
+# the role model had silently never applied.
+
+model
+  schema 1.1
+
+type user
 
 type conversation
-  relation user: user
-  relation admin: user
+  relations
+    define assigned: [user]
+    # viewer/editor are what every read and write path checks; deleting them
+    # by overriding this block is what broke production boot.
+    define viewer: assigned
+    define editor: assigned
+    # SendMessage takes a Conversation @param, so the executor checks this
+    # relation on the conversation object. Without it the action is denied.
+    define can_send_message: [user]
+    # Named by permissions/field-permissions.yaml to reveal systemPrompt.
+    define user: [user]
+    define clinician: [user]
+    define admin: [user]
 
-type chatmessage
-  relation user: user
-  relation admin: user
+type chat_message
+  relations
+    define assigned: [user]
+    define viewer: assigned
+    define editor: assigned
+    # Named by permissions/field-permissions.yaml to reveal content.
+    define user: [user]
+    define clinician: [user]
+    define admin: [user]
