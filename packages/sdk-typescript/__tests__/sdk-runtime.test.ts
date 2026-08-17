@@ -540,6 +540,32 @@ describe('Generated SDK runtime', () => {
       vi.useRealTimers();
     });
 
+    it('ignores messages from a socket that has been superseded', async () => {
+      // a9822f8 guarded the close listener but not the message listener. A late
+      // connection_ack from a replaced socket sets wsReady and flushes the
+      // queue, so subscribes go out on the CURRENT socket before it has
+      // completed its own handshake — which graphql-transport-ws treats as a
+      // protocol violation and the server may close over.
+      vi.useFakeTimers();
+      const client = new Altius({ endpoint: 'http://localhost:3000/graphql', token: 't' });
+
+      client.patient.onAnyChange(() => {});
+      await vi.advanceTimersByTimeAsync(10);
+      const a = MockWebSocket.instances[0]!;
+
+      // A is superseded before it ever acks.
+      a.readyState = MockWebSocket.CLOSING;
+      client.ward.onAnyChange(() => {});
+      await vi.advanceTimersByTimeAsync(10);
+      const b = MockWebSocket.instances[1]!;
+
+      // A's ack arrives late. It must not make B look ready.
+      a._receive(JSON.stringify({ type: 'connection_ack' }));
+
+      expect(b.sent.filter(m => m.includes('"subscribe"'))).toHaveLength(0);
+      vi.useRealTimers();
+    });
+
     it('does not reconnect after the caller unsubscribes', async () => {
       // Letting go of a stream is not losing one; reconnecting here would
       // resurrect a subscription the caller has already abandoned.

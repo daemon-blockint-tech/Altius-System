@@ -1129,6 +1129,12 @@ export class Altius {
       });
     });
     socket.addEventListener('message', (event) => {
+      // Same reason the close listener is guarded: a superseded socket can
+      // still deliver. A late connection_ack from one would mark the client
+      // ready and flush the queue onto the CURRENT socket before it has
+      // handshaken, and a late next/complete would be attributed to a
+      // subscription this socket no longer owns.
+      if (this.wsSocket !== socket) return;
       const msg = JSON.parse(event.data as string) as { type: string; id?: string; payload?: unknown };
       if (msg.type === 'connection_ack') {
         this.wsReady = true;
