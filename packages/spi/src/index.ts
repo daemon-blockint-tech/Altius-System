@@ -207,6 +207,113 @@ export type {
   ProposalQuery,
 } from './change-proposals.js';
 
+// ML model registry, lifecycle, and inference
+export type {
+  ModelRegistryService,
+  ModelInferenceService,
+  ModelChainService,
+  ModelingObjectiveService,
+  ModelArtifact,
+  ModelAdapter,
+  ModelSource,
+  ModelLifecycleState,
+  ModelQuery,
+  CreateModelInput,
+  ModelDeployment,
+  InferenceInput,
+  InferenceResult,
+  InferenceHistoryRecord,
+  ModelChain,
+  ModelChainStep,
+  ModelChainResult,
+  ModelingObjective,
+} from './model-registry.js';
+
+// Scenario simulation
+export type {
+  ScenarioService,
+  Scenario,
+  ScenarioResult,
+  CreateScenarioInput,
+  ScenarioQuery,
+} from './scenarios.js';
+
+// Data pipelines: quality, conflict resolution, build orchestration
+export type {
+  DataExpectationsService,
+  DataExpectation,
+  ExpectationType,
+  ExpectationResult,
+  CreateExpectationInput,
+  ConflictResolutionService,
+  DataConflict,
+  ConflictStrategy,
+  PipelineBuildService,
+  PipelineBuild,
+  BuildState,
+  BuildTrigger,
+  PipelineSchedule,
+  CreateScheduleInput,
+} from './data-pipelines.js';
+
+// Process mining and event objects
+export type {
+  EventObjectService,
+  ProcessMiningService,
+  EventObject,
+  CreateEventInput,
+  EventQuery,
+  ProcessModel,
+  ProcessNode,
+  ProcessEdge,
+  ProcessVariant,
+  ConformanceResult,
+} from './process-mining.js';
+
+// Business rules engine
+export type {
+  BusinessRulesService,
+  BusinessRule,
+  RuleNode,
+  RuleNodeType,
+  FilterCondition,
+  ConditionOperator,
+  JoinType,
+  AggregateFunction,
+  WindowType,
+  RuleExecutionResult,
+  CreateRuleInput,
+} from './business-rules.js';
+
+// Agent evaluation framework
+export type {
+  AgentEvaluationService,
+  AgentExecutor,
+  EvalSuite,
+  EvalTestCase,
+  EvalMetric,
+  MetricType,
+  TestCaseResult,
+  EvalRunResult,
+  CreateEvalSuiteInput,
+} from './agent-evaluation.js';
+
+// Platform governance: ABAC approvals, cross-app commands, kiosk mode
+export type {
+  ApprovalWorkflowService,
+  CommandService,
+  KioskService,
+  ApprovalWorkflow,
+  SubmissionCriterion,
+  AttributeCondition,
+  ApprovalSubmission,
+  AppCommand,
+  CommandChain,
+  CommandChainResult,
+  KioskSession,
+  CreateKioskInput,
+} from './platform-governance.js';
+
 // LLM Client (Section AIP)
 export type {
   LLMClient,

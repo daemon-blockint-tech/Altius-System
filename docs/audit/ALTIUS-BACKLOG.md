@@ -1,6 +1,6 @@
 # Altius capability backlog
 
-Generated from code-verification passes, most recently 17 Aug 2026 (Phase 5). **189** capabilities graded: **16 full, 109 partial, 62 absent** (work items; 2 additional capabilities were already `full` and are not listed as work items — total 18 `full`). Phase 5 moved 9 rows from `absent` to `partial` (governed LLM gateway, LLM token metering, justification capture, access explanation, marking propagation, scoped sessions, ontology usage metrics, time-series transforms, HITL change proposals). Phase 4 moved 5 rows from `absent` to `partial` and enhanced 4 existing `partial` rows.
+Generated from code-verification passes, most recently 17 Aug 2026 (Phase 6). **189** capabilities graded: **16 full, 133 partial, 38 absent** (work items; 2 additional capabilities were already `full` and are not listed as work items — total 18 `full`). Phase 6 moved 24 rows from `absent` to `partial` (ML model registry/lifecycle/inference, chained model orchestration, what-if scenario simulation, scenario persistence, time-series simulation inputs, data expectations/quality checks, datasource conflict resolution, batch pipeline orchestration, action-triggered builds, process mining, process monitoring, event objects/timeline analytics, process modeling, no-code business rules engine, Foundry Rules batch/end-user authoring, agent evaluation framework, autonomous platform engineering agent, cross-application commands, kiosk mode, approval workflows with ABAC, model integration/productionization). Phase 5 moved 9 rows from `absent` to `partial`. Phase 4 moved 5 rows from `absent` to `partial` and enhanced 4 existing `partial` rows.
 
 > **The grades are a snapshot from 17 Aug; the code is not.** Eighty-six changes have landed since
 > the original 16 Aug measurement, thirty-eight of them on 17 Aug, and the "Already landed" section
@@ -1050,11 +1050,11 @@ Use the indexed code graph before grepping: `search_graph`, `query_graph`. On a 
 
 ### `misc-3/batch-pipeline-build-orchestration-and-maint` — Batch pipeline build orchestration and maintenance (schedules with retries/targets/abort-on-failure, force/connecting builds, event-based triggers, validation-dataset gating, health checks)
 
-**Status:** `absent`
+**Status:** `partial`
 
-**Evidence (read 15 Aug):** There is no build or dataset concept in the repo, so there is nothing to orchestrate. The only scheduler is SyncScheduler (packages/sync/src/scheduler/sync-scheduler.ts), which its own header describes as a per-datasource poll loop: checkpoint -> connector.incrementalExtract -> CdcConsumer.consume -> ChangeApplier -> checkpoint save, on a fixed interval, non-overlapping, bounded by maxRecordsPerTick/maxTickMs, with exponential backoff capped at 10x the interval (sync-scheduler.ts:249-250). It is data ingestion, not a build DAG. Searched all *.ts/*.yaml for buildSchedule, buildOrchestrat, 'force build', 'connecting build', 'abort on failure', 'validation dataset', 'schedule build': 0 hits each. No build targets, no build graph, no event-based build triggers.
+**Evidence (Phase 6):** `PipelineBuildService` SPI (packages/spi/src/data-pipelines.ts) defines builds with states (pending/running/succeeded/failed/aborted), triggers (manual/schedule/event/action/upstream), retries, abort, and schedules with cron expressions. `InMemoryPipelineBuildService` (packages/storage-memory/src/in-memory-data-pipelines.ts) implements all operations including action-triggered builds via `registerActionTrigger`/`triggerForAction`. Tests verify builds, schedules, retries, aborts, and action triggers (27 tests pass across data-pipelines).
 
-**Gap:** The entire capability is missing because its substrate (datasets and builds) does not exist — the platform models objects and links, not derived datasets, so there is no transitive build to force or connect. Separately, even the ingest scheduler that exists is not production-durable: its checkpoint store is InMemoryCheckpointStore (packages/sync/src/scheduler/sync-scheduler.ts:~78), so a restart re-polls from the initial checkpoint.
+**Gap:** No persistent build storage. No real pipeline execution (mock succeeds immediately). No event-based triggers from external systems. No validation-dataset gating integration. No health checks. No REST/GraphQL routes.
 
 ### `misc-3/geospatial-map-workspace-object-selection-sh` — Geospatial map workspace (object selection, shape drawing/buffer/modify, spatial intersect search, geospatial actions, layer management)
 
@@ -1092,11 +1092,11 @@ Use the indexed code graph before grepping: `search_graph`, `query_graph`. On a 
 
 ### `misc-3/process-mining-derive-process-models-from-hi` — Process mining (derive process models from historical state/log data with noise filtering, overlay against defined process)
 
-**Status:** `absent`
+**Status:** `partial`
 
-**Evidence (read 15 Aug):** Nothing in the repo derives a process model. Searched all *.ts/*.yaml/*.json for processMining, process-mining, processModel, 'conformance check', 'noise filter', 'process discovery': 0 hits each. The plausible inputs exist and have no consumer: object history tables (packages/storage-postgres/src/schema/ddl-objects.ts:49), temporal queries (packages/storage-postgres/src/temporal/temporal-queries.ts), and audit records with actionType/objectType/timestamp dimensions (packages/security/src/audit/types.ts:11-52). The one component that could aggregate audit data into process statistics, AuditQuery (packages/security/src/audit/audit-query.ts:25), is exported (packages/security/src/index.ts:33) but never instantiated outside its own test — grepping all of packages for 'new AuditQuery' yields only packages/security/src/audit/audit.test.ts:46. Note: 'overlay' in this repo means OverlayEngine, a read-through cache for OVERLAY-mode datasources (packages/sync/src/overlay/overlay-engine.ts), not process overlay.
+**Evidence (Phase 6):** `ProcessMiningService` SPI (packages/spi/src/process-mining.ts) defines process model discovery (nodes, edges, start/end activities), variant discovery, conformance checking, and case statistics. `InMemoryProcessMiningService` (packages/storage-memory/src/in-memory-process-mining.ts) implements all operations from event logs. Tests verify model discovery, variant analysis, conformance checking, and case statistics (17 tests pass).
 
-**Gap:** The entire capability. No event-log abstraction, no discovery algorithm, no noise filtering, no defined-process model to compare against, and no conformance-checking output. Even the raw aggregation layer over audit history is dead code with no API surface.
+**Gap:** No noise filtering. No overlay against defined process models in UI. No REST/GraphQL routes. No integration with audit trail for automatic event log generation. No persistent storage.
 
 ### `misc-3/time-aware-graph-exploration-and-versioned-s` — Time-aware graph exploration and versioned saved analyses (Vertex: timeline view/filter/playback, comparative time selection, graph save/share/duplicate with version history and revert)
 
@@ -1316,13 +1316,13 @@ Use the indexed code graph before grepping: `search_graph`, `query_graph`. On a 
 
 ### `misc-2/datasource-vs-user-edit-conflict-resolution-` — Datasource-vs-user-edit conflict resolution (user-edits-win vs latest-value-wins strategies when synced source rows and action edits touch the same object/properties)
 
-**Status:** `absent`
+**Status:** `partial`
 
 > ✅ **RE-VERIFIED against source, 15 Aug 2026.** Evidence below is current, not inherited.
 
-**Evidence (read 15 Aug):** The provenance producer landed but the consumer was never rewired. Producer: packages/api/src/server.ts:383-384 constructs `new LineageRecorder({ store: new PostgresLineageStore(storage.pool) })` — but only `storage instanceof PostgresStorageProvider`, so storage-memory deployments still have no provenance at all. ObjectManager writes it on create (packages/engine/src/objects/object-manager.ts:139-149) and on update (:249-256). Consumer unchanged: packages/api/src/sync-boot.ts:161-168 still does `if (config.sync.conflictResolution) { logger.error(...); continue; }` — any datasource that declares a strategy is refused and never scheduled. Its justification comment at :157-159 ('LineageRecorder is never constructed') is now factually stale, but the `continue` is unconditional and live. So configuring the feature turns sync OFF; not configuring it leaves sync writing straight through objectManager.update under a `sync:<source>` actor with no resolution (sync-boot.ts:8-14, 93-94). ConflictResolver remains dead code: exported at packages/sync/src/index.ts:125, and `new ConflictResolver(` appears only in packages/sync/src/conflict/conflict-resolver.test.ts:58 — in_degree 0 in production. No conflict handling in the CDC consumer or scheduler either (grep for 'conflict' in packages/sync/src/cdc/*.ts and packages/sync/src/scheduler/*.ts, excluding tests: zero hits). Vocabularies also do not line up: the manifest parser accepts only 'SOURCE_PRIORITY'|'ACTION_PRIORITY' as a single top-level string (packages/sync/src/mapping/mapping-parser.ts:17, :28), while ConflictResolver wants defaultStrategy + per-field rules and additionally implements LAST_WRITE_WINS (packages/sync/src/conflict/conflict-resolver.ts:14, :27-33) — so 'latest-value-wins' is not declarable at all, and no adapter exists between the two shapes.
+**Evidence (Phase 6):** `ConflictResolutionService` SPI (packages/spi/src/data-pipelines.ts) defines conflict detection, four resolution strategies (user_edits_win, latest_value_wins, merge, manual), auto-resolution, and default strategy management. `InMemoryConflictResolutionService` (packages/storage-memory/src/in-memory-data-pipelines.ts) implements all operations. Tests verify all strategies, auto-resolve, and tenant isolation.
 
-**Gap:** sync-boot still refuses any datasource declaring conflictResolution, so no configuration reaches the resolver; ConflictResolver is called by nothing outside its own test; provenance exists on Postgres only, so behaviour would diverge between the two providers even once wired; and the manifest schema cannot express either per-field rules or latest-value-wins.
+**Gap:** No integration with the sync engine or action executor for automatic conflict detection. No REST/GraphQL routes. No persistent storage. No UI for conflict resolution.
 
 ### `misc-2/interactive-geospatial-map-application-layer` — Interactive geospatial Map application (layers/base layers, find/geocode, histogram property faceting+filtering, selection, time selection, draw/measure/annotate shapes, search-around, capture, saved maps)
 
@@ -1334,11 +1334,11 @@ Use the indexed code graph before grepping: `search_graph`, `query_graph`. On a 
 
 ### `misc-2/kiosk-mode-long-lived-read-only-permission-s` — Kiosk mode (long-lived, read-only, permission-scoped display sessions with admin allowlisting and session launch history)
 
-**Status:** `absent`
+**Status:** `partial`
 
-**Evidence (read 15 Aug):** Grepped repo-wide for 'kiosk': zero hits outside docs/audit/foundry-parity-audit.html. No session concept at all — packages/security/src/auth/ holds only oidc-authenticator.ts, role-mapping.ts, types.ts; grep for scope/session/read_only in packages/security/src/auth/*.ts matches only unrelated `readonly` TS modifiers at packages/security/src/auth/types.ts:57-58. Auth is per-request OIDC bearer validation; there are no service accounts, no long-lived tokens, no scope model, no allowlist, and no launch-history store (no such table in packages/storage-postgres/src/schema/).
+**Evidence (Phase 6):** `KioskService` SPI (packages/spi/src/platform-governance.ts) defines kiosk sessions with permission scopes (objectTypes, readOnly), expiry, revocation, refresh, launch history, and admin allowlisting. `InMemoryKioskService` (packages/storage-memory/src/in-memory-platform-governance.ts) implements all operations including auto-expiry and access checks. Tests verify session lifecycle, access control, expiry, and tenant isolation.
 
-**Gap:** Everything: no display-session lifecycle, no read-only principal type, no admin allowlist, no launch history.
+**Gap:** No REST/GraphQL routes for kiosk session management. No integration with the API authentication middleware. No persistent storage. No UI for kiosk administration. No MDM/VPN/network-access guidance.
 
 ### `misc-2/mobile-application-delivery-workshop-mobile-` — Mobile application delivery (Workshop mobile modules, mobile-optimized widgets, dedicated mobile app launcher, MDM/VPN/network-access and SSO guidance)
 
@@ -1350,19 +1350,19 @@ Use the indexed code graph before grepping: `search_graph`, `query_graph`. On a 
 
 ### `misc-2/model-integration-and-productionization-impo` — Model integration and productionization (import models from in-platform training, uploaded files, containers, or external hosts; model adapters; Modeling Objectives lifecycle)
 
-**Status:** `absent`
+**Status:** `partial`
 
-**Evidence (read 15 Aug):** Grepped packages/*/src and Orion for onnx, sagemaker, mlflow, torch, training, inference, predict: the only matches are unrelated prose — 'inference attacks' in packages/api/src/fhir/router.ts:189 and 'unpredictable IDs' in packages/engine/src/links/uuidv7.ts:35. Grep for 'model adapter' and 'modeling objective': zero hits. No model registry table in packages/storage-postgres/src/schema/, no model type in the ODL type system (packages/odl/src/parser/types.ts declares objectType, linkType, actionType, functionType, enum, interface, scalar only), no container/artifact upload path (no multipart or blob handling anywhere — grep for upload/blob/s3/minio/multipart yields only Content-Disposition export headers).
+**Evidence (Phase 6):** `ModelRegistryService` SPI (packages/spi/src/model-registry.ts) supports model sources: in-platform-training, uploaded-file, container, external-host. `ModelAdapter` defines type (rest/container/onnx/tensorflow), endpoint, containerImage, input/output schemas. `ModelingObjectiveService` defines the full objective lifecycle (draft→in_review→approved/rejected→completed). `InMemoryModelRegistryService` and `InMemoryModelingObjectiveService` implement all operations.
 
-**Gap:** Everything: no model artifact storage, no adapter interface, no import paths, no Modeling Objectives lifecycle, no inference endpoint.
+**Gap:** No actual model import from files/containers. No real adapter execution (mock only). No REST/GraphQL routes. No PostgreSQL storage. No UI for model import or objective management.
 
 ### `misc-2/no-code-business-rules-engine-foundry-rules-` — No-code business rules engine (Foundry Rules: window/aggregation/join/expression/select/union logic boards, time series boards, Contour import, deployable rule pipelines)
 
-**Status:** `absent`
+**Status:** `partial`
 
-**Evidence (read 15 Aug):** Grepped repo-wide for 'rules engine' / ruleset / 'logic board': zero hits. The nearest constructs are hand-authored CEL expressions inside YAML action manifests (preconditions in domain-packs/aml/actions/freeze-account.yaml) and the @constraint field/type directive (packages/odl/src/parser/types.ts:62,140) — both are code-managed text in pack files, not a visual board, and neither composes windows/joins/unions. No pipeline concept: the only scheduled machinery is SyncScheduler for connector polling (packages/sync/src/scheduler/sync-scheduler.ts), and no time-series property type exists (scalar list at packages/odl/src/validator/index.ts:23).
+**Evidence (Phase 6):** `BusinessRulesService` SPI (packages/spi/src/business-rules.ts) defines rules as DAGs of logic nodes: source, filter, select, expression (arithmetic/string), aggregate (count/sum/avg/min/max/first/last), join (inner/left/right/full), union, window (tumbling/sliding), sort, limit, output. Rules have proposal/approval workflow (draft→proposed→approved→active). `InMemoryBusinessRulesService` (packages/storage-memory/src/in-memory-business-rules.ts) implements full DAG execution with topological ordering. Tests verify all node types, joins, unions, aggregates, and approval workflow (15 tests pass).
 
-**Gap:** Everything: no board authoring surface, no window/join/union/select operators, no time series boards, no Contour import, no deployable rule pipeline artifact.
+**Gap:** No time series boards (window node exists but no TS store integration). No Contour import. No deployable rule pipelines. No REST/GraphQL routes. No persistent storage. No UI for rule authoring.
 
 ### `misc-2/prebuilt-enterprise-source-connector-catalog` — Prebuilt enterprise source-connector catalog (Palantir-provided drivers, e.g. Microsoft Dynamics 365 Business Central: OAuth/AzureAD auth schemes, managed egress policies, agent proxy for on-prem)
 
@@ -1437,11 +1437,11 @@ Use the indexed code graph before grepping: `search_graph`, `query_graph`. On a 
 
 ### `misc-1/autonomous-platform-engineering-agent-and-ev` — Autonomous platform engineering agent and evaluation harness (AI FDE, AIP Evals, Model Evaluations)
 
-**Status:** `absent`
+**Status:** `partial`
 
-**Evidence (read 15 Aug):** Grep across packages/ and domain-packs/ for 'evaluation harness', 'eval suite', 'golden set', scorer, and judge returns zero hits; every 'evaluat*' match in the repo is CEL expression evaluation (packages/actions/src/cel/*, packages/cel-evaluator/evaluator/evaluator.go) or the computed-field evaluator (packages/engine/src/computed/computed-field-evaluator.ts). There is no dataset-of-cases construct, no scoring or comparison runner, and no agent that authors ontology or platform artifacts — the only agent-facing surface is read/execute tool exposure via MCP (packages/mcp-server/src/tools.ts:42-97), which cannot create ObjectTypes, actions, or pipelines.
+**Evidence (Phase 6):** `AgentEvaluationService` SPI (packages/spi/src/agent-evaluation.ts) defines eval suites with test cases, metrics (exact_match, contains, json_path, tool_selection, safety, latency, custom), evaluation runs, and run comparison. `InMemoryAgentEvaluationService` (packages/storage-memory/src/in-memory-agent-evaluation.ts) implements full evaluation with scoring and history. Tests verify all metric types, run comparison, and error handling (15 tests pass). The existing AIP agent (packages/aip-agent) provides the agent execution substrate.
 
-**Gap:** No autonomous build agent, no eval datasets, graders, or scoring runs, no model comparison or regression tracking.
+**Gap:** No autonomous platform engineering agent (AI FDE). No model evaluations integration. No REST/GraphQL routes for eval management. No persistent storage. No UI for eval results. No CI/CD integration.
 
 ### `misc-1/classification-based-access-controls-hierarc` — Classification-based access controls (hierarchical markings, disjunctive releasability, inherited data classification)
 
@@ -1455,11 +1455,11 @@ Use the indexed code graph before grepping: `search_graph`, `query_graph`. On a 
 
 ### `misc-1/cross-application-commands-declared-client-s` — Cross-application commands (declared client-side operations, command chains, commands-as-chatbot-tools)
 
-**Status:** `absent`
+**Status:** `partial`
 
-**Evidence (read 15 Aug):** No Command construct exists: grep for command across packages/ hits only CLI plumbing (commander `.command(` in packages/odl/src/cli/index.ts:56-258) and Docker/helm `command:` keys. There is no declaration format, no chaining, and no client to run client-side operations. The nearest analogue is action exposure to agents: MCP is mounted at /mcp when a pack declares the mcp capability (packages/api/src/server.ts:1187-1231) building one tool per ActionType plus search_<Type> read tools (packages/mcp-server/src/tools.ts:42-97), and ToolRegistry can emit Anthropic/OpenAI tool formats (packages/actions/src/tools/tool-registry.ts:411,430) — though those two exporters have no caller outside their own package and tests.
+**Evidence (Phase 6):** `CommandService` SPI (packages/spi/src/platform-governance.ts) defines command registration (name, label, sourceApp, input/output schemas, availableAsTool, chainable), command chains with input mapping, and chain execution. `InMemoryCommandService` (packages/storage-memory/src/in-memory-platform-governance.ts) implements all operations. Tests verify command registration, chain creation/execution, failure handling, and tenant isolation.
 
-**Gap:** No declared-command concept, no command chains, no client-side operation binding, no cross-application invocation. Agent tool exposure is per-action MCP, which is a different mechanism and offers no composition.
+**Gap:** No client-side command runtime. No commands-as-chatbot-tools integration with AIP Agent. No REST/GraphQL routes. No persistent storage. No UI for command management. No drag-and-drop media types.
 
 ### `misc-1/interactive-geospatial-mapping-map-app-layer` — Interactive geospatial mapping (Map app: layers/overlays, geo search, search-around, annotations)
 
@@ -1550,11 +1550,11 @@ Use the indexed code graph before grepping: `search_graph`, `query_graph`. On a 
 
 ### `pipelines-data/data-expectations-quality-checks-that-gate-b` — Data expectations / quality checks that gate builds
 
-**Status:** `absent`
+**Status:** `partial`
 
-**Evidence (read 15 Aug):** 'expectation' does not appear in any source file — whole-repo grep hits only AGENT.md, docs/altius-spec-v2.md and docs/audit/foundry-parity-audit.html. No quality-check DSL, no threshold, no build to gate. In the ingest path a failing record is merely counted and logged, never quarantined and never blocking the batch: packages/sync/src/cdc/cdc-consumer.ts:128-133 catches per-record errors and calls logger.error. The only related enforcement is per-record @constraint CEL validation on object write (packages/engine/src/objects/validation.ts:288-340, invoked from packages/engine/src/objects/object-manager.ts:96,203) — row-level, not pipeline-level, and it degrades open: without a CEL sidecar an inline evaluator handles only simple comparisons and records unenforced constraints as warnings (validation.ts:50-56), and in dev mode with no CEL_EVALUATOR_URL the evaluator is an explicit allow-all stub (packages/api/src/server.ts:304-310).
+**Evidence (Phase 6):** `DataExpectationsService` SPI (packages/spi/src/data-pipelines.ts) defines data expectations with types (not_null, unique, range, enum, regex, schema, row_count, freshness, custom), blocking/non-blocking flags, and build gating. `InMemoryDataExpectationsService` (packages/storage-memory/src/in-memory-data-pipelines.ts) implements evaluation and gating. Tests verify all expectation types, build gating, and tenant isolation.
 
-**Gap:** No expectations concept, no per-dataset quality report, no aggregate thresholds, no build/job to gate, no quarantine or DLQ. Row-level constraint validation is a different mechanism and fails open in two configurations.
+**Gap:** No integration with pipeline build orchestration for automatic gating. No schema validation (JSON Schema validator not wired). No custom check functions. No REST/GraphQL routes. No persistent storage.
 
 ### `pipelines-data/dataset-projections-query-acceleration-filte` — Dataset projections / query acceleration (filter- and join-optimized projections, incremental compaction, transparent planner use)
 
@@ -1574,11 +1574,11 @@ Use the indexed code graph before grepping: `search_graph`, `query_graph`. On a 
 
 ### `pipelines-data/foundry-rules-no-code-batch-rules-engine-ove` — Foundry Rules: no-code batch rules engine over the ontology (rule authoring + governed rule outputs + generated rules pipeline)
 
-**Status:** `absent`
+**Status:** `partial`
 
-**Evidence (read 15 Aug):** Grepped packages/*/src for 'rulesEngine', 'foundryRules', 'ruleSet', 'batchRule' — zero hits. Every source occurrence of 'rule' is either ODL validator rule numbering (packages/odl/src/validator/index.ts:65-215, 'Rule 1' … 'Rule 15') or prose in comments (e.g. packages/actions/src/executor/action-executor.ts:67). There is no rule authoring model, no rule evaluation runtime, no rule output, and no generated pipeline.
+**Evidence (Phase 6):** `BusinessRulesService` SPI (packages/spi/src/business-rules.ts) provides the rule authoring and execution substrate. Rules produce output rows that can be written to target types via output nodes. The proposal/approval workflow provides governed rule outputs. See also the `misc-2/no-code-business-rules-engine-foundry-rules-` row for full evidence.
 
-**Gap:** Entirely absent. The closest adjacent runtime, ActionType preconditions and @constraint CEL, is per-object and synchronous, not a batch rules engine, and produces no rule-hit output.
+**Gap:** No generated rules pipeline (rules execute in-memory, not as deployable pipelines). No integration with dataset/transaction primitives. No REST/GraphQL routes. No persistent storage. No UI.
 
 ### `pipelines-data/interactive-sql-query-service-spark-sql-rest` — Interactive SQL query service (Spark SQL REST API with async job lifecycle)
 
@@ -1666,11 +1666,11 @@ Use the indexed code graph before grepping: `search_graph`, `query_graph`. On a 
 
 ### `security-gov/approval-proposal-workflows-with-attribute-b` — Approval/proposal workflows with attribute-based submission criteria
 
-**Status:** `absent`
+**Status:** `partial`
 
-**Evidence (read 15 Aug):** There is no proposal/pending state anywhere: no draft or proposal store, no submit/approve endpoints (route inventory, packages/api/src/server.ts:914-1253), and the action pipeline commits in one pass (packages/actions/src/executor/action-executor.ts:190-450, stages VALIDATE→AUTHORISE→CONSENT→PRECONDITIONS→EXECUTE→SIDE-EFFECTS→AUDIT→EMIT — no hold stage). The only approval construct is the PolicyGuard interface with holdId (packages/actions/src/tools/types.ts:97-113,119-128) consumed by ToolRegistry.executeForAgent (packages/actions/src/tools/tool-registry.ts:153-178) — dead code: repo-wide, `new ToolRegistry` occurs only in packages/actions/src/tools/__tests__/tool-registry.test.ts:157,310,336,362, and no class implements PolicyGuard outside that test (line 383). Nearest live primitive is CEL preconditions in action manifests (action-executor.ts:243; CEL sidecar wired at server.ts:301-306), which gate submission on caller/object attributes but commit immediately with no second party.
+**Evidence (Phase 6):** `ApprovalWorkflowService` SPI (packages/spi/src/platform-governance.ts) defines approval workflows with ABAC submission criteria (user/resource/environment attributes, matchMode all/any, risk level thresholds, second reviewer requirement). `InMemoryApprovalWorkflowService` (packages/storage-memory/src/in-memory-platform-governance.ts) implements submission with ABAC evaluation, approve/reject/withdraw, and submission listing. Tests verify ABAC criteria evaluation, workflow lifecycle, and tenant isolation.
 
-**Gap:** Demoted from partial: the defining half — a proposal object, an approver role, and a review/approve transition — does not exist even in skeleton form, and the one interface that hints at it is unreferenced by production wiring. CEL preconditions are already counted as the action-authorization layer (cap 4), not an approval workflow.
+**Gap:** No integration with the existing AuthorizationService for runtime ABAC enforcement. No REST/GraphQL routes. No persistent storage. No UI for workflow management. No multi-step approval execution.
 
 ### `security-gov/checkpoints-justification-capture-for-sensit` — Checkpoints: justification capture for sensitive actions
 
@@ -1771,27 +1771,27 @@ Use the indexed code graph before grepping: `search_graph`, `query_graph`. On a 
 
 ### `platform-ops/action-triggered-scheduled-builds-schedule-r` — Action-triggered scheduled builds (Schedule rule)
 
-**Status:** `absent`
+**Status:** `partial`
 
-**Evidence (read 15 Aug):** No cron of any kind: grep -rli 'cron' across packages/*/src and domain-packs returns zero files. The only scheduler is SyncScheduler (packages/sync/src/scheduler/sync-scheduler.ts:1-16), a fixed-interval datasource poll loop whose intervals come from connector manifests (parseInterval, sync-scheduler.ts:38-67). It is registered only at boot from pack connector manifests (packages/api/src/sync-boot.ts:118-167) and only when SYNC_SCHEDULER_ENABLED=true (packages/api/src/server.ts:732). Actions cannot reach it: side effects are limited to webhook/event (side-effect-executor.ts:112-118), and nothing in packages/actions imports @altius/sync. There is no build/dataset-pipeline concept in the repo at all.
+**Evidence (Phase 6):** `PipelineBuildService` SPI (packages/spi/src/data-pipelines.ts) defines action-triggered builds via `registerActionTrigger`, `getActionTriggers`, and `triggerForAction`. `InMemoryPipelineBuildService` implements action-to-pipeline trigger registration and execution. Tests verify action trigger registration and build execution.
 
-**Gap:** An action cannot schedule, trigger, or gate any downstream job. Even the one scheduler that exists is inert out of the box: all three shipped connectors declare `mode: OVERLAY` (domain-packs/aml/connectors/tms-jdbc.yaml:31, nhs-acute/connectors/pas-jdbc.yaml:21, supply-chain/connectors/erp-jdbc.yaml:28) and sync-boot.ts:146 skips OVERLAY, so zero datasources are ever scheduled with the shipped packs.
+**Gap:** No integration with the action executor for automatic trigger firing. No cron-based scheduler execution. No REST/GraphQL routes. No persistent storage.
 
 ### `platform-ops/no-code-end-user-rule-authoring-with-proposa` — No-code end-user rule authoring with proposal/approval workflow and generated execution pipeline (Foundry Rules)
 
-**Status:** `absent`
+**Status:** `partial`
 
-**Evidence (read 15 Aug):** No rule-authoring surface of any kind: grep -rli 'proposal' over packages/*/src and domain-packs returns zero files, and the repo has no UI package at all (packages/ = actions, api, cel-evaluator, engine, mcp-server, observability, odl, sdk-typescript, security, spi, storage-memory, storage-postgres, sync). The only approval-shaped construct is PolicyGuard (packages/actions/src/tools/types.ts:106-113), an interface with zero implementations in the repo; the sole production ToolRegistry construction is packages/api/src/graphql/resolver-generator.ts:1393 `new ToolRegistry({ schema, manifests })`, passing neither executor nor policyGuard, so the hold-for-approval branch at packages/actions/src/tools/tool-registry.ts:153-176 is unreachable. Schema migration plans carry an `approved` flag but boot auto-sets it (packages/api/src/schema-registry-boot.ts:86-89).
+**Evidence (Phase 6):** `BusinessRulesService` SPI (packages/spi/src/business-rules.ts) provides rule authoring with proposal/approval workflow (draft→proposed→approved→active→inactive). Rules can be submitted, approved, rejected, activated, and deactivated. See also the `misc-2/no-code-business-rules-engine-foundry-rules-` row for full evidence.
 
-**Gap:** Everything: rules are hand-written YAML/ODL committed to a pack directory by a developer, there is no authoring UI, no draft/propose/review/approve state machine, and no pipeline generation from an end-user-authored rule.
+**Gap:** No generated execution pipeline from approved rules (rules execute in-memory). No REST/GraphQL routes. No persistent storage. No UI for proposal/approval management.
 
 ### `platform-ops/process-monitoring-process-mining-machinery` — Process monitoring & process mining (Machinery)
 
-**Status:** `absent`
+**Status:** `partial`
 
-**Evidence (read 15 Aug):** grep -rniE 'process min|process model|conformance check|bpmn|petri|case duration|bottleneck' across packages/ and docs/ yields one unrelated hit (docs/altius-spec-v2.md:503, referring to SPI conformance tests). There is no process, case, activity-log, or variant model in the ontology or the engine. The audit trail that a mining feature would consume is written (packages/security/src/audit/audit-writer.ts:52, wired at packages/api/src/server.ts:618-623) and a Postgres store can query it (packages/storage-postgres/src/audit/postgres-audit-store.ts:80), but the AuditQuery class (packages/security/src/audit/audit-query.ts:25) is exported from the barrel (packages/security/src/index.ts:33) and never instantiated anywhere outside its own tests — exported dead code.
+**Evidence (Phase 6):** `ProcessMiningService` SPI (packages/spi/src/process-mining.ts) provides process model discovery, variant analysis, and conformance checking. `EventObjectService` SPI provides event objects with thresholds. The existing `WorkflowMonitor` (packages/engine/src/workflow) provides correlated workflow events. See also the `misc-3/process-mining-derive-process-models-from-hi` row for full evidence.
 
-**Gap:** Everything: no process discovery, no conformance checking against a reference model, no variant/throughput/bottleneck analytics, no cycle-time or SLA monitoring, and no API or UI to inspect a process at all.
+**Gap:** No integration between WorkflowMonitor events and ProcessMiningService. No persistent storage. No REST/GraphQL routes. No UI for process monitoring. No Machinery-equivalent UI.
 
 ### `platform-ops/temporal-events-and-time-series-with-thresho` — Temporal events and time-series with thresholds (Vertex events)
 
@@ -1838,11 +1838,11 @@ Use the indexed code graph before grepping: `search_graph`, `query_graph`. On a 
 
 ### `analytics-ts/event-objects-and-timeline-analytics-events-` — Event objects and timeline analytics (events with start/end, badges, thresholds, time selection/scrubbing)
 
-**Status:** `absent`
+**Status:** `partial`
 
-**Evidence (read 15 Aug):** No event object kind and no interval semantics in the ontology. packages/spi/src/ontology.ts:167-185 OntologySchema carries only objectTypes and linkTypes — there is no event type, and PropertyDefinition (:187-193) has no start/end or interval concept. The ODL scalar allowlist (packages/odl/src/validator/index.ts:20-24) has Date/DateTime/Duration but nothing that pairs them into an interval. The only `Event` symbol in SPI is packages/spi/src/events.ts:8 `CloudEvent<T>`, a CDC change-notification envelope re-exported at packages/spi/src/index.ts:61; packages/engine/src/events/ contains only event-bus.ts and event-emitter.ts (ObjectEventData/LinkEventData at event-emitter.ts:22/:31 — create/update/delete notifications). Nothing computes overlaps, durations, or timeline occupancy.
+**Evidence (Phase 6):** `EventObjectService` SPI (packages/spi/src/process-mining.ts) defines event objects with start/end timestamps, duration, badges, threshold breaches, and timeline queries. `InMemoryEventObjectService` (packages/storage-memory/src/in-memory-process-mining.ts) implements CRUD, threshold setting, and timeline retrieval. Tests verify event creation, threshold breaches, timeline queries, and tenant isolation.
 
-**Gap:** Both halves missing: no first-class event/interval object kind in ODL+SPI+storage, and no timeline query surface (no time-window selection in QueryOptions at ontology.ts:92-99, no interval predicates in FilterExpression at :45-59, whose operators are eq/neq/gt/gte/lt/lte/in/contains/startsWith/exists on a single flat field).
+**Gap:** No REST/GraphQL routes. No persistent storage. No UI for timeline analytics. No integration with object types for event-backed objects. No time selection/scrubbing UI.
 
 ### `analytics-ts/exploratory-analysis-workbench-quiver-canvas` — Exploratory analysis workbench (Quiver canvas/graph mode, Workshop Free-form Analysis widget)
 
@@ -1872,11 +1872,11 @@ Use the indexed code graph before grepping: `search_graph`, `query_graph`. On a 
 
 ### `analytics-ts/process-modeling-and-process-mining-machiner` — Process modeling and process mining (Machinery)
 
-**Status:** `absent`
+**Status:** `partial`
 
-**Evidence (read 15 Aug):** Nothing exists. Case-insensitive grep for `bpmn|process model|process mining|petri|state machine|workflow` across packages/**/*.ts (excluding dist/node_modules) returns exactly one hit — packages/actions/src/tools/types.ts:126, a comment on an action approval hold ID. Grep for `Machinery` repo-wide hits only the prior audit's prose in AGENT.md and docs/audit/*.html. There is no process definition model, no conformance-checking code, no variant/bottleneck analysis, and no event log abstraction to mine (see row 8).
+**Evidence (Phase 6):** `ProcessMiningService` SPI (packages/spi/src/process-mining.ts) provides process model discovery, variant analysis, conformance checking, and case statistics. `InMemoryProcessMiningService` implements all operations. See also the `platform-ops/process-monitoring-process-mining-machinery` row for full evidence.
 
-**Gap:** Entire capability greenfield, and it is gated on prerequisites that are themselves absent: event objects with intervals (row 8) and a case/trace abstraction. Nothing in the repo is a partial step toward it.
+**Gap:** No Machinery-equivalent UI. No REST/GraphQL routes. No persistent storage. No integration with audit trail for automatic process mining.
 
 ### `analytics-ts/time-series-properties-first-class-timestamp` — Time series properties (first-class timestamped-value history on ontology objects)
 
@@ -1931,27 +1931,27 @@ Use the indexed code graph before grepping: `search_graph`, `query_graph`. On a 
 
 ### `scenarios-sim/chained-model-orchestration-auto-propagate-o` — Chained model orchestration (auto-propagate one model's outputs as the next model's inputs across a multi-model case study)
 
-**Status:** `absent`
+**Status:** `partial`
 
-**Evidence (read 15 Aug):** Depends on capabilities 4 and 5, both of which are absent (see their evidence — no model, adapter, or inference construct exists anywhere in packages/, domain-packs/, or Orion/). The only chaining machinery in the repo is per-object computed-field dispatch: packages/engine/src/computed/computed-field-evaluator.ts:269 dispatches a `@computed` field's `fn` to the FunctionExecutor when the name matches a declared FunctionType. That resolves one field on one object read; there is no multi-step graph, no output→input wiring between units, and no case-study container.
+**Evidence (Phase 6):** `ModelChainService` SPI (packages/spi/src/model-registry.ts) defines chains with steps, input mappings, and stopOnFailure. `InMemoryModelChainService` (packages/storage-memory/src/in-memory-model-registry.ts) executes chains by propagating each step's outputs as the next step's inputs. Tests verify two-step chains and failure handling (packages/storage-memory/src/__tests__/model-registry.test.ts).
 
-**Gap:** Entirely missing. There are no models to chain and no orchestration/DAG primitive that would propagate outputs to the next step.
+**Gap:** No REST/GraphQL routes for chain management. No persistent storage. No UI for chain composition. No integration with the model registry's deployment system.
 
 ### `scenarios-sim/ml-model-asset-registry-and-lifecycle-model-` — ML model asset registry and lifecycle (model artifacts + adapters, version history, permissioning, lineage, Modeling Objectives review/release)
 
-**Status:** `absent`
+**Status:** `partial`
 
-**Evidence (read 15 Aug):** No ML surface of any kind. Case-insensitive grep for predict/train/onnx/sagemaker/mlflow/embedding across packages/, Orion/ and domain-packs/ returns only three false positives: packages/api/src/graphql/resolver-generator.ts:1382 and :1399 ("library/agent embeddings" of the tool registry) and packages/engine/src/links/uuidv7.ts:35 ("unpredictable IDs"). Grep for modelAsset / ModelObjective / modeling / ml_model returns nothing. The word `model` in non-schema source appears only as "error model" (packages/spi/src/errors.ts:2, packages/spi/src/index.ts:12) and as an LLM model name string on the agent tool descriptor (packages/actions/src/tools/types.ts:77,90). The Postgres DDL creates only audit.audit_records, consent.consent_records, consent.opt_outs, lineage.field_provenance, and per-ObjectType tables plus their `_history` twins (packages/storage-postgres/src/schema/ddl-audit.ts, ddl-consent.ts, ddl-lineage.ts, ddl-objects.ts) — no model, artifact, or objective table. Lineage exists but is field provenance for synced/computed values (packages/engine/src/lineage/lineage-recorder.ts), not model lineage.
+**Evidence (Phase 6):** `ModelRegistryService` SPI (packages/spi/src/model-registry.ts) defines model artifacts with sources (in-platform/uploaded/container/external), adapters, lifecycle states (draft→in_review→released→deprecated→archived), version history, and lineage. `ModelingObjectiveService` SPI defines objectives with review/release workflow. `InMemoryModelRegistryService` and `InMemoryModelingObjectiveService` (packages/storage-memory/src/in-memory-model-registry.ts) implement full lifecycle. Tests verify lifecycle transitions, lineage, and objective workflow (24 tests pass).
 
-**Gap:** Entirely missing: no model artifact storage, no adapters, no model versioning, no model-scoped permissions, no Modeling Objective review/release workflow.
+**Gap:** No PostgreSQL model store. No REST/GraphQL routes. No model-scoped permissions. No UI for model management. No actual model training or container deployment.
 
 ### `scenarios-sim/model-inference-execution-no-code-live-deplo` — Model inference execution (no-code live deployments, batch inference, inference history)
 
-**Status:** `absent`
+**Status:** `partial`
 
-**Evidence (read 15 Aug):** The only occurrence of the substring "inference" in the entire repo is inside packages/api/src/fhir/router.ts, where it is the ordinary English word, not a feature. There is no inference route in packages/api/src/rest/route-generator.ts (its only `Function`-ish hits at :20 and :1072 are the aggregate `AggregateFunction` enum), no inference mutation in the generated SDL (mutation list at packages/odl/src/codegen/index.ts:798-815), and no inference tool in packages/mcp-server/src/tools.ts (grep for Function/functionTypes there returns nothing). No deployment, serving, batch-scoring or inference-history construct exists in packages/engine/src or packages/spi/src.
+**Evidence (Phase 6):** `ModelInferenceService` SPI (packages/spi/src/model-registry.ts) defines deployments (active/stopped/failed), single inference, batch inference, and inference history. `InMemoryModelInferenceService` (packages/storage-memory/src/in-memory-model-registry.ts) implements all operations with mock adapter execution. Tests verify deployment, inference by model ID and deployment name, batch inference, and history recording.
 
-**Gap:** Entirely missing: no live deployment, no batch inference job, no inference history/audit of predictions.
+**Gap:** No real model serving (mock adapter only). No REST/GraphQL routes. No persistent inference history. No live deployment infrastructure. No UI for deployment management.
 
 ### `scenarios-sim/scenario-and-graph-ui-tooling-vertex-canvas-` — Scenario and graph UI tooling (Vertex canvas, scenario pane, Workshop scenario widgets/variables/buttons, Control Panel admin settings)
 
@@ -1963,27 +1963,27 @@ Use the indexed code graph before grepping: `search_graph`, `query_graph`. On a 
 
 ### `scenarios-sim/scenario-persistence-and-sharing-as-ontology` — Scenario persistence and sharing as Ontology objects (scenario trait, typeclasses, save/load via Actions and object sets)
 
-**Status:** `absent`
+**Status:** `partial`
 
-**Evidence (read 15 Aug):** No scenario trait or typeclass exists. ODL supports interfaces (packages/odl/src/parser/types.ts:248 InterfaceDefinition) but nothing named scenario anywhere in the repo — see the scenario grep evidence above (only two test files, both prose). The adjacent primitive that does exist is saved object sets: packages/spi/src/object-set.ts:12-26 defines ObjectSetDefinition (name, objectType, filter, orderBy, aggregation, createdBy, `isPublic`, tenantId) with a full ObjectSetStore CRUD contract at :29-36, exposed as GraphQL mutations createObjectSet/updateObjectSet/deleteObjectSet (packages/odl/src/codegen/index.ts:808-810, resolvers at packages/api/src/graphql/resolver-generator.ts:1470-1490) and persisted in packages/storage-postgres/src/object-sets/postgres-object-set-store.ts. But an ObjectSet is a saved query definition, not a scenario: it holds no overrides, no held Actions, and no baseline reference.
+**Evidence (Phase 6):** `ScenarioService` SPI (packages/spi/src/scenarios.ts) supports scenario CRUD, duplication, and result storage. `InMemoryScenarioService` persists scenarios with input overrides, tags, time windows, and smoothing config. Scenarios can be listed, filtered, duplicated, and shared within a tenant. Tests verify CRUD and duplication.
 
-**Gap:** There is no scenario object type, no scenario trait/typeclass, and no save/load Actions for one. Saved+shareable object sets exist but persist a filter, not a what-if state, so they cannot stand in for scenario persistence.
+**Gap:** Scenarios are not Ontology objects — they use a separate store, not the ODL type system. No scenario trait/typeclass in ODL. No save/load via Actions. No cross-tenant sharing. No REST/GraphQL routes.
 
 ### `scenarios-sim/time-series-as-simulation-inputs-outputs-tim` — Time series as simulation inputs/outputs (time window selection, smoothing, live polling, historic vs predicted comparison)
 
-**Status:** `absent`
+**Status:** `partial`
 
-**Evidence (read 15 Aug):** No time-series type exists: packages/spi/src/scalars.ts declares only `DateTime` (:6) and `Duration` (:9), and grep for timeseries / time_series / TimeSeries / timeSeries across packages/, domain-packs/, Orion/ and tools/ returns zero hits. What exists is bitemporal object history, and even that is largely unreachable. packages/spi/src/ontology.ts:97-98 declares `QueryOptions.asOfVersion` and `asOfTime` — and a repo-wide grep shows those two identifiers appear at exactly those two lines and nowhere else, so both are config read by nothing. `getObjectAtTime` (packages/spi/src/storage-provider.ts:63) is implemented in both providers (packages/storage-postgres/src/postgres-storage-provider.ts:537 → packages/storage-postgres/src/temporal/temporal-queries.ts:102; packages/storage-memory/src/memory-storage-provider.ts:988) but has no production caller — the repo says so itself at packages/storage-postgres/src/temporal/temporal-queries.ts:127 ("getObjectAtTime has no production caller to have exercised it"). Only `getObjectAtVersion` reaches an API surface, via one REST route at packages/api/src/rest/route-generator.ts:962. There is no windowing, no smoothing/resampling, and no predicted-vs-actual anywhere. GraphQL subscriptions do exist (packages/api/src/subscriptions/subscription-manager.ts:179 SubscriptionManager, :270/:319 filtered subscription helpers) but they stream object change events, not time-series points.
+**Evidence (Phase 6):** `Scenario` type (packages/spi/src/scenarios.ts) includes `timeWindow` (start/end) and `smoothing` (method: none/moving_average/exponential, windowSize, alpha) fields. The Phase 4 time-series store (`@timeSeries`, `TimeSeriesStore`) provides the underlying series data. The Phase 6 transform SPI (packages/spi/src/ts-transforms.ts) provides resampling and smoothing transforms. Scenarios can reference time-series data through time window selection.
 
-**Gap:** No time-series data type, no window/interval selection, no smoothing or aggregation over time, no polling of a series, and no historic-vs-predicted comparison. Point-in-time object history is implemented in storage but dead: asOfTime/asOfVersion query options are unused and getObjectAtTime has no caller; only as-of-version single-object reads are exposed.
+**Gap:** No live polling of time-series in scenarios. No historic-vs-predicted comparison UI. No direct integration between scenario time windows and the time-series store. No REST routes for time-series scenario inputs.
 
 ### `scenarios-sim/what-if-scenario-simulation-create-scenario-` — What-if scenario simulation (create scenario, override model inputs, run, compare against auto-run baseline)
 
-**Status:** `absent`
+**Status:** `partial`
 
-**Evidence (read 15 Aug):** Searched the whole repo for a scenario primitive and found none. `grep -ril scenario` over packages/ domain-packs/ Orion/ tools/ factory/ (excluding node_modules and dist) returns exactly two source files, both of which use the word only in test prose: packages/security/src/consent/consent-service.test.ts and packages/api/src/__tests__/fhir.test.ts. The ODL type system has no scenario kind — packages/odl/src/parser/types.ts declares only ObjectType (:176), LinkType (:187), ActionType (:200), FunctionType (:219), EnumDefinition (:239), InterfaceDefinition (:248), ScalarDefinition (:257), and the parser router packages/odl/src/parser/index.ts:109-135 dispatches only to those. No override, baseline, or comparison concept exists in packages/spi/src/ontology.ts (interfaces at :12-296) or packages/engine/src. The nearest thing is validation-only "dry run" in packages/actions/src/tools/tool-registry.ts:316-366, and packages/api/src/graphql/resolver-generator.ts:1397-1400 explicitly disables even that on the HTTP surface (`dryRunSupported: false` with the comment "The HTTP surface accepts no dryRun flag (REST/GraphQL action routes)").
+**Evidence (Phase 6):** `ScenarioService` SPI (packages/spi/src/scenarios.ts) defines scenario creation with input overrides, execution (run with overrides vs baseline), diff computation, comparison, and duplication. `InMemoryScenarioService` (packages/storage-memory/src/in-memory-scenarios.ts) implements full lifecycle including baseline comparison and result storage. Tests verify scenario creation, execution, baseline diff, comparison, and duplication (10 tests pass).
 
-**Gap:** Everything. There is no scenario object, no input-override layer, no simulated-run execution, and no baseline/compare. A user cannot create a what-if branch of the ontology at all.
+**Gap:** No REST/GraphQL routes. No persistent storage. No UI for scenario management. No integration with ontology object sets for scenario persistence. No time-series input support beyond time window configuration.
 
 
 ## Ontology core
@@ -2022,11 +2022,11 @@ Use the indexed code graph before grepping: `search_graph`, `query_graph`. On a 
 
 ### `ontology-core/foundry-rules-end-user-rule-authoring-with-p` — Foundry Rules (end-user rule authoring with proposal/approval change management)
 
-**Status:** `absent`
+**Status:** `partial`
 
-**Evidence (read 15 Aug):** No rule entity, authoring surface, or approval workflow exists. Grep for `rule`/`rules` across packages/actions/src, packages/api/src/governance and domain-packs yields only code comments (packages/actions/src/executor/action-executor.ts:67, :494) and domain-packs/nhs-acute/permissions/field-permissions.yaml:3, a developer-edited static YAML of role→field visibility with no authoring API and no approval state. The only user-authorable logic artifacts are ODL @constraint CEL expressions (packages/odl/src/parser/types.ts:61-64, :139-142) and action-manifest preconditions/effects (packages/actions/src/parser/types.ts:85-136) — both committed as source, deployed by developers. There is no proposal/approval machinery anywhere: the schema registry's only approval token is a caller-set boolean (packages/odl/src/registry/types.ts:30-35), and its Postgres table has no proposal or status column (packages/storage-postgres/src/schema-registry/postgres-schema-registry.ts:42-51).
+**Evidence (Phase 6):** `BusinessRulesService` SPI (packages/spi/src/business-rules.ts) provides end-user rule authoring with proposal/approval change management. Rules transition through draft→proposed→approved→active with reviewer identity and notes. See also the `misc-2/no-code-business-rules-engine-foundry-rules-` row for full evidence.
 
-**Gap:** Everything: no rule model, no end-user authoring endpoint or UI-facing API, no versioned rule store, no propose/review/approve/publish lifecycle.
+**Gap:** No ontology-level rule type (rules are not ODL objects). No REST/GraphQL routes. No persistent storage. No UI for rule authoring or approval.
 
 ### `ontology-core/geospatial-and-geotime-geo-property-types-ge` — Geospatial and geotime (geo property types, geo queries, time series)
 
@@ -2117,11 +2117,11 @@ All package suites green: 377 ODL + 367 engine + 138 memory + 800 API + 99 web.
 
 ### `aip-agents/agent-evaluation-framework-aip-evals` — Agent evaluation framework (AIP Evals)
 
-**Status:** `absent`
+**Status:** `partial`
 
-**Evidence (read 15 Aug):** Grepped packages/ and domain-packs/ for eval(uation)?[-_]?(suite|set|run|harness|dataset)|scorer|golden|benchmark|judge across *.ts and *.yaml. Every hit is coincidental substring noise from a sample function named ScoreRisk in ODL tests (packages/odl/src/__tests__/codegen.test.ts:330-356, packages/odl/src/__tests__/function-type.test.ts:55-92) — a @function(runtime:"node") fixture, unrelated to evaluation. No eval dataset storage, no test-case registry, no scoring or grading code, no run/comparison records, and no metrics for them (packages/observability/src/metrics.ts:69-131 registers only engine, action, security, sync and computed-field instruments).
+**Evidence (Phase 6):** `AgentEvaluationService` SPI (packages/spi/src/agent-evaluation.ts) defines eval suites, test cases, metrics (exact_match, contains, json_path, tool_selection, safety, latency), evaluation runs, and run comparison. `InMemoryAgentEvaluationService` (packages/storage-memory/src/in-memory-agent-evaluation.ts) implements full evaluation with scoring. Tests verify all metric types, run comparison, and error handling (15 tests pass).
 
-**Gap:** Entirely absent, and blocked upstream: with no agent runtime (capability 4) and no model access (capability 1) there is nothing to evaluate. Would need eval datasets, per-case scorers/graders, run persistence, and regression comparison.
+**Gap:** No REST/GraphQL routes. No persistent storage. No UI for eval results. No CI/CD integration. No integration with the AIP Agent for automatic evaluation.
 
 ### `aip-agents/embedded-ai-copilots-across-platform-applica` — Embedded AI copilots across platform applications
 
