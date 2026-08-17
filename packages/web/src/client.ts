@@ -43,13 +43,29 @@ export async function loadConfig(
   env: Record<string, string | undefined>,
   origin: string,
   fetchImpl: typeof fetch = fetch,
+  isProd = false,
 ): Promise<WebConfig> {
   let runtime: RuntimeConfig = {};
+  let failed = false;
   try {
     const response = await fetchImpl('/config.json', { cache: 'no-store' });
     if (response.ok) runtime = (await response.json()) as RuntimeConfig;
+    else failed = true;
   } catch {
-    // Left empty on purpose — see above.
+    failed = true;
+  }
+
+  // A built bundle is always served by the image, whose entrypoint writes
+  // /config.json unconditionally — so in production its absence means the
+  // deployment is broken, and carrying on would run anonymously and have every
+  // request rejected by the gateway with no explanation. Under `pnpm dev` there
+  // is no container and no file, which is normal; that is the only reason this
+  // could not be distinguished before.
+  if (failed && isProd) {
+    throw new Error(
+      'Configuration could not be loaded (/config.json). The deployment is incomplete — ' +
+      'the container entrypoint writes this file at start-up.',
+    );
   }
 
   return readConfig(

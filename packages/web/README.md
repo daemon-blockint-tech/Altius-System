@@ -52,6 +52,12 @@ cookie still valid that is a round trip, not a re-login. The PKCE verifier does
 go in `sessionStorage` because it must survive the redirect, but it is
 single-use, tab-scoped and worthless without the matching code.
 
+A **built bundle** refuses to start if `/config.json` cannot be loaded: the
+image entrypoint writes it unconditionally, so its absence means the deployment
+is incomplete, and running on would serve an anonymous UI whose every request
+the gateway rejects. Under `pnpm dev` there is no container and no file, which
+is normal — `import.meta.env.PROD` is what distinguishes the two.
+
 `VITE_OIDC_ISSUER` unset means no OIDC, which is correct against the dev stack
 (`NODE_ENV=development` accepts anonymous callers). Production is covered by the
 gateway refusing them.

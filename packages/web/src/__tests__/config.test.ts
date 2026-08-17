@@ -52,6 +52,28 @@ describe('loadConfig', () => {
     expect(config.oidc).toBeNull();
   });
 
+  it('refuses to start in production when the config cannot be loaded', async () => {
+    // The image entrypoint writes /config.json unconditionally, so in a built
+    // bundle its absence means the deployment is broken. Carrying on would run
+    // anonymously and have every request rejected with no explanation.
+    await expect(
+      loadConfig({}, 'https://altius.example', fetchReturning(null, false), true),
+    ).rejects.toThrow(/Configuration could not be loaded/);
+  });
+
+  it('still tolerates a missing config file outside production', async () => {
+    // `pnpm dev` has no container and no file, which is normal — this is the
+    // distinction that makes the check above safe to make at all.
+    const config = await loadConfig(
+      { VITE_OIDC_ISSUER: 'http://localhost:8180/auth/realms/altius' },
+      'http://localhost:5173',
+      fetchReturning(null, false),
+      false,
+    );
+
+    expect(config.oidc?.issuer).toBe('http://localhost:8180/auth/realms/altius');
+  });
+
   it('survives an unreachable or unparseable config file', async () => {
     // Against the dev stack there is no OIDC to configure; refusing to start
     // over a missing optional file would be worse than running without it.
