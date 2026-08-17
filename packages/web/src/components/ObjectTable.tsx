@@ -229,6 +229,19 @@ export function ObjectTable<T extends RowMetadata>({
  * invites someone to fill the gap in.
  */
 function renderCell<T extends RowMetadata>(row: T, col: Column<T>): ReactNode {
+  // Checked before redaction and before the null check, because the server
+  // nulls EVERY non-primary field when consent is withheld
+  // (resolver-generator.ts:384-387, :742-747). Falling through would draw the
+  // whole row as "not recorded" — a claim about the data rather than about
+  // permission, and the one that invites someone to fill the gap in.
+  if (row._consentRestricted) {
+    return (
+      <span data-consent-restricted="true" title="Withheld: the subject has not consented to this use">
+        consent withheld
+      </span>
+    );
+  }
+
   const redacted = row._redactedFields?.includes(col.key) ?? false;
   if (redacted) {
     return (

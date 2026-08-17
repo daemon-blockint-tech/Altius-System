@@ -20,6 +20,7 @@ interface Patient {
   name: string | null;
   status: string | null;
   _redactedFields?: string[] | null;
+  _consentRestricted?: boolean | null;
 }
 
 function connection(nodes: Patient[], opts: { hasNextPage?: boolean; endCursor?: string } = {}): ConnectionLike<Patient> {
@@ -73,6 +74,25 @@ describe('ObjectTable', () => {
     const empty = container.querySelector('[data-empty]');
     expect(empty?.textContent).toBe('—');
     expect(container.querySelectorAll('[data-redacted]').length).toBe(1);
+  });
+
+  it('distinguishes a consent-restricted row from one with no data', async () => {
+    // When consent is denied the server sets _consentRestricted and nulls every
+    // non-primary field (resolver-generator.ts:384-387, :742-747). Drawing those
+    // as "—" reads as "this patient has no recorded name or status", which is a
+    // different and dangerous claim from "you are not permitted to see this".
+    const load = vi.fn().mockResolvedValue(
+      connection([{ id: 'p-1', name: null, status: null, _consentRestricted: true }]),
+    );
+
+    const { container } = render(<ObjectTable caption="Patients" columns={COLUMNS} load={load} />);
+    await waitFor(() => expect(container.querySelector('[data-consent-restricted]')).not.toBeNull());
+
+    expect(container.querySelector('[data-consent-restricted]')?.textContent).toBe('consent withheld');
+    // Not the "not recorded" marker, and not the redaction marker either — the
+    // three are different reasons a value is absent.
+    expect(container.querySelector('[data-empty]')).toBeNull();
+    expect(container.querySelector('[data-redacted]')).toBeNull();
   });
 
   it('pages forward with the end cursor and back without one', async () => {

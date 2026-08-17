@@ -21,6 +21,12 @@ being hand-maintained. The UI adds no data access of its own: every read is the
 same governed GraphQL surface that REST, MCP and FHIR use, which is what keeps
 FGA filtering, field redaction and consent gating in one place server-side.
 
+**Three reasons a value is absent, three renderings.** `consent withheld` when
+`_consentRestricted` is set (the server nulls every non-primary field in that
+case), `redacted` when the field is named in `_redactedFields`, and `—` when the
+value genuinely was not recorded. Collapsing any of these into the others makes
+a permission decision read as a statement about the data.
+
 **Redacted ≠ empty.** The server nulls fields the caller may not see and names
 them in `_redactedFields`. `ObjectTable` renders those as `redacted`, distinct
 from `—` for a genuinely unset value. Rendering both blank would make "you are
