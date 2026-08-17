@@ -32,6 +32,11 @@ type Patient @objectType {
   meanValue: Float @computed(fn: "avgLinks", args: { linkType: "HasReading", field: "value" })
   lowest: Float @computed(fn: "minLinks", args: { linkType: "HasReading", field: "value" })
   highest: Float @computed(fn: "maxLinks", args: { linkType: "HasReading", field: "value" })
+  # countLinks names its argument "type" where the aggregates name it
+  # "linkType", AND defaults to inbound where they default to outbound. Both
+  # are stated explicitly here rather than relied on. Not this change's
+  # business to reconcile, but worth knowing before writing a pack.
+  readingCount: Int @computed(fn: "countLinks", args: { type: "HasReading", direction: "OUTBOUND" })
 }
 
 type HasReading @linkType(from: "Patient", to: "Reading", cardinality: ONE_TO_MANY) {
@@ -120,5 +125,39 @@ describe('@computed aggregation builtins', () => {
     const readingId = await addReading('a', 7);
 
     await expect(evaluator.evaluate('Reading', readingId, 'patientName', ctx)).resolves.toBe('P');
+  });
+});
+
+describe('page boundary — an aggregate must see every input or fail', () => {
+  // getLinks pages at DEFAULT_LINK_QUERY_LIMIT (100). Passing no options meant
+  // these aggregated the first 100 links and reported the result as a total:
+  // 150 readings of 1 summed to 100, with nothing in the response saying so.
+  // `countLinks` on the same object reads totalCount, so the two computed
+  // fields contradicted each other on the same payload.
+  //
+  // Every existing case above uses 2-3 links, which is exactly why none of
+  // them could see this.
+
+  it('sums past the default page size', async () => {
+    for (let i = 0; i < 150; i++) await addReading(`r${i}`, 1);
+
+    await expect(evaluator.evaluate('Patient', patientId, 'totalValue', ctx)).resolves.toBe(150);
+  });
+
+  it('agrees with countLinks on the same object', async () => {
+    for (let i = 0; i < 120; i++) await addReading(`r${i}`, 1);
+
+    const total = await evaluator.evaluate('Patient', patientId, 'totalValue', ctx);
+    const count = await evaluator.evaluate('Patient', patientId, 'readingCount', ctx);
+    expect(total).toBe(count);
+  });
+
+  it('finds the max when it sits beyond the first page', async () => {
+    // Ordering is not guaranteed, but a truncating implementation can only
+    // ever see a subset — with the outlier last, it reports the wrong maximum.
+    for (let i = 0; i < 130; i++) await addReading(`r${i}`, 1);
+    await addReading('outlier', 999);
+
+    await expect(evaluator.evaluate('Patient', patientId, 'highest', ctx)).resolves.toBe(999);
   });
 });

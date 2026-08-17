@@ -23,6 +23,7 @@ import type {
   DirectiveArgValue,
 } from '@altius/odl';
 import type { FunctionExecutor } from '../functions/function-executor.js';
+import { MAX_LINK_QUERY_LIMIT } from '@altius/spi';
 
 /** Context passed to built-in compute functions. */
 export interface ComputeContext {
@@ -185,7 +186,28 @@ function aggregateLinks(op: NumericAggregate): ComputeFunction {
       ? (argsObj.direction.toLowerCase() as 'inbound' | 'outbound')
       : 'outbound';
 
-    const links = await context.storage.getLinks(context.ctx, context.objectId, linkType, direction);
+    // getLinks pages, and its default page is DEFAULT_LINK_QUERY_LIMIT (100).
+    // Passing no options meant this aggregated the FIRST 100 links and reported
+    // the result as a total: a Patient with 150 readings summed 100 of them,
+    // with nothing in the response to say so. `countLinks` on the same object
+    // reads `totalCount` and answers 150, so the two computed fields
+    // contradicted each other on the same payload.
+    //
+    // MAX_LINK_QUERY_LIMIT is the largest page the SPI permits, so it is the
+    // most this can see in one call — and beyond it the honest answer is an
+    // error. An aggregate that cannot reach all its inputs must fail loudly;
+    // under-reporting is the failure mode nobody notices.
+    const links = await context.storage.getLinks(
+      context.ctx, context.objectId, linkType, direction,
+      { limit: MAX_LINK_QUERY_LIMIT },
+    );
+    if (links.hasNextPage) {
+      throw new Error(
+        `${label}: ${linkType} has more than ${MAX_LINK_QUERY_LIMIT} links from this object ` +
+        `(${links.totalCount} total). A computed aggregate cannot page, and silently ` +
+        `aggregating the first ${MAX_LINK_QUERY_LIMIT} would report a wrong total.`,
+      );
+    }
 
     const values: number[] = [];
     for (const link of links.items) {
