@@ -403,6 +403,33 @@ describe('Generated SDK runtime', () => {
       vi.useRealTimers();
     });
 
+    it('does not double-subscribe when a new stream is opened while disconnected', async () => {
+      // subscribe() queues its own sendSubscribe AND records it as a
+      // resubscriber. A retry timer already pending then queues every
+      // resubscriber on top, so the newcomer is in the queue twice and the ack
+      // sends its subscribe twice under one id — the same protocol violation
+      // 4ba0250 fixed on the retry-after-retry path, reached another way.
+      vi.useFakeTimers();
+      const client = new Altius({ endpoint: 'http://localhost:3000/graphql', token: 't' });
+
+      client.patient.onAnyChange(() => {});
+      await vi.advanceTimersByTimeAsync(10);
+      MockWebSocket.instances[0]!._receive(JSON.stringify({ type: 'connection_ack' }));
+      MockWebSocket.instances[0]!.close();
+
+      // A second stream opens during the backoff window, before any retry.
+      client.ward.onAnyChange(() => {});
+      await vi.advanceTimersByTimeAsync(2000);
+
+      const last = MockWebSocket.instances[MockWebSocket.instances.length - 1]!;
+      last._receive(JSON.stringify({ type: 'connection_ack' }));
+
+      const subscribes = last.sent.filter(m => m.includes('"subscribe"'));
+      // One per subscription, not three.
+      expect(subscribes).toHaveLength(2);
+      vi.useRealTimers();
+    });
+
     it('does not reconnect after the caller unsubscribes', async () => {
       // Letting go of a stream is not losing one; reconnecting here would
       // resurrect a subscription the caller has already abandoned.
