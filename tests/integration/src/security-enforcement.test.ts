@@ -37,7 +37,7 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { execSync } from 'node:child_process';
+import { execSync, spawn } from 'node:child_process';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { dockerAvailable } from './setup.js';
@@ -62,12 +62,42 @@ const PATIENTS_URL = `${CONFIG.restBaseUrl}/patients`;
 const WARDS_URL = `${CONFIG.restBaseUrl}/wards`;
 const RELATIONSHIPS_URL = `${CONFIG.restBaseUrl}/relationships`;
 
-function compose(files: string[], cmd: string, env?: Record<string, string>): void {
-  const fileArgs = files.map((f) => `-f "${f}"`).join(' ');
-  execSync(`docker compose ${fileArgs} ${cmd}`, {
-    stdio: 'inherit',
-    env: { ...process.env, ...env },
+/**
+ * Run a docker compose command without blocking the event loop.
+ *
+ * These were execSync. A `down -v --remove-orphans` over ten containers plus
+ * volumes holds the thread for seconds, and while it is held the worker cannot
+ * answer vitest's reporter RPC — so `onTaskUpdate` timed out and was raised as
+ * an unhandled error. The job then exited 1 reporting a failure over a suite
+ * whose own line above it read `9 passed (9)`. A green run reported as red is
+ * worse than a red one: it trains you to ignore the signal.
+ *
+ * Awaiting a spawned process keeps the loop free for the RPC. Same commands,
+ * same inherited stdio, same failure-on-nonzero-exit.
+ */
+async function run(cmd: string, env?: Record<string, string>): Promise<void> {
+  await new Promise<void>((resolvePromise, reject) => {
+    const child = spawn(cmd, {
+      shell: true,
+      stdio: 'inherit',
+      env: { ...process.env, ...env },
+    });
+    child.on('error', reject);
+    child.on('close', (code) =>
+      code === 0
+        ? resolvePromise()
+        : reject(new Error(`Command failed with exit code ${code}: ${cmd}`)),
+    );
   });
+}
+
+async function compose(
+  files: string[],
+  cmd: string,
+  env?: Record<string, string>,
+): Promise<void> {
+  const fileArgs = files.map((f) => `-f "${f}"`).join(' ');
+  await run(`docker compose ${fileArgs} ${cmd}`, env);
 }
 
 /** Run a SQL query in the stack's Postgres and return the trimmed scalar result. */
@@ -158,8 +188,8 @@ describeMaybe('security enforcement (production mode)', () => {
   beforeAll(async () => {
     // 1. Clean slate, then bring up Keycloak + OpenFGA (base compose only — the
     //    dev-mode gateway must NOT start; the prod gateway needs a store id).
-    compose([BASE], 'down -v --remove-orphans');
-    compose([BASE], 'up -d --wait keycloak openfga');
+    await compose([BASE], 'down -v --remove-orphans');
+    await compose([BASE], 'up -d --wait keycloak openfga');
 
     // 2. Wait for OpenFGA (no healthcheck → poll) and create a store.
     await waitForEndpoint(`${OPENFGA_URL}/healthz`, 60, 2_000);
@@ -168,7 +198,7 @@ describeMaybe('security enforcement (production mode)', () => {
     // 3. Bring the gateway up in production with the store id (+ the seed
     //    override so reference wards exist). It syncs the authz model into the
     //    store at boot, then seeds reference data under tenant `default`.
-    compose(FILES, 'up -d --wait', { OPENFGA_STORE_ID: storeId });
+    await compose(FILES, 'up -d --wait', { OPENFGA_STORE_ID: storeId });
     await waitForEndpoint(HEALTH_URL, 90, 3_000);
 
     // 4. Mint real tokens (clinician + admin) and capture dr-test's subject id.
@@ -189,8 +219,8 @@ describeMaybe('security enforcement (production mode)', () => {
     if (!seededWardId) throw new Error('No seeded ward found to authorize a read against');
   }, 600_000);
 
-  afterAll(() => {
-    compose([BASE], 'down -v --remove-orphans');
+  afterAll(async () => {
+    await compose([BASE], 'down -v --remove-orphans');
   });
 
   it('rejects an unauthenticated request (401)', async () => {

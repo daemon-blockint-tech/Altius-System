@@ -248,25 +248,36 @@ function primaryFieldName(schema: ParsedSchema | undefined, typeName: string): s
 }
 
 /** System field prefixes that storage manages internally. */
-const SYSTEM_FIELD_PREFIXES = new Set([
-  '_id', '_tenantId', '_version', '_createdAt', '_updatedAt', '_deletedAt',
-  '_type', '_fromId', '_toId', '_fromType', '_toType',
-]);
+
 
 /**
  * Strip system fields from an object snapshot before using it in compensation.
- * Storage providers manage these fields internally; including them in an
- * updateObject() call can cause column-mapping errors.
+ *
+ * Storage providers manage these internally, and passing one back as a user
+ * property is not a no-op: storage-postgres snake_cases the key and drops the
+ * leading underscore, so `_actorId` becomes `SET "actor_id"` against a column
+ * called `"_actor_id"` — a 42703 raised INSIDE the compensation loop, which
+ * means a failed action's rollback fails too and the partial writes stay.
+ *
+ * Identified by the leading underscore rather than an enumerated list. The list
+ * this replaces had already drifted: it never gained `_actorId` after that field
+ * was added to OntologyObject, and nothing failed, because the memory provider
+ * overwrites system fields unconditionally and masks it. Enumerating members of
+ * a type that grows is a standing invitation to the same bug; the prefix is the
+ * actual rule, and ODL user properties cannot start with an underscore.
  */
 function stripSystemFields(obj: Record<string, unknown>): Record<string, unknown> {
   const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(obj)) {
-    if (!SYSTEM_FIELD_PREFIXES.has(key)) {
+    if (!key.startsWith('_')) {
       result[key] = value;
     }
   }
   return result;
 }
+
+/** @internal Exported for tests — the rollback path it guards needs Postgres to observe. */
+export const __stripSystemFieldsForTest = stripSystemFields;
 
 // ---------------------------------------------------------------------------
 // ActionExecutor

@@ -504,13 +504,15 @@ services:
       dockerfile: packages/web/Dockerfile
       args:
         GIT_REVISION: ${GIT_REVISION:-unknown}
-        # Inlined into the bundle at build time. Empty issuer means no OIDC,
-        # which is correct for this stack: the gateway runs NODE_ENV=development
-        # and serves anonymous callers. Orion/docker-compose.prod-test.yaml is
-        # where real auth is exercised.
-        VITE_OIDC_ISSUER: ${VITE_OIDC_ISSUER:-}
-        VITE_OIDC_CLIENT_ID: ${VITE_OIDC_CLIENT_ID:-altius}
-        VITE_OIDC_REDIRECT_URI: ${VITE_OIDC_REDIRECT_URI:-}
+    # Resolved at container start and served as /config.json, NOT baked into the
+    # bundle — that is what keeps one image promotable across environments.
+    # Empty issuer means no OIDC, which is correct here: the gateway runs
+    # NODE_ENV=development and serves anonymous callers.
+    # Orion/docker-compose.prod-test.yaml is where real auth is exercised.
+    environment:
+      OIDC_ISSUER: ${OIDC_ISSUER:-}
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-altius}
+      OIDC_REDIRECT_URI: ${OIDC_REDIRECT_URI:-}
     ports:
       - "${WEB_PORT:-8090}:8080"
     depends_on:

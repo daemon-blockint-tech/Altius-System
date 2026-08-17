@@ -222,6 +222,18 @@ describeWithPg('Link CRUD, Traversal, Temporal (PostgreSQL integration)', () => 
         ON "public"."assigned_to" ("_tenant_id", "_from_type", "_from_id");
       CREATE INDEX IF NOT EXISTS "idx_assigned_to_to"
         ON "public"."assigned_to" ("_tenant_id", "_to_type", "_to_id");
+
+      -- The partial unique indexes generateLinkTableDDL emits for a ONE_TO_ONE
+      -- link (ddl-links.ts:57-63). Without them this fixture exercised only the
+      -- application-level SELECT-count in enforceCardinality, never the database
+      -- constraint production relies on — and that count-then-insert is racy, so
+      -- the index is the part that actually holds under concurrency.
+      -- Partial on "_deleted_at" IS NULL, so a soft-deleted link does not block
+      -- re-linking the same pair.
+      CREATE UNIQUE INDEX IF NOT EXISTS "uq_assigned_to_from"
+        ON "public"."assigned_to" ("_tenant_id", "_from_id") WHERE "_deleted_at" IS NULL;
+      CREATE UNIQUE INDEX IF NOT EXISTS "uq_assigned_to_to"
+        ON "public"."assigned_to" ("_tenant_id", "_to_id") WHERE "_deleted_at" IS NULL;
     `);
   });
 

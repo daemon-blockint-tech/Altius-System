@@ -9,6 +9,7 @@
  */
 
 import type { Pool } from 'pg';
+import { types as pgTypes } from 'pg';
 import type {
   OntologyObject,
   RequestContext,
@@ -21,6 +22,15 @@ import { snakeCase, pgIdent, fieldCol } from '../schema/type-mapping.js';
 import { filterToSql } from './filter-to-sql.js';
 import { isListProperty } from '../list-properties.js';
 import { PgTransaction, resolveQueryable } from '../transactions/index.js';
+
+// An ODL `Date` is a calendar date, and its contract is the string
+// 'YYYY-MM-DD'. node-postgres decodes DATE (oid 1082) to a JS Date in the
+// server's timezone, which both loses that contract and shifts the day near
+// midnight. Hand the text back untouched instead.
+//
+// Only 1082. TIMESTAMPTZ (1184) must keep decoding to a Date, because
+// rowToObject casts the system timestamps and calls .toISOString() on them.
+pgTypes.setTypeParser(1082, (value: string) => value);
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -60,20 +70,27 @@ function rowToObject(row: Record<string, unknown>): OntologyObject {
   }
 
   // Map remaining columns (user-defined properties)
-  const systemCols = new Set([
-    '_tenant_id', '_id', '_type', '_version',
-    '_created_at', '_updated_at', '_deleted_at', '_actor_id',
-    // History-table bookkeeping. Absent from the live table, so this is a
-    // no-op for a normal query — but an as-of query reads the history table,
-    // and without these two the caller would get `historyId` and
-    // `historyCreatedAt` as if they were declared properties.
-    '_history_id', '_history_created_at',
-  ]);
+  // System columns are identified by the leading underscore, not by an
+  // enumerated list. Six copies of that list existed and only object-crud
+  // gained "_actor_id" when the DDL did, so the rule and its copies could
+  // disagree with nothing to notice.
+  //
+  // CONFIRMED: with the old enumerated list the column falls through to the
+  // user-property branch and the snake-to-camel mapper renames it "ActorId" —
+  // a key in no schema. Pinned by traversal.test.ts; reverting the predicate
+  // there yields [..., "ActorId"]. Because it has no leading underscore,
+  // redactObject treats it as an ordinary field.
   for (const [key, value] of Object.entries(row)) {
-    if (!systemCols.has(key)) {
+    if (!key.startsWith('_')) {
       // Convert snake_case column back to camelCase property name
       const camelKey = key.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
-      obj[camelKey] = value;
+      // Normalise what the driver hands back, the same way the system
+      // timestamps above already are. node-postgres decodes TIMESTAMPTZ to a
+      // JS Date, and the platform's contract for an ODL DateTime is an ISO
+      // string — every validator, CEL expression and API response assumes it.
+      // Returning the raw Date made a DateTime property fail its own
+      // format check the moment it was read back and re-validated.
+      obj[camelKey] = value instanceof Date ? value.toISOString() : value;
     }
   }
 

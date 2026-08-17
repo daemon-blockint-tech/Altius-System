@@ -25,6 +25,15 @@ export class AuthSession {
   constructor(
     private readonly config: OidcConfig,
     private readonly now: () => number = Date.now,
+    /**
+     * Called once when the session can no longer be renewed.
+     *
+     * Without it the app stays signed-in forever: every request throws, the
+     * table offers a Retry that can never succeed, and nothing routes the user
+     * back to login. Expiry is normal — the refresh token has its own lifetime
+     * — so it needs a path, not an error message.
+     */
+    private readonly onExpired?: () => void,
   ) {}
 
   adopt(tokens: TokenSet): void {
@@ -34,6 +43,14 @@ export class AuthSession {
   clear(): void {
     this.tokens = null;
     this.refreshing = null;
+  }
+
+  /** Drop the session and notify once. Idempotent, so N concurrent failures
+   *  produce one trip back to login rather than N. */
+  private expire(): void {
+    if (!this.tokens) return;
+    this.tokens = null;
+    this.onExpired?.();
   }
 
   get isAuthenticated(): boolean {
@@ -55,6 +72,7 @@ export class AuthSession {
     if (!current.refreshToken) {
       // Nothing to refresh with: surface it rather than sending a token the
       // gateway will reject with an unexplained 401.
+      this.expire();
       throw new Error('Access token expired and no refresh token is available.');
     }
 
@@ -65,6 +83,12 @@ export class AuthSession {
       .then(next => {
         this.tokens = next;
         return next;
+      })
+      .catch((err: unknown) => {
+        // A failed refresh ends the session: the refresh token is spent or
+        // expired, and retrying only reuses it.
+        this.expire();
+        throw err;
       })
       .finally(() => {
         this.refreshing = null;

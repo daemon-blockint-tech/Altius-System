@@ -910,10 +910,14 @@ function convertObjectType(objType: ObjectType): ObjectTypeDefinition {
     // declared `String! @default(value: "DRAFT")` is REJECTED by both
     // providers when an effect omits it — the opposite of what it declares.
     const defaultDirective = field.directives.find(d => d.kind === 'default');
+    // A @readonly property is never supplied by a caller and nothing in the
+    // platform populates it, so a NOT NULL column for it is unsatisfiable —
+    // the insert would fail at the database even if validation let it past.
+    const isReadonlyField = field.directives.some(d => d.kind === 'readonly');
     properties.push({
       name: field.name,
       type: mapFieldType(field.type.name),
-      required: field.type.nonNull,
+      required: field.type.nonNull && !isReadonlyField,
       ...(field.type.isList ? { isList: true } : {}),
       ...(defaultDirective ? { defaultValue: defaultDirective.value } : {}),
     });

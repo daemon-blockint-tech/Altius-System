@@ -373,18 +373,28 @@ function generateObjectAccessor(obj: ObjectType): string {
     `      onChange: (id: string, callback: (event: ChangeEvent<${name}>) => void): Subscription =>`,
     `        this.subscribe<${name}>('${name}', id, '${fields}', callback),`,
     '',
-    `      onAnyChange: (callback: (event: ChangeEvent<${name}>) => void, filter?: ${name}Filter): Subscription =>`,
-    `        this.subscribe<${name}>('${name}', null, '${fields}', callback, filter as Record<string, unknown> | undefined),`,
+    `      onAnyChange: (callback: (event: ChangeEvent<${name}>) => void, filter?: ${name}Filter, onClose?: () => void, onResume?: () => void): Subscription =>`,
+    `        this.subscribe<${name}>('${name}', null, '${fields}', callback, filter as Record<string, unknown> | undefined, onClose, onResume),`,
     '    };',
     '  }',
   ].join('\n');
 }
 
 function getFieldNames(obj: ObjectType): string {
-  return obj.fields
+  const declared = obj.fields
     .filter(f => !isLinkField(f) && !isComputedField(f))
-    .map(f => f.name)
-    .join(' ');
+    .map(f => f.name);
+
+  // The redaction metadata, which every generated interface declares as a
+  // required member (`_redactedFields: string[] | null`) and no generated query
+  // asked for — so it was always undefined at runtime and the type lied.
+  //
+  // It is what separates "you may not see this" from "nobody recorded this".
+  // Redaction nulls a value rather than removing the field, so without this a
+  // caller cannot tell the two apart, and on a clinical worklist the second
+  // reading invites someone to fill the gap in over data that already exists.
+  // Both are declared on every object type in the SDL (codegen/index.ts:154).
+  return [...declared, '_redactedFields', '_consentRestricted'].join(' ');
 }
 
 function generateActionsNamespace(schema: ParsedSchema): string {
@@ -409,6 +419,17 @@ function generateActionsNamespace(schema: ParsedSchema): string {
     '       * way a client can build a form without hard-coding one per action.',
     '       * It is also caller-scoped, so it reflects what this user may run.',
     '       */',
+    '      /**',
+    '       * Invoke an action by name.',
+    '       *',
+    '       * The typed methods below are generated from the schema this build',
+    '       * saw. A UI driven by availableTools is working from the RUNTIME',
+    '       * list, which can include an action this bundle predates, so it',
+    '       * needs a by-name path as well.',
+    '       */',
+    '      invoke: (name: string, input: Record<string, unknown>): Promise<ActionResult> =>',
+    '        this.mutate<ActionResult>(name, input),',
+    '',
     '      available: (filter?: ToolFilter): Promise<ToolDescriptor[]> =>',
     "        this.query<ToolDescriptor[]>(`query($filter: ToolFilter) { availableTools(filter: $filter) { name kind description parameters returnType requiredPermissions dryRunSupported reversible tags } }`, { filter }).then(",
     "          (r) => (r as unknown as { availableTools?: ToolDescriptor[] })?.availableTools ?? (r as ToolDescriptor[]) ?? [],",
@@ -436,6 +457,23 @@ function generateClientClass(schema: ParsedSchema): string {
     '  private readonly endpoint: string;',
     '  private readonly token: string | TokenProvider;',
     '  private readonly wsSubscriptions = new Map<string, (payload: unknown) => void>();',
+    '  /**',
+    '   * Close handlers, one per live subscription.',
+    '   *',
+    '   * The socket clears its subscriptions on close and does not reconnect, so',
+    '   * without this a dropped connection leaves the caller holding a stream',
+    '   * that has silently stopped — a table that looks current and is not. The',
+    '   * handler lets the caller SAY so; reconnection is a separate concern and',
+    '   * a reconnect that quietly misses events during the gap is the same bug.',
+    '   */',
+    '  private readonly wsCloseHandlers = new Map<string, () => void>();',
+    '  /** Replay closures, one per live subscription, used to re-establish after a drop. */',
+    '  private readonly wsResubscribers = new Map<string, () => void>();',
+    '  /** Fired after a dropped stream is re-established. Callers must RE-READ: */',
+    '  /** events that occurred while the socket was down are gone, so resuming */',
+    '  /** without re-reading is the silent-staleness bug wearing a fix. */',
+    '  private readonly wsResumeHandlers = new Map<string, () => void>();',
+    '  private wsReconnectAttempt = 0;',
     '  private wsSocket: WebSocket | null = null;',
     '  private wsReady = false;',
     '  private wsReadyQueue: Array<() => void> = [];',
@@ -499,6 +537,26 @@ function generateClientClass(schema: ParsedSchema): string {
     '    return (json.data?.[field] ?? null) as T;',
     '  }',
     '',
+    '  /**',
+    '   * Re-establish the socket after an unexpected close, with backoff.',
+    '   *',
+    '   * Replay goes through wsReadyQueue, the same path a first subscribe uses,',
+    '   * so a reconnected subscription is established exactly like a fresh one',
+    '   * rather than by a second code path that can drift from it.',
+    '   */',
+    '  private scheduleReconnect(): void {',
+    '    const attempt = ++this.wsReconnectAttempt;',
+    '    // 1s, 2s, 4s... capped. Capped rather than unbounded because a client',
+    '    // that gives up entirely leaves the caller with a dead stream and no',
+    '    // further notice, which is the state this whole mechanism exists to end.',
+    '    const delay = Math.min(1000 * Math.pow(2, attempt - 1), 30000);',
+    '    setTimeout(() => {',
+    '      if (this.wsResubscribers.size === 0) return;',
+    '      for (const replay of this.wsResubscribers.values()) this.wsReadyQueue.push(replay);',
+    '      this.ensureWebSocket();',
+    '    }, delay);',
+    '  }',
+    '',
     '  private ensureWebSocket(): WebSocket {',
     '    if (this.wsSocket && (this.wsSocket.readyState === WebSocket.OPEN || this.wsSocket.readyState === WebSocket.CONNECTING)) {',
     '      return this.wsSocket;',
@@ -526,6 +584,12 @@ function generateClientClass(schema: ParsedSchema): string {
     '        this.wsReady = true;',
     '        for (const fn of this.wsReadyQueue) fn();',
     '        this.wsReadyQueue = [];',
+    '        if (this.wsReconnectAttempt > 0) {',
+    '          this.wsReconnectAttempt = 0;',
+    '          for (const onResume of this.wsResumeHandlers.values()) {',
+    '            try { onResume(); } catch { /* one handler must not stop the rest */ }',
+    '          }',
+    '        }',
     "      } else if (msg.type === 'next' && msg.id) {",
     '        const handler = this.wsSubscriptions.get(msg.id);',
     '        if (handler) handler(msg.payload);',
@@ -536,6 +600,13 @@ function generateClientClass(schema: ParsedSchema): string {
     '      }',
     '    });',
     "    socket.addEventListener('close', () => {",
+    '      for (const onClose of this.wsCloseHandlers.values()) {',
+    '        try { onClose(); } catch { /* a handler must not stop the others */ }',
+    '      }',
+    '      // Deliberately NOT cleared: the handlers are needed again if the',
+    '      // socket drops a second time, and the resubscribers are what make',
+    '      // recovery possible. Only unsubscribe() removes them.',
+    '      if (this.wsResubscribers.size > 0) this.scheduleReconnect();',
     '      this.wsSocket = null;',
     '      this.wsReady = false;',
     '      this.wsSubscriptions.clear();',
@@ -556,7 +627,9 @@ function generateClientClass(schema: ParsedSchema): string {
     '    fields: string,',
     '    callback: (event: ChangeEvent<T>) => void,',
     '    filter?: Record<string, unknown>,',
-    '  ): Subscription {',
+        '    onClose?: () => void,',
+    '    onResume?: () => void,',
+'  ): Subscription {',
     '    const subId = `${typeName}:${id ?? "*"}:${Math.random().toString(36).slice(2)}`;',
     '    const lower = typeName.charAt(0).toLowerCase() + typeName.slice(1);',
     '    const field = id === null ? `${lower}sChanged` : `${lower}Changed`;',
@@ -576,6 +649,8 @@ function generateClientClass(schema: ParsedSchema): string {
     '      const socket = this.ensureWebSocket();',
     '      const payload = filter && id === null ? { query, variables: { filter } } : { query };',
     "      socket.send(JSON.stringify({ id: subId, type: 'subscribe', payload }));",
+    '      if (onClose) this.wsCloseHandlers.set(subId, onClose);',
+    '      if (onResume) this.wsResumeHandlers.set(subId, onResume);',
     '      this.wsSubscriptions.set(subId, (raw) => {',
     '        // graphql-ws `next` carries an ExecutionResult envelope, not the',
     '        // event itself. Handing the envelope to the callback would satisfy',
@@ -587,6 +662,7 @@ function generateClientClass(schema: ParsedSchema): string {
     '        }',
     '      });',
     '    };',
+    '    this.wsResubscribers.set(subId, sendSubscribe);',
     '    if (this.wsReady) {',
     '      sendSubscribe();',
     '    } else {',
@@ -596,6 +672,9 @@ function generateClientClass(schema: ParsedSchema): string {
     '    return {',
     '      unsubscribe: () => {',
     '        this.wsSubscriptions.delete(subId);',
+    '        this.wsCloseHandlers.delete(subId);',
+    '        this.wsResumeHandlers.delete(subId);',
+    '        this.wsResubscribers.delete(subId);',
     '        if (this.wsSocket && this.wsSocket.readyState === WebSocket.OPEN) {',
     "          this.wsSocket.send(JSON.stringify({ id: subId, type: 'complete' }));",
     '        }',

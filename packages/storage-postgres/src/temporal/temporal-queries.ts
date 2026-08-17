@@ -42,13 +42,18 @@ function historyRowToObject(row: Record<string, unknown>): OntologyObject {
   }
 
   // Map remaining columns (user-defined properties)
-  const systemCols = new Set([
-    '_tenant_id', '_id', '_type', '_version',
-    '_created_at', '_updated_at', '_deleted_at',
-    '_history_id', '_history_created_at',
-  ]);
+  // System columns are identified by the leading underscore, not by an
+  // enumerated list. Six copies of that list existed and only object-crud
+  // gained "_actor_id" when the DDL did, so the rule and its copies could
+  // disagree with nothing to notice.
+  //
+  // CONFIRMED: with the old enumerated list the column falls through to the
+  // user-property branch and the snake-to-camel mapper renames it "ActorId" —
+  // a key in no schema. Pinned by traversal.test.ts; reverting the predicate
+  // there yields [..., "ActorId"]. Because it has no leading underscore,
+  // redactObject treats it as an ordinary field.
   for (const [key, value] of Object.entries(row)) {
-    if (!systemCols.has(key)) {
+    if (!key.startsWith('_')) {
       const camelKey = key.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
       obj[camelKey] = value;
     }

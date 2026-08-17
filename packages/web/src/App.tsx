@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { ObjectTable } from './components/ObjectTable.js';
-import { createClient, readConfig } from './client.js';
+import { ActionPanel } from './components/ActionPanel.js';
+import type { ActionSchema } from './components/ActionForm.js';
+import { createClient } from './client.js';
+import type { WebConfig } from './client.js';
 import { AuthSession } from './auth/session.js';
 import { beginLogin, completeLogin } from './auth/pkce.js';
 
@@ -15,19 +18,28 @@ type AuthState = 'checking' | 'anonymous' | 'signed-in' | 'error';
  * field-redacted and consent-gated server-side. The UI adds no data access of
  * its own, which is what keeps the permission model in one place.
  */
-export function App(): ReactNode {
-  const config = useMemo(() => readConfig(import.meta.env, window.location.origin), []);
+export function App({ config }: { config: WebConfig }): ReactNode {
+  // React 18+ runs effects twice in StrictMode; exchanging a single-use code
+  // twice would fail the second time and look like a broken login. Reset on
+  // expiry so a fresh login can exchange again.
+  const exchanged = useRef(false);
+  // Declared before the session so the expiry callback can reach it.
+  const [authState, setAuthState] = useState<AuthState>(config.oidc ? 'checking' : 'anonymous');
   const session = useMemo(
-    () => (config.oidc ? new AuthSession(config.oidc) : null),
+    () =>
+      config.oidc
+        ? new AuthSession(config.oidc, Date.now, () => {
+            // The session cannot be renewed. Return to the signed-out view so
+            // there is a way back in — otherwise every request throws behind a
+            // Retry button that can never succeed.
+            exchanged.current = false;
+            setAuthState('anonymous');
+          })
+        : null,
     [config.oidc],
   );
 
-  // No OIDC configured means the dev stack, which serves anonymous callers.
-  const [authState, setAuthState] = useState<AuthState>(session ? 'checking' : 'anonymous');
   const [authError, setAuthError] = useState<string | null>(null);
-  // React 18+ runs effects twice in StrictMode; exchanging a single-use code
-  // twice would fail the second time and look like a broken login.
-  const exchanged = useRef(false);
 
   useEffect(() => {
     if (!session || !config.oidc || exchanged.current) return;
@@ -56,6 +68,20 @@ export function App(): ReactNode {
   const client = useMemo(
     () => createClient(config.endpoint, session && authState === 'signed-in' ? session.getAccessToken : null),
     [config.endpoint, session, authState],
+  );
+
+  // Memoised so ActionPanel refetches only when the client actually changes,
+  // not on every render of this component.
+  const loadActions = useMemo(
+    () => async (): Promise<ActionSchema[]> => {
+      const tools = await client.actions.available({ kind: 'action' });
+      return tools.map(t => ({
+        name: t.name,
+        description: t.description,
+        parameters: t.parameters as ActionSchema['parameters'],
+      }));
+    },
+    [client],
   );
 
   if (authState === 'checking') return <p>Signing in…</p>;
@@ -93,7 +119,14 @@ export function App(): ReactNode {
         load={({ first, after }) =>
           client.patient.list(undefined, after === undefined ? { first } : { first, after })
         }
-        subscribe={onChange => client.patient.onAnyChange(() => onChange())}
+        subscribe={(onChange, onLost, onResumed) =>
+          client.patient.onAnyChange(() => onChange(), undefined, onLost, onResumed)
+        }
+      />
+
+      <ActionPanel
+        loadActions={loadActions}
+        submit={(name, input) => client.actions.invoke(name, input)}
       />
     </main>
   );

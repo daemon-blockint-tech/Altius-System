@@ -13,29 +13,30 @@ COPY tools/ tools/
 
 RUN pnpm install --frozen-lockfile
 
-# VITE_ vars are inlined at build time, so they are build args rather than
-# runtime env. The endpoint deliberately is NOT one: it defaults to a relative
-# /graphql that this image's own nginx proxies, which is what makes the same
-# bundle promotable between environments.
-ARG VITE_OIDC_ISSUER=""
-ARG VITE_OIDC_CLIENT_ID="altius"
-ARG VITE_OIDC_REDIRECT_URI=""
-ENV VITE_OIDC_ISSUER="${VITE_OIDC_ISSUER}" \
-    VITE_OIDC_CLIENT_ID="${VITE_OIDC_CLIENT_ID}" \
-    VITE_OIDC_REDIRECT_URI="${VITE_OIDC_REDIRECT_URI}"
-
+# Nothing environment-specific is baked in. vite inlines VITE_* at build time,
+# so anything set here would pin the image to one deployment; OIDC settings are
+# written at container start by docker-entrypoint.sh and fetched by the app, and
+# the API endpoint is a relative path this image's own nginx proxies.
 RUN pnpm turbo build --filter=@altius/web...
 
 # Runtime stage
-FROM nginx:1.27-alpine
+FROM nginx:1.29-alpine
 
-RUN apk upgrade --no-cache libcrypto3 libssl3
+# Upgrade everything, not a hand-kept list. The list was libcrypto3 + libssl3
+# and the base image then went stale on c-ares, curl, libexpat, libxml2 and
+# nghttp2-libs — 9 HIGH findings whose fixes were already sitting in the alpine
+# 3.23 index the image was built from. A named list has to be extended every
+# time a different package lags; `apk upgrade` cannot fall behind that way.
+# Same branch, so this takes patch updates only.
+RUN apk upgrade --no-cache
 
 ARG GIT_REVISION=unknown
 LABEL org.opencontainers.image.revision="${GIT_REVISION}"
 
 COPY --from=builder /app/packages/web/dist/ /usr/share/nginx/html/
 COPY packages/web/nginx.conf /etc/nginx/conf.d/default.conf
+COPY packages/web/docker-entrypoint.sh /docker-entrypoint.d/99-altius-config.sh
+RUN chmod +x /docker-entrypoint.d/99-altius-config.sh
 
 EXPOSE 8080
 

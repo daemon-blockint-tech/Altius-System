@@ -57,6 +57,13 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.storage.postgres.existingSecret }}
+{{- if .Values.authz.openfga.existingSecret }}
+            - name: OPENFGA_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.authz.openfga.existingSecret }}
+                  key: {{ .Values.authz.openfga.secretKeys.apiToken }}
+{{- end }}
                   key: {{ .Values.storage.postgres.secretKeys.password }}
             - name: POSTGRES_URL
               value: {{ include "altius.postgresUrl" . | quote }}

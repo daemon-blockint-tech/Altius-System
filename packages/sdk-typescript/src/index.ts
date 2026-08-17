@@ -989,6 +989,23 @@ export class Altius {
   private readonly endpoint: string;
   private readonly token: string | TokenProvider;
   private readonly wsSubscriptions = new Map<string, (payload: unknown) => void>();
+  /**
+   * Close handlers, one per live subscription.
+   *
+   * The socket clears its subscriptions on close and does not reconnect, so
+   * without this a dropped connection leaves the caller holding a stream
+   * that has silently stopped — a table that looks current and is not. The
+   * handler lets the caller SAY so; reconnection is a separate concern and
+   * a reconnect that quietly misses events during the gap is the same bug.
+   */
+  private readonly wsCloseHandlers = new Map<string, () => void>();
+  /** Replay closures, one per live subscription, used to re-establish after a drop. */
+  private readonly wsResubscribers = new Map<string, () => void>();
+  /** Fired after a dropped stream is re-established. Callers must RE-READ: */
+  /** events that occurred while the socket was down are gone, so resuming */
+  /** without re-reading is the silent-staleness bug wearing a fix. */
+  private readonly wsResumeHandlers = new Map<string, () => void>();
+  private wsReconnectAttempt = 0;
   private wsSocket: WebSocket | null = null;
   private wsReady = false;
   private wsReadyQueue: Array<() => void> = [];
@@ -1052,6 +1069,26 @@ export class Altius {
     return (json.data?.[field] ?? null) as T;
   }
 
+  /**
+   * Re-establish the socket after an unexpected close, with backoff.
+   *
+   * Replay goes through wsReadyQueue, the same path a first subscribe uses,
+   * so a reconnected subscription is established exactly like a fresh one
+   * rather than by a second code path that can drift from it.
+   */
+  private scheduleReconnect(): void {
+    const attempt = ++this.wsReconnectAttempt;
+    // 1s, 2s, 4s... capped. Capped rather than unbounded because a client
+    // that gives up entirely leaves the caller with a dead stream and no
+    // further notice, which is the state this whole mechanism exists to end.
+    const delay = Math.min(1000 * Math.pow(2, attempt - 1), 30000);
+    setTimeout(() => {
+      if (this.wsResubscribers.size === 0) return;
+      for (const replay of this.wsResubscribers.values()) this.wsReadyQueue.push(replay);
+      this.ensureWebSocket();
+    }, delay);
+  }
+
   private ensureWebSocket(): WebSocket {
     if (this.wsSocket && (this.wsSocket.readyState === WebSocket.OPEN || this.wsSocket.readyState === WebSocket.CONNECTING)) {
       return this.wsSocket;
@@ -1079,6 +1116,12 @@ export class Altius {
         this.wsReady = true;
         for (const fn of this.wsReadyQueue) fn();
         this.wsReadyQueue = [];
+        if (this.wsReconnectAttempt > 0) {
+          this.wsReconnectAttempt = 0;
+          for (const onResume of this.wsResumeHandlers.values()) {
+            try { onResume(); } catch { /* one handler must not stop the rest */ }
+          }
+        }
       } else if (msg.type === 'next' && msg.id) {
         const handler = this.wsSubscriptions.get(msg.id);
         if (handler) handler(msg.payload);
@@ -1089,6 +1132,13 @@ export class Altius {
       }
     });
     socket.addEventListener('close', () => {
+      for (const onClose of this.wsCloseHandlers.values()) {
+        try { onClose(); } catch { /* a handler must not stop the others */ }
+      }
+      // Deliberately NOT cleared: the handlers are needed again if the
+      // socket drops a second time, and the resubscribers are what make
+      // recovery possible. Only unsubscribe() removes them.
+      if (this.wsResubscribers.size > 0) this.scheduleReconnect();
       this.wsSocket = null;
       this.wsReady = false;
       this.wsSubscriptions.clear();
@@ -1109,6 +1159,8 @@ export class Altius {
     fields: string,
     callback: (event: ChangeEvent<T>) => void,
     filter?: Record<string, unknown>,
+    onClose?: () => void,
+    onResume?: () => void,
   ): Subscription {
     const subId = `${typeName}:${id ?? "*"}:${Math.random().toString(36).slice(2)}`;
     const lower = typeName.charAt(0).toLowerCase() + typeName.slice(1);
@@ -1129,6 +1181,8 @@ export class Altius {
       const socket = this.ensureWebSocket();
       const payload = filter && id === null ? { query, variables: { filter } } : { query };
       socket.send(JSON.stringify({ id: subId, type: 'subscribe', payload }));
+      if (onClose) this.wsCloseHandlers.set(subId, onClose);
+      if (onResume) this.wsResumeHandlers.set(subId, onResume);
       this.wsSubscriptions.set(subId, (raw) => {
         // graphql-ws `next` carries an ExecutionResult envelope, not the
         // event itself. Handing the envelope to the callback would satisfy
@@ -1140,6 +1194,7 @@ export class Altius {
         }
       });
     };
+    this.wsResubscribers.set(subId, sendSubscribe);
     if (this.wsReady) {
       sendSubscribe();
     } else {
@@ -1149,6 +1204,9 @@ export class Altius {
     return {
       unsubscribe: () => {
         this.wsSubscriptions.delete(subId);
+        this.wsCloseHandlers.delete(subId);
+        this.wsResumeHandlers.delete(subId);
+        this.wsResubscribers.delete(subId);
         if (this.wsSocket && this.wsSocket.readyState === WebSocket.OPEN) {
           this.wsSocket.send(JSON.stringify({ id: subId, type: 'complete' }));
         }
@@ -1159,286 +1217,286 @@ export class Altius {
   get bed() {
     return {
       get: (id: string): Promise<Bed | null> =>
-        this.query<Bed | null>(`query { bed(id: "${id}") { id number type status } }`),
+        this.query<Bed | null>(`query { bed(id: "${id}") { id number type status _redactedFields _consentRestricted } }`),
 
       list: (filter?: BedFilter, pagination?: PaginationArgs): Promise<BedConnection> =>
-        this.query<BedConnection>(`query($filter: BedFilter, $first: Int, $after: String) { beds(filter: $filter, first: $first, after: $after) { edges { node { id number type status } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after }),
+        this.query<BedConnection>(`query($filter: BedFilter, $first: Int, $after: String) { beds(filter: $filter, first: $first, after: $after) { edges { node { id number type status _redactedFields _consentRestricted } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after }),
 
       onChange: (id: string, callback: (event: ChangeEvent<Bed>) => void): Subscription =>
-        this.subscribe<Bed>('Bed', id, 'id number type status', callback),
+        this.subscribe<Bed>('Bed', id, 'id number type status _redactedFields _consentRestricted', callback),
 
-      onAnyChange: (callback: (event: ChangeEvent<Bed>) => void, filter?: BedFilter): Subscription =>
-        this.subscribe<Bed>('Bed', null, 'id number type status', callback, filter as Record<string, unknown> | undefined),
+      onAnyChange: (callback: (event: ChangeEvent<Bed>) => void, filter?: BedFilter, onClose?: () => void, onResume?: () => void): Subscription =>
+        this.subscribe<Bed>('Bed', null, 'id number type status _redactedFields _consentRestricted', callback, filter as Record<string, unknown> | undefined, onClose, onResume),
     };
   }
   get consultant() {
     return {
       get: (id: string): Promise<Consultant | null> =>
-        this.query<Consultant | null>(`query { consultant(id: "${id}") { id gmcNumber name specialty } }`),
+        this.query<Consultant | null>(`query { consultant(id: "${id}") { id gmcNumber name specialty _redactedFields _consentRestricted } }`),
 
       list: (filter?: ConsultantFilter, pagination?: PaginationArgs): Promise<ConsultantConnection> =>
-        this.query<ConsultantConnection>(`query($filter: ConsultantFilter, $first: Int, $after: String) { consultants(filter: $filter, first: $first, after: $after) { edges { node { id gmcNumber name specialty } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after }),
+        this.query<ConsultantConnection>(`query($filter: ConsultantFilter, $first: Int, $after: String) { consultants(filter: $filter, first: $first, after: $after) { edges { node { id gmcNumber name specialty _redactedFields _consentRestricted } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after }),
 
       onChange: (id: string, callback: (event: ChangeEvent<Consultant>) => void): Subscription =>
-        this.subscribe<Consultant>('Consultant', id, 'id gmcNumber name specialty', callback),
+        this.subscribe<Consultant>('Consultant', id, 'id gmcNumber name specialty _redactedFields _consentRestricted', callback),
 
-      onAnyChange: (callback: (event: ChangeEvent<Consultant>) => void, filter?: ConsultantFilter): Subscription =>
-        this.subscribe<Consultant>('Consultant', null, 'id gmcNumber name specialty', callback, filter as Record<string, unknown> | undefined),
+      onAnyChange: (callback: (event: ChangeEvent<Consultant>) => void, filter?: ConsultantFilter, onClose?: () => void, onResume?: () => void): Subscription =>
+        this.subscribe<Consultant>('Consultant', null, 'id gmcNumber name specialty _redactedFields _consentRestricted', callback, filter as Record<string, unknown> | undefined, onClose, onResume),
     };
   }
   get dischargeRecord() {
     return {
       get: (id: string): Promise<DischargeRecord | null> =>
-        this.query<DischargeRecord | null>(`query { dischargeRecord(id: "${id}") { id patient ward destination dischargeDate notes } }`),
+        this.query<DischargeRecord | null>(`query { dischargeRecord(id: "${id}") { id patient ward destination dischargeDate notes _redactedFields _consentRestricted } }`),
 
       list: (filter?: DischargeRecordFilter, pagination?: PaginationArgs): Promise<DischargeRecordConnection> =>
-        this.query<DischargeRecordConnection>(`query($filter: DischargeRecordFilter, $first: Int, $after: String) { dischargeRecords(filter: $filter, first: $first, after: $after) { edges { node { id patient ward destination dischargeDate notes } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after }),
+        this.query<DischargeRecordConnection>(`query($filter: DischargeRecordFilter, $first: Int, $after: String) { dischargeRecords(filter: $filter, first: $first, after: $after) { edges { node { id patient ward destination dischargeDate notes _redactedFields _consentRestricted } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after }),
 
       onChange: (id: string, callback: (event: ChangeEvent<DischargeRecord>) => void): Subscription =>
-        this.subscribe<DischargeRecord>('DischargeRecord', id, 'id patient ward destination dischargeDate notes', callback),
+        this.subscribe<DischargeRecord>('DischargeRecord', id, 'id patient ward destination dischargeDate notes _redactedFields _consentRestricted', callback),
 
-      onAnyChange: (callback: (event: ChangeEvent<DischargeRecord>) => void, filter?: DischargeRecordFilter): Subscription =>
-        this.subscribe<DischargeRecord>('DischargeRecord', null, 'id patient ward destination dischargeDate notes', callback, filter as Record<string, unknown> | undefined),
+      onAnyChange: (callback: (event: ChangeEvent<DischargeRecord>) => void, filter?: DischargeRecordFilter, onClose?: () => void, onResume?: () => void): Subscription =>
+        this.subscribe<DischargeRecord>('DischargeRecord', null, 'id patient ward destination dischargeDate notes _redactedFields _consentRestricted', callback, filter as Record<string, unknown> | undefined, onClose, onResume),
     };
   }
   get patient() {
     return {
       get: (id: string): Promise<Patient | null> =>
-        this.query<Patient | null>(`query { patient(id: "${id}") { id nhsNumber name family given dateOfBirth status triageCategory presentingComplaint createdAt createdBy updatedAt updatedBy validFrom validTo } }`),
+        this.query<Patient | null>(`query { patient(id: "${id}") { id nhsNumber name family given dateOfBirth status triageCategory presentingComplaint createdAt createdBy updatedAt updatedBy validFrom validTo _redactedFields _consentRestricted } }`),
 
       list: (filter?: PatientFilter, pagination?: PaginationArgs): Promise<PatientConnection> =>
-        this.query<PatientConnection>(`query($filter: PatientFilter, $first: Int, $after: String) { patients(filter: $filter, first: $first, after: $after) { edges { node { id nhsNumber name family given dateOfBirth status triageCategory presentingComplaint createdAt createdBy updatedAt updatedBy validFrom validTo } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after }),
+        this.query<PatientConnection>(`query($filter: PatientFilter, $first: Int, $after: String) { patients(filter: $filter, first: $first, after: $after) { edges { node { id nhsNumber name family given dateOfBirth status triageCategory presentingComplaint createdAt createdBy updatedAt updatedBy validFrom validTo _redactedFields _consentRestricted } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after }),
 
       onChange: (id: string, callback: (event: ChangeEvent<Patient>) => void): Subscription =>
-        this.subscribe<Patient>('Patient', id, 'id nhsNumber name family given dateOfBirth status triageCategory presentingComplaint createdAt createdBy updatedAt updatedBy validFrom validTo', callback),
+        this.subscribe<Patient>('Patient', id, 'id nhsNumber name family given dateOfBirth status triageCategory presentingComplaint createdAt createdBy updatedAt updatedBy validFrom validTo _redactedFields _consentRestricted', callback),
 
-      onAnyChange: (callback: (event: ChangeEvent<Patient>) => void, filter?: PatientFilter): Subscription =>
-        this.subscribe<Patient>('Patient', null, 'id nhsNumber name family given dateOfBirth status triageCategory presentingComplaint createdAt createdBy updatedAt updatedBy validFrom validTo', callback, filter as Record<string, unknown> | undefined),
+      onAnyChange: (callback: (event: ChangeEvent<Patient>) => void, filter?: PatientFilter, onClose?: () => void, onResume?: () => void): Subscription =>
+        this.subscribe<Patient>('Patient', null, 'id nhsNumber name family given dateOfBirth status triageCategory presentingComplaint createdAt createdBy updatedAt updatedBy validFrom validTo _redactedFields _consentRestricted', callback, filter as Record<string, unknown> | undefined, onClose, onResume),
     };
   }
   get staff() {
     return {
       get: (id: string): Promise<Staff | null> =>
-        this.query<Staff | null>(`query { staff(id: "${id}") { id staffId name role specialty } }`),
+        this.query<Staff | null>(`query { staff(id: "${id}") { id staffId name role specialty _redactedFields _consentRestricted } }`),
 
       list: (filter?: StaffFilter, pagination?: PaginationArgs): Promise<StaffConnection> =>
-        this.query<StaffConnection>(`query($filter: StaffFilter, $first: Int, $after: String) { staffs(filter: $filter, first: $first, after: $after) { edges { node { id staffId name role specialty } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after }),
+        this.query<StaffConnection>(`query($filter: StaffFilter, $first: Int, $after: String) { staffs(filter: $filter, first: $first, after: $after) { edges { node { id staffId name role specialty _redactedFields _consentRestricted } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after }),
 
       onChange: (id: string, callback: (event: ChangeEvent<Staff>) => void): Subscription =>
-        this.subscribe<Staff>('Staff', id, 'id staffId name role specialty', callback),
+        this.subscribe<Staff>('Staff', id, 'id staffId name role specialty _redactedFields _consentRestricted', callback),
 
-      onAnyChange: (callback: (event: ChangeEvent<Staff>) => void, filter?: StaffFilter): Subscription =>
-        this.subscribe<Staff>('Staff', null, 'id staffId name role specialty', callback, filter as Record<string, unknown> | undefined),
+      onAnyChange: (callback: (event: ChangeEvent<Staff>) => void, filter?: StaffFilter, onClose?: () => void, onResume?: () => void): Subscription =>
+        this.subscribe<Staff>('Staff', null, 'id staffId name role specialty _redactedFields _consentRestricted', callback, filter as Record<string, unknown> | undefined, onClose, onResume),
     };
   }
   get transfer() {
     return {
       get: (id: string): Promise<Transfer | null> =>
-        this.query<Transfer | null>(`query { transfer(id: "${id}") { id patient fromWard toWard transferDate reason } }`),
+        this.query<Transfer | null>(`query { transfer(id: "${id}") { id patient fromWard toWard transferDate reason _redactedFields _consentRestricted } }`),
 
       list: (filter?: TransferFilter, pagination?: PaginationArgs): Promise<TransferConnection> =>
-        this.query<TransferConnection>(`query($filter: TransferFilter, $first: Int, $after: String) { transfers(filter: $filter, first: $first, after: $after) { edges { node { id patient fromWard toWard transferDate reason } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after }),
+        this.query<TransferConnection>(`query($filter: TransferFilter, $first: Int, $after: String) { transfers(filter: $filter, first: $first, after: $after) { edges { node { id patient fromWard toWard transferDate reason _redactedFields _consentRestricted } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after }),
 
       onChange: (id: string, callback: (event: ChangeEvent<Transfer>) => void): Subscription =>
-        this.subscribe<Transfer>('Transfer', id, 'id patient fromWard toWard transferDate reason', callback),
+        this.subscribe<Transfer>('Transfer', id, 'id patient fromWard toWard transferDate reason _redactedFields _consentRestricted', callback),
 
-      onAnyChange: (callback: (event: ChangeEvent<Transfer>) => void, filter?: TransferFilter): Subscription =>
-        this.subscribe<Transfer>('Transfer', null, 'id patient fromWard toWard transferDate reason', callback, filter as Record<string, unknown> | undefined),
+      onAnyChange: (callback: (event: ChangeEvent<Transfer>) => void, filter?: TransferFilter, onClose?: () => void, onResume?: () => void): Subscription =>
+        this.subscribe<Transfer>('Transfer', null, 'id patient fromWard toWard transferDate reason _redactedFields _consentRestricted', callback, filter as Record<string, unknown> | undefined, onClose, onResume),
     };
   }
   get ward() {
     return {
       get: (id: string): Promise<Ward | null> =>
-        this.query<Ward | null>(`query { ward(id: "${id}") { id name specialty capacity location address } }`),
+        this.query<Ward | null>(`query { ward(id: "${id}") { id name specialty capacity location address _redactedFields _consentRestricted } }`),
 
       list: (filter?: WardFilter, pagination?: PaginationArgs): Promise<WardConnection> =>
-        this.query<WardConnection>(`query($filter: WardFilter, $first: Int, $after: String) { wards(filter: $filter, first: $first, after: $after) { edges { node { id name specialty capacity location address } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after }),
+        this.query<WardConnection>(`query($filter: WardFilter, $first: Int, $after: String) { wards(filter: $filter, first: $first, after: $after) { edges { node { id name specialty capacity location address _redactedFields _consentRestricted } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after }),
 
       onChange: (id: string, callback: (event: ChangeEvent<Ward>) => void): Subscription =>
-        this.subscribe<Ward>('Ward', id, 'id name specialty capacity location address', callback),
+        this.subscribe<Ward>('Ward', id, 'id name specialty capacity location address _redactedFields _consentRestricted', callback),
 
-      onAnyChange: (callback: (event: ChangeEvent<Ward>) => void, filter?: WardFilter): Subscription =>
-        this.subscribe<Ward>('Ward', null, 'id name specialty capacity location address', callback, filter as Record<string, unknown> | undefined),
+      onAnyChange: (callback: (event: ChangeEvent<Ward>) => void, filter?: WardFilter, onClose?: () => void, onResume?: () => void): Subscription =>
+        this.subscribe<Ward>('Ward', null, 'id name specialty capacity location address _redactedFields _consentRestricted', callback, filter as Record<string, unknown> | undefined, onClose, onResume),
     };
   }
   get account() {
     return {
       get: (id: string): Promise<Account | null> =>
-        this.query<Account | null>(`query { account(id: "${id}") { id accountNumber type status currency customer openDate lastActivityDate } }`),
+        this.query<Account | null>(`query { account(id: "${id}") { id accountNumber type status currency customer openDate lastActivityDate _redactedFields _consentRestricted } }`),
 
       list: (filter?: AccountFilter, pagination?: PaginationArgs): Promise<AccountConnection> =>
-        this.query<AccountConnection>(`query($filter: AccountFilter, $first: Int, $after: String) { accounts(filter: $filter, first: $first, after: $after) { edges { node { id accountNumber type status currency customer openDate lastActivityDate } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after }),
+        this.query<AccountConnection>(`query($filter: AccountFilter, $first: Int, $after: String) { accounts(filter: $filter, first: $first, after: $after) { edges { node { id accountNumber type status currency customer openDate lastActivityDate _redactedFields _consentRestricted } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after }),
 
       onChange: (id: string, callback: (event: ChangeEvent<Account>) => void): Subscription =>
-        this.subscribe<Account>('Account', id, 'id accountNumber type status currency customer openDate lastActivityDate', callback),
+        this.subscribe<Account>('Account', id, 'id accountNumber type status currency customer openDate lastActivityDate _redactedFields _consentRestricted', callback),
 
-      onAnyChange: (callback: (event: ChangeEvent<Account>) => void, filter?: AccountFilter): Subscription =>
-        this.subscribe<Account>('Account', null, 'id accountNumber type status currency customer openDate lastActivityDate', callback, filter as Record<string, unknown> | undefined),
+      onAnyChange: (callback: (event: ChangeEvent<Account>) => void, filter?: AccountFilter, onClose?: () => void, onResume?: () => void): Subscription =>
+        this.subscribe<Account>('Account', null, 'id accountNumber type status currency customer openDate lastActivityDate _redactedFields _consentRestricted', callback, filter as Record<string, unknown> | undefined, onClose, onResume),
     };
   }
   get alert() {
     return {
       get: (id: string): Promise<Alert | null> =>
-        this.query<Alert | null>(`query { alert(id: "${id}") { id alertNumber severity status ruleName score narrative transaction customer assignedTo createdDate } }`),
+        this.query<Alert | null>(`query { alert(id: "${id}") { id alertNumber severity status ruleName score narrative transaction customer assignedTo createdDate _redactedFields _consentRestricted } }`),
 
       list: (filter?: AlertFilter, pagination?: PaginationArgs): Promise<AlertConnection> =>
-        this.query<AlertConnection>(`query($filter: AlertFilter, $first: Int, $after: String) { alerts(filter: $filter, first: $first, after: $after) { edges { node { id alertNumber severity status ruleName score narrative transaction customer assignedTo createdDate } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after }),
+        this.query<AlertConnection>(`query($filter: AlertFilter, $first: Int, $after: String) { alerts(filter: $filter, first: $first, after: $after) { edges { node { id alertNumber severity status ruleName score narrative transaction customer assignedTo createdDate _redactedFields _consentRestricted } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after }),
 
       onChange: (id: string, callback: (event: ChangeEvent<Alert>) => void): Subscription =>
-        this.subscribe<Alert>('Alert', id, 'id alertNumber severity status ruleName score narrative transaction customer assignedTo createdDate', callback),
+        this.subscribe<Alert>('Alert', id, 'id alertNumber severity status ruleName score narrative transaction customer assignedTo createdDate _redactedFields _consentRestricted', callback),
 
-      onAnyChange: (callback: (event: ChangeEvent<Alert>) => void, filter?: AlertFilter): Subscription =>
-        this.subscribe<Alert>('Alert', null, 'id alertNumber severity status ruleName score narrative transaction customer assignedTo createdDate', callback, filter as Record<string, unknown> | undefined),
+      onAnyChange: (callback: (event: ChangeEvent<Alert>) => void, filter?: AlertFilter, onClose?: () => void, onResume?: () => void): Subscription =>
+        this.subscribe<Alert>('Alert', null, 'id alertNumber severity status ruleName score narrative transaction customer assignedTo createdDate _redactedFields _consentRestricted', callback, filter as Record<string, unknown> | undefined, onClose, onResume),
     };
   }
   get case() {
     return {
       get: (id: string): Promise<Case | null> =>
-        this.query<Case | null>(`query { case(id: "${id}") { id caseNumber status priority assignedAnalyst summary openDate closeDate } }`),
+        this.query<Case | null>(`query { case(id: "${id}") { id caseNumber status priority assignedAnalyst summary openDate closeDate _redactedFields _consentRestricted } }`),
 
       list: (filter?: CaseFilter, pagination?: PaginationArgs): Promise<CaseConnection> =>
-        this.query<CaseConnection>(`query($filter: CaseFilter, $first: Int, $after: String) { cases(filter: $filter, first: $first, after: $after) { edges { node { id caseNumber status priority assignedAnalyst summary openDate closeDate } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after }),
+        this.query<CaseConnection>(`query($filter: CaseFilter, $first: Int, $after: String) { cases(filter: $filter, first: $first, after: $after) { edges { node { id caseNumber status priority assignedAnalyst summary openDate closeDate _redactedFields _consentRestricted } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after }),
 
       onChange: (id: string, callback: (event: ChangeEvent<Case>) => void): Subscription =>
-        this.subscribe<Case>('Case', id, 'id caseNumber status priority assignedAnalyst summary openDate closeDate', callback),
+        this.subscribe<Case>('Case', id, 'id caseNumber status priority assignedAnalyst summary openDate closeDate _redactedFields _consentRestricted', callback),
 
-      onAnyChange: (callback: (event: ChangeEvent<Case>) => void, filter?: CaseFilter): Subscription =>
-        this.subscribe<Case>('Case', null, 'id caseNumber status priority assignedAnalyst summary openDate closeDate', callback, filter as Record<string, unknown> | undefined),
+      onAnyChange: (callback: (event: ChangeEvent<Case>) => void, filter?: CaseFilter, onClose?: () => void, onResume?: () => void): Subscription =>
+        this.subscribe<Case>('Case', null, 'id caseNumber status priority assignedAnalyst summary openDate closeDate _redactedFields _consentRestricted', callback, filter as Record<string, unknown> | undefined, onClose, onResume),
     };
   }
   get customer() {
     return {
       get: (id: string): Promise<Customer | null> =>
-        this.query<Customer | null>(`query { customer(id: "${id}") { id externalId name type riskLevel kycStatus kycExpiryDate country dateOfBirth taxId } }`),
+        this.query<Customer | null>(`query { customer(id: "${id}") { id externalId name type riskLevel kycStatus kycExpiryDate country dateOfBirth taxId _redactedFields _consentRestricted } }`),
 
       list: (filter?: CustomerFilter, pagination?: PaginationArgs): Promise<CustomerConnection> =>
-        this.query<CustomerConnection>(`query($filter: CustomerFilter, $first: Int, $after: String) { customers(filter: $filter, first: $first, after: $after) { edges { node { id externalId name type riskLevel kycStatus kycExpiryDate country dateOfBirth taxId } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after }),
+        this.query<CustomerConnection>(`query($filter: CustomerFilter, $first: Int, $after: String) { customers(filter: $filter, first: $first, after: $after) { edges { node { id externalId name type riskLevel kycStatus kycExpiryDate country dateOfBirth taxId _redactedFields _consentRestricted } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after }),
 
       onChange: (id: string, callback: (event: ChangeEvent<Customer>) => void): Subscription =>
-        this.subscribe<Customer>('Customer', id, 'id externalId name type riskLevel kycStatus kycExpiryDate country dateOfBirth taxId', callback),
+        this.subscribe<Customer>('Customer', id, 'id externalId name type riskLevel kycStatus kycExpiryDate country dateOfBirth taxId _redactedFields _consentRestricted', callback),
 
-      onAnyChange: (callback: (event: ChangeEvent<Customer>) => void, filter?: CustomerFilter): Subscription =>
-        this.subscribe<Customer>('Customer', null, 'id externalId name type riskLevel kycStatus kycExpiryDate country dateOfBirth taxId', callback, filter as Record<string, unknown> | undefined),
+      onAnyChange: (callback: (event: ChangeEvent<Customer>) => void, filter?: CustomerFilter, onClose?: () => void, onResume?: () => void): Subscription =>
+        this.subscribe<Customer>('Customer', null, 'id externalId name type riskLevel kycStatus kycExpiryDate country dateOfBirth taxId _redactedFields _consentRestricted', callback, filter as Record<string, unknown> | undefined, onClose, onResume),
     };
   }
   get suspiciousActivityReport() {
     return {
       get: (id: string): Promise<SuspiciousActivityReport | null> =>
-        this.query<SuspiciousActivityReport | null>(`query { suspiciousActivityReport(id: "${id}") { id sarNumber status filingDate narrative amount reportingEntity caseRef } }`),
+        this.query<SuspiciousActivityReport | null>(`query { suspiciousActivityReport(id: "${id}") { id sarNumber status filingDate narrative amount reportingEntity caseRef _redactedFields _consentRestricted } }`),
 
       list: (filter?: SuspiciousActivityReportFilter, pagination?: PaginationArgs): Promise<SuspiciousActivityReportConnection> =>
-        this.query<SuspiciousActivityReportConnection>(`query($filter: SuspiciousActivityReportFilter, $first: Int, $after: String) { suspiciousActivityReports(filter: $filter, first: $first, after: $after) { edges { node { id sarNumber status filingDate narrative amount reportingEntity caseRef } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after }),
+        this.query<SuspiciousActivityReportConnection>(`query($filter: SuspiciousActivityReportFilter, $first: Int, $after: String) { suspiciousActivityReports(filter: $filter, first: $first, after: $after) { edges { node { id sarNumber status filingDate narrative amount reportingEntity caseRef _redactedFields _consentRestricted } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after }),
 
       onChange: (id: string, callback: (event: ChangeEvent<SuspiciousActivityReport>) => void): Subscription =>
-        this.subscribe<SuspiciousActivityReport>('SuspiciousActivityReport', id, 'id sarNumber status filingDate narrative amount reportingEntity caseRef', callback),
+        this.subscribe<SuspiciousActivityReport>('SuspiciousActivityReport', id, 'id sarNumber status filingDate narrative amount reportingEntity caseRef _redactedFields _consentRestricted', callback),
 
-      onAnyChange: (callback: (event: ChangeEvent<SuspiciousActivityReport>) => void, filter?: SuspiciousActivityReportFilter): Subscription =>
-        this.subscribe<SuspiciousActivityReport>('SuspiciousActivityReport', null, 'id sarNumber status filingDate narrative amount reportingEntity caseRef', callback, filter as Record<string, unknown> | undefined),
+      onAnyChange: (callback: (event: ChangeEvent<SuspiciousActivityReport>) => void, filter?: SuspiciousActivityReportFilter, onClose?: () => void, onResume?: () => void): Subscription =>
+        this.subscribe<SuspiciousActivityReport>('SuspiciousActivityReport', null, 'id sarNumber status filingDate narrative amount reportingEntity caseRef _redactedFields _consentRestricted', callback, filter as Record<string, unknown> | undefined, onClose, onResume),
     };
   }
   get transaction() {
     return {
       get: (id: string): Promise<Transaction | null> =>
-        this.query<Transaction | null>(`query { transaction(id: "${id}") { id referenceId type status amount currency sourceAccount destinationAccount transactionDate description country } }`),
+        this.query<Transaction | null>(`query { transaction(id: "${id}") { id referenceId type status amount currency sourceAccount destinationAccount transactionDate description country _redactedFields _consentRestricted } }`),
 
       list: (filter?: TransactionFilter, pagination?: PaginationArgs): Promise<TransactionConnection> =>
-        this.query<TransactionConnection>(`query($filter: TransactionFilter, $first: Int, $after: String) { transactions(filter: $filter, first: $first, after: $after) { edges { node { id referenceId type status amount currency sourceAccount destinationAccount transactionDate description country } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after }),
+        this.query<TransactionConnection>(`query($filter: TransactionFilter, $first: Int, $after: String) { transactions(filter: $filter, first: $first, after: $after) { edges { node { id referenceId type status amount currency sourceAccount destinationAccount transactionDate description country _redactedFields _consentRestricted } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after }),
 
       onChange: (id: string, callback: (event: ChangeEvent<Transaction>) => void): Subscription =>
-        this.subscribe<Transaction>('Transaction', id, 'id referenceId type status amount currency sourceAccount destinationAccount transactionDate description country', callback),
+        this.subscribe<Transaction>('Transaction', id, 'id referenceId type status amount currency sourceAccount destinationAccount transactionDate description country _redactedFields _consentRestricted', callback),
 
-      onAnyChange: (callback: (event: ChangeEvent<Transaction>) => void, filter?: TransactionFilter): Subscription =>
-        this.subscribe<Transaction>('Transaction', null, 'id referenceId type status amount currency sourceAccount destinationAccount transactionDate description country', callback, filter as Record<string, unknown> | undefined),
+      onAnyChange: (callback: (event: ChangeEvent<Transaction>) => void, filter?: TransactionFilter, onClose?: () => void, onResume?: () => void): Subscription =>
+        this.subscribe<Transaction>('Transaction', null, 'id referenceId type status amount currency sourceAccount destinationAccount transactionDate description country _redactedFields _consentRestricted', callback, filter as Record<string, unknown> | undefined, onClose, onResume),
     };
   }
   get facility() {
     return {
       get: (id: string): Promise<Facility | null> =>
-        this.query<Facility | null>(`query { facility(id: "${id}") { id name code type status location address country capacity } }`),
+        this.query<Facility | null>(`query { facility(id: "${id}") { id name code type status location address country capacity _redactedFields _consentRestricted } }`),
 
       list: (filter?: FacilityFilter, pagination?: PaginationArgs): Promise<FacilityConnection> =>
-        this.query<FacilityConnection>(`query($filter: FacilityFilter, $first: Int, $after: String) { facilitys(filter: $filter, first: $first, after: $after) { edges { node { id name code type status location address country capacity } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after }),
+        this.query<FacilityConnection>(`query($filter: FacilityFilter, $first: Int, $after: String) { facilitys(filter: $filter, first: $first, after: $after) { edges { node { id name code type status location address country capacity _redactedFields _consentRestricted } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after }),
 
       onChange: (id: string, callback: (event: ChangeEvent<Facility>) => void): Subscription =>
-        this.subscribe<Facility>('Facility', id, 'id name code type status location address country capacity', callback),
+        this.subscribe<Facility>('Facility', id, 'id name code type status location address country capacity _redactedFields _consentRestricted', callback),
 
-      onAnyChange: (callback: (event: ChangeEvent<Facility>) => void, filter?: FacilityFilter): Subscription =>
-        this.subscribe<Facility>('Facility', null, 'id name code type status location address country capacity', callback, filter as Record<string, unknown> | undefined),
+      onAnyChange: (callback: (event: ChangeEvent<Facility>) => void, filter?: FacilityFilter, onClose?: () => void, onResume?: () => void): Subscription =>
+        this.subscribe<Facility>('Facility', null, 'id name code type status location address country capacity _redactedFields _consentRestricted', callback, filter as Record<string, unknown> | undefined, onClose, onResume),
     };
   }
   get inventoryRecord() {
     return {
       get: (id: string): Promise<InventoryRecord | null> =>
-        this.query<InventoryRecord | null>(`query { inventoryRecord(id: "${id}") { id quantity reservedQuantity stockLevel lastCountDate product facility } }`),
+        this.query<InventoryRecord | null>(`query { inventoryRecord(id: "${id}") { id quantity reservedQuantity stockLevel lastCountDate product facility _redactedFields _consentRestricted } }`),
 
       list: (filter?: InventoryRecordFilter, pagination?: PaginationArgs): Promise<InventoryRecordConnection> =>
-        this.query<InventoryRecordConnection>(`query($filter: InventoryRecordFilter, $first: Int, $after: String) { inventoryRecords(filter: $filter, first: $first, after: $after) { edges { node { id quantity reservedQuantity stockLevel lastCountDate product facility } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after }),
+        this.query<InventoryRecordConnection>(`query($filter: InventoryRecordFilter, $first: Int, $after: String) { inventoryRecords(filter: $filter, first: $first, after: $after) { edges { node { id quantity reservedQuantity stockLevel lastCountDate product facility _redactedFields _consentRestricted } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after }),
 
       onChange: (id: string, callback: (event: ChangeEvent<InventoryRecord>) => void): Subscription =>
-        this.subscribe<InventoryRecord>('InventoryRecord', id, 'id quantity reservedQuantity stockLevel lastCountDate product facility', callback),
+        this.subscribe<InventoryRecord>('InventoryRecord', id, 'id quantity reservedQuantity stockLevel lastCountDate product facility _redactedFields _consentRestricted', callback),
 
-      onAnyChange: (callback: (event: ChangeEvent<InventoryRecord>) => void, filter?: InventoryRecordFilter): Subscription =>
-        this.subscribe<InventoryRecord>('InventoryRecord', null, 'id quantity reservedQuantity stockLevel lastCountDate product facility', callback, filter as Record<string, unknown> | undefined),
+      onAnyChange: (callback: (event: ChangeEvent<InventoryRecord>) => void, filter?: InventoryRecordFilter, onClose?: () => void, onResume?: () => void): Subscription =>
+        this.subscribe<InventoryRecord>('InventoryRecord', null, 'id quantity reservedQuantity stockLevel lastCountDate product facility _redactedFields _consentRestricted', callback, filter as Record<string, unknown> | undefined, onClose, onResume),
     };
   }
   get product() {
     return {
       get: (id: string): Promise<Product | null> =>
-        this.query<Product | null>(`query { product(id: "${id}") { id sku name category unitOfMeasure reorderPoint reorderQuantity } }`),
+        this.query<Product | null>(`query { product(id: "${id}") { id sku name category unitOfMeasure reorderPoint reorderQuantity _redactedFields _consentRestricted } }`),
 
       list: (filter?: ProductFilter, pagination?: PaginationArgs): Promise<ProductConnection> =>
-        this.query<ProductConnection>(`query($filter: ProductFilter, $first: Int, $after: String) { products(filter: $filter, first: $first, after: $after) { edges { node { id sku name category unitOfMeasure reorderPoint reorderQuantity } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after }),
+        this.query<ProductConnection>(`query($filter: ProductFilter, $first: Int, $after: String) { products(filter: $filter, first: $first, after: $after) { edges { node { id sku name category unitOfMeasure reorderPoint reorderQuantity _redactedFields _consentRestricted } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after }),
 
       onChange: (id: string, callback: (event: ChangeEvent<Product>) => void): Subscription =>
-        this.subscribe<Product>('Product', id, 'id sku name category unitOfMeasure reorderPoint reorderQuantity', callback),
+        this.subscribe<Product>('Product', id, 'id sku name category unitOfMeasure reorderPoint reorderQuantity _redactedFields _consentRestricted', callback),
 
-      onAnyChange: (callback: (event: ChangeEvent<Product>) => void, filter?: ProductFilter): Subscription =>
-        this.subscribe<Product>('Product', null, 'id sku name category unitOfMeasure reorderPoint reorderQuantity', callback, filter as Record<string, unknown> | undefined),
+      onAnyChange: (callback: (event: ChangeEvent<Product>) => void, filter?: ProductFilter, onClose?: () => void, onResume?: () => void): Subscription =>
+        this.subscribe<Product>('Product', null, 'id sku name category unitOfMeasure reorderPoint reorderQuantity _redactedFields _consentRestricted', callback, filter as Record<string, unknown> | undefined, onClose, onResume),
     };
   }
   get purchaseOrder() {
     return {
       get: (id: string): Promise<PurchaseOrder | null> =>
-        this.query<PurchaseOrder | null>(`query { purchaseOrder(id: "${id}") { id orderNumber status supplier product quantity unitCost currency requestedDeliveryDate notes } }`),
+        this.query<PurchaseOrder | null>(`query { purchaseOrder(id: "${id}") { id orderNumber status supplier product quantity unitCost currency requestedDeliveryDate notes _redactedFields _consentRestricted } }`),
 
       list: (filter?: PurchaseOrderFilter, pagination?: PaginationArgs): Promise<PurchaseOrderConnection> =>
-        this.query<PurchaseOrderConnection>(`query($filter: PurchaseOrderFilter, $first: Int, $after: String) { purchaseOrders(filter: $filter, first: $first, after: $after) { edges { node { id orderNumber status supplier product quantity unitCost currency requestedDeliveryDate notes } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after }),
+        this.query<PurchaseOrderConnection>(`query($filter: PurchaseOrderFilter, $first: Int, $after: String) { purchaseOrders(filter: $filter, first: $first, after: $after) { edges { node { id orderNumber status supplier product quantity unitCost currency requestedDeliveryDate notes _redactedFields _consentRestricted } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after }),
 
       onChange: (id: string, callback: (event: ChangeEvent<PurchaseOrder>) => void): Subscription =>
-        this.subscribe<PurchaseOrder>('PurchaseOrder', id, 'id orderNumber status supplier product quantity unitCost currency requestedDeliveryDate notes', callback),
+        this.subscribe<PurchaseOrder>('PurchaseOrder', id, 'id orderNumber status supplier product quantity unitCost currency requestedDeliveryDate notes _redactedFields _consentRestricted', callback),
 
-      onAnyChange: (callback: (event: ChangeEvent<PurchaseOrder>) => void, filter?: PurchaseOrderFilter): Subscription =>
-        this.subscribe<PurchaseOrder>('PurchaseOrder', null, 'id orderNumber status supplier product quantity unitCost currency requestedDeliveryDate notes', callback, filter as Record<string, unknown> | undefined),
+      onAnyChange: (callback: (event: ChangeEvent<PurchaseOrder>) => void, filter?: PurchaseOrderFilter, onClose?: () => void, onResume?: () => void): Subscription =>
+        this.subscribe<PurchaseOrder>('PurchaseOrder', null, 'id orderNumber status supplier product quantity unitCost currency requestedDeliveryDate notes _redactedFields _consentRestricted', callback, filter as Record<string, unknown> | undefined, onClose, onResume),
     };
   }
   get shipment() {
     return {
       get: (id: string): Promise<Shipment | null> =>
-        this.query<Shipment | null>(`query { shipment(id: "${id}") { id trackingNumber status transportMode quantity departureDate estimatedArrival actualArrival order origin destination } }`),
+        this.query<Shipment | null>(`query { shipment(id: "${id}") { id trackingNumber status transportMode quantity departureDate estimatedArrival actualArrival order origin destination _redactedFields _consentRestricted } }`),
 
       list: (filter?: ShipmentFilter, pagination?: PaginationArgs): Promise<ShipmentConnection> =>
-        this.query<ShipmentConnection>(`query($filter: ShipmentFilter, $first: Int, $after: String) { shipments(filter: $filter, first: $first, after: $after) { edges { node { id trackingNumber status transportMode quantity departureDate estimatedArrival actualArrival order origin destination } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after }),
+        this.query<ShipmentConnection>(`query($filter: ShipmentFilter, $first: Int, $after: String) { shipments(filter: $filter, first: $first, after: $after) { edges { node { id trackingNumber status transportMode quantity departureDate estimatedArrival actualArrival order origin destination _redactedFields _consentRestricted } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after }),
 
       onChange: (id: string, callback: (event: ChangeEvent<Shipment>) => void): Subscription =>
-        this.subscribe<Shipment>('Shipment', id, 'id trackingNumber status transportMode quantity departureDate estimatedArrival actualArrival order origin destination', callback),
+        this.subscribe<Shipment>('Shipment', id, 'id trackingNumber status transportMode quantity departureDate estimatedArrival actualArrival order origin destination _redactedFields _consentRestricted', callback),
 
-      onAnyChange: (callback: (event: ChangeEvent<Shipment>) => void, filter?: ShipmentFilter): Subscription =>
-        this.subscribe<Shipment>('Shipment', null, 'id trackingNumber status transportMode quantity departureDate estimatedArrival actualArrival order origin destination', callback, filter as Record<string, unknown> | undefined),
+      onAnyChange: (callback: (event: ChangeEvent<Shipment>) => void, filter?: ShipmentFilter, onClose?: () => void, onResume?: () => void): Subscription =>
+        this.subscribe<Shipment>('Shipment', null, 'id trackingNumber status transportMode quantity departureDate estimatedArrival actualArrival order origin destination _redactedFields _consentRestricted', callback, filter as Record<string, unknown> | undefined, onClose, onResume),
     };
   }
   get supplier() {
     return {
       get: (id: string): Promise<Supplier | null> =>
-        this.query<Supplier | null>(`query { supplier(id: "${id}") { id name code system display tier contactName contactEmail country leadTimeDays onTimeDeliveryRate } }`),
+        this.query<Supplier | null>(`query { supplier(id: "${id}") { id name code system display tier contactName contactEmail country leadTimeDays onTimeDeliveryRate _redactedFields _consentRestricted } }`),
 
       list: (filter?: SupplierFilter, pagination?: PaginationArgs): Promise<SupplierConnection> =>
-        this.query<SupplierConnection>(`query($filter: SupplierFilter, $first: Int, $after: String) { suppliers(filter: $filter, first: $first, after: $after) { edges { node { id name code system display tier contactName contactEmail country leadTimeDays onTimeDeliveryRate } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after }),
+        this.query<SupplierConnection>(`query($filter: SupplierFilter, $first: Int, $after: String) { suppliers(filter: $filter, first: $first, after: $after) { edges { node { id name code system display tier contactName contactEmail country leadTimeDays onTimeDeliveryRate _redactedFields _consentRestricted } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after }),
 
       onChange: (id: string, callback: (event: ChangeEvent<Supplier>) => void): Subscription =>
-        this.subscribe<Supplier>('Supplier', id, 'id name code system display tier contactName contactEmail country leadTimeDays onTimeDeliveryRate', callback),
+        this.subscribe<Supplier>('Supplier', id, 'id name code system display tier contactName contactEmail country leadTimeDays onTimeDeliveryRate _redactedFields _consentRestricted', callback),
 
-      onAnyChange: (callback: (event: ChangeEvent<Supplier>) => void, filter?: SupplierFilter): Subscription =>
-        this.subscribe<Supplier>('Supplier', null, 'id name code system display tier contactName contactEmail country leadTimeDays onTimeDeliveryRate', callback, filter as Record<string, unknown> | undefined),
+      onAnyChange: (callback: (event: ChangeEvent<Supplier>) => void, filter?: SupplierFilter, onClose?: () => void, onResume?: () => void): Subscription =>
+        this.subscribe<Supplier>('Supplier', null, 'id name code system display tier contactName contactEmail country leadTimeDays onTimeDeliveryRate _redactedFields _consentRestricted', callback, filter as Record<string, unknown> | undefined, onClose, onResume),
     };
   }
   get actions() {
@@ -1451,6 +1509,17 @@ export class Altius {
        * way a client can build a form without hard-coding one per action.
        * It is also caller-scoped, so it reflects what this user may run.
        */
+      /**
+       * Invoke an action by name.
+       *
+       * The typed methods below are generated from the schema this build
+       * saw. A UI driven by availableTools is working from the RUNTIME
+       * list, which can include an action this bundle predates, so it
+       * needs a by-name path as well.
+       */
+      invoke: (name: string, input: Record<string, unknown>): Promise<ActionResult> =>
+        this.mutate<ActionResult>(name, input),
+
       available: (filter?: ToolFilter): Promise<ToolDescriptor[]> =>
         this.query<ToolDescriptor[]>(`query($filter: ToolFilter) { availableTools(filter: $filter) { name kind description parameters returnType requiredPermissions dryRunSupported reversible tags } }`, { filter }).then(
           (r) => (r as unknown as { availableTools?: ToolDescriptor[] })?.availableTools ?? (r as ToolDescriptor[]) ?? [],

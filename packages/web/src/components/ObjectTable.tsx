@@ -56,7 +56,11 @@ export interface ObjectTableProps<T> {
    * patching a row in place would drift from what the server would actually
    * return — including showing a row the caller may no longer see.
    */
-  subscribe?: (onChange: () => void) => { unsubscribe(): void };
+  subscribe?: (
+    onChange: () => void,
+    onLost: () => void,
+    onResumed: () => void,
+  ) => { unsubscribe(): void };
 }
 
 type Status = 'loading' | 'ready' | 'error';
@@ -82,6 +86,8 @@ export function ObjectTable<T extends RowMetadata>({
   const [status, setStatus] = useState<Status>('loading');
   const [error, setError] = useState<string | null>(null);
   const [connection, setConnection] = useState<ConnectionLike<T> | null>(null);
+  /** False once a live stream has dropped; there is no reconnect. */
+  const [live, setLive] = useState(true);
 
   // Cursors of the pages BEFORE the current one. Pushed on next, popped on
   // previous. `undefined` at the bottom is the first page.
@@ -124,6 +130,7 @@ export function ObjectTable<T extends RowMetadata>({
     if (!subscribe) return;
 
     let pending: ReturnType<typeof setTimeout> | null = null;
+    setLive(true);
     const subscription = subscribe(() => {
       // Coalesce: a bulk write emits one event per row, and refetching per
       // event would put the table into a refresh loop under load.
@@ -132,6 +139,15 @@ export function ObjectTable<T extends RowMetadata>({
         pending = null;
         void fetchPage(cursorRef.current);
       }, LIVE_COALESCE_MS);
+    }, () => {
+      // Dropped. Say so rather than let a stale table look current.
+      setLive(false);
+    }, () => {
+      // Re-established. Re-read rather than just clearing the notice: the
+      // events that happened while the socket was down are gone, so the page
+      // on screen may already be wrong.
+      setLive(true);
+      void fetchPage(cursorRef.current);
     });
 
     return () => {
@@ -199,6 +215,12 @@ export function ObjectTable<T extends RowMetadata>({
 
       {/* Announced politely so a screen reader hears the page change without
           losing the user's place in the table. */}
+      {subscribe && !live ? (
+        <p role="status" data-live-lost="true">
+          Live updates disconnected — this list may be out of date. Reload to resume.
+        </p>
+      ) : null}
+
       <p aria-live="polite">
         {status === 'loading' ? 'Loading…' : rows.length === 0 ? `No ${caption} to show.` : ''}
       </p>
@@ -229,6 +251,19 @@ export function ObjectTable<T extends RowMetadata>({
  * invites someone to fill the gap in.
  */
 function renderCell<T extends RowMetadata>(row: T, col: Column<T>): ReactNode {
+  // Checked before redaction and before the null check, because the server
+  // nulls EVERY non-primary field when consent is withheld
+  // (resolver-generator.ts:384-387, :742-747). Falling through would draw the
+  // whole row as "not recorded" — a claim about the data rather than about
+  // permission, and the one that invites someone to fill the gap in.
+  if (row._consentRestricted) {
+    return (
+      <span data-consent-restricted="true" title="Withheld: the subject has not consented to this use">
+        consent withheld
+      </span>
+    );
+  }
+
   const redacted = row._redactedFields?.includes(col.key) ?? false;
   if (redacted) {
     return (

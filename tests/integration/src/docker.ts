@@ -44,16 +44,66 @@ export function isDockerAvailable(): boolean {
  * Uses `docker compose up -d --wait` which blocks until health checks pass.
  */
 export function dockerComposeUp(): void {
-  execSync(
-    `docker compose ${COMPOSE_FILES} up -d --wait`,
-    { ...EXEC_OPTS, timeout: 300_000, stdio: 'inherit' },
-  );
+  try {
+    execSync(
+      `docker compose ${COMPOSE_FILES} up -d --wait`,
+      { ...EXEC_OPTS, timeout: 300_000, stdio: 'inherit' },
+    );
+  } catch (err) {
+    // Print the containers' own logs before rethrowing.
+    //
+    // `up --wait` reports only "container X exited (1)"; the reason lives in
+    // that container's log. The caller's afterAll then runs `down -v`, which
+    // deletes it. Four integration jobs stayed red for twenty CI runs saying
+    // nothing more than the exit code, because every trace of the cause was
+    // destroyed microseconds after it was produced — and a job-level dump
+    // cannot help, since the containers are already gone by then.
+    //
+    // Here is the one point every spec's startup routes through, and the last
+    // moment the evidence still exists.
+    try {
+      execSync(
+        `docker compose ${COMPOSE_FILES} ps -a`,
+        { ...EXEC_OPTS, timeout: 30_000, stdio: 'inherit' },
+      );
+      execSync(
+        `docker compose ${COMPOSE_FILES} logs --no-color --tail 150`,
+        { ...EXEC_OPTS, timeout: 60_000, stdio: 'inherit' },
+      );
+    } catch {
+      // Diagnostics are best-effort; never mask the original failure.
+    }
+    throw err;
+  }
 }
 
 /**
  * Tear down the Docker Compose stack and remove volumes.
  */
 export function dockerComposeDown(): void {
+  // In CI, print the logs before destroying the stack.
+  //
+  // The startup path already dumps on a failed `up`, but a test that fails
+  // against a stack that came up fine leaves nothing: the assertion says
+  // "expected 500 to be 200" and the reason for the 500 is in a container log
+  // that `down -v` removes on the next line. That is how a one-line
+  // assertion failure stays unexplainable across runs.
+  //
+  // Unconditional in CI rather than only-on-failure: vitest settles its
+  // failure state after teardown runs, so the honest options are "always" or
+  // "never". Logs on a green run are ignored; logs missing on a red one cost
+  // another full cycle to recover.
+  if (process.env['CI']) {
+    try {
+      execSync(
+        `docker compose ${COMPOSE_FILES} logs --no-color --tail 100`,
+        { ...EXEC_OPTS, timeout: 60_000, stdio: 'inherit' },
+      );
+    } catch {
+      // Best-effort; never let diagnostics block teardown.
+    }
+  }
+
   execSync(
     `docker compose ${COMPOSE_FILES} down -v --remove-orphans`,
     { ...EXEC_OPTS, timeout: 120_000, stdio: 'inherit' },

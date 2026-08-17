@@ -72,6 +72,13 @@ spec:
                   key: {{ .Values.storage.postgres.secretKeys.password }}
             - name: POSTGRES_URL
               value: {{ include "altius.postgresUrl" . | quote }}
+{{- if .Values.authz.openfga.existingSecret }}
+            - name: OPENFGA_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.authz.openfga.existingSecret }}
+                  key: {{ .Values.authz.openfga.secretKeys.apiToken }}
+{{- end }}
             # Single-instance components. The chart refuses >1 replica when
             # either is on (see altius.assertMultiPodSafe), because a
             # Deployment has no leader election and every pod would fire.

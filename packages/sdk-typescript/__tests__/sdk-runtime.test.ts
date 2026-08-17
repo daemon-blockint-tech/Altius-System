@@ -309,6 +309,91 @@ describe('Generated SDK runtime', () => {
     });
   });
 
+  describe('subscription close signalling', () => {
+    it('tells the subscriber when the socket dies', async () => {
+      // The client clears its subscriptions on close and does not reconnect, so
+      // without this the caller keeps a stream that has silently stopped — a
+      // live view that looks current and is not.
+      const onClose = vi.fn();
+      const client = new Altius({ endpoint: 'http://localhost:3000/graphql', token: 't' });
+
+      client.patient.onAnyChange(() => {}, undefined, onClose);
+      await new Promise(r => setTimeout(r, 10));
+      const ws = MockWebSocket.instances[0]!;
+      // The subscribe is queued until connection_ack, and the close handler is
+      // registered with it.
+      ws._receive(JSON.stringify({ type: 'connection_ack' }));
+
+      ws.close();
+
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not call the handler after an explicit unsubscribe', async () => {
+      const onClose = vi.fn();
+      const client = new Altius({ endpoint: 'http://localhost:3000/graphql', token: 't' });
+
+      const sub = client.patient.onAnyChange(() => {}, undefined, onClose);
+      await new Promise(r => setTimeout(r, 10));
+      const ws = MockWebSocket.instances[0]!;
+      ws._receive(JSON.stringify({ type: 'connection_ack' }));
+      sub.unsubscribe();
+
+      ws.close();
+
+      // Closing after the caller has already let go is not a lost stream.
+      expect(onClose).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('subscription reconnection', () => {
+    it('re-establishes a dropped subscription and announces the resume', async () => {
+      // Visibility alone leaves the stream dead. Recovery has to actually
+      // resubscribe, and the caller has to be told so it can RE-READ: events
+      // during the gap are gone, so resuming without re-reading is the same
+      // silent-staleness bug with a nicer message.
+      vi.useFakeTimers();
+      const onClose = vi.fn();
+      const onResume = vi.fn();
+      const client = new Altius({ endpoint: 'http://localhost:3000/graphql', token: 't' });
+
+      client.patient.onAnyChange(() => {}, undefined, onClose, onResume);
+      await vi.advanceTimersByTimeAsync(10);
+      MockWebSocket.instances[0]!._receive(JSON.stringify({ type: 'connection_ack' }));
+
+      MockWebSocket.instances[0]!.close();
+      expect(onClose).toHaveBeenCalledTimes(1);
+
+      // Backoff, then a fresh socket carrying the replayed subscription.
+      await vi.advanceTimersByTimeAsync(1500);
+      expect(MockWebSocket.instances.length).toBe(2);
+      MockWebSocket.instances[1]!._receive(JSON.stringify({ type: 'connection_ack' }));
+
+      expect(onResume).toHaveBeenCalledTimes(1);
+      // The subscribe was actually re-sent, not just the socket reopened.
+      expect(MockWebSocket.instances[1]!.sent.some(m => m.includes('"subscribe"'))).toBe(true);
+      vi.useRealTimers();
+    });
+
+    it('does not reconnect after the caller unsubscribes', async () => {
+      // Letting go of a stream is not losing one; reconnecting here would
+      // resurrect a subscription the caller has already abandoned.
+      vi.useFakeTimers();
+      const client = new Altius({ endpoint: 'http://localhost:3000/graphql', token: 't' });
+
+      const sub = client.patient.onAnyChange(() => {});
+      await vi.advanceTimersByTimeAsync(10);
+      MockWebSocket.instances[0]!._receive(JSON.stringify({ type: 'connection_ack' }));
+      sub.unsubscribe();
+
+      MockWebSocket.instances[0]!.close();
+      await vi.advanceTimersByTimeAsync(5000);
+
+      expect(MockWebSocket.instances.length).toBe(1);
+      vi.useRealTimers();
+    });
+  });
+
   describe('token provider (refresh seam)', () => {
     it('consults the provider on every request instead of freezing it', async () => {
       // Access tokens expire. A client that captured the string at construction

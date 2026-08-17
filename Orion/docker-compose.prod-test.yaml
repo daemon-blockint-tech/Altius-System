@@ -12,5 +12,11 @@ services:
       OPENFGA_STORE_ID: "${OPENFGA_STORE_ID:?set OPENFGA_STORE_ID}"
       # One store must name the tenant it serves; without this the API
       # refuses to boot rather than serving every tenant from one namespace.
-      OIDC_DEFAULT_TENANT: "${OIDC_DEFAULT_TENANT:-nhs-trust-01}"
+      # Must match the tenant the tokens actually claim. The shipped realm gives
+      # dr-test and admin-test `tenant_id: default`, and the claim wins over
+      # this default (oidc-authenticator.ts), so keying the OpenFGA store map
+      # to anything else maps every request to NO store. Reads then fail
+      # closed — which is why the deny-asserting specs still passed — while
+      # writeRelationship throws UNKNOWN_TENANT and the grant answers 500.
+      OIDC_DEFAULT_TENANT: "${OIDC_DEFAULT_TENANT:-default}"
       FHIR_BASE_URL: "http://localhost:4000/fhir"

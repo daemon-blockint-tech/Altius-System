@@ -42,6 +42,12 @@ export const DEV_USER: AuthenticatedUser = {
     'auditor',
   ],
   groups: [],
+  // No markings, deliberately. Markings are mandatory: they restrict access
+  // rather than expand it, so no role on this list gets past one. A stand-in
+  // identity holding none is the correct outcome — a deployment that
+  // configures markings denies this user every marked type, and the dev
+  // fallback cannot become the way around a mandatory control.
+  markings: [],
   tenantId: 'default',
 };
 

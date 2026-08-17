@@ -27,7 +27,7 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { execSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { dockerAvailable } from './setup.js';
@@ -44,11 +44,33 @@ const COMPOSE_FILE = resolve(
   '../../../Orion/docker-compose.yaml',
 );
 
-function compose(cmd: string, env?: Record<string, string>): void {
-  execSync(`docker compose -f "${COMPOSE_FILE}" ${cmd}`, {
-    stdio: 'inherit',
-    env: { ...process.env, ...env },
+/**
+ * Run a docker compose command without blocking the event loop.
+ *
+ * This was execSync. A `down -v` over the full stack holds the thread for
+ * seconds, and while it is held the worker cannot answer vitest's reporter
+ * RPC — `onTaskUpdate` then times out and is raised as an unhandled error, so
+ * the job exits 1 over a suite that passed. See the same note in
+ * security-enforcement.test.ts, where it actually bit.
+ */
+async function run(cmd: string, env?: Record<string, string>): Promise<void> {
+  await new Promise<void>((resolvePromise, reject) => {
+    const child = spawn(cmd, {
+      shell: true,
+      stdio: 'inherit',
+      env: { ...process.env, ...env },
+    });
+    child.on('error', reject);
+    child.on('close', (code) =>
+      code === 0
+        ? resolvePromise()
+        : reject(new Error(`Command failed with exit code ${code}: ${cmd}`)),
+    );
   });
+}
+
+async function compose(cmd: string, env?: Record<string, string>): Promise<void> {
+  await run(`docker compose -f "${COMPOSE_FILE}" ${cmd}`, env);
 }
 
 const HEALTH_URL = `${CONFIG.apiBaseUrl}/.well-known/apollo/server-health`;
@@ -69,16 +91,16 @@ async function postConsent(body: Record<string, unknown>): Promise<{ status: num
 }
 
 describeMaybe('open consent-purpose vocabulary (non-NHS deployment)', () => {
-  beforeAll(() => {
-    compose('down -v --remove-orphans');
-    compose('up -d --wait', {
+  beforeAll(async () => {
+    await compose('down -v --remove-orphans');
+    await compose('up -d --wait', {
       CONSENT_PURPOSES: 'KYC,AML_MONITORING',
       DEFAULT_CONSENT_PURPOSE: 'KYC',
     });
   }, 600_000);
 
-  afterAll(() => {
-    compose('down -v --remove-orphans');
+  afterAll(async () => {
+    await compose('down -v --remove-orphans');
   });
 
   it('boots and serves health', async () => {

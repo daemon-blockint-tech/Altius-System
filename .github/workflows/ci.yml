@@ -91,7 +91,28 @@ jobs:
         env:
           PG_TEST_URL: postgresql://postgres:postgres@localhost:5432/altius_test
         run: pnpm --filter @altius/spi-conformance test
-
+      # A stack that fails to come up leaves no trace in the job output: the
+      # `up --wait` step reports only "container X exited (1)", and the reason
+      # lives in a container log nobody ever printed. Four integration jobs
+      # have been red since this workflow was written and none of them said
+      # why. Dump the logs on failure so the next red run is diagnosable.
+      - name: Container logs (on failure)
+        if: failure()
+        env:
+          # The prod-test overlay declares OPENFGA_STORE_ID as required, and the
+          # spec sets it only for the stack it starts — not for this step. A
+          # placeholder keeps interpolation happy; nothing is started here, so
+          # the value is never used. Without it the dump fails to parse and
+          # reports the missing variable instead of the logs it exists to show.
+          OPENFGA_STORE_ID: diagnostic-placeholder
+          OIDC_DEFAULT_TENANT: diagnostic-placeholder
+        run: |
+          files=""
+          for f in Orion/docker-compose.yaml Orion/docker-compose.test.yaml Orion/docker-compose.prod-test.yaml; do
+            [ -f "$f" ] && files="$files -f $f"
+          done
+          docker compose $files ps -a || true
+          docker compose $files logs --no-color --tail 200 || true
   docker-stack-integration:
     name: Docker-stack integration
     runs-on: ubuntu-latest
@@ -137,6 +158,28 @@ jobs:
           up -d --wait --wait-timeout 600
       - name: Integration tests
         run: pnpm run test:integration
+      # Six consecutive runs failed on `container orion-web-1 is unhealthy`
+      # with no container output captured anywhere, so every attempt to fix it
+      # was a guess from the outside. `up --wait` prints only which container it
+      # gave up on; the reason lives in that container's log and in its last
+      # healthcheck result, and the teardown below destroys both.
+      - name: Diagnose stack on failure
+        if: failure()
+        run: |
+          set +e
+          COMPOSE="docker compose -f Orion/docker-compose.yaml -f Orion/docker-compose.test.yaml"
+          echo "::group::container status"
+          $COMPOSE ps -a
+          echo "::endgroup::"
+          echo "::group::healthcheck output"
+          for c in $($COMPOSE ps -aq); do
+            echo "--- $(docker inspect -f '{{.Name}}' $c)"
+            docker inspect -f '{{json .State.Health}}' $c
+          done
+          echo "::endgroup::"
+          echo "::group::container logs"
+          $COMPOSE logs --no-color --tail=200
+          echo "::endgroup::"
       - name: Tear down stack
         if: always()
         run: >-
@@ -144,7 +187,28 @@ jobs:
           -f Orion/docker-compose.yaml
           -f Orion/docker-compose.test.yaml
           down -v --remove-orphans
-
+      # A stack that fails to come up leaves no trace in the job output: the
+      # `up --wait` step reports only "container X exited (1)", and the reason
+      # lives in a container log nobody ever printed. Four integration jobs
+      # have been red since this workflow was written and none of them said
+      # why. Dump the logs on failure so the next red run is diagnosable.
+      - name: Container logs (on failure)
+        if: failure()
+        env:
+          # The prod-test overlay declares OPENFGA_STORE_ID as required, and the
+          # spec sets it only for the stack it starts — not for this step. A
+          # placeholder keeps interpolation happy; nothing is started here, so
+          # the value is never used. Without it the dump fails to parse and
+          # reports the missing variable instead of the logs it exists to show.
+          OPENFGA_STORE_ID: diagnostic-placeholder
+          OIDC_DEFAULT_TENANT: diagnostic-placeholder
+        run: |
+          files=""
+          for f in Orion/docker-compose.yaml Orion/docker-compose.test.yaml Orion/docker-compose.prod-test.yaml; do
+            [ -f "$f" ] && files="$files -f $f"
+          done
+          docker compose $files ps -a || true
+          docker compose $files logs --no-color --tail 200 || true
   enforcement-e2e:
     name: Enforcement E2E (prod security, capability gating, consent vocab)
     runs-on: ubuntu-latest
@@ -188,10 +252,53 @@ jobs:
         run: CAPABILITY_E2E=1 pnpm --filter @altius/integration-tests exec vitest run capability-gating
       - name: Open-consent-vocabulary E2E
         run: CONSENT_VOCAB_E2E=1 pnpm --filter @altius/integration-tests exec vitest run open-consent-vocab
+      # Six consecutive runs failed on `container orion-web-1 is unhealthy`
+      # with no container output captured anywhere, so every attempt to fix it
+      # was a guess from the outside. `up --wait` prints only which container it
+      # gave up on; the reason lives in that container's log and in its last
+      # healthcheck result, and the teardown below destroys both.
+      - name: Diagnose stack on failure
+        if: failure()
+        run: |
+          set +e
+          COMPOSE="docker compose -f Orion/docker-compose.yaml -f Orion/docker-compose.test.yaml"
+          echo "::group::container status"
+          $COMPOSE ps -a
+          echo "::endgroup::"
+          echo "::group::healthcheck output"
+          for c in $($COMPOSE ps -aq); do
+            echo "--- $(docker inspect -f '{{.Name}}' $c)"
+            docker inspect -f '{{json .State.Health}}' $c
+          done
+          echo "::endgroup::"
+          echo "::group::container logs"
+          $COMPOSE logs --no-color --tail=200
+          echo "::endgroup::"
       - name: Tear down stack
         if: always()
         run: docker compose -f Orion/docker-compose.yaml down -v --remove-orphans
-
+      # A stack that fails to come up leaves no trace in the job output: the
+      # `up --wait` step reports only "container X exited (1)", and the reason
+      # lives in a container log nobody ever printed. Four integration jobs
+      # have been red since this workflow was written and none of them said
+      # why. Dump the logs on failure so the next red run is diagnosable.
+      - name: Container logs (on failure)
+        if: failure()
+        env:
+          # The prod-test overlay declares OPENFGA_STORE_ID as required, and the
+          # spec sets it only for the stack it starts — not for this step. A
+          # placeholder keeps interpolation happy; nothing is started here, so
+          # the value is never used. Without it the dump fails to parse and
+          # reports the missing variable instead of the logs it exists to show.
+          OPENFGA_STORE_ID: diagnostic-placeholder
+          OIDC_DEFAULT_TENANT: diagnostic-placeholder
+        run: |
+          files=""
+          for f in Orion/docker-compose.yaml Orion/docker-compose.test.yaml Orion/docker-compose.prod-test.yaml; do
+            [ -f "$f" ] && files="$files -f $f"
+          done
+          docker compose $files ps -a || true
+          docker compose $files logs --no-color --tail 200 || true
   helm-lint:
     name: Helm lint
     runs-on: ubuntu-latest
