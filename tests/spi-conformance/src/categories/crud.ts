@@ -447,5 +447,55 @@ export function registerCrudTests(name: string, factory: ProviderFactory): void 
       });
     });
 
+
+    // ─── Date/DateTime round-trip ───
+
+    describe('date properties survive a round-trip as strings', () => {
+      // The platform's contract for an ODL Date is 'YYYY-MM-DD' and for a
+      // DateTime an ISO instant. node-postgres decodes DATE and TIMESTAMPTZ to
+      // JS Date objects, so a value written as a string came back as an object
+      // — and every validator, CEL expression and API response assumes the
+      // string. It surfaced as every updateObject action effect failing on
+      // Postgres and passing on memory, because the executor re-validates the
+      // MERGED object and the merge carries the value it just read.
+      //
+      // This is the divergence the shared suite exists to catch, and it only
+      // catches it by running against both providers.
+
+      it('returns a DateTime as the ISO string it was written as', async () => {
+        const written = '2026-08-17T10:30:00.000Z';
+        const created = await provider.createObject(tenantA, 'Patient', {
+          name: 'Round Trip', lastVisit: written,
+        });
+
+        expect(typeof created['lastVisit']).toBe('string');
+
+        const fetched = await provider.getObject(tenantA, 'Patient', created._id);
+        expect(typeof fetched?.['lastVisit']).toBe('string');
+        expect(new Date(String(fetched?.['lastVisit'])).toISOString()).toBe(written);
+      });
+
+      it('survives being read back and written again — the merged-update path', async () => {
+        const created = await provider.createObject(tenantA, 'Patient', {
+          name: 'Merge', lastVisit: '2026-08-17T10:30:00.000Z',
+        });
+
+        // What the action executor does: read, merge, write the whole object.
+        const read = await provider.getObject(tenantA, 'Patient', created._id);
+        // System fields are the provider's, not the caller's — the executor
+        // strips them the same way before writing back.
+        const merged: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries(read ?? {})) {
+          if (!k.startsWith('_')) merged[k] = v;
+        }
+        merged['status'] = 'ACTIVE';
+
+        const updated = await provider.updateObject(tenantA, 'Patient', created._id, merged);
+
+        expect(updated['status']).toBe('ACTIVE');
+        expect(typeof updated['lastVisit']).toBe('string');
+      });
+    });
+
   });
 }

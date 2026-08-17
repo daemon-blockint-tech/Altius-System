@@ -9,6 +9,7 @@
  */
 
 import type { Pool } from 'pg';
+import { types as pgTypes } from 'pg';
 import type {
   OntologyObject,
   RequestContext,
@@ -21,6 +22,15 @@ import { snakeCase, pgIdent, fieldCol } from '../schema/type-mapping.js';
 import { filterToSql } from './filter-to-sql.js';
 import { isListProperty } from '../list-properties.js';
 import { PgTransaction, resolveQueryable } from '../transactions/index.js';
+
+// An ODL `Date` is a calendar date, and its contract is the string
+// 'YYYY-MM-DD'. node-postgres decodes DATE (oid 1082) to a JS Date in the
+// server's timezone, which both loses that contract and shifts the day near
+// midnight. Hand the text back untouched instead.
+//
+// Only 1082. TIMESTAMPTZ (1184) must keep decoding to a Date, because
+// rowToObject casts the system timestamps and calls .toISOString() on them.
+pgTypes.setTypeParser(1082, (value: string) => value);
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -75,7 +85,13 @@ function rowToObject(row: Record<string, unknown>): OntologyObject {
     if (!key.startsWith('_')) {
       // Convert snake_case column back to camelCase property name
       const camelKey = key.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
-      obj[camelKey] = value;
+      // Normalise what the driver hands back, the same way the system
+      // timestamps above already are. node-postgres decodes TIMESTAMPTZ to a
+      // JS Date, and the platform's contract for an ODL DateTime is an ISO
+      // string — every validator, CEL expression and API response assumes it.
+      // Returning the raw Date made a DateTime property fail its own
+      // format check the moment it was read back and re-validated.
+      obj[camelKey] = value instanceof Date ? value.toISOString() : value;
     }
   }
 
