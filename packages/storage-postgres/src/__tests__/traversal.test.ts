@@ -379,4 +379,39 @@ describe('traverse()', () => {
     });
   });
 
+
+  it('drops a system column instead of exposing it as a phantom property', async () => {
+    // _actor_id is emitted by the object DDL (ddl-objects.ts:23). Six
+    // hand-written system-column lists decided what counted as metadata and
+    // only object-crud gained it, so elsewhere it fell through to the
+    // user-property branch, where the snake-to-camel mapper renames it
+    // "ActorId" — a key in no schema. It has no leading underscore, so
+    // redactObject does not skip it as system metadata: with a field policy it
+    // is nulled and named in _redactedFields (a redaction report for a field
+    // that does not exist); without one, the writer identity goes to every
+    // caller of search, traversal and point-in-time reads.
+    //
+    // Reverting the predicate here to the old enumerated list yields
+    // [..., "ActorId"] — this assertion discriminates.
+    const pool = createMockPool((sql) => {
+      if (sql.includes('admitted_to')) {
+        return {
+          rows: [makeLinkRow({
+            _from_type: 'Patient', _from_id: 'patient-1',
+            _to_type: 'Ward', _to_id: 'ward-1',
+          })],
+        };
+      }
+      return { rows: [makeObjectRow('Patient', 'patient-1')] };
+    });
+
+    const path: TraversalPath = { steps: [{ linkType: 'AdmittedTo', direction: 'inbound' }] };
+    const result = await traverse(pool, createCtx(), 'ward-1', path);
+
+    const node = result.nodes[0]!;
+    expect(node).toBeDefined();
+    expect(Object.keys(node)).not.toContain('ActorId');
+    // The declared field must also not be silently invented in its place.
+    expect(Object.keys(node)).not.toContain('actorId');
+  });
 });

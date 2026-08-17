@@ -47,12 +47,11 @@ function historyRowToObject(row: Record<string, unknown>): OntologyObject {
   // gained "_actor_id" when the DDL did, so the rule and its copies could
   // disagree with nothing to notice.
   //
-  // NOT VERIFIED: the suspected consequence was that the column fell through to
-  // the user-property branch and surfaced as a phantom "ActorId". A probe of
-  // the traversal path found identical output with this check and with the old
-  // enumerated list, so that consequence is unconfirmed and may be wrong. The
-  // refactor stands on removing six restatements of one rule; treat the
-  // severity claim as open until someone reproduces it against real Postgres.
+  // CONFIRMED: with the old enumerated list the column falls through to the
+  // user-property branch and the snake-to-camel mapper renames it "ActorId" —
+  // a key in no schema. Pinned by traversal.test.ts; reverting the predicate
+  // there yields [..., "ActorId"]. Because it has no leading underscore,
+  // redactObject treats it as an ordinary field.
   for (const [key, value] of Object.entries(row)) {
     if (!key.startsWith('_')) {
       const camelKey = key.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
