@@ -256,7 +256,15 @@ function validateSchema(
     if (field.type.nonNull && (value === undefined || value === null)) {
       // Skip if field has a @default directive
       const hasDefault = field.directives.some((d) => d.kind === 'default');
-      if (!hasDefault) {
+      // A @readonly field is platform-owned: the write paths refuse it from a
+      // caller, so demanding it makes the type UNCREATABLE by anyone. The core
+      // `Auditable` interface declares createdAt/createdBy/updatedAt/updatedBy
+      // exactly that way, so every type implementing it — Patient among them —
+      // could never be created, by seed, action or API. Nothing populates them
+      // either; the real audit values live in the _created_at/_updated_at/
+      // _actor_id system columns.
+      const isReadonly = field.directives.some((d) => d.kind === 'readonly');
+      if (!hasDefault && !isReadonly) {
         failures.push({
           step: 'schema',
           field: field.name,
