@@ -597,6 +597,62 @@ describe('Generated SDK runtime', () => {
       vi.useRealTimers();
     });
 
+    it('tolerates unsubscribe being called twice', async () => {
+      // Idempotence matters because React effect cleanup can run twice under
+      // StrictMode, and a second `complete` frame for an id the server has
+      // already closed is a protocol error it may drop the connection over.
+      vi.useFakeTimers();
+      const client = new Altius({ endpoint: 'http://localhost:3000/graphql', token: 't' });
+
+      const sub = client.patient.onAnyChange(() => {});
+      await vi.advanceTimersByTimeAsync(10);
+      const ws = MockWebSocket.instances[0]!;
+      ws._receive(JSON.stringify({ type: 'connection_ack' }));
+
+      sub.unsubscribe();
+      sub.unsubscribe();
+
+      expect(ws.sent.filter(m => m.includes('"complete"'))).toHaveLength(1);
+      vi.useRealTimers();
+    });
+
+    it('ignores a server complete for a subscription the caller already dropped', async () => {
+      // The server echoes `complete` back after our own. That must not be read
+      // as a server-side termination and fire onClose — the caller let go, it
+      // did not lose anything.
+      vi.useFakeTimers();
+      const onClose = vi.fn();
+      const client = new Altius({ endpoint: 'http://localhost:3000/graphql', token: 't' });
+
+      const sub = client.patient.onAnyChange(() => {}, undefined, onClose);
+      await vi.advanceTimersByTimeAsync(10);
+      const ws = MockWebSocket.instances[0]!;
+      ws._receive(JSON.stringify({ type: 'connection_ack' }));
+      const subId = JSON.parse(ws.sent.find(m => m.includes('"subscribe"'))!).id as string;
+
+      sub.unsubscribe();
+      ws._receive(JSON.stringify({ type: 'complete', id: subId }));
+
+      expect(onClose).not.toHaveBeenCalled();
+      vi.useRealTimers();
+    });
+
+    it('does not re-send subscriptions when connection_ack arrives twice', async () => {
+      // A duplicate ack would flush an already-drained queue. Harmless only if
+      // the queue was emptied rather than merely iterated.
+      vi.useFakeTimers();
+      const client = new Altius({ endpoint: 'http://localhost:3000/graphql', token: 't' });
+
+      client.patient.onAnyChange(() => {});
+      await vi.advanceTimersByTimeAsync(10);
+      const ws = MockWebSocket.instances[0]!;
+      ws._receive(JSON.stringify({ type: 'connection_ack' }));
+      ws._receive(JSON.stringify({ type: 'connection_ack' }));
+
+      expect(ws.sent.filter(m => m.includes('"subscribe"'))).toHaveLength(1);
+      vi.useRealTimers();
+    });
+
     it('does not reconnect after the caller unsubscribes', async () => {
       // Letting go of a stream is not losing one; reconnecting here would
       // resurrect a subscription the caller has already abandoned.

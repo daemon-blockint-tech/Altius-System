@@ -1280,6 +1280,10 @@ export class Altius {
     }
     return {
       unsubscribe: () => {
+        // Idempotent: React StrictMode runs effect cleanup twice, and a
+        // second `complete` for an id the server has already closed is a
+        // protocol error it may drop the connection over.
+        if (!this.wsResubscribers.has(subId) && !this.wsSubscriptions.has(subId)) return;
         this.wsSubscriptions.delete(subId);
         this.wsCloseHandlers.delete(subId);
         this.wsResumeHandlers.delete(subId);
