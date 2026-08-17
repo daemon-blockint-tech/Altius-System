@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # Build stage
 # Pinned to a patch release so the baked Go stdlib stays ahead of known CVEs
 # (>=1.25.11 fixes CVE-2026-42504; >=1.25.12 fixes CVE-2026-39822, the os.Root
@@ -8,14 +9,17 @@ WORKDIR /app
 
 # Cache dependency downloads
 COPY go.mod go.sum ./
-RUN go mod download
+RUN --mount=type=cache,id=gomod,target=/go/pkg/mod \
+    go mod download
 
 # Copy source and build the server + the gRPC health probe. Both are compiled
 # in the builder (which has the Go toolchain); only the resulting static
 # binaries are copied into the runtime image — never the toolchain itself
 # (copying /usr/local/go added ~400MB to the final image as a permanent layer).
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -o /cel-evaluator .
+RUN --mount=type=cache,id=gomod,target=/go/pkg/mod \
+    --mount=type=cache,id=gobuild,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=linux go build -o /cel-evaluator .
 
 # grpc-health-probe is built from a throwaway module rather than
 # `go install pkg@version`, which would resolve the TOOL's own go.mod and bake
@@ -23,7 +27,9 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o /cel-evaluator .
 # GHSA-hrxh-6v49-42gf) with no way for us to override them. Inside a module we
 # can require the patched grpc explicitly; MVS then selects it for the build.
 # Keep the grpc version here in step with the one in go.mod.
-RUN mkdir -p /tools && cd /tools \
+RUN --mount=type=cache,id=gomod,target=/go/pkg/mod \
+    --mount=type=cache,id=gobuild,target=/root/.cache/go-build \
+    mkdir -p /tools && cd /tools \
     && go mod init tools \
     && GOFLAGS=-mod=mod go get github.com/grpc-ecosystem/grpc-health-probe@v0.4.53 \
     && GOFLAGS=-mod=mod go get google.golang.org/grpc@v1.82.1 \

@@ -98,7 +98,16 @@ jobs:
       # why. Dump the logs on failure so the next red run is diagnosable.
       - name: Container logs (on failure)
         if: failure()
+        env:
+          # The prod-test overlay declares OPENFGA_STORE_ID as required, and the
+          # spec sets it only for the stack it starts — not for this step. A
+          # placeholder keeps interpolation happy; nothing is started here, so
+          # the value is never used. Without it the dump fails to parse and
+          # reports the missing variable instead of the logs it exists to show.
+          OPENFGA_STORE_ID: diagnostic-placeholder
+          OIDC_DEFAULT_TENANT: diagnostic-placeholder
         run: |
+          files=""
           for f in Orion/docker-compose.yaml Orion/docker-compose.test.yaml Orion/docker-compose.prod-test.yaml; do
             [ -f "$f" ] && files="$files -f $f"
           done
@@ -185,7 +194,16 @@ jobs:
       # why. Dump the logs on failure so the next red run is diagnosable.
       - name: Container logs (on failure)
         if: failure()
+        env:
+          # The prod-test overlay declares OPENFGA_STORE_ID as required, and the
+          # spec sets it only for the stack it starts — not for this step. A
+          # placeholder keeps interpolation happy; nothing is started here, so
+          # the value is never used. Without it the dump fails to parse and
+          # reports the missing variable instead of the logs it exists to show.
+          OPENFGA_STORE_ID: diagnostic-placeholder
+          OIDC_DEFAULT_TENANT: diagnostic-placeholder
         run: |
+          files=""
           for f in Orion/docker-compose.yaml Orion/docker-compose.test.yaml Orion/docker-compose.prod-test.yaml; do
             [ -f "$f" ] && files="$files -f $f"
           done
@@ -266,7 +284,16 @@ jobs:
       # why. Dump the logs on failure so the next red run is diagnosable.
       - name: Container logs (on failure)
         if: failure()
+        env:
+          # The prod-test overlay declares OPENFGA_STORE_ID as required, and the
+          # spec sets it only for the stack it starts — not for this step. A
+          # placeholder keeps interpolation happy; nothing is started here, so
+          # the value is never used. Without it the dump fails to parse and
+          # reports the missing variable instead of the logs it exists to show.
+          OPENFGA_STORE_ID: diagnostic-placeholder
+          OIDC_DEFAULT_TENANT: diagnostic-placeholder
         run: |
+          files=""
           for f in Orion/docker-compose.yaml Orion/docker-compose.test.yaml Orion/docker-compose.prod-test.yaml; do
             [ -f "$f" ] && files="$files -f $f"
           done
