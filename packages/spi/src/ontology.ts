@@ -297,6 +297,13 @@ export interface OntologySchema {
   version: number;
   objectTypes: ObjectTypeDefinition[];
   linkTypes: LinkTypeDefinition[];
+  /**
+   * Struct type names declared in the ODL schema. A struct is a value type
+   * stored as a JSONB column on its parent object. Storage providers use this
+   * set to decide the column type: a property whose type is in this set maps
+   * to JSONB rather than TEXT.
+   */
+  structTypeNames?: string[];
 }
 
 export interface ObjectTypeDefinition {

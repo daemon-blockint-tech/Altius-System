@@ -13,6 +13,7 @@ import type {
   FunctionType,
   FieldDefinition,
   InterfaceDefinition,
+  StructDefinition,
   LinkDirective,
 } from '../parser/types.js';
 
@@ -190,6 +191,51 @@ function generateInterfaceType(iface: InterfaceDefinition): string {
   return lines.join('\n');
 }
 
+/**
+ * Struct types are emitted as GraphQL `type` definitions (not input types)
+ * so they can be returned from queries. They have no connections, no filters,
+ * no mutations — they are plain value objects nested inside their parent.
+ *
+ * An `input` companion is also emitted so struct-typed fields can appear in
+ * mutation inputs (GraphQL forbids output `type`s inside `input`s).
+ */
+function generateStructType(st: StructDefinition): string {
+  const lines: string[] = [];
+  if (st.description) {
+    lines.push(`"""${st.description}"""`);
+  }
+  lines.push(`type ${st.name} {`);
+  for (const field of st.fields) {
+    const gqlType = fieldToGqlType(field);
+    lines.push(`  ${field.name}: ${gqlType}`);
+  }
+  lines.push('}');
+  return lines.join('\n');
+}
+
+/**
+ * Generate the `input` companion for a struct type, so struct-typed fields
+ * can appear in mutation inputs. Field types reference `<Name>Input` for
+ * nested structs, scalars/enums directly, and `[<Elem>Input!]` for lists.
+ */
+function generateStructInputType(
+  st: StructDefinition,
+  structNames: ReadonlySet<string>,
+): string {
+  const lines: string[] = [`input ${st.name}Input {`];
+  for (const field of st.fields) {
+    const baseName = field.type.name;
+    const inputName = structNames.has(baseName) ? `${baseName}Input` : baseName;
+    const elem = field.type.isList
+      ? `[${inputName}${field.type.listElementNonNull ? '!' : ''}]`
+      : inputName;
+    const gqlType = field.type.nonNull ? `${elem}!` : elem;
+    lines.push(`  ${field.name}: ${gqlType}`);
+  }
+  lines.push('}');
+  return lines.join('\n');
+}
+
 function generateLinkType(link: LinkType): string {
   const lines: string[] = [];
   lines.push(`type ${link.name} {`);
@@ -228,7 +274,11 @@ function generateConnection(typeName: string): string {
  * @readonly and @immutable fields are excluded because the write path refuses
  * them anyway, so advertising them would invite a request that always fails.
  */
-function generateUpdateInput(obj: ObjectType, objectTypeNames: ReadonlySet<string>): string {
+function generateUpdateInput(
+  obj: ObjectType,
+  objectTypeNames: ReadonlySet<string>,
+  structNames: ReadonlySet<string> = new Set(),
+): string {
   const lines: string[] = [`input Update${obj.name}Input {`];
   for (const field of getScalarFields(obj.fields)) {
     if (isPrimaryField(field)) continue;
@@ -237,6 +287,14 @@ function generateUpdateInput(obj: ObjectType, objectTypeNames: ReadonlySet<strin
     // an input. Relationships are edited through link effects, not by
     // patching an embedded object, so skipping it is also the right shape.
     if (objectTypeNames.has(field.type.name)) continue;
+    // A struct-typed field uses its `input` companion (e.g. `AddressInput`)
+    // because GraphQL forbids output `type`s inside `input`s.
+    if (structNames.has(field.type.name)) {
+      const inputName = `${field.type.name}Input`;
+      const elem = field.type.isList ? `[${inputName}!]` : inputName;
+      lines.push(`  ${field.name}: ${elem}`);
+      continue;
+    }
     // Strip the non-null marker: a partial patch omits what it does not change.
     const gqlType = fieldToGqlType(field).replace(/!$/, '');
     lines.push(`  ${field.name}: ${gqlType}`);
@@ -319,14 +377,18 @@ function generateOrderBy(obj: ObjectType, enumNames: Set<string>): string {
   return lines.join('\n');
 }
 
-function generateMutationInputType(action: ActionType, objectTypeNames: Set<string>): string {
+function generateMutationInputType(
+  action: ActionType,
+  objectTypeNames: Set<string>,
+  structNames: ReadonlySet<string> = new Set(),
+): string {
   const lines: string[] = [];
   lines.push(`input ${action.name}Input {`);
 
   const paramFields = action.fields.filter(isParamField);
   for (const field of paramFields) {
     // For action inputs, param fields referencing ObjectTypes use ID
-    const typeName = resolveInputType(field, objectTypeNames);
+    const typeName = resolveInputType(field, objectTypeNames, structNames);
     lines.push(`  ${field.name}: ${typeName}`);
   }
 
@@ -345,10 +407,19 @@ function generateMutationInputType(action: ActionType, objectTypeNames: Set<stri
   return lines.join('\n');
 }
 
-function resolveInputType(field: FieldDefinition, objectTypeNames: Set<string>): string {
+function resolveInputType(
+  field: FieldDefinition,
+  objectTypeNames: Set<string>,
+  structNames: ReadonlySet<string> = new Set(),
+): string {
   const { type } = field;
   // Object references become ID in action inputs — executor resolves by ID
-  const baseName = objectTypeNames.has(type.name) ? 'ID' : type.name;
+  // Struct types use their `input` companion (e.g. `AddressInput`)
+  const baseName = objectTypeNames.has(type.name)
+    ? 'ID'
+    : structNames.has(type.name)
+      ? `${type.name}Input`
+      : type.name;
   if (type.isList) {
     const elem = type.listElementNonNull ? `${baseName}!` : baseName;
     return type.nonNull ? `[${elem}]!` : `[${elem}]`;
@@ -369,12 +440,16 @@ function generateMutationResultType(action: ActionType): string {
 
 // ─── Function type generation ───
 
-function generateFunctionInputType(fn: FunctionType, objectTypeNames: Set<string>): string {
+function generateFunctionInputType(
+  fn: FunctionType,
+  objectTypeNames: Set<string>,
+  structNames: ReadonlySet<string> = new Set(),
+): string {
   const lines: string[] = [];
   lines.push(`input ${fn.name}FunctionInput {`);
   const paramFields = fn.fields.filter(isParamField);
   for (const field of paramFields) {
-    const typeName = resolveInputType(field, objectTypeNames);
+    const typeName = resolveInputType(field, objectTypeNames, structNames);
     lines.push(`  ${field.name}: ${typeName}`);
   }
   lines.push('}');
@@ -897,6 +972,18 @@ export function generateGraphQLSchema(schema: ParsedSchema, options?: GraphQLSch
     sections.push(generateInterfaceType(iface));
   }
 
+  // 2c. Struct types — emit SDL blocks so struct-typed fields resolve against
+  // a declared GraphQL type. Must precede ObjectTypes for the same reason
+  // interfaces do: a field `headquarters: Address` must find `Address` already
+  // declared. Structs are plain value types with no connections or mutations.
+  // An `input` companion is emitted for each so struct-typed fields can appear
+  // in mutation inputs (GraphQL forbids output `type`s inside `input`s).
+  const structNames = new Set((schema.structTypes ?? []).map(s => s.name));
+  for (const st of schema.structTypes ?? []) {
+    sections.push(generateStructType(st));
+    sections.push(generateStructInputType(st, structNames));
+  }
+
   // 3. Shared types
   sections.push(generateSharedTypes());
 
@@ -928,7 +1015,7 @@ export function generateGraphQLSchema(schema: ParsedSchema, options?: GraphQLSch
   for (const obj of schema.objectTypes) {
     sections.push(generateObjectType(obj));
     sections.push(generateConnection(obj.name));
-    sections.push(generateUpdateInput(obj, objectTypeNames));
+    sections.push(generateUpdateInput(obj, objectTypeNames, structNames));
     sections.push(generateFilter(obj, enumNames));
     sections.push(generateOrderBy(obj, enumNames));
     sections.push(generateChangeEvent(obj.name));
@@ -943,13 +1030,13 @@ export function generateGraphQLSchema(schema: ParsedSchema, options?: GraphQLSch
 
   // 8. Action input/result types
   for (const action of schema.actionTypes) {
-    sections.push(generateMutationInputType(action, objectTypeNames));
+    sections.push(generateMutationInputType(action, objectTypeNames, structNames));
     sections.push(generateMutationResultType(action));
   }
 
   // 8b. Function input/result types
   for (const fn of schema.functionTypes) {
-    sections.push(generateFunctionInputType(fn, objectTypeNames));
+    sections.push(generateFunctionInputType(fn, objectTypeNames, structNames));
     sections.push(generateFunctionResultType(fn));
   }
 

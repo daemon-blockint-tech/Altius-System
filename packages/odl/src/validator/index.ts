@@ -13,6 +13,7 @@ import type {
   FieldDirective,
   FieldTypeRef,
   InterfaceDefinition,
+  StructDefinition,
 } from '../parser/types.js';
 
 import type { ValidationResult, ValidationIssue } from './types.js';
@@ -51,6 +52,7 @@ export function validateSchema(schema: ParsedSchema): ValidationResult {
   const scalarNames = new Set(schema.scalars.map(s => s.name));
   const actionTypeNames = new Set(schema.actionTypes.map(a => a.name));
   const functionTypeNames = new Set(schema.functionTypes.map(f => f.name));
+  const structNames = new Set((schema.structTypes ?? []).map(s => s.name));
 
   // All known type names for field type resolution
   const allTypeNames = new Set([
@@ -62,6 +64,7 @@ export function validateSchema(schema: ParsedSchema): ValidationResult {
     ...scalarNames,
     ...actionTypeNames,
     ...functionTypeNames,
+    ...structNames,
   ]);
 
   // ─── Rule 1: Every ObjectType has exactly one @primary field ───
@@ -196,6 +199,12 @@ export function validateSchema(schema: ParsedSchema): ValidationResult {
       validateFieldTypeRef(fn.name, field, allTypeNames, errors);
     }
   }
+
+  // ─── Rule 17: Struct types — field validity, no @link/@computed/@primary, no cycles ───
+  for (const st of schema.structTypes ?? []) {
+    validateStructFields(st, allTypeNames, errors);
+  }
+  validateStructCycles(schema.structTypes ?? [], errors);
 
   return {
     valid: errors.length === 0,
@@ -765,6 +774,95 @@ function fieldTypeLabel(f: FieldDefinition): string {
   const { type } = f;
   const elem = type.isList ? `[${type.name}${type.listElementNonNull ? '!' : ''}]` : type.name;
   return `${elem}${type.nonNull ? '!' : ''}`;
+}
+
+// ─── Struct validation ───
+
+/** Directives that are meaningless on a struct field (they require entity semantics). */
+const FORBIDDEN_STRUCT_FIELD_DIRECTIVES = new Set([
+  'primary', 'link', 'computed', 'unique', 'indexed',
+]);
+
+/**
+ * Rule 17a: Struct fields must reference scalars, enums, or other structs —
+ * not ObjectTypes, LinkTypes, or ActionTypes. They also must not carry
+ * @primary, @link, @computed, @unique, or @indexed, which are entity-level
+ * directives that have no meaning on a value type stored as a JSONB column.
+ */
+function validateStructFields(
+  st: StructDefinition,
+  allTypeNames: Set<string>,
+  errors: ValidationIssue[],
+): void {
+  for (const field of st.fields) {
+    // Check type reference is known
+    if (!allTypeNames.has(field.type.name)) {
+      errors.push({
+        severity: 'error',
+        code: 'UNKNOWN_TYPE_REF',
+        message: `Field "${st.name}.${field.name}" references unknown type "${field.type.name}".`,
+        typeName: st.name,
+        fieldName: field.name,
+      });
+    }
+
+    // Check for forbidden directives
+    for (const d of field.directives) {
+      if (FORBIDDEN_STRUCT_FIELD_DIRECTIVES.has(d.kind)) {
+        errors.push({
+          severity: 'error',
+          code: 'STRUCT_INVALID_FIELD',
+          message: `Struct "${st.name}" field "${field.name}" has @${d.kind}, which is not allowed on struct fields. Structs are value types with no identity, links, or indexes.`,
+          typeName: st.name,
+          fieldName: field.name,
+        });
+      }
+    }
+  }
+}
+
+/**
+ * Rule 17b: Detect cycles in struct field references. A struct A that has a
+ * field of type B, where B has a field of type A, is a cycle — the value
+ * would be infinitely nested. Self-references (A has a field of type A) are
+ * also cycles.
+ */
+function validateStructCycles(
+  structTypes: StructDefinition[],
+  errors: ValidationIssue[],
+): void {
+  const structMap = new Map(structTypes.map(s => [s.name, s]));
+  const visited = new Set<string>();
+  const stack = new Set<string>();
+
+  function dfs(name: string): void {
+    if (stack.has(name)) {
+      errors.push({
+        severity: 'error',
+        code: 'STRUCT_CYCLE',
+        message: `Struct "${name}" is part of a circular reference cycle. Struct fields cannot form cycles.`,
+        typeName: name,
+      });
+      return;
+    }
+    if (visited.has(name)) return;
+
+    const st = structMap.get(name);
+    if (!st) return;
+
+    stack.add(name);
+    for (const field of st.fields) {
+      if (structMap.has(field.type.name)) {
+        dfs(field.type.name);
+      }
+    }
+    stack.delete(name);
+    visited.add(name);
+  }
+
+  for (const st of structTypes) {
+    dfs(st.name);
+  }
 }
 
 export type { ValidationResult, ValidationIssue, ValidationSeverity } from './types.js';

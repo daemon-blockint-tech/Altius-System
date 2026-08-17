@@ -200,6 +200,10 @@ export interface TypeDisplayDirective {
   statusProperty?: string;
 }
 
+export interface StructDirective {
+  kind: 'struct';
+}
+
 export type TypeDirective =
   | ObjectTypeDirective
   | LinkTypeDirective
@@ -207,7 +211,8 @@ export type TypeDirective =
   | FunctionDirective
   | DeprecatedDirective
   | TypeConstraintDirective
-  | TypeDisplayDirective;
+  | TypeDisplayDirective
+  | StructDirective;
 
 // ─── Field type reference ───
 
@@ -328,6 +333,30 @@ export interface ScalarDefinition {
   description?: string;
 }
 
+// ─── Struct (value type) ───
+
+/**
+ * A Struct is a nested value type: a named collection of fields stored as a
+ * JSONB column on its parent object, with no identity (_id), no storage table,
+ * and no links. Structs are validated recursively against their field
+ * definitions. A struct field may reference a scalar, an enum, or another
+ * struct (nesting), but not an ObjectType, LinkType, or ActionType.
+ *
+ * Declared with the `@struct` directive on a `type` definition:
+ *
+ *   type Address @struct {
+ *     street: String!
+ *     city: String!
+ *   }
+ */
+export interface StructDefinition {
+  kind: 'struct';
+  name: string;
+  description?: string;
+  fields: FieldDefinition[];
+  directives: TypeDirective[];
+}
+
 // ─── Namespace ───
 
 export interface NamespaceMetadata {
@@ -346,4 +375,10 @@ export interface ParsedSchema {
   enums: EnumDefinition[];
   interfaces: InterfaceDefinition[];
   scalars: ScalarDefinition[];
+  /**
+   * Struct value types declared with `@struct`. Optional for backward
+   * compatibility with test fixtures that construct ParsedSchema manually;
+   * the parser always initializes it to `[]`.
+   */
+  structTypes?: StructDefinition[];
 }

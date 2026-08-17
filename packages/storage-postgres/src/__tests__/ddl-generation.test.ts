@@ -533,3 +533,48 @@ describe('generateDDL', () => {
     }
   });
 });
+
+// ─── Struct type DDL tests ───
+
+describe('Struct type DDL', () => {
+  const supplierType: ObjectTypeDefinition = {
+    name: 'Supplier',
+    properties: [
+      { name: 'name', type: 'String', required: true },
+      { name: 'headquarters', type: 'Address' },
+      { name: 'valuation', type: 'Money' },
+      { name: 'contacts', type: 'ContactInfo', isList: true },
+    ],
+  };
+
+  const structTypeNames = new Set(['Address', 'Money', 'ContactInfo']);
+
+  it('maps struct-typed properties to JSONB columns', () => {
+    const ddl = generateObjectTableDDL(supplierType, 'public', structTypeNames);
+    const createTable = ddl[0]!;
+
+    expect(createTable).toContain('"headquarters" JSONB');
+    expect(createTable).toContain('"valuation" JSONB');
+  });
+
+  it('maps list-of-struct properties to JSONB array columns', () => {
+    const ddl = generateObjectTableDDL(supplierType, 'public', structTypeNames);
+    const createTable = ddl[0]!;
+
+    expect(createTable).toContain('"contacts" JSONB[]');
+  });
+
+  it('does not map struct types to JSONB when structTypeNames is not provided', () => {
+    const ddl = generateObjectTableDDL(supplierType);
+    const createTable = ddl[0]!;
+
+    // Without struct type info, unknown types default to TEXT
+    expect(createTable).toContain('"headquarters" TEXT');
+  });
+
+  it('pgType maps struct types to JSONB when structTypeNames is provided', () => {
+    expect(pgType('Address', false, structTypeNames)).toBe('JSONB');
+    expect(pgType('Address', true, structTypeNames)).toBe('JSONB[]');
+    expect(pgType('String', false, structTypeNames)).toBe('TEXT');
+  });
+});

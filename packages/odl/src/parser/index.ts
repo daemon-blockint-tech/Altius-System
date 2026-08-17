@@ -33,6 +33,7 @@ import type {
   EnumValue,
   InterfaceDefinition,
   ScalarDefinition,
+  StructDefinition,
   FieldDefinition,
   FieldTypeRef,
   FieldDirective,
@@ -67,6 +68,7 @@ function extractSchema(doc: DocumentNode): ParsedSchema {
     enums: [],
     interfaces: [],
     scalars: [],
+    structTypes: [],
   };
 
   for (const def of doc.definitions) {
@@ -130,6 +132,13 @@ function processObjectType(def: ObjectTypeDefinitionNode, schema: ParsedSchema):
     return;
   }
 
+  // Struct value type: no identity, no storage table, stored as JSONB.
+  const structDir = directives.find(d => d.name.value === 'struct');
+  if (structDir) {
+    (schema.structTypes ??= []).push(extractStructType(def));
+    return;
+  }
+
   // Default: objectType (may or may not have explicit @objectType directive)
   schema.objectTypes.push(extractObjectType(def));
 }
@@ -143,6 +152,18 @@ function extractObjectType(def: ObjectTypeDefinitionNode): ObjectType {
     description: def.description?.value,
     fields: extractFields(def.fields),
     interfaces: (def.interfaces ?? []).map(i => i.name.value),
+    directives: extractTypeDirectives(def.directives),
+  };
+}
+
+// ─── Struct Type ───
+
+function extractStructType(def: ObjectTypeDefinitionNode): StructDefinition {
+  return {
+    kind: 'struct',
+    name: def.name.value,
+    description: def.description?.value,
+    fields: extractFields(def.fields),
     directives: extractTypeDirectives(def.directives),
   };
 }
@@ -427,6 +448,9 @@ function extractTypeDirectives(directives: readonly DirectiveNode[] | undefined)
           titleProperty: getStringArg(d, 'titleProperty'),
           statusProperty: getStringArg(d, 'statusProperty'),
         });
+        break;
+      case 'struct':
+        result.push({ kind: 'struct' });
         break;
     }
   }

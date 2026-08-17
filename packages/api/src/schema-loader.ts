@@ -827,6 +827,7 @@ function mergeSchemas(schemas: ParsedSchema[]): ParsedSchema {
     enums: [],
     interfaces: [],
     scalars: [],
+    structTypes: [],
   };
 
   const seenObjects = new Set<string>();
@@ -834,6 +835,7 @@ function mergeSchemas(schemas: ParsedSchema[]): ParsedSchema {
   const seenEnums = new Set<string>();
   const seenInterfaces = new Set<string>();
   const seenScalars = new Set<string>();
+  const seenStructs = new Set<string>();
 
   for (const schema of schemas) {
     for (const obj of schema.objectTypes) {
@@ -870,6 +872,12 @@ function mergeSchemas(schemas: ParsedSchema[]): ParsedSchema {
       if (!seenScalars.has(scalar.name)) {
         merged.scalars.push(scalar);
         seenScalars.add(scalar.name);
+      }
+    }
+    for (const st of schema.structTypes ?? []) {
+      if (!seenStructs.has(st.name)) {
+        (merged.structTypes ??= []).push(st);
+        seenStructs.add(st.name);
       }
     }
   }
@@ -982,6 +990,9 @@ export function toOntologySchema(parsed: ParsedSchema): OntologySchema {
     version: 1,
     objectTypes: parsed.objectTypes.map(convertObjectType),
     linkTypes: parsed.linkTypes.map(convertLinkType),
+    ...((parsed.structTypes ?? []).length > 0
+      ? { structTypeNames: (parsed.structTypes ?? []).map(s => s.name) }
+      : {}),
   };
 }
 

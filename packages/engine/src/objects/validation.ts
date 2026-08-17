@@ -18,6 +18,7 @@ import type {
   ParsedSchema,
   ObjectType,
   FieldDefinition,
+  StructDefinition,
 } from '@altius/odl';
 
 /** A single validation failure. */
@@ -176,8 +177,13 @@ export async function validateObjectProperties(
     enumMap.set(e.name, new Set(e.values.map((v) => v.name)));
   }
 
+  // Build struct lookup for the schema
+  const structMap = new Map<string, StructDefinition>(
+    (schema.structTypes ?? []).map(s => [s.name, s]),
+  );
+
   // Step 1: Schema validation (uses merged state for required-field checks)
-  const schemaFailures = validateSchema(objectType, properties, enumMap);
+  const schemaFailures = validateSchema(objectType, properties, enumMap, structMap);
   failures.push(...schemaFailures);
 
   // Step 1b: Immutable field check (updates only, uses patch keys not merged state)
@@ -241,6 +247,7 @@ function validateSchema(
   objectType: ObjectType,
   properties: Record<string, unknown>,
   enumMap: Map<string, Set<string>>,
+  structMap: Map<string, StructDefinition>,
 ): ValidationFailure[] {
   const failures: ValidationFailure[] = [];
 
@@ -337,6 +344,145 @@ function validateSchema(
           field: field.name,
           message: `Field '${field.name}' has invalid type. Expected ${field.type.name}, got ${typeof value}`,
         });
+      }
+    }
+
+    // Check struct types — validate nested fields recursively
+    const structDef = structMap?.get(field.type.name);
+    if (structDef) {
+      if (field.type.isList) {
+        if (!Array.isArray(value)) {
+          failures.push({
+            step: 'schema',
+            field: field.name,
+            message: `Field '${field.name}' must be an array of ${field.type.name}`,
+          });
+        } else {
+          for (let i = 0; i < value.length; i++) {
+            const structFailures = validateStructValue(
+              `${field.name}[${i}]`,
+              structDef,
+              value[i],
+              enumMap,
+              structMap,
+            );
+            failures.push(...structFailures);
+          }
+        }
+      } else {
+        const structFailures = validateStructValue(
+          field.name,
+          structDef,
+          value,
+          enumMap,
+          structMap,
+        );
+        failures.push(...structFailures);
+      }
+    }
+  }
+
+  return failures;
+}
+
+/**
+ * Validate a struct-typed value against its StructDefinition.
+ * Recursively validates nested struct fields.
+ */
+function validateStructValue(
+  fieldPath: string,
+  structDef: StructDefinition,
+  value: unknown,
+  enumMap: Map<string, Set<string>>,
+  structMap: Map<string, StructDefinition> | undefined,
+): ValidationFailure[] {
+  const failures: ValidationFailure[] = [];
+
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    failures.push({
+      step: 'schema',
+      field: fieldPath,
+      message: `Field '${fieldPath}' must be an object`,
+    });
+    return failures;
+  }
+
+  const obj = value as Record<string, unknown>;
+
+  for (const field of structDef.fields) {
+    const fieldValue = obj[field.name];
+
+    // Check required fields
+    if (field.type.nonNull && (fieldValue === undefined || fieldValue === null)) {
+      const hasDefault = field.directives.some((d) => d.kind === 'default');
+      if (!hasDefault) {
+        failures.push({
+          step: 'schema',
+          field: `${fieldPath}.${field.name}`,
+          message: `Required field '${fieldPath}.${field.name}' is missing`,
+        });
+      }
+      continue;
+    }
+
+    // Skip further checks if value is not provided
+    if (fieldValue === undefined || fieldValue === null) continue;
+
+    // Check enum values
+    const enumValues = enumMap.get(field.type.name);
+    if (enumValues) {
+      if (typeof fieldValue !== 'string' || !enumValues.has(fieldValue)) {
+        failures.push({
+          step: 'schema',
+          field: `${fieldPath}.${field.name}`,
+          message: `Invalid enum value '${String(fieldValue)}' for field '${fieldPath}.${field.name}'`,
+        });
+      }
+      continue;
+    }
+
+    // Check scalar types
+    const typeCheck = SCALAR_TYPE_CHECKS[field.type.name];
+    if (typeCheck) {
+      if (!typeCheck(fieldValue)) {
+        failures.push({
+          step: 'schema',
+          field: `${fieldPath}.${field.name}`,
+          message: `Field '${fieldPath}.${field.name}' has invalid type. Expected ${field.type.name}`,
+        });
+      }
+      continue;
+    }
+
+    // Check nested struct types
+    const nestedStruct = structMap?.get(field.type.name);
+    if (nestedStruct) {
+      if (field.type.isList) {
+        if (!Array.isArray(fieldValue)) {
+          failures.push({
+            step: 'schema',
+            field: `${fieldPath}.${field.name}`,
+            message: `Field '${fieldPath}.${field.name}' must be an array`,
+          });
+        } else {
+          for (let i = 0; i < fieldValue.length; i++) {
+            failures.push(...validateStructValue(
+              `${fieldPath}.${field.name}[${i}]`,
+              nestedStruct,
+              fieldValue[i],
+              enumMap,
+              structMap,
+            ));
+          }
+        }
+      } else {
+        failures.push(...validateStructValue(
+          `${fieldPath}.${field.name}`,
+          nestedStruct,
+          fieldValue,
+          enumMap,
+          structMap,
+        ));
       }
     }
   }
@@ -691,7 +837,10 @@ export function validateSchemaFields(
   for (const e of schema.enums) {
     enumMap.set(e.name, new Set(e.values.map((v) => v.name)));
   }
-  return validateSchema(objectType, properties, enumMap);
+  const structMap = new Map<string, StructDefinition>(
+    (schema.structTypes ?? []).map(s => [s.name, s]),
+  );
+  return validateSchema(objectType, properties, enumMap, structMap);
 }
 
 /**

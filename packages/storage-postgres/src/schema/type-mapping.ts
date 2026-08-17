@@ -57,9 +57,14 @@ const PG_BY_LOWER: Record<string, string> = {
 /**
  * Convert an ODL/SPI property type name to a PostgreSQL column type.
  * Matching is case-insensitive. Unknown types default to TEXT (enum types,
- * custom scalars).
+ * custom scalars). Struct types (passed via `structTypeNames`) map to JSONB
+ * to preserve their nested object shape.
  */
-export function pgType(odlType: string, isList = false): string {
+export function pgType(odlType: string, isList = false, structTypeNames?: Set<string>): string {
+  // Struct types are stored as JSONB to preserve their nested object shape.
+  if (structTypeNames?.has(odlType)) {
+    return isList ? 'JSONB[]' : 'JSONB';
+  }
   const base = ODL_TO_PG[odlType] ?? PG_BY_LOWER[odlType.toLowerCase()] ?? 'TEXT';
   // A list property becomes a Postgres array of the element type, so the value
   // round-trips as the array it was written as. Flattening it to the scalar

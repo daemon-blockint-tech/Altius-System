@@ -87,9 +87,12 @@ export function generateDDL(
     result.objectTables.push(`CREATE EXTENSION IF NOT EXISTS pg_trgm;`);
   }
 
+  // Struct type names — used to map struct-typed properties to JSONB columns.
+  const structTypeNames = new Set(schema.structTypeNames ?? []);
+
   // Object tables + history tables
   for (const objectType of schema.objectTypes) {
-    result.objectTables.push(...generateObjectTableDDL(objectType, dataSchema));
+    result.objectTables.push(...generateObjectTableDDL(objectType, dataSchema, structTypeNames));
   }
 
   // Link tables

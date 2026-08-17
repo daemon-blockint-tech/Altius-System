@@ -25,14 +25,18 @@ const SYSTEM_COLUMNS = `
 /**
  * Generate DDL for an ObjectType table.
  */
-export function generateObjectTableDDL(objectType: ObjectTypeDefinition, schema = 'public'): string[] {
+export function generateObjectTableDDL(
+  objectType: ObjectTypeDefinition,
+  schema = 'public',
+  structTypeNames?: Set<string>,
+): string[] {
   const tableName = snakeCase(objectType.name);
   const qualifiedTable = `${pgIdent(schema)}.${pgIdent(tableName)}`;
   const statements: string[] = [];
 
   // Main table
   const propertyCols = objectType.properties
-    .map(p => propertyColumn(p))
+    .map(p => propertyColumn(p, structTypeNames))
     .join(',\n  ');
 
   const mainTable = `CREATE TABLE IF NOT EXISTS ${qualifiedTable} (
@@ -120,9 +124,9 @@ export function generateObjectTableDDL(objectType: ObjectTypeDefinition, schema 
 /**
  * Generate DDL for a single property column.
  */
-function propertyColumn(prop: PropertyDefinition): string {
+function propertyColumn(prop: PropertyDefinition, structTypeNames?: Set<string>): string {
   const colName = pgIdent(snakeCase(prop.name));
-  const colType = pgType(prop.type, prop.isList === true);
+  const colType = pgType(prop.type, prop.isList === true, structTypeNames);
   const notNull = prop.required ? ' NOT NULL' : '';
   const defaultVal = prop.defaultValue !== undefined
     ? ` DEFAULT ${pgLiteral(prop.defaultValue)}`
