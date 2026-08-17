@@ -16,8 +16,11 @@
  * hop when that is undefined. staticTargetType models the hop and nothing else,
  * so a stored property named after a @link field is a write the check cannot see.
  *
- * All three end with `success: true`, `errors: []`, and
- * txn.updateObject('Patient', 'p-9', …) for an actor holding ['WARD_OPS'].
+ * All three are refused with `MARKING_DENIED` before the transaction
+ * opens — no `updateObject` call — for an actor holding only ['WARD_OPS'].
+ * The static `checkMarkings` pass sees only declared types; a runtime
+ * pass (`checkRuntimeMarkings`) resolves each updateObject/deleteObject
+ * target and checks its actual `_type`, closing the three holes below.
  */
 
 import { describe, it, expect, vi } from 'vitest';

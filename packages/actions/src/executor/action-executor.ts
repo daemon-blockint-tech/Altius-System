@@ -429,6 +429,31 @@ export class ActionExecutor {
     // (e.g. "patient.currentWard", "patient.currentBed").
     await this.preResolveLinkPaths(manifest, resolvedVariables, schema, reqCtx);
 
+    // ------------------------------------------------------------------
+    // Step 4b: RUNTIME MARKINGS — check the resolved type of each
+    // updateObject/deleteObject target.
+    //
+    // checkMarkings (step 1b) is static: it reads declared types from the
+    // manifest and schema. A dotted target like "ward.slot" resolves to an
+    // object whose _type is only known at runtime — a stored link row's
+    // _toType may differ from the schema's declared endpoint, a stored
+    // property may shadow a @link field, or (structural-only mode) a caller
+    // param may shadow a createObject binding. Resolving the target here and
+    // checking its _type closes those holes. Runs after preResolveLinkPaths
+    // so the target is already cached in context; no extra storage calls on
+    // the common path.
+    // ------------------------------------------------------------------
+    const runtimeMarkingDenial = await this.checkRuntimeMarkings(
+      manifest,
+      resolvedVariables,
+      actor,
+      schema,
+      reqCtx,
+    );
+    if (runtimeMarkingDenial) {
+      return failResult(actionId, [runtimeMarkingDenial]);
+    }
+
     for (const precondition of manifest.preconditions) {
       const result = await this.config.cel.evaluate(
         precondition.expr,
@@ -756,6 +781,61 @@ export class ActionExecutor {
   }
 
   /**
+   * Runtime marking check for `updateObject`/`deleteObject` targets.
+   *
+   * `checkMarkings` (step 1b) is static: it reads declared types from the
+   * manifest and schema — `@param` types, `createObject.objectType`, and link
+   * endpoints from the schema's `linkDef`. A dotted target like `ward.slot`
+   * resolves to an object whose `_type` is only known at runtime:
+   *
+   *   - a stored link row's `_toType` may differ from the schema's declared
+   *     endpoint (Case 2 in marking-refute.test.ts),
+   *   - a stored property may shadow a `@link` field, routing the write to a
+   *     type the schema never declared (Case 3),
+   *   - in structural-only mode a caller param may shadow a `createObject`
+   *     binding, routing the write to a fabricated type (Case 1).
+   *
+   * Resolving the target here and checking its `_type` catches all three. Runs
+   * after `preResolveLinkPaths` so the target is already cached in context; no
+   * extra storage calls on the common path. Fires regardless of any effect
+   * `condition` — markings are mandatory, conditions are business logic, and
+   * the static check already has the same contract.
+   */
+  private async checkRuntimeMarkings(
+    manifest: ActionManifest,
+    context: Record<string, unknown>,
+    actor: ActionActor,
+    schema: ParsedSchema,
+    reqCtx: RequestContext,
+  ): Promise<ActionError | null> {
+    const policy = this.config.markingPolicy;
+    if (!policy || policy.isEmpty) return null;
+
+    const held = actor.markings ?? [];
+
+    for (const effect of manifest.effects) {
+      if (effect.type !== 'updateObject' && effect.type !== 'deleteObject') continue;
+
+      const target = await this.resolveTarget(effect.target, context, schema, reqCtx);
+      if (!target || typeof target._type !== 'string') continue;
+
+      const required = policy.requiredFor(target._type);
+      if (required.length === 0) continue;
+
+      if (!policy.check(held, required).allowed) {
+        return {
+          code: 'MARKING_DENIED',
+          message:
+            `Action "${manifest.action}" operates on ${target._type}, which is restricted by ` +
+            `mandatory markings the caller does not satisfy.`,
+        };
+      }
+    }
+
+    return null;
+  }
+
+  /**
    * Every ObjectType this action touches, as far as the declaration reveals.
    *
    * The @param types alone are not enough. An effect names its own target: a
@@ -765,8 +845,9 @@ export class ActionExecutor {
    * create a Patient the caller may not see — the marking holding on all five
    * read surfaces and silently absent on the one that writes.
    *
-   * `updateObject`/`deleteObject` targets are expressions naming a param, so
-   * their type is already covered by the @param pass.
+   * `updateObject`/`deleteObject` targets are dotted paths whose resolved
+   * type is only known at runtime; they are checked separately by
+   * `checkRuntimeMarkings` after param resolution.
    */
   private touchedObjectTypes(
     actionTypeDef: ActionType | undefined,
