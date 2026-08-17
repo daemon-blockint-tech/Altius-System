@@ -9,31 +9,87 @@ import type { WebConfig } from './client.js';
 import { AuthSession } from './auth/session.js';
 import { beginLogin, completeLogin } from './auth/pkce.js';
 import { isAuthFailure } from './auth/auth-failure.js';
+import { EditorialShell } from './components/EditorialShell.js';
+import type { JobKey, ScreenEntry, JobGroup, PackOption, RoleOption } from './components/EditorialShell.js';
+import { FacilitiesScreen } from './components/FacilitiesScreen.js';
+import type { ActiveFilter, FacilityStats } from './components/FacilitiesScreen.js';
+import { GovernanceRail } from './components/GovernanceRail.js';
+import { TraceBar } from './components/TraceBar.js';
+import type { TraceState } from './components/TraceBar.js';
+import './editorial.css';
 
 type AuthState = 'checking' | 'anonymous' | 'signed-in' | 'error';
 
+// ── Pack / job / role definitions ─────────────────────────────
+
+const PACKS: PackOption[] = [
+  { id: 'supply-chain', name: 'supply.chain', version: '0.1.0' },
+  { id: 'nhs-acute', name: 'nhs.acute', version: '0.1.0' },
+  { id: 'aml', name: 'aml', version: '0.1.0' },
+];
+
+const JOBS: JobGroup[] = [
+  {
+    key: 'OP',
+    label: 'Operate',
+    screens: [
+      { id: 'ops-map', label: 'Ops map' },
+      { id: 'facilities', label: 'Facilities', count: 41 },
+      { id: 'shipments', label: 'Shipments', count: 2184 },
+      { id: 'purchase-orders', label: 'Purchase orders', count: 867 },
+      { id: 'inventory', label: 'Inventory', count: 5402 },
+      { id: 'action-console', label: 'Action console' },
+    ],
+  },
+  {
+    key: 'IN',
+    label: 'Investigate',
+    screens: [
+      { id: 'audit-trail', label: 'Audit trail' },
+      { id: 'consent-permissions', label: 'Consent & permissions' },
+      { id: 'graph-explorer', label: 'Graph / link explorer' },
+      { id: 'mcp-activity', label: 'MCP activity' },
+    ],
+  },
+  {
+    key: 'MO',
+    label: 'Model',
+    screens: [
+      { id: 'ontology-explorer', label: 'Ontology / schema' },
+      { id: 'pack-manager', label: 'Domain pack manager' },
+    ],
+  },
+  {
+    key: 'AD',
+    label: 'Administer',
+    screens: [
+      { id: 'sync-health', label: 'Sync & connector health' },
+      { id: 'fdp-cdm', label: 'FDP-CDM projection' },
+    ],
+  },
+];
+
+const ROLES: RoleOption[] = [
+  { id: 'warehouse_manager', label: 'Warehouse manager' },
+  { id: 'logistics_manager', label: 'Logistics manager' },
+  { id: 'supply_chain_admin', label: 'Supply chain admin' },
+];
+
 /**
- * Patient worklist.
+ * Altius operational console — Editorial shell (Shell C).
  *
- * `load` is handed straight to the generated SDK method, so the table talks to
- * the same governed GraphQL surface as every other client: FGA-filtered,
- * field-redacted and consent-gated server-side. The UI adds no data access of
- * its own, which is what keeps the permission model in one place.
+ * The shell wraps the existing governed data surface. Auth flow is unchanged:
+ * OIDC PKCE → session → SDK client → governed GraphQL. The shell adds the
+ * chrome (icon rail, sidebar, governance rail, trace bar) and the Facilities
+ * screen; the patient worklist remains as the nhs.acute pack's anchor screen.
  */
 export function App({ config }: { config: WebConfig }): ReactNode {
-  // React 18+ runs effects twice in StrictMode; exchanging a single-use code
-  // twice would fail the second time and look like a broken login. Reset on
-  // expiry so a fresh login can exchange again.
   const exchanged = useRef(false);
-  // Declared before the session so the expiry callback can reach it.
   const [authState, setAuthState] = useState<AuthState>(config.oidc ? 'checking' : 'anonymous');
   const session = useMemo(
     () =>
       config.oidc
         ? new AuthSession(config.oidc, Date.now, () => {
-            // The session cannot be renewed. Return to the signed-out view so
-            // there is a way back in — otherwise every request throws behind a
-            // Retry button that can never succeed.
             exchanged.current = false;
             setAuthState('anonymous');
           })
@@ -56,8 +112,6 @@ export function App({ config }: { config: WebConfig }): ReactNode {
     completeLogin(config.oidc, params)
       .then(tokens => {
         session.adopt(tokens);
-        // Drop the code and state from the address bar so a reload does not
-        // retry a code that has already been spent.
         window.history.replaceState({}, '', window.location.pathname);
         setAuthState('signed-in');
       })
@@ -72,33 +126,14 @@ export function App({ config }: { config: WebConfig }): ReactNode {
     [config.endpoint, session, authState],
   );
 
-  // Dispose the previous client when auth state changes. Without this the old
-  // instance keeps an authenticated socket open with its subscriptions, and
-  // reconnects it when the server drops it — while nothing references it.
   useEffect(() => () => client.close(), [client]);
 
-  /**
-   * Send an identity failure back to the signed-out view instead of letting it
-   * surface as a data error.
-   *
-   * A credential that has stopped working fails every widget at once, and each
-   * one would offer its own Retry sending the same dead token — a screenful of
-   * buttons that cannot succeed. The session's own expiry callback covers a
-   * token that expires on the clock; this covers the rest (revoked mid-session,
-   * or a clock the client and issuer disagree about), where the first the app
-   * hears of it is a 401 on a read.
-   *
-   * Rethrown after: the widget still needs its promise to reject, and this only
-   * decides what the user is shown.
-   */
   const guardAuth = <R,>(p: Promise<R>): Promise<R> =>
     p.catch((err: unknown) => {
       if (isAuthFailure(err)) setAuthState('anonymous');
       throw err;
     });
 
-  // Memoised so ActionPanel refetches only when the client actually changes,
-  // not on every render of this component.
   const loadActions = useMemo(
     () => async (): Promise<ActionSchema[]> => {
       const tools = await guardAuth(client.actions.available({ kind: 'ACTION' }));
@@ -111,11 +146,57 @@ export function App({ config }: { config: WebConfig }): ReactNode {
     [client],
   );
 
-  // No OIDC configured means there is no way to obtain a credential, and the
-  // gateway refuses anonymous callers in every environment (see client.ts).
-  // Every data view below would load and fail 401 behind a Retry that can never
-  // succeed — an app that reads as broken when it is merely unconfigured. Said
-  // once, here, instead of once per widget.
+  // ── Shell state ──────────────────────────────────────────────
+
+  const [activePack, setActivePack] = useState('supply-chain');
+  const [activeJob, setActiveJob] = useState<JobKey>('OP');
+  const [activeScreen, setActiveScreen] = useState('facilities');
+  const [activeRole, setActiveRole] = useState('warehouse_manager');
+  const [activeFilters, setActiveFilters] = useState<ActiveFilter[]>([
+    { field: 'country', values: ['DE', 'NL', 'GB'] },
+  ]);
+
+  // Stats — in a real deployment these would come from an aggregate query.
+  // For now they are static placeholders matching the mockup.
+  const facilityStats: FacilityStats | null = activeScreen === 'facilities' && activePack === 'supply-chain'
+    ? { visible: 38, total: 41, disrupted: 2, meanUtilisation: 67, cdcLagSeconds: 1.8 }
+    : null;
+
+  const trace: TraceState | null = {
+    activeStage: 'emit',
+    durationMs: 41,
+    auditId: '01JQ4Z…7KP',
+    traceId: '4f2a…9c1',
+  };
+
+  const handleScreenSelect = (job: JobKey, screenId: string) => {
+    setActiveJob(job);
+    setActiveScreen(screenId);
+  };
+
+  const handleRemoveFilter = (field: string, value: string) => {
+    setActiveFilters(filters =>
+      filters
+        .map(f =>
+          f.field === field
+            ? { ...f, values: f.values.filter(v => v !== value) }
+            : f,
+        )
+        .filter(f => f.values.length > 0),
+    );
+  };
+
+  const handleAddFilter = (field: string) => {
+    // Simple: add an empty filter pill that the user can interact with.
+    // A real implementation would open a dropdown of available values.
+    setActiveFilters(filters => {
+      if (filters.some(f => f.field === field)) return filters;
+      return [...filters, { field, values: [] }];
+    });
+  };
+
+  // ── Auth gates (unchanged) ───────────────────────────────────
+
   if (!config.oidc) {
     return (
       <main>
@@ -152,47 +233,185 @@ export function App({ config }: { config: WebConfig }): ReactNode {
     );
   }
 
-  return (
-    <main>
-      <h1>Altius</h1>
-      {/* Parameterised explicitly: the column literals cannot drive inference,
-          so without this T falls back to the bare constraint and the key check
-          below binds against nothing. */}
-      <ObjectTable<Patient>
-        caption="Patients"
-        columns={[
-          // sortable mirrors PatientOrderBy: every one of these is an orderable
-          // scalar or enum the generated input declares, so the header cannot
-          // send a field the server would reject.
-          { key: 'nhsNumber', header: 'NHS number', sortable: true },
-          { key: 'name', header: 'Name', sortable: true },
-          { key: 'status', header: 'Status', sortable: true },
-          { key: 'triageCategory', header: 'Triage', sortable: true },
-        ]}
-        load={({ first, after, orderBy }) =>
-          guardAuth(client.patient.list(
-            undefined,
-            after === undefined ? { first } : { first, after },
-            undefined,
-            // { field: 'ASC' } is the shape PatientOrderBy takes; the table
-            // reports one active key at a time.
-            orderBy ? { [orderBy.key]: orderBy.direction } : undefined,
-          ))
-        }
-        subscribe={(onChange, onLost, onResumed) =>
-          client.patient.onAnyChange(() => onChange(), undefined, onLost, onResumed)
-        }
-      />
+  // ── Render the active screen inside the shell ────────────────
 
-      <ActionPanel
-        loadActions={loadActions}
-        submit={(name, input) => guardAuth(client.actions.invoke(name, input))}
-      />
-    </main>
+  const screenContent = renderScreen(
+    activeScreen,
+    activePack,
+    client,
+    facilityStats,
+    activeFilters,
+    handleRemoveFilter,
+    handleAddFilter,
+    guardAuth,
+    loadActions,
+  );
+
+  return (
+    <EditorialShell
+      packs={PACKS}
+      activePack={activePack}
+      onPackChange={setActivePack}
+      jobs={JOBS}
+      activeJob={activeJob}
+      activeScreen={activeScreen}
+      onScreenSelect={handleScreenSelect}
+      roles={ROLES}
+      activeRole={activeRole}
+      onRoleChange={setActiveRole}
+      brand="SC"
+      userInitials="JO"
+      governance={
+        <GovernanceRail
+          principal={{
+            name: 'Joy Okafor',
+            email: 'j.okafor@trust.example',
+            tenant: 'acme-eu',
+            sub: '4f2a…9c1',
+            relationsSummary: (
+              <>
+                Holds <code>warehouse_manager</code> on 4 facilities and{' '}
+                <code>viewer</code> everywhere it derives.
+              </>
+            ),
+          }}
+          hidden={[
+            {
+              title: `${Math.max(0, (facilityStats?.total ?? 41) - (facilityStats?.visible ?? 38))} rows, filtered`,
+              detail: (
+                <>
+                  No <code>assigned</code> relation. Removed by the ReBAC pre-filter before the page
+                  was built.
+                </>
+              ),
+            },
+            {
+              title: '2 fields, redacted',
+              detail: (
+                <>
+                  <code>unitCost</code> and <code>currency</code> on linked purchase orders.
+                  Commercial terms sit outside your relation.
+                </>
+              ),
+            },
+            {
+              title: 'Consent: not applicable',
+              detail: (
+                <>
+                  No consent-gated type on this view. It engages on{' '}
+                  <code>nhs.acute</code>.
+                </>
+              ),
+            },
+          ]}
+          events={[
+            { time: '14:22:07', text: <>Shipment <code>SHP-8841</code> delayed</> },
+            { time: '14:21:58', text: 'Inventory adjusted at Leipzig' },
+            { time: '14:21:31', text: <>Hamburg Altenwerder set <code>DISRUPTED</code></> },
+          ]}
+          live={true}
+        />
+      }
+      trace={<TraceBar trace={trace} label="LAST READ" />}
+    >
+      {screenContent}
+    </EditorialShell>
   );
 
   async function startLogin(): Promise<void> {
     if (!config.oidc) return;
     window.location.assign(await beginLogin(config.oidc));
   }
+}
+
+/**
+ * Render the main content for the active screen.
+ *
+ * Only the Facilities screen (supply-chain pack) and the patient worklist
+ * (nhs.acute pack) are wired to live data in this implementation. The other
+ * nine screens render a placeholder — they are defined in the sidebar so the
+ * navigation is complete, but their data surfaces are future work.
+ */
+function renderScreen(
+  screenId: string,
+  packId: string,
+  client: ReturnType<typeof createClient>,
+  stats: FacilityStats | null,
+  filters: ActiveFilter[],
+  onRemoveFilter: (field: string, value: string) => void,
+  onAddFilter: (field: string) => void,
+  guardAuth: <R>(p: Promise<R>) => Promise<R>,
+  loadActions: () => Promise<ActionSchema[]>,
+): ReactNode {
+  // Supply-chain Facilities — the anchor screen, fully wired.
+  if (screenId === 'facilities' && packId === 'supply-chain') {
+    return (
+      <FacilitiesScreen
+        client={client}
+        stats={stats}
+        activeFilters={filters}
+        onRemoveFilter={onRemoveFilter}
+        onAddFilter={onAddFilter}
+      />
+    );
+  }
+
+  // NHS acute — patient worklist (the existing screen, restyled by the shell).
+  if (screenId === 'facilities' && packId === 'nhs-acute') {
+    return (
+      <main className="ed-main">
+        <header className="ed-main__header">
+          <span className="ed-main__eyebrow">NHS.ACUTE · OBJECT TYPE</span>
+          <h1 className="ed-main__title">Patients</h1>
+          <p className="ed-main__lede">
+            The patient worklist. Reads are FGA-filtered, field-redacted and consent-gated
+            server-side — the UI adds no data access of its own.
+          </p>
+        </header>
+        <div className="ed-table-wrap">
+          <ObjectTable<Patient>
+            caption="Patients"
+            columns={[
+              { key: 'nhsNumber', header: 'NHS number', sortable: true },
+              { key: 'name', header: 'Name', sortable: true },
+              { key: 'status', header: 'Status', sortable: true },
+              { key: 'triageCategory', header: 'Triage', sortable: true },
+            ]}
+            load={({ first, after, orderBy }) =>
+              guardAuth(client.patient.list(
+                undefined,
+                after === undefined ? { first } : { first, after },
+                undefined,
+                orderBy ? { [orderBy.key]: orderBy.direction } : undefined,
+              ))
+            }
+            subscribe={(onChange, onLost, onResumed) =>
+              client.patient.onAnyChange(() => onChange(), undefined, onLost, onResumed)
+            }
+          />
+        </div>
+        <div style={{ padding: '0 44px 40px', maxWidth: 1180 }}>
+          <ActionPanel
+            loadActions={loadActions}
+            submit={(name, input) => guardAuth(client.actions.invoke(name, input))}
+          />
+        </div>
+      </main>
+    );
+  }
+
+  // Placeholder for the other nine screens.
+  const screen = JOBS.flatMap(j => j.screens).find(s => s.id === screenId);
+  return (
+    <main className="ed-main">
+      <header className="ed-main__header">
+        <span className="ed-main__eyebrow">{packId.toUpperCase().replace('-', '.')} · SCREEN</span>
+        <h1 className="ed-main__title">{screen?.label ?? screenId}</h1>
+        <p className="ed-main__lede">
+          This screen is defined in the navigation but its data surface is not yet wired.
+          The governed API endpoints exist — this placeholder will be replaced with a live view.
+        </p>
+      </header>
+    </main>
+  );
 }

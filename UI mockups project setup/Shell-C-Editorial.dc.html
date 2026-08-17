@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;450;500;600&family=IBM+Plex+Sans:wght@400;450;500;600&display=swap" rel="stylesheet">
+<style>
+html,body{margin:0;padding:0;background:#faf9f6;color:#1b1b17;-webkit-font-smoothing:antialiased}
+*,*::before,*::after{box-sizing:border-box}
+a{color:#1b1b17;text-decoration:none}
+a:hover{color:#71716a}
+</style>
+</helmet>
+<div style="min-height:100vh;display:grid;grid-template-columns:60px 232px 1fr 320px;grid-template-rows:1fr 38px;font-family:'IBM Plex Sans',system-ui,sans-serif;background:#faf9f6;color:#1b1b17">
+
+  <nav style="grid-row:1 / span 2;border-right:1px solid #e7e6e0;display:flex;flex-direction:column;align-items:center;padding:22px 0 14px;gap:0">
+    <div style="font:600 13px/1 'IBM Plex Mono',monospace;letter-spacing:-0.02em;margin-bottom:26px">SC</div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:20px">
+      <div style="display:flex;flex-direction:column;align-items:center;gap:7px;cursor:pointer">
+        <span style="width:22px;height:2px;background:#1b1b17"></span>
+        <span style="font:500 9px/1 'IBM Plex Mono',monospace;letter-spacing:.1em">OP</span>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:7px;cursor:pointer">
+        <span style="width:22px;height:1px;background:#cfcec6"></span>
+        <span style="font:400 9px/1 'IBM Plex Mono',monospace;letter-spacing:.1em;color:#9b9a92">IN</span>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:7px;cursor:pointer">
+        <span style="width:22px;height:1px;background:#cfcec6"></span>
+        <span style="font:400 9px/1 'IBM Plex Mono',monospace;letter-spacing:.1em;color:#9b9a92">MO</span>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:7px;cursor:pointer">
+        <span style="width:22px;height:1px;background:#cfcec6"></span>
+        <span style="font:400 9px/1 'IBM Plex Mono',monospace;letter-spacing:.1em;color:#9b9a92">AD</span>
+      </div>
+    </div>
+    <div style="flex:1"></div>
+    <span style="font:450 9.5px/1 'IBM Plex Mono',monospace;color:#9b9a92">JO</span>
+  </nav>
+
+  <aside style="grid-row:1 / span 2;border-right:1px solid #e7e6e0;padding:30px 0 0;display:flex;flex-direction:column">
+    <div style="padding:0 24px 26px">
+      <span style="display:block;font:400 10px/1 'IBM Plex Mono',monospace;letter-spacing:.15em;color:#9b9a92;margin-bottom:10px">PACK</span>
+      <div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px;cursor:pointer;padding-bottom:7px;border-bottom:1px solid #1b1b17">
+        <span style="font:450 15px/1.1 'IBM Plex Sans',sans-serif;letter-spacing:-0.01em">supply.chain</span>
+        <span style="font:400 10px 'IBM Plex Mono',monospace;color:#9b9a92">0.1.0 ▾</span>
+      </div>
+    </div>
+    <div style="padding:0 24px 12px"><span style="font:400 10px/1 'IBM Plex Mono',monospace;letter-spacing:.15em;color:#9b9a92">OPERATE</span></div>
+    <div style="display:flex;flex-direction:column;gap:0">
+      <a href="#" style="padding:9px 24px;display:flex;justify-content:space-between;align-items:baseline;background:#f2f1ec"><span style="font:500 14px/1.2 'IBM Plex Sans',sans-serif">Facilities</span><span style="font:400 10.5px 'IBM Plex Mono',monospace;color:#71716a">41</span></a>
+      <a href="#" style="padding:9px 24px;display:flex;justify-content:space-between;align-items:baseline" style-hover="background:#f5f4ef"><span style="font:400 14px/1.2 'IBM Plex Sans',sans-serif;color:#3c3c36">Shipments</span><span style="font:400 10.5px 'IBM Plex Mono',monospace;color:#9b9a92">2,184</span></a>
+      <a href="#" style="padding:9px 24px;display:flex;justify-content:space-between;align-items:baseline" style-hover="background:#f5f4ef"><span style="font:400 14px/1.2 'IBM Plex Sans',sans-serif;color:#3c3c36">Purchase orders</span><span style="font:400 10.5px 'IBM Plex Mono',monospace;color:#9b9a92">867</span></a>
+      <a href="#" style="padding:9px 24px;display:flex;justify-content:space-between;align-items:baseline" style-hover="background:#f5f4ef"><span style="font:400 14px/1.2 'IBM Plex Sans',sans-serif;color:#3c3c36">Inventory</span><span style="font:400 10.5px 'IBM Plex Mono',monospace;color:#9b9a92">5,402</span></a>
+      <a href="#" style="padding:9px 24px" style-hover="background:#f5f4ef"><span style="font:400 14px/1.2 'IBM Plex Sans',sans-serif;color:#3c3c36">Ops map</span></a>
+      <a href="#" style="padding:9px 24px" style-hover="background:#f5f4ef"><span style="font:400 14px/1.2 'IBM Plex Sans',sans-serif;color:#3c3c36">Action console</span></a>
+    </div>
+    <div style="flex:1"></div>
+    <div style="padding:20px 24px 26px">
+      <span style="display:block;font:400 10px/1 'IBM Plex Mono',monospace;letter-spacing:.15em;color:#9b9a92;margin-bottom:11px">ACTING AS</span>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <label style="display:flex;align-items:center;gap:9px;cursor:pointer"><span style="width:8px;height:8px;background:#1b1b17;border-radius:50%"></span><span style="font:450 12.5px 'IBM Plex Sans',sans-serif">Warehouse manager</span></label>
+        <label style="display:flex;align-items:center;gap:9px;cursor:pointer"><span style="width:8px;height:8px;border:1px solid #cfcec6;border-radius:50%"></span><span style="font:400 12.5px 'IBM Plex Sans',sans-serif;color:#71716a">Logistics manager</span></label>
+        <label style="display:flex;align-items:center;gap:9px;cursor:pointer"><span style="width:8px;height:8px;border:1px solid #cfcec6;border-radius:50%"></span><span style="font:400 12.5px 'IBM Plex Sans',sans-serif;color:#71716a">Supply chain admin</span></label>
+      </div>
+    </div>
+  </aside>
+
+  <main style="overflow:auto;background:#faf9f6">
+    <header style="padding:44px 44px 0;max-width:1180px">
+      <span style="display:block;font:400 10.5px/1 'IBM Plex Mono',monospace;letter-spacing:.13em;color:#9b9a92;margin-bottom:16px">SUPPLY.CHAIN · OBJECT TYPE</span>
+      <h1 style="margin:0 0 16px;font:450 40px/1 'IBM Plex Sans',sans-serif;letter-spacing:-0.03em">Facility</h1>
+      <p style="margin:0 0 28px;max-width:56ch;font:400 14.5px/1.6 'IBM Plex Sans',sans-serif;color:#4b4b44;text-wrap:pretty">Six object types load from this pack. Facility is where inventory, shipments and disruption meet — 38 of 41 are visible to you, scoped by the <span style="font-family:'IBM Plex Mono',monospace;font-size:13px">assigned</span> relation.</p>
+      <div style="display:flex;gap:0;border-top:1px solid #1b1b17;border-bottom:1px solid #e7e6e0">
+        <div style="flex:1;padding:16px 20px 16px 0;border-right:1px solid #e7e6e0">
+          <span style="display:block;font:400 9.5px/1 'IBM Plex Mono',monospace;letter-spacing:.13em;color:#9b9a92;margin-bottom:8px">VISIBLE</span>
+          <span style="font:450 24px/1 'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums">38<span style="font-size:13px;color:#9b9a92"> / 41</span></span>
+        </div>
+        <div style="flex:1;padding:16px 20px;border-right:1px solid #e7e6e0">
+          <span style="display:block;font:400 9.5px/1 'IBM Plex Mono',monospace;letter-spacing:.13em;color:#9b9a92;margin-bottom:8px">DISRUPTED</span>
+          <span style="font:450 24px/1 'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums">2</span>
+        </div>
+        <div style="flex:1;padding:16px 20px;border-right:1px solid #e7e6e0">
+          <span style="display:block;font:400 9.5px/1 'IBM Plex Mono',monospace;letter-spacing:.13em;color:#9b9a92;margin-bottom:8px">MEAN UTILISATION</span>
+          <span style="font:450 24px/1 'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums">67<span style="font-size:13px;color:#9b9a92">%</span></span>
+        </div>
+        <div style="flex:1;padding:16px 0 16px 20px">
+          <span style="display:block;font:400 9.5px/1 'IBM Plex Mono',monospace;letter-spacing:.13em;color:#9b9a92;margin-bottom:8px">CDC LAG</span>
+          <span style="font:450 24px/1 'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums">1.8<span style="font-size:13px;color:#9b9a92">s</span></span>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:20px;padding:18px 0 6px">
+        <div style="display:flex;gap:8px;align-items:center">
+          <span style="display:inline-flex;align-items:center;gap:8px;border-bottom:1px solid #1b1b17;padding:0 2px 3px;font:450 11.5px 'IBM Plex Mono',monospace">country = DE, NL, GB <span style="color:#9b9a92;cursor:pointer">✕</span></span>
+          <span style="font:400 11.5px 'IBM Plex Mono',monospace;color:#9b9a92;cursor:pointer;padding-bottom:3px" style-hover="color:#1b1b17">+ status</span>
+          <span style="font:400 11.5px 'IBM Plex Mono',monospace;color:#9b9a92;cursor:pointer;padding-bottom:3px" style-hover="color:#1b1b17">+ type</span>
+        </div>
+        <label style="display:flex;align-items:center;gap:8px;border-bottom:1px solid #cfcec6;padding-bottom:4px;min-width:200px">
+          <span style="font:400 11px 'IBM Plex Mono',monospace;color:#9b9a92">⌕</span>
+          <input placeholder="search name or code" style="border:0;outline:0;background:transparent;font:400 13px 'IBM Plex Sans',sans-serif;width:100%">
+        </label>
+      </div>
+    </header>
+
+    <div style="padding:8px 44px 40px;max-width:1180px">
+      <table style="width:100%;border-collapse:collapse">
+        <thead>
+          <tr>
+            <th style="text-align:left;padding:10px 16px 10px 0;border-bottom:1px solid #cfcec6;font:400 9.5px 'IBM Plex Mono',monospace;letter-spacing:.13em;color:#71716a">FACILITY ▲</th>
+            <th style="text-align:left;padding:10px 16px;border-bottom:1px solid #cfcec6;font:400 9.5px 'IBM Plex Mono',monospace;letter-spacing:.13em;color:#71716a">STATUS</th>
+            <th style="text-align:right;padding:10px 16px;border-bottom:1px solid #cfcec6;font:400 9.5px 'IBM Plex Mono',monospace;letter-spacing:.13em;color:#71716a">CAPACITY</th>
+            <th style="text-align:left;padding:10px 0 10px 16px;border-bottom:1px solid #cfcec6;font:400 9.5px 'IBM Plex Mono',monospace;letter-spacing:.13em;color:#71716a;width:210px">UTILISATION</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr style-hover="background:#f5f4ef">
+            <td style="padding:16px 16px 16px 0;border-bottom:1px solid #eceb e5;border-bottom:1px solid #ecebe5">
+              <div style="display:flex;flex-direction:column;gap:4px">
+                <span style="font:450 16px/1.2 'IBM Plex Sans',sans-serif;letter-spacing:-0.01em">Felixstowe Berth 8</span>
+                <span style="font:400 10.5px 'IBM Plex Mono',monospace;color:#9b9a92">FAC-FEL-01 · PORT · GB</span>
+              </div>
+            </td>
+            <td style="padding:16px;border-bottom:1px solid #ecebe5;font:450 11.5px 'IBM Plex Mono',monospace"><span style="display:inline-flex;align-items:center;gap:7px"><span style="width:7px;height:7px;background:#1b1b17;border-radius:50%"></span>OPERATIONAL</span></td>
+            <td style="padding:16px;border-bottom:1px solid #ecebe5;text-align:right;font:450 13px 'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums">18,400</td>
+            <td style="padding:16px 0 16px 16px;border-bottom:1px solid #ecebe5">
+              <div style="display:flex;align-items:center;gap:12px">
+                <div style="flex:1;height:3px;background:#ecebe5"><div style="width:72%;height:100%;background:#2f6b4f"></div></div>
+                <span style="font:450 13px 'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums;min-width:36px;text-align:right">72%</span>
+              </div>
+            </td>
+          </tr>
+          <tr style-hover="background:#f5f4ef">
+            <td style="padding:16px 16px 16px 0;border-bottom:1px solid #ecebe5">
+              <div style="display:flex;flex-direction:column;gap:4px">
+                <span style="font:450 16px/1.2 'IBM Plex Sans',sans-serif;letter-spacing:-0.01em">Hamburg Altenwerder</span>
+                <span style="font:400 10.5px 'IBM Plex Mono',monospace;color:#9b9a92">FAC-HAM-02 · PORT · DE</span>
+              </div>
+            </td>
+            <td style="padding:16px;border-bottom:1px solid #ecebe5;font:500 11.5px 'IBM Plex Mono',monospace"><span style="display:inline-flex;align-items:center;gap:7px"><span style="width:7px;height:7px;background:#a8452c;transform:rotate(45deg)"></span>DISRUPTED</span></td>
+            <td style="padding:16px;border-bottom:1px solid #ecebe5;text-align:right;font:450 13px 'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums">32,000</td>
+            <td style="padding:16px 0 16px 16px;border-bottom:1px solid #ecebe5">
+              <div style="display:flex;align-items:center;gap:12px">
+                <div style="flex:1;height:3px;background:#ecebe5"><div style="width:96%;height:100%;background:#a8452c"></div></div>
+                <span style="font:500 13px 'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums;min-width:36px;text-align:right">96%</span>
+              </div>
+            </td>
+          </tr>
+          <tr style-hover="background:#f5f4ef">
+            <td style="padding:16px 16px 16px 0;border-bottom:1px solid #ecebe5">
+              <div style="display:flex;flex-direction:column;gap:4px">
+                <span style="font:450 16px/1.2 'IBM Plex Sans',sans-serif;letter-spacing:-0.01em">Leipzig Distribution Centre</span>
+                <span style="font:400 10.5px 'IBM Plex Mono',monospace;color:#9b9a92">FAC-LEI-07 · DISTRIBUTION_CENTER · DE</span>
+              </div>
+            </td>
+            <td style="padding:16px;border-bottom:1px solid #ecebe5;font:450 11.5px 'IBM Plex Mono',monospace"><span style="display:inline-flex;align-items:center;gap:7px"><span style="width:7px;height:7px;background:#1b1b17;border-radius:50%"></span>OPERATIONAL</span></td>
+            <td style="padding:16px;border-bottom:1px solid #ecebe5;text-align:right;font:450 13px 'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums">9,600</td>
+            <td style="padding:16px 0 16px 16px;border-bottom:1px solid #ecebe5">
+              <div style="display:flex;align-items:center;gap:12px">
+                <div style="flex:1;height:3px;background:#ecebe5"><div style="width:54%;height:100%;background:#2f6b4f"></div></div>
+                <span style="font:450 13px 'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums;min-width:36px;text-align:right">54%</span>
+              </div>
+            </td>
+          </tr>
+          <tr style-hover="background:#f5f4ef">
+            <td style="padding:16px 16px 16px 0;border-bottom:1px solid #ecebe5">
+              <div style="display:flex;flex-direction:column;gap:4px">
+                <span style="font:450 16px/1.2 'IBM Plex Sans',sans-serif;letter-spacing:-0.01em">Rotterdam Deepwater Terminal</span>
+                <span style="font:400 10.5px 'IBM Plex Mono',monospace;color:#9b9a92">FAC-RTM-01 · PORT · NL</span>
+              </div>
+            </td>
+            <td style="padding:16px;border-bottom:1px solid #ecebe5;font:450 11.5px 'IBM Plex Mono',monospace"><span style="display:inline-flex;align-items:center;gap:7px"><span style="width:7px;height:7px;background:#1b1b17;border-radius:50%"></span>OPERATIONAL</span></td>
+            <td style="padding:16px;border-bottom:1px solid #ecebe5;text-align:right;font:450 13px 'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums">48,000</td>
+            <td style="padding:16px 0 16px 16px;border-bottom:1px solid #ecebe5">
+              <div style="display:flex;align-items:center;gap:12px">
+                <div style="flex:1;height:3px;background:#ecebe5"><div style="width:86%;height:100%;background:#9a7b2f"></div></div>
+                <span style="font:450 13px 'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums;min-width:36px;text-align:right">86%</span>
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td colspan="4" style="padding:14px 0;border-bottom:1px solid #ecebe5">
+              <span style="font:400 12px/1.5 'IBM Plex Sans',sans-serif;color:#71716a">Three facilities are not listed. You hold no <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#1b1b17">assigned</span> relation to them, so they were filtered before the query ran — absent, not refused. <a href="#" style="border-bottom:1px solid #cfcec6">See why</a></span>
+            </td>
+          </tr>
+          <tr style-hover="background:#f5f4ef">
+            <td style="padding:16px 16px 16px 0">
+              <div style="display:flex;flex-direction:column;gap:4px">
+                <span style="font:450 16px/1.2 'IBM Plex Sans',sans-serif;letter-spacing:-0.01em">Yantian Consolidation Hub</span>
+                <span style="font:400 10.5px 'IBM Plex Mono',monospace;color:#9b9a92">FAC-YAN-09 · WAREHOUSE · CN</span>
+              </div>
+            </td>
+            <td style="padding:16px;font:450 11.5px 'IBM Plex Mono',monospace"><span style="display:inline-flex;align-items:center;gap:7px"><span style="width:7px;height:7px;background:#1b1b17;border-radius:50%"></span>OPERATIONAL</span></td>
+            <td style="padding:16px;text-align:right;font:450 13px 'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums">27,500</td>
+            <td style="padding:16px 0 16px 16px">
+              <div style="display:flex;align-items:center;gap:12px">
+                <div style="flex:1;height:3px;background:#ecebe5"><div style="width:64%;height:100%;background:#2f6b4f"></div></div>
+                <span style="font:450 13px 'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums;min-width:36px;text-align:right">64%</span>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <nav style="display:flex;align-items:center;gap:16px;padding:24px 0 0">
+        <span style="font:400 12px 'IBM Plex Mono',monospace;color:#cfcec6">← previous</span>
+        <a href="#" style="font:450 12px 'IBM Plex Mono',monospace;border-bottom:1px solid #1b1b17">next 25 →</a>
+        <span style="font:400 11px 'IBM Plex Mono',monospace;color:#9b9a92">showing 1–25 of 38</span>
+      </nav>
+    </div>
+  </main>
+
+  <aside style="grid-row:1 / span 2;border-left:1px solid #e7e6e0;padding:34px 26px;display:flex;flex-direction:column;gap:28px;overflow:auto">
+    <div>
+      <span style="display:block;font:400 9.5px/1 'IBM Plex Mono',monospace;letter-spacing:.15em;color:#9b9a92;margin-bottom:12px">SIGNED IN</span>
+      <p style="margin:0 0 5px;font:450 14px/1.3 'IBM Plex Sans',sans-serif">Joy Okafor</p>
+      <p style="margin:0 0 10px;font:400 11px/1.5 'IBM Plex Mono',monospace;color:#71716a">j.okafor@trust.example<br>tenant acme-eu · sub 4f2a…9c1</p>
+      <p style="margin:0;font:400 12px/1.55 'IBM Plex Sans',sans-serif;color:#4b4b44">Holds <span style="font-family:'IBM Plex Mono',monospace;font-size:11px">warehouse_manager</span> on 4 facilities and <span style="font-family:'IBM Plex Mono',monospace;font-size:11px">viewer</span> everywhere it derives.</p>
+    </div>
+
+    <div style="height:1px;background:#e7e6e0"></div>
+
+    <div>
+      <span style="display:block;font:400 9.5px/1 'IBM Plex Mono',monospace;letter-spacing:.15em;color:#9b9a92;margin-bottom:14px">WHAT THIS VIEW HIDES</span>
+      <div style="display:flex;flex-direction:column;gap:16px">
+        <div>
+          <p style="margin:0 0 3px;font:450 12.5px/1.3 'IBM Plex Sans',sans-serif">3 rows, filtered</p>
+          <p style="margin:0;font:400 11.5px/1.55 'IBM Plex Sans',sans-serif;color:#71716a">No <span style="font-family:'IBM Plex Mono',monospace;font-size:10.5px">assigned</span> relation. Removed by the ReBAC pre-filter before the page was built.</p>
+        </div>
+        <div>
+          <p style="margin:0 0 3px;font:450 12.5px/1.3 'IBM Plex Sans',sans-serif">2 fields, redacted</p>
+          <p style="margin:0;font:400 11.5px/1.55 'IBM Plex Sans',sans-serif;color:#71716a"><span style="font-family:'IBM Plex Mono',monospace;font-size:10.5px">unitCost</span> and <span style="font-family:'IBM Plex Mono',monospace;font-size:10.5px">currency</span> on linked purchase orders. Commercial terms sit outside your relation.</p>
+        </div>
+        <div>
+          <p style="margin:0 0 3px;font:450 12.5px/1.3 'IBM Plex Sans',sans-serif">Consent: not applicable</p>
+          <p style="margin:0;font:400 11.5px/1.55 'IBM Plex Sans',sans-serif;color:#71716a">No consent-gated type on this view. It engages on <span style="font-family:'IBM Plex Mono',monospace;font-size:10.5px">nhs.acute</span>.</p>
+        </div>
+      </div>
+    </div>
+
+    <div style="height:1px;background:#e7e6e0"></div>
+
+    <div>
+      <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:12px">
+        <span style="font:400 9.5px/1 'IBM Plex Mono',monospace;letter-spacing:.15em;color:#9b9a92">EVENT FEED</span>
+        <span style="font:400 9.5px 'IBM Plex Mono',monospace;color:#2f6b4f">live</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div style="display:flex;gap:10px;align-items:baseline"><span style="font:400 10px 'IBM Plex Mono',monospace;color:#9b9a92;min-width:52px">14:22:07</span><span style="font:400 11.5px/1.4 'IBM Plex Sans',sans-serif">Shipment <span style="font-family:'IBM Plex Mono',monospace;font-size:10.5px">SHP-8841</span> delayed</span></div>
+        <div style="display:flex;gap:10px;align-items:baseline"><span style="font:400 10px 'IBM Plex Mono',monospace;color:#9b9a92;min-width:52px">14:21:58</span><span style="font:400 11.5px/1.4 'IBM Plex Sans',sans-serif">Inventory adjusted at Leipzig</span></div>
+        <div style="display:flex;gap:10px;align-items:baseline"><span style="font:400 10px 'IBM Plex Mono',monospace;color:#9b9a92;min-width:52px">14:21:31</span><span style="font:400 11.5px/1.4 'IBM Plex Sans',sans-serif">Hamburg Altenwerder set <span style="font-family:'IBM Plex Mono',monospace;font-size:10.5px">DISRUPTED</span></span></div>
+      </div>
+    </div>
+  </aside>
+
+  <footer style="grid-column:3 / span 2;border-top:1px solid #e7e6e0;display:flex;align-items:center;padding:0 44px;gap:18px;overflow:hidden">
+    <span style="font:400 9.5px 'IBM Plex Mono',monospace;letter-spacing:.15em;color:#9b9a92;white-space:nowrap">LAST READ</span>
+    <div style="display:flex;align-items:center;gap:14px;flex:1;min-width:0">
+      <span style="font:400 11px 'IBM Plex Mono',monospace;color:#71716a;white-space:nowrap">validate</span>
+      <span style="font:400 11px 'IBM Plex Mono',monospace;color:#71716a;white-space:nowrap">authorise</span>
+      <span style="font:400 11px 'IBM Plex Mono',monospace;color:#71716a;white-space:nowrap">consent</span>
+      <span style="font:400 11px 'IBM Plex Mono',monospace;color:#71716a;white-space:nowrap">redact</span>
+      <span style="font:450 11px 'IBM Plex Mono',monospace;border-bottom:1px solid #1b1b17;white-space:nowrap">emit</span>
+      <span style="font:400 11px 'IBM Plex Mono',monospace;color:#9b9a92;white-space:nowrap">41ms · audit 01JQ4Z…7KP</span>
+    </div>
+    <a href="#" style="font:450 11px 'IBM Plex Mono',monospace;border-bottom:1px solid #cfcec6;white-space:nowrap">open trace</a>
+  </footer>
+</div>
+</x-dc>
+</body>
+</html>
