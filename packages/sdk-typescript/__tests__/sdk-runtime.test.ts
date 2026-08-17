@@ -458,6 +458,35 @@ describe('Generated SDK runtime', () => {
       vi.useRealTimers();
     });
 
+    it('reports a server-terminated stream and stops replaying it', async () => {
+      // The server ends a subscription with `error` or `complete` — auth
+      // expiry, revoked permission, a filter it will not accept. Only
+      // wsSubscriptions was cleaned, so the caller was never told (a dead
+      // stream looking alive, the exact failure this feature exists to end)
+      // and the next reconnect re-sent the subscribe, resurrecting a stream
+      // the server had deliberately refused.
+      vi.useFakeTimers();
+      const onClose = vi.fn();
+      const client = new Altius({ endpoint: 'http://localhost:3000/graphql', token: 't' });
+
+      client.patient.onAnyChange(() => {}, undefined, onClose);
+      await vi.advanceTimersByTimeAsync(10);
+      const ws = MockWebSocket.instances[0]!;
+      ws._receive(JSON.stringify({ type: 'connection_ack' }));
+      const subId = JSON.parse(ws.sent.find(m => m.includes('"subscribe"'))!).id as string;
+
+      ws._receive(JSON.stringify({ type: 'error', id: subId, payload: [{ message: 'forbidden' }] }));
+
+      expect(onClose).toHaveBeenCalledTimes(1);
+
+      // And it must not come back: with nothing left to replay, a subsequent
+      // close should not even open a socket.
+      ws.close();
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(MockWebSocket.instances).toHaveLength(1);
+      vi.useRealTimers();
+    });
+
     it('does not reconnect after the caller unsubscribes', async () => {
       // Letting go of a stream is not losing one; reconnecting here would
       // resurrect a subscription the caller has already abandoned.
