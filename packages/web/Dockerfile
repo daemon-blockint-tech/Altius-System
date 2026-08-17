@@ -22,7 +22,13 @@ RUN pnpm turbo build --filter=@altius/web...
 # Runtime stage
 FROM nginx:1.29-alpine
 
-RUN apk upgrade --no-cache libcrypto3 libssl3
+# Upgrade everything, not a hand-kept list. The list was libcrypto3 + libssl3
+# and the base image then went stale on c-ares, curl, libexpat, libxml2 and
+# nghttp2-libs — 9 HIGH findings whose fixes were already sitting in the alpine
+# 3.23 index the image was built from. A named list has to be extended every
+# time a different package lags; `apk upgrade` cannot fall behind that way.
+# Same branch, so this takes patch updates only.
+RUN apk upgrade --no-cache
 
 ARG GIT_REVISION=unknown
 LABEL org.opencontainers.image.revision="${GIT_REVISION}"

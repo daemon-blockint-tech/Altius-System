@@ -26,7 +26,12 @@ RUN --mount=type=cache,id=gomod,target=/go/pkg/mod \
 # its pinned transitive deps (v0.4.53 still ships grpc 1.81.1 —
 # GHSA-hrxh-6v49-42gf) with no way for us to override them. Inside a module we
 # can require the patched grpc explicitly; MVS then selects it for the build.
-# Keep the grpc version here in step with the one in go.mod.
+#
+# Every dependency that needs a floor has to be named HERE as well as in
+# go.mod — this module resolves independently, so a bump on the main module
+# does not reach it. x/net is the proof: go.mod moved to v0.56.0 for
+# CVE-2026-46600 and the scan still reported v0.55.0, because it was reading
+# this binary, not the server. Keep these in step with go.mod.
 RUN --mount=type=cache,id=gomod,target=/go/pkg/mod \
     --mount=type=cache,id=gobuild,target=/root/.cache/go-build \
     mkdir -p /tools && cd /tools \
@@ -34,6 +39,7 @@ RUN --mount=type=cache,id=gomod,target=/go/pkg/mod \
     && GOFLAGS=-mod=mod go get github.com/grpc-ecosystem/grpc-health-probe@v0.4.53 \
     && GOFLAGS=-mod=mod go get google.golang.org/grpc@v1.82.1 \
     && GOFLAGS=-mod=mod go get golang.org/x/text@v0.39.0 \
+    && GOFLAGS=-mod=mod go get golang.org/x/net@v0.56.0 \
     && CGO_ENABLED=0 GOOS=linux go build -o /usr/local/bin/grpc-health-probe \
        github.com/grpc-ecosystem/grpc-health-probe
 
