@@ -81,6 +81,9 @@ import { registerAttachmentRoutes } from './rest/attachment-routes.js';
 import { registerTimeSeriesRoutes } from './rest/timeseries-routes.js';
 import { registerBranchRoutes } from './rest/branch-routes.js';
 import { registerCommentRoutes } from './rest/comment-routes.js';
+import { registerNotificationRoutes } from './rest/notification-routes.js';
+import { registerEmbeddingRoutes } from './rest/embedding-routes.js';
+import { registerAlertingRoutes } from './rest/alerting-routes.js';
 import { readPlatformVersion } from './version.js';
 import { createFhirRouter } from './fhir/index.js';
 import { createCdmRouter } from './cdm/index.js';
@@ -1421,6 +1424,15 @@ async function main(): Promise<void> {
 
   // ── Comments and collaboration routes ──
   registerCommentRoutes(app, deps, authenticator, isDev);
+
+  // ── Platform notification routes ──
+  registerNotificationRoutes(app, deps, authenticator, isDev);
+
+  // ── Embedding / vector search routes ──
+  registerEmbeddingRoutes(app, deps, authenticator, isDev);
+
+  // ── Alerting routes ──
+  registerAlertingRoutes(app, deps, authenticator, isDev);
 
   // ── OpenAPI spec at /api/v1/openapi.json ──
   // Stamp the served contract with the real platform version (root package.json)

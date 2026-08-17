@@ -38,6 +38,28 @@ export interface CloudEventConfig {
 }
 
 // ---------------------------------------------------------------------------
+// Notification configuration (in-platform notification side-effect)
+// ---------------------------------------------------------------------------
+
+export interface NotificationConfig {
+  /** Target user ID. */
+  userId: string;
+  /** Notification title. */
+  title: string;
+  /** Notification body. */
+  body: string;
+  /** Notification type. */
+  notificationType?: string;
+  /** Severity: info, warning, or critical. */
+  severity?: 'info' | 'warning' | 'critical';
+  /** Optional source object reference. */
+  sourceObjectType?: string;
+  sourceObjectId?: string;
+  /** Optional link URL. */
+  linkUrl?: string;
+}
+
+// ---------------------------------------------------------------------------
 // Event bus abstraction
 // ---------------------------------------------------------------------------
 
@@ -98,6 +120,8 @@ export interface SideEffectExecutorConfig {
   httpClient: HttpClient;
   /** Event bus for CloudEvent emission. */
   eventBus?: EventBus;
+  /** Notification dispatcher for in-platform notification side-effects. */
+  notificationDispatcher?: NotificationDispatcher;
   /** Default rollback policy if not specified on the manifest. */
   defaultPolicy?: RollbackPolicy;
   /**
@@ -112,6 +136,17 @@ export interface SideEffectExecutorConfig {
    * record carried only before/after states, and no metric existed.
    */
   logger?: SideEffectLogger;
+}
+
+/**
+ * Dispatcher for in-platform notification side-effects.
+ * Implementations write to the platform NotificationStore.
+ */
+export interface NotificationDispatcher {
+  dispatch(ctx: {
+    tenantId: string;
+    actorId?: string;
+  }, config: NotificationConfig): Promise<void>;
 }
 
 /** Minimal logger surface the executor needs. */

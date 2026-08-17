@@ -98,6 +98,39 @@ export type {
 } from './comments.js';
 export { parseMentions } from './comments.js';
 
+// Platform notifications
+export type {
+  NotificationStore,
+  PlatformNotification,
+  NotificationPreferences,
+  NotificationType,
+  NotificationChannel,
+  NotificationQuery,
+} from './notifications.js';
+
+// Embeddings and vector search
+export type {
+  EmbeddingStore,
+  StoredEmbedding,
+  CreateEmbeddingInput,
+  EmbeddingSearchOptions,
+  EmbeddingSearchHit,
+  EmbeddingSearchResult,
+} from './embeddings.js';
+export { cosineSimilarity } from './embeddings.js';
+
+// Time-series rules and alerting
+export type {
+  AlertingService,
+  ThresholdRule,
+  CreateThresholdRuleInput,
+  Alert,
+  AlertQuery,
+  RuleEvaluationResult,
+  ThresholdOperator,
+} from './alerting.js';
+export { pointSatisfies, findConsecutiveRun } from './alerting.js';
+
 // LLM Client (Section AIP)
 export type {
   LLMClient,

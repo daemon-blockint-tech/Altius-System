@@ -14,6 +14,7 @@ import type {
   WebhookConfig,
   CloudEventConfig,
   CloudEvent,
+  NotificationConfig,
 } from './types.js';
 
 // ---------------------------------------------------------------------------
@@ -113,6 +114,8 @@ export class SideEffectExecutor implements SideEffectHandler {
           await this.executeWebhook(sideEffect.config as unknown as WebhookConfig, context);
         } else if (sideEffect.type === 'event') {
           await this.executeEvent(sideEffect.config as unknown as CloudEventConfig, context);
+        } else if (sideEffect.type === 'notification') {
+          await this.executeNotification(sideEffect.config as unknown as NotificationConfig, context);
         } else {
           throw new Error(`Unknown side-effect type: ${sideEffect.type}`);
         }
@@ -200,6 +203,24 @@ export class SideEffectExecutor implements SideEffectHandler {
     };
 
     await this.config.eventBus.emit(event);
+  }
+
+  /**
+   * Execute a notification side-effect — dispatches an in-platform
+   * notification to the specified user via the NotificationDispatcher.
+   */
+  async executeNotification(
+    config: NotificationConfig,
+    context: Record<string, unknown>,
+  ): Promise<void> {
+    if (!this.config.notificationDispatcher) {
+      throw new Error('Notification dispatcher not configured');
+    }
+
+    const tenantId = (context['tenantId'] as string) ?? 'system';
+    const actorId = context['actorId'] as string | undefined;
+
+    await this.config.notificationDispatcher.dispatch({ tenantId, actorId }, config);
   }
 
   // ---------------------------------------------------------------------------

@@ -10,7 +10,7 @@ import type {
   MarkingPolicy,
 } from '@altius/security';
 import type { ParsedSchema } from '@altius/odl';
-import type { RequestContext, StorageProvider, LLMClient, BlobStore, TimeSeriesStore, BranchStore, CommentStore } from '@altius/spi';
+import type { RequestContext, StorageProvider, LLMClient, BlobStore, TimeSeriesStore, BranchStore, CommentStore, NotificationStore, EmbeddingStore, AlertingService } from '@altius/spi';
 import { DataPurpose } from '@altius/spi';
 
 /**
@@ -180,6 +180,39 @@ export interface ApiDependencies {
    *   POST /api/v1/notifications/:id/read
    */
   commentStore?: CommentStore;
+  /**
+   * Platform notification store. When present, REST endpoints for
+   * notifications and user preferences are registered:
+   *   GET    /api/v1/notifications
+   *   POST   /api/v1/notifications/:id/read
+   *   POST   /api/v1/notifications/read-all
+   *   DELETE /api/v1/notifications/:id
+   *   GET/PUT /api/v1/notifications/preferences
+   */
+  notificationStore?: NotificationStore;
+  /**
+   * Embedding store for vector similarity search. When present, REST
+   * endpoints for embedding upsert/search are registered:
+   *   PUT    /api/v1/embeddings/:type/:id/:field
+   *   GET    /api/v1/embeddings/:type/:id/:field
+   *   DELETE /api/v1/embeddings/:type/:id/:field
+   *   POST   /api/v1/embeddings/:type/:field/search
+   */
+  embeddingStore?: EmbeddingStore;
+  /**
+   * Alerting service for time-series threshold rules. When present, REST
+   * endpoints for rule and alert management are registered:
+   *   POST   /api/v1/alerting/rules
+   *   GET    /api/v1/alerting/rules
+   *   GET    /api/v1/alerting/rules/:id
+   *   PATCH  /api/v1/alerting/rules/:id
+   *   DELETE /api/v1/alerting/rules/:id
+   *   GET    /api/v1/alerting/alerts
+   *   POST   /api/v1/alerting/alerts/:id/acknowledge
+   *   POST   /api/v1/alerting/alerts/:id/resolve
+   *   POST   /api/v1/alerting/evaluate
+   */
+  alertingService?: AlertingService;
 }
 
 /**
