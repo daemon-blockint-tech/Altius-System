@@ -97,6 +97,8 @@ export {
   type WebhookPipelineMapping,
   type WebhookResult,
   type WebhookProvider,
+  LLMFunctionRuntime,
+  type LLMFunctionRuntimeConfig,
 } from './functions/index.js';
 
 // LLM Client
@@ -105,3 +107,23 @@ export { AnthropicLLMClient, LLMProviderError, readTextDeltas } from './llm/anth
 export type { AnthropicLLMClientConfig } from './llm/anthropic-llm-client.js';
 export { createLLMClient } from './llm/create-llm-client.js';
 export type { LLMEnv } from './llm/create-llm-client.js';
+
+// LLM Pipeline Runner (AI-driven data pipelining)
+export {
+  runLLMPipelineStep,
+  isRetryableProviderError,
+  backoffFor,
+  parseJsonOutput,
+  validateSchema as validateLlmSchema,
+  type LLMPipelineRunnerConfig,
+  type LLMPipelineRunResult,
+  type LLMPipelineOutcome,
+} from './llm/llm-pipeline-runner.js';
+
+// LLM Function Runtime (AI-driven logic building)
+export {
+  LLMFunctionRuntime,
+  type LLMFunctionRuntimeConfig,
+  schemaForFunction,
+  renderPrompt,
+} from './functions/llm-function-runtime.js';

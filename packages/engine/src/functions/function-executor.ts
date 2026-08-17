@@ -246,6 +246,14 @@ export interface FunctionExecutorConfig {
    * silent null the pack author would read as "not found".
    */
   ontology?: FunctionOntologyAccess;
+  /**
+   * Optional LLM-backed runtime. When supplied, functions declared with
+   * `@function(runtime: "llm")` are executable; without it they fail at
+   * invocation time with a clear "LLM runtime not configured" error rather
+   * than silently no-op'ing. The runtime is opt-in so a deployment without
+   * an LLM provider does not pay the construction cost or pull the SPI.
+   */
+  llmRuntime?: FunctionRuntime;
 }
 
 /**
@@ -277,6 +285,13 @@ export class FunctionExecutor {
     ];
     for (const rt of config.runtimes ?? defaults) {
       this.runtimes.set(rt.name, rt);
+    }
+    // The LLM runtime is registered separately so it does not override a
+    // caller-supplied adapter of the same name (e.g. a customised one with
+    // different retry policy). A config that explicitly lists an "llm"
+    // runtime in `runtimes` wins.
+    if (config.llmRuntime && !this.runtimes.has(config.llmRuntime.name)) {
+      this.runtimes.set(config.llmRuntime.name, config.llmRuntime);
     }
   }
 

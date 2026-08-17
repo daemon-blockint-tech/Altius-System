@@ -19,6 +19,28 @@ import type { RequestContext } from './ontology.js';
 // Completion
 // ---------------------------------------------------------------------------
 
+/**
+ * A minimal JSON-Schema-like shape used to constrain and validate LLM output.
+ *
+ * Deliberately a subset of draft-07: the pipeline runner only needs to verify
+ * that a model's text parses to JSON and conforms to a structural contract,
+ * not full schema validation. Keeping it small avoids a json-schema-validator
+ * dependency and keeps the validator auditable.
+ */
+export interface LLMSchema {
+  type?: 'object' | 'array' | 'string' | 'number' | 'integer' | 'boolean' | 'null';
+  /** For `type: 'object'` — required property names. */
+  required?: string[];
+  /** For `type: 'object'` — per-property schemas. */
+  properties?: Record<string, LLMSchema>;
+  /** For `type: 'array'` — element schema. */
+  items?: LLMSchema;
+  /** For `type: 'string'` — enumerated allowed values. */
+  enum?: Array<string | number>;
+  /** Human description used in prompt generation, not validation. */
+  description?: string;
+}
+
 export interface LLMCompleteOptions {
   /** Model identifier (provider-specific, e.g. 'gpt-4', 'claude-3-opus'). */
   model?: string;
@@ -30,6 +52,16 @@ export interface LLMCompleteOptions {
   systemPrompt?: string;
   /** Stop sequences that end generation. */
   stop?: string[];
+  /**
+   * When set, the caller is asking for structured output conforming to this
+   * schema. The provider is expected to return JSON; the pipeline runner
+   * validates the parsed result against the schema and retries on a parse or
+   * conformance failure (subject to `maxRetries`).
+   *
+   * Providers that ignore this option still work — the runner's validator is
+   * the source of truth, not the provider's own enforcement.
+   */
+  outputSchema?: LLMSchema;
 }
 
 export interface LLMResponse {

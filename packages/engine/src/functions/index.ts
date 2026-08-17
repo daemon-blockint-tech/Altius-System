@@ -61,3 +61,10 @@ export {
   type WebhookResult,
   type WebhookProvider,
 } from './webhook-pipeline-trigger.js';
+
+export {
+  LLMFunctionRuntime,
+  type LLMFunctionRuntimeConfig,
+  schemaForFunction,
+  renderPrompt,
+} from './llm-function-runtime.js';

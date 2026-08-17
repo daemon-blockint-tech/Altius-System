@@ -75,6 +75,7 @@ export type {
   VectorSearchOptions,
   VectorSearchHit,
   VectorSearchResult,
+  LLMSchema,
 } from './llm-client.js';
 
 // CloudEvents (Section 4.2)

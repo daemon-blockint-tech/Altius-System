@@ -23,6 +23,22 @@ export const MetricNames = {
 
   // Computed metrics
   COMPUTED_EVALUATIONS: "altius.computed.evaluations",
+
+  // LLM / AI pipeline metrics (Section AIP)
+  LLM_CALLS: "altius.llm.calls",
+  LLM_DURATION: "altius.llm.duration",
+  LLM_TOKENS: "altius.llm.tokens",
+  LLM_RETRIES: "altius.llm.retries",
+  LLM_VALIDATION_FAILURES: "altius.llm.validation_failures",
+
+  // Function lifecycle metrics
+  FUNCTION_INVOCATIONS: "altius.function.invocations",
+  FUNCTION_DURATION: "altius.function.duration",
+
+  // Workflow monitoring metrics
+  WORKFLOW_EVENTS: "altius.workflow.events",
+  WORKFLOW_DURATION: "altius.workflow.duration",
+  WORKFLOW_FAILURES: "altius.workflow.failures",
 } as const;
 
 export type MetricName = (typeof MetricNames)[keyof typeof MetricNames];
@@ -50,6 +66,22 @@ export interface AltiusMetrics {
 
   // Computed
   computedEvaluations: Counter;
+
+  // LLM / AI pipeline
+  llmCalls: Counter;
+  llmDuration: Histogram;
+  llmTokens: Counter;
+  llmRetries: Counter;
+  llmValidationFailures: Counter;
+
+  // Functions
+  functionInvocations: Counter;
+  functionDuration: Histogram;
+
+  // Workflows
+  workflowEvents: Counter;
+  workflowDuration: Histogram;
+  workflowFailures: Counter;
 }
 
 /**
@@ -113,6 +145,49 @@ export function createAltiusMetrics(
     // Computed
     computedEvaluations: m.createCounter(MetricNames.COMPUTED_EVALUATIONS, {
       description: "Total number of computed field evaluations",
+    }),
+
+    // LLM / AI pipeline
+    llmCalls: m.createCounter(MetricNames.LLM_CALLS, {
+      description: "Total number of LLM completion calls (provider round-trips)",
+    }),
+    llmDuration: m.createHistogram(MetricNames.LLM_DURATION, {
+      description: "Latency of a single LLM provider round-trip in milliseconds",
+      unit: "ms",
+    }),
+    llmTokens: m.createCounter(MetricNames.LLM_TOKENS, {
+      description: "Total LLM tokens consumed (prompt + completion)",
+    }),
+    llmRetries: m.createCounter(MetricNames.LLM_RETRIES, {
+      description: "Total LLM call retries attempted by the pipeline runner",
+    }),
+    llmValidationFailures: m.createCounter(
+      MetricNames.LLM_VALIDATION_FAILURES,
+      {
+        description:
+          "Total LLM output schema validation failures (parse or conformance)",
+      },
+    ),
+
+    // Functions
+    functionInvocations: m.createCounter(MetricNames.FUNCTION_INVOCATIONS, {
+      description: "Total number of FunctionType invocations",
+    }),
+    functionDuration: m.createHistogram(MetricNames.FUNCTION_DURATION, {
+      description: "Duration of a function invocation in milliseconds",
+      unit: "ms",
+    }),
+
+    // Workflows
+    workflowEvents: m.createCounter(MetricNames.WORKFLOW_EVENTS, {
+      description: "Total workflow events emitted (action/function/object)",
+    }),
+    workflowDuration: m.createHistogram(MetricNames.WORKFLOW_DURATION, {
+      description: "End-to-end workflow step duration in milliseconds",
+      unit: "ms",
+    }),
+    workflowFailures: m.createCounter(MetricNames.WORKFLOW_FAILURES, {
+      description: "Total workflow steps that ended in failure",
     }),
   };
 }
