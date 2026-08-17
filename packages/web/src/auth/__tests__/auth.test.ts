@@ -183,6 +183,56 @@ describe('AuthSession', () => {
   });
 });
 
+describe('session expiry', () => {
+  it('signals expiry when the refresh is rejected', async () => {
+    // The refresh token is spent or expired. Retrying reuses it, so this is the
+    // end of the session, not a transient error — and without a signal the app
+    // stays "signed in" behind a Retry that can never succeed.
+    const onExpired = vi.fn();
+    globalThis.fetch = tokenResponse({ error: 'invalid_grant' }, false);
+    const session = new AuthSession(CONFIG, () => 100_000, onExpired);
+    session.adopt({ accessToken: 'stale', refreshToken: 'rt', expiresAt: 100_000 });
+
+    await expect(session.getAccessToken()).rejects.toThrow();
+    expect(onExpired).toHaveBeenCalledTimes(1);
+    expect(session.isAuthenticated).toBe(false);
+  });
+
+  it('signals expiry when there is nothing to refresh with', async () => {
+    const onExpired = vi.fn();
+    const session = new AuthSession(CONFIG, () => 100_000, onExpired);
+    session.adopt({ accessToken: 'stale', refreshToken: null, expiresAt: 0 });
+
+    await expect(session.getAccessToken()).rejects.toThrow(/no refresh token/i);
+    expect(onExpired).toHaveBeenCalledTimes(1);
+  });
+
+  it('signals once even when several requests hit the dead session together', async () => {
+    // A table firing three queries must not produce three redirects to login.
+    const onExpired = vi.fn();
+    globalThis.fetch = tokenResponse({ error: 'invalid_grant' }, false);
+    const session = new AuthSession(CONFIG, () => 100_000, onExpired);
+    session.adopt({ accessToken: 'stale', refreshToken: 'rt', expiresAt: 100_000 });
+
+    await Promise.allSettled([
+      session.getAccessToken(),
+      session.getAccessToken(),
+      session.getAccessToken(),
+    ]);
+
+    expect(onExpired).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not signal expiry while the token is still valid', async () => {
+    const onExpired = vi.fn();
+    const session = new AuthSession(CONFIG, () => 1_000, onExpired);
+    session.adopt({ accessToken: 'at', refreshToken: 'rt', expiresAt: 1_000_000 });
+
+    expect(await session.getAccessToken()).toBe('at');
+    expect(onExpired).not.toHaveBeenCalled();
+  });
+});
+
 describe('refreshTokens', () => {
   it('posts the refresh grant with the client id', async () => {
     const fetchMock = tokenResponse({ access_token: 'a2', refresh_token: 'r2', expires_in: 60 });

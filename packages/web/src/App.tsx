@@ -19,17 +19,27 @@ type AuthState = 'checking' | 'anonymous' | 'signed-in' | 'error';
  * its own, which is what keeps the permission model in one place.
  */
 export function App({ config }: { config: WebConfig }): ReactNode {
+  // React 18+ runs effects twice in StrictMode; exchanging a single-use code
+  // twice would fail the second time and look like a broken login. Reset on
+  // expiry so a fresh login can exchange again.
+  const exchanged = useRef(false);
+  // Declared before the session so the expiry callback can reach it.
+  const [authState, setAuthState] = useState<AuthState>(config.oidc ? 'checking' : 'anonymous');
   const session = useMemo(
-    () => (config.oidc ? new AuthSession(config.oidc) : null),
+    () =>
+      config.oidc
+        ? new AuthSession(config.oidc, Date.now, () => {
+            // The session cannot be renewed. Return to the signed-out view so
+            // there is a way back in — otherwise every request throws behind a
+            // Retry button that can never succeed.
+            exchanged.current = false;
+            setAuthState('anonymous');
+          })
+        : null,
     [config.oidc],
   );
 
-  // No OIDC configured means the dev stack, which serves anonymous callers.
-  const [authState, setAuthState] = useState<AuthState>(session ? 'checking' : 'anonymous');
   const [authError, setAuthError] = useState<string | null>(null);
-  // React 18+ runs effects twice in StrictMode; exchanging a single-use code
-  // twice would fail the second time and look like a broken login.
-  const exchanged = useRef(false);
 
   useEffect(() => {
     if (!session || !config.oidc || exchanged.current) return;
