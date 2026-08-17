@@ -100,8 +100,12 @@ export interface ToolDescriptor {
   tags: string[];
 }
 
+/** Mirrors the ToolKind enum in the SDL. A plain string here let a
+ *  lowercase value type-check and then fail GraphQL validation at runtime. */
+export type ToolKind = 'ACTION' | 'FUNCTION';
+
 export interface ToolFilter {
-  kind?: string;
+  kind?: ToolKind;
   tags?: string[];
 }
 

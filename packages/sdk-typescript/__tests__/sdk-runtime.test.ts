@@ -302,6 +302,7 @@ describe('Generated SDK runtime', () => {
       expect(params.properties['assessedAt']!.format).toBe('date-time');
     });
 
+
     it('forwards a filter', async () => {
       const fetchMock = createFetchMock({ data: { availableTools: [] } });
       globalThis.fetch = fetchMock;

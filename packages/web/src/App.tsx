@@ -79,7 +79,7 @@ export function App({ config }: { config: WebConfig }): ReactNode {
   // not on every render of this component.
   const loadActions = useMemo(
     () => async (): Promise<ActionSchema[]> => {
-      const tools = await client.actions.available({ kind: 'action' });
+      const tools = await client.actions.available({ kind: 'ACTION' });
       return tools.map(t => ({
         name: t.name,
         description: t.description,
