@@ -3,7 +3,7 @@
 # Pinned to a patch release so the baked Go stdlib stays ahead of known CVEs
 # (>=1.25.11 fixes CVE-2026-42504; >=1.25.12 fixes CVE-2026-39822, the os.Root
 # symlink-following flaw); bump deliberately, not via a floating tag.
-FROM golang:1.25.12-alpine AS builder
+FROM golang:1.25.13-alpine AS builder
 
 WORKDIR /app
 
@@ -38,7 +38,7 @@ RUN --mount=type=cache,id=gomod,target=/go/pkg/mod \
        github.com/grpc-ecosystem/grpc-health-probe
 
 # Runtime stage
-FROM alpine:3.20
+FROM alpine:3.23
 
 ARG GIT_REVISION=unknown
 LABEL org.opencontainers.image.revision="${GIT_REVISION}"

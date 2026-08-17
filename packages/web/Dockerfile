@@ -20,7 +20,7 @@ RUN pnpm install --frozen-lockfile
 RUN pnpm turbo build --filter=@altius/web...
 
 # Runtime stage
-FROM nginx:1.27-alpine
+FROM nginx:1.29-alpine
 
 RUN apk upgrade --no-cache libcrypto3 libssl3
 
