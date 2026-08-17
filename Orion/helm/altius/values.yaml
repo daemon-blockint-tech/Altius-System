@@ -77,6 +77,16 @@ auth:
 authz:
   openfga:
     url: http://openfga:8080
+    # -- Secret holding the pre-shared key the gateway presents to OpenFGA.
+    # Empty means OpenFGA is reached unauthenticated, which is only safe where
+    # it is not routable beyond the pods that need it. On Kubernetes OpenFGA is
+    # a Service every pod in the namespace can reach, so anything that can
+    # write tuples grants itself any permission — invisibly to Altius, because
+    # the grant never passes through Altius. The gateway has honoured
+    # OPENFGA_API_TOKEN since 7235120; until now the chart had no way to set it.
+    existingSecret: ""
+    secretKeys:
+      apiToken: apiToken
     # Single-tenant: one store, serving the tenant named by
     # auth.oidc.defaultTenant. Both must be set together — a store id with no
     # default tenant IS the shared-store configuration this replaced, so the

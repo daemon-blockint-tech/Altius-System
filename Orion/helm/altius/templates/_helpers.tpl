@@ -60,15 +60,22 @@ postgresql://$(POSTGRES_USERNAME):$(POSTGRES_PASSWORD)@{{ .Values.storage.postgr
 {{- end }}
 
 {{/*
-Replicas the api-gateway will actually run.
+The most api-gateway pods this release can reach.
 
-The HPA owns the count when autoscaling is on, so replicaCount is not the
-number to reason about — minReplicas is the floor the deployment never drops
-below.
+A safety assertion has to reason about the CEILING, not the floor. This
+returned minReplicas at first, on the reasoning that the HPA owns the count
+once autoscaling is on — which is true and is exactly why it is the wrong
+number: the HPA owning the count is what makes maxReplicas reachable. Setting
+`autoscaling.minReplicas=1` then bypassed the whole guard while the Deployment
+still rendered `replicas: 2` (the template emits replicaCount whether or not
+autoscaling is on, and it stands until the first HPA reconcile) and the HPA
+still permitted 5.
+
+Both numbers are reachable pod counts, so take the larger.
 */}}
 {{- define "altius.effectiveReplicas" -}}
 {{- if .Values.apiGateway.autoscaling.enabled -}}
-{{- .Values.apiGateway.autoscaling.minReplicas -}}
+{{- max (int .Values.apiGateway.replicaCount) (int .Values.apiGateway.autoscaling.maxReplicas) -}}
 {{- else -}}
 {{- .Values.apiGateway.replicaCount -}}
 {{- end -}}

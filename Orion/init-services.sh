@@ -15,6 +15,17 @@ fi
 POSTGRES_DB="${POSTGRES_DB:-altius}"
 POSTGRES_USER="${POSTGRES_USER:-altius}"
 OPENFGA_HOST="${OPENFGA_HOST:-localhost}"
+# Pre-shared key, when OpenFGA runs with OPENFGA_AUTHN_METHOD=preshared. The
+# .env.example that documents that hardening step used to leave this script
+# out, so following it made provisioning abort: every call below is
+# unauthenticated without this. Empty keeps the header off entirely, which is
+# what an unauthenticated local stack needs.
+OPENFGA_API_TOKEN="${OPENFGA_API_TOKEN:-}"
+if [ -n "$OPENFGA_API_TOKEN" ]; then
+  FGA_AUTH=(-H "Authorization: Bearer ${OPENFGA_API_TOKEN}")
+else
+  FGA_AUTH=()
+fi
 OPENFGA_PORT="${OPENFGA_PORT:-8280}"
 
 log() { echo "[init] $*"; }
@@ -65,7 +76,7 @@ wait_for_openfga() {
   log "Waiting for OpenFGA on ${OPENFGA_HOST}:${OPENFGA_PORT}..."
   local attempts=0
   local max_attempts=30
-  until curl -sf "http://${OPENFGA_HOST}:${OPENFGA_PORT}/healthz" >/dev/null 2>&1; do
+  until curl -sf "${FGA_AUTH[@]}" "http://${OPENFGA_HOST}:${OPENFGA_PORT}/healthz" >/dev/null 2>&1; do
     attempts=$((attempts + 1))
     if [ "${attempts}" -ge "${max_attempts}" ]; then
       err "OpenFGA not ready after ${max_attempts} attempts"
@@ -83,7 +94,7 @@ load_openfga_model() {
 
   # Create store
   local store_response
-  store_response=$(curl -sf -X POST "http://${OPENFGA_HOST}:${OPENFGA_PORT}/stores" \
+  store_response=$(curl -sf "${FGA_AUTH[@]}" -X POST "http://${OPENFGA_HOST}:${OPENFGA_PORT}/stores" \
     -H "Content-Type: application/json" \
     -d '{"name": "altius"}')
 
@@ -93,7 +104,7 @@ load_openfga_model() {
   if [ -z "${store_id}" ]; then
     # Store may already exist — list stores and find it
     local list_response
-    list_response=$(curl -sf "http://${OPENFGA_HOST}:${OPENFGA_PORT}/stores")
+    list_response=$(curl -sf "${FGA_AUTH[@]}" "http://${OPENFGA_HOST}:${OPENFGA_PORT}/stores")
     store_id=$(echo "${list_response}" | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
   fi
 
@@ -111,7 +122,7 @@ load_openfga_model() {
     exit 1
   fi
 
-  curl -sf -X POST "http://${OPENFGA_HOST}:${OPENFGA_PORT}/stores/${store_id}/authorization-models" \
+  curl -sf "${FGA_AUTH[@]}" -X POST "http://${OPENFGA_HOST}:${OPENFGA_PORT}/stores/${store_id}/authorization-models" \
     -H "Content-Type: application/json" \
     -d @"${model_file}" >/dev/null
 
