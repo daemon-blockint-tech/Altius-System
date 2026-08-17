@@ -159,7 +159,7 @@ describe('Generated SDK runtime', () => {
       globalThis.fetch = fetchMock;
 
       const client = new Altius({ endpoint: 'http://localhost:3000/graphql', token: 'tok' });
-      const result = await client.patient.get('p-1') as unknown as { patient: Patient };
+      const result = await client.patient.get('p-1');
 
       expect(fetchMock).toHaveBeenCalledTimes(1);
       const [, init] = fetchMock.mock.calls[0]!;
@@ -169,9 +169,14 @@ describe('Generated SDK runtime', () => {
       // Authorization header must carry the token
       const headers = init!.headers as Record<string, string>;
       expect(headers['Authorization']).toBe('Bearer tok');
-      // The SDK returns the GraphQL data envelope; the caller extracts the field
-      expect(result.patient).not.toBeNull();
-      expect(result.patient.id).toBe('p-1');
+      // The declared return type is Patient | null, so that is what must come
+      // back. Returning the { patient: ... } envelope while claiming otherwise
+      // meant every caller silently read undefined off it — ObjectTable's
+      // `connection?.edges ?? []` rendered an empty table against a real
+      // server, and no unit test saw it because the fixtures supply the
+      // unwrapped shape directly.
+      expect(result).not.toBeNull();
+      expect(result!.id).toBe('p-1');
     });
 
     it('returns null data when the server returns null', async () => {
@@ -179,8 +184,8 @@ describe('Generated SDK runtime', () => {
       globalThis.fetch = fetchMock;
 
       const client = new Altius({ endpoint: 'http://localhost:3000/graphql', token: 'tok' });
-      const result = await client.patient.get('nonexistent') as unknown as { patient: Patient | null };
-      expect(result.patient).toBeNull();
+      const result = await client.patient.get('nonexistent');
+      expect(result).toBeNull();
     });
   });
 
