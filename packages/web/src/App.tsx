@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { ObjectTable } from './components/ObjectTable.js';
-import { createClient, readConfig } from './client.js';
+import { createClient } from './client.js';
+import type { WebConfig } from './client.js';
 import { AuthSession } from './auth/session.js';
 import { beginLogin, completeLogin } from './auth/pkce.js';
 
@@ -15,8 +16,7 @@ type AuthState = 'checking' | 'anonymous' | 'signed-in' | 'error';
  * field-redacted and consent-gated server-side. The UI adds no data access of
  * its own, which is what keeps the permission model in one place.
  */
-export function App(): ReactNode {
-  const config = useMemo(() => readConfig(import.meta.env, window.location.origin), []);
+export function App({ config }: { config: WebConfig }): ReactNode {
   const session = useMemo(
     () => (config.oidc ? new AuthSession(config.oidc) : null),
     [config.oidc],

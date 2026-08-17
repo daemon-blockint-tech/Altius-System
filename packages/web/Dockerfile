@@ -13,17 +13,10 @@ COPY tools/ tools/
 
 RUN pnpm install --frozen-lockfile
 
-# VITE_ vars are inlined at build time, so they are build args rather than
-# runtime env. The endpoint deliberately is NOT one: it defaults to a relative
-# /graphql that this image's own nginx proxies, which is what makes the same
-# bundle promotable between environments.
-ARG VITE_OIDC_ISSUER=""
-ARG VITE_OIDC_CLIENT_ID="altius"
-ARG VITE_OIDC_REDIRECT_URI=""
-ENV VITE_OIDC_ISSUER="${VITE_OIDC_ISSUER}" \
-    VITE_OIDC_CLIENT_ID="${VITE_OIDC_CLIENT_ID}" \
-    VITE_OIDC_REDIRECT_URI="${VITE_OIDC_REDIRECT_URI}"
-
+# Nothing environment-specific is baked in. vite inlines VITE_* at build time,
+# so anything set here would pin the image to one deployment; OIDC settings are
+# written at container start by docker-entrypoint.sh and fetched by the app, and
+# the API endpoint is a relative path this image's own nginx proxies.
 RUN pnpm turbo build --filter=@altius/web...
 
 # Runtime stage
@@ -36,6 +29,8 @@ LABEL org.opencontainers.image.revision="${GIT_REVISION}"
 
 COPY --from=builder /app/packages/web/dist/ /usr/share/nginx/html/
 COPY packages/web/nginx.conf /etc/nginx/conf.d/default.conf
+COPY packages/web/docker-entrypoint.sh /docker-entrypoint.d/99-altius-config.sh
+RUN chmod +x /docker-entrypoint.d/99-altius-config.sh
 
 EXPOSE 8080
 

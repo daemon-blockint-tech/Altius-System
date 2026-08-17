@@ -97,10 +97,17 @@ Serving the API from the **same origin** is the design, not a convenience:
   production an unset value denies every cross-origin caller, which the gateway
   warns about at boot.
 
-`VITE_*` values are inlined by vite at build time, so they are Docker build args
-rather than runtime env. The endpoint deliberately is not one: it stays relative.
-Changing the OIDC issuer therefore means a rebuild, which is the honest
-consequence of shipping a static bundle.
+**Nothing environment-specific is baked into the bundle.** vite inlines `VITE_*`
+at build time, so anything set at build pins the image to one deployment — one
+image per issuer, and no promotion from staging to production. Instead
+`docker-entrypoint.sh` writes `/config.json` at container start from
+`OIDC_ISSUER`, `OIDC_CLIENT_ID` and `OIDC_REDIRECT_URI`, and the app fetches it
+before the first render. Build-time `VITE_*` remain the fallback so `pnpm dev`
+works with no container involved.
+
+Only non-secret, client-visible settings belong in that file: it is served to
+every browser that loads the app. The API endpoint is not in it at all — it is a
+relative path this image's own nginx proxies.
 
 nginx caches `/assets/` hard (vite content-hashes them) and marks `index.html`
 `no-store` — otherwise a deploy leaves browsers holding the previous bundle's

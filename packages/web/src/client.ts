@@ -20,6 +20,52 @@ export interface WebConfig {
   oidc: OidcConfig | null;
 }
 
+/** Shape written by docker-entrypoint.sh and served from the image. */
+interface RuntimeConfig {
+  oidcIssuer?: string;
+  oidcClientId?: string;
+  oidcRedirectUri?: string;
+}
+
+/**
+ * Resolve config at startup, preferring what the container wrote.
+ *
+ * vite inlines VITE_* at build time, so relying on them alone pins the bundle
+ * to one environment. /config.json is written per container, which is what
+ * makes a single image promotable. The build-time values remain the fallback so
+ * `pnpm dev` works with no container involved.
+ *
+ * A missing or unparseable /config.json is NOT fatal: against the dev stack
+ * there is no OIDC to configure, and failing startup over an absent optional
+ * file would be worse than running the way the dev stack expects.
+ */
+export async function loadConfig(
+  env: Record<string, string | undefined>,
+  origin: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<WebConfig> {
+  let runtime: RuntimeConfig = {};
+  try {
+    const response = await fetchImpl('/config.json', { cache: 'no-store' });
+    if (response.ok) runtime = (await response.json()) as RuntimeConfig;
+  } catch {
+    // Left empty on purpose — see above.
+  }
+
+  return readConfig(
+    {
+      ...env,
+      // Runtime wins: the container knows which environment it is in, the
+      // build does not. Empty strings are treated as unset so an unconfigured
+      // container falls back rather than half-configuring OIDC.
+      ...(runtime.oidcIssuer ? { VITE_OIDC_ISSUER: runtime.oidcIssuer } : {}),
+      ...(runtime.oidcClientId ? { VITE_OIDC_CLIENT_ID: runtime.oidcClientId } : {}),
+      ...(runtime.oidcRedirectUri ? { VITE_OIDC_REDIRECT_URI: runtime.oidcRedirectUri } : {}),
+    },
+    origin,
+  );
+}
+
 export function readConfig(
   env: Record<string, string | undefined>,
   origin: string,
