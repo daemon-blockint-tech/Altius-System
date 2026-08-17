@@ -1124,6 +1124,12 @@ export class Altius {
         // The provider refused — an expired session is the usual reason.
         // Flagged so the close below reports the loss WITHOUT scheduling a
         // reconnect: the retry would re-resolve the same failing token.
+        // Only the CURRENT socket may set client-wide state. A superseded
+        // socket resolving late would otherwise suppress the reconnect of
+        // the socket that replaced it. NOT reproduced by a test — I could
+        // not construct the interleaving — so this is consistency with the
+        // message and close listeners rather than a fixed defect.
+        if (this.wsSocket !== socket) return;
         this.wsAuthFailed = true;
         try { socket.close(); } catch { /* already gone */ }
       });

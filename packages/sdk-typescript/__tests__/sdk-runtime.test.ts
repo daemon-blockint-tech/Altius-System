@@ -566,6 +566,7 @@ describe('Generated SDK runtime', () => {
       vi.useRealTimers();
     });
 
+
     it('does not reconnect after the caller unsubscribes', async () => {
       // Letting go of a stream is not losing one; reconnecting here would
       // resurrect a subscription the caller has already abandoned.
