@@ -133,7 +133,11 @@ domainPacksExtra:
 # -- Observability (OpenTelemetry)
 observability:
   otlp:
-    endpoint: otel-collector:4317
+    # The exporter is @opentelemetry/exporter-trace-otlp-http and it POSTs to
+    # `${endpoint}/v1/traces`, so this needs BOTH a scheme and the collector's
+    # HTTP port. It had neither: 4317 is the collector's gRPC listener, and
+    # without http:// the composed value is not a URL at all.
+    endpoint: http://otel-collector:4318
 
 # -- Sync engine / CDC
 sync:

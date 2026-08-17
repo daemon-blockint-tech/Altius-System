@@ -48,7 +48,10 @@ spec:
           protocol: TCP
         - port: 8080
           protocol: TCP
-        - port: 4317
+        # OTLP over HTTP. The exporter is the -http package, so 4318 is the
+        # port it dials; allowing only the collector's gRPC 4317 would drop
+        # every span even once the endpoint URL is right.
+        - port: 4318
           protocol: TCP
         - port: 6379
           protocol: TCP
