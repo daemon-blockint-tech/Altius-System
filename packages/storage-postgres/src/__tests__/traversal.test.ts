@@ -55,9 +55,6 @@ function makeLinkRow(overrides: Record<string, unknown> = {}): Record<string, un
     _created_at: new Date('2025-01-01T00:00:00Z'),
     _updated_at: new Date('2025-01-01T00:00:00Z'),
     _deleted_at: null,
-    // Emitted by generateObjectTableDDL (ddl-objects.ts). The fixture omitted
-    // it, which is why the phantom-"ActorId" mapping was invisible here.
-    _actor_id: 'user-9',
     ...overrides,
   };
 }
@@ -71,6 +68,10 @@ function makeObjectRow(type: string, id: string, overrides: Record<string, unkno
     _created_at: new Date('2025-01-01T00:00:00Z'),
     _updated_at: new Date('2025-01-01T00:00:00Z'),
     _deleted_at: null,
+    // Object tables carry _actor_id (ddl-objects.ts:23). Link tables do not —
+    // generateLinkTableDDL emits no such column — so it belongs here and not on
+    // makeLinkRow, where an earlier edit of mine wrongly put it.
+    _actor_id: 'user-9',
     ...overrides,
   };
 }
