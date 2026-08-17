@@ -6,8 +6,8 @@
  * ensure safe quoting.
  */
 
-import type { FilterExpression, FieldPredicate, LogicalPredicate } from '@altius/spi';
-import { fieldCol } from '../schema/type-mapping.js';
+import type { FilterExpression, FieldPredicate, LogicalPredicate, LinkTypeDefinition } from '@altius/spi';
+import { fieldCol, snakeCase, pgIdent } from '../schema/type-mapping.js';
 
 /** Result of translating a FilterExpression. */
 export interface SqlFragment {
@@ -15,6 +15,27 @@ export interface SqlFragment {
   text: string;
   /** Bind parameter values matching the $N placeholders. */
   params: unknown[];
+}
+
+/**
+ * Context for resolving link-scoped filters (dotted field paths).
+ *
+ * When a FieldPredicate's `field` contains a dot (e.g. `admittedTo.name`),
+ * the first segment is treated as a link type name and the remainder as a
+ * field on the target object type. The filter is translated into an EXISTS
+ * subquery that joins through the link table.
+ *
+ * Without this context, dotted fields are treated as literal column names
+ * (which will fail at execution time if no such column exists — preserving
+ * backward-compatible behaviour for callers that don't need link scoping).
+ */
+export interface FilterContext {
+  /** The object type being filtered (the outer query's table). */
+  currentType: string;
+  /** Schema name for qualifying link/target tables. Default: 'public'. */
+  schema?: string;
+  /** Resolves a link type name to its definition. */
+  resolveLink: (linkType: string) => LinkTypeDefinition | undefined;
 }
 
 function isFieldPredicate(f: FilterExpression): f is FieldPredicate {
@@ -30,21 +51,76 @@ function isLogicalPredicate(f: FilterExpression): f is LogicalPredicate {
  *
  * @param filter  The filter tree to translate.
  * @param offset  Starting index for $N placeholders (1-based).
+ * @param ctx     Optional context for resolving link-scoped filters.
  * @returns       SQL fragment with text and bind parameters.
  */
-export function filterToSql(filter: FilterExpression, offset = 1): SqlFragment {
+export function filterToSql(filter: FilterExpression, offset = 1, ctx?: FilterContext): SqlFragment {
   if (isFieldPredicate(filter)) {
-    return fieldPredicateToSql(filter, offset);
+    return fieldPredicateToSql(filter, offset, ctx);
   }
   if (isLogicalPredicate(filter)) {
-    return logicalPredicateToSql(filter, offset);
+    return logicalPredicateToSql(filter, offset, ctx);
   }
   // Fallback: empty filter matches everything
   return { text: 'TRUE', params: [] };
 }
 
-function fieldPredicateToSql(pred: FieldPredicate, offset: number): SqlFragment {
-  const col = fieldCol(pred.field);
+/**
+ * Build an EXISTS subquery for a link-scoped predicate.
+ *
+ * Joins the link table to the target object table and applies the
+ * predicate against the target field. The outer table is referenced
+ * by its implicit snake_case alias.
+ */
+function linkScopedPredicateToSql(pred: FieldPredicate, offset: number, ctx: FilterContext, link: { linkType: string; targetField: string; linkDef: LinkTypeDefinition }): SqlFragment {
+  const schema = ctx.schema ?? 'public';
+  const outerAlias = snakeCase(ctx.currentType);
+  const linkTable = `${pgIdent(schema)}.${pgIdent(snakeCase(link.linkType))}`;
+  const targetTable = `${pgIdent(schema)}.${pgIdent(snakeCase(link.linkDef.toType))}`;
+
+  // Determine direction: which side of the link is the outer type?
+  const outerIsFrom = link.linkDef.fromType === ctx.currentType;
+  const outerIsTo = link.linkDef.toType === ctx.currentType;
+  if (!outerIsFrom && !outerIsTo) {
+    // The link type doesn't connect to the current type — no match possible.
+    return { text: 'FALSE', params: [] };
+  }
+
+  const outerLinkCol = outerIsFrom ? '_from_id' : '_to_id';
+  const targetLinkCol = outerIsFrom ? '_to_id' : '_from_id';
+
+  // Build the inner predicate (same operator logic as flat fields, but
+  // against the target table's column, qualified with 't.' alias).
+  const innerPred: FieldPredicate = { ...pred, field: link.targetField };
+  const innerFragment = fieldPredicateToSqlFlat(innerPred, offset, 't');
+
+  return {
+    text: `EXISTS (SELECT 1 FROM ${linkTable} AS l JOIN ${targetTable} AS t ON t."_id" = l."${targetLinkCol}" AND t."_deleted_at" IS NULL WHERE l."_tenant_id" = ${outerAlias}."_tenant_id" AND l."_deleted_at" IS NULL AND l."${outerLinkCol}" = ${outerAlias}."_id" AND l."${outerLinkCol === '_from_id' ? '_from_type' : '_to_type'}" = $${offset + innerFragment.params.length} AND ${innerFragment.text})`,
+    params: [...innerFragment.params, ctx.currentType],
+  };
+}
+
+function fieldPredicateToSql(pred: FieldPredicate, offset: number, ctx?: FilterContext): SqlFragment {
+  // Link-scoped filter: dotted field path resolved via context.
+  const dot = pred.field.indexOf('.');
+  if (dot > 0 && ctx) {
+    const linkType = pred.field.substring(0, dot);
+    const targetField = pred.field.substring(dot + 1);
+    const linkDef = ctx.resolveLink(linkType);
+    if (!linkDef) {
+      // Dotted field + context + unknown link type → no row can match.
+      // Safer than falling through to a non-existent column reference.
+      return { text: 'FALSE', params: [] };
+    }
+    return linkScopedPredicateToSql(pred, offset, ctx, { linkType, targetField, linkDef });
+  }
+  return fieldPredicateToSqlFlat(pred, offset);
+}
+
+/** Flat-field predicate translation (no link scoping).
+ *  @param tableAlias Optional alias prefix for the column (e.g. 't' inside EXISTS). */
+function fieldPredicateToSqlFlat(pred: FieldPredicate, offset: number, tableAlias?: string): SqlFragment {
+  const col = tableAlias ? `${tableAlias}.${fieldCol(pred.field)}` : fieldCol(pred.field);
 
   switch (pred.operator) {
     case 'eq':
@@ -103,15 +179,15 @@ function fieldPredicateToSql(pred: FieldPredicate, offset: number): SqlFragment 
   }
 }
 
-function logicalPredicateToSql(pred: LogicalPredicate, offset: number): SqlFragment {
+function logicalPredicateToSql(pred: LogicalPredicate, offset: number, ctx?: FilterContext): SqlFragment {
   if (pred.and && pred.and.length > 0) {
-    return composeFragments(pred.and, 'AND', offset);
+    return composeFragments(pred.and, 'AND', offset, ctx);
   }
   if (pred.or && pred.or.length > 0) {
-    return composeFragments(pred.or, 'OR', offset);
+    return composeFragments(pred.or, 'OR', offset, ctx);
   }
   if (pred.not) {
-    const inner = filterToSql(pred.not, offset);
+    const inner = filterToSql(pred.not, offset, ctx);
     // Same NULL asymmetry one level up: NOT(NULL) is NULL, not TRUE, so a row
     // the inner predicate could not evaluate was dropped rather than negated.
     // COALESCE gives negation the JS meaning the memory provider already had —
@@ -125,13 +201,14 @@ function composeFragments(
   filters: FilterExpression[],
   operator: 'AND' | 'OR',
   offset: number,
+  ctx?: FilterContext,
 ): SqlFragment {
   const parts: string[] = [];
   const allParams: unknown[] = [];
   let currentOffset = offset;
 
   for (const f of filters) {
-    const fragment = filterToSql(f, currentOffset);
+    const fragment = filterToSql(f, currentOffset, ctx);
     parts.push(fragment.text);
     allParams.push(...fragment.params);
     currentOffset += fragment.params.length;

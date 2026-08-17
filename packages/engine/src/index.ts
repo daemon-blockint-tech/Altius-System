@@ -70,6 +70,21 @@ export {
   // — which is why production still ran pack code in-process.
   IsolatedNodeFunctionRuntime,
   type IsolatedNodeRuntimeConfig,
+  FunctionRegistry,
+  type FunctionRevision,
+  type FunctionRevisionStatus,
+  type CreateFunctionRevisionInput,
+  type TestRunResult,
+  PythonFunctionRuntime,
+  type PythonRuntimeConfig,
+  GitFunctionSource,
+  type GitRepoConfig,
+  type GitOperationResult,
+  repoIdForUrl,
+  FunctionPipeline,
+  type PipelineStage,
+  type PipelineResult,
+  type PipelineConfig,
 } from './functions/index.js';
 
 // LLM Client

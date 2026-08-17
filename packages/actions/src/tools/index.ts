@@ -19,3 +19,11 @@ export type {
   PolicyGuardResult,
   RiskLevel,
 } from './types.js';
+
+// Concrete PolicyGuard implementation with hold/approval workflow
+export { HoldApprovePolicyGuard } from './hold-approve-policy-guard.js';
+export type {
+  HoldRecord,
+  HoldStatus,
+  HoldApprovePolicyGuardConfig,
+} from './hold-approve-policy-guard.js';

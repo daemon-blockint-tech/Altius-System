@@ -70,11 +70,13 @@ function createCtx(deps: ApiDependencies): ResolverContext {
 describe('Aggregate date bucketing over HTTP', () => {
   const schema = parseOdl(ODL);
 
-  it('emits DateBucketInput and BucketInterval in the SDL', () => {
+  it('emits DateBucketInput, NumericBucketInput, and BucketInput in the SDL', () => {
     const sdl = generateGraphQLSchema(schema);
     expect(sdl).toContain('enum BucketInterval');
     expect(sdl).toContain('input DateBucketInput');
-    expect(sdl).toContain('buckets: [DateBucketInput!]');
+    expect(sdl).toContain('input NumericBucketInput');
+    expect(sdl).toContain('input BucketInput');
+    expect(sdl).toContain('buckets: [BucketInput!]');
   });
 
   it('GraphQL resolver passes buckets to the aggregate query', async () => {
@@ -91,7 +93,7 @@ describe('Aggregate date bucketing over HTTP', () => {
 
     await resolver(undefined, {
       fields: [{ field: 'amount', fn: 'SUM', alias: 'total' }],
-      buckets: [{ field: 'timestamp', interval: 'MONTH' }],
+      buckets: [{ field: 'timestamp', date: { field: 'timestamp', interval: 'MONTH' } }],
     }, createCtx(deps));
 
     const call = (deps.objectManager.aggregate as ReturnType<typeof vi.fn>).mock.calls[0]!;
@@ -122,5 +124,46 @@ describe('Aggregate date bucketing over HTTP', () => {
     const call = (deps.objectManager.aggregate as ReturnType<typeof vi.fn>).mock.calls[0]!;
     const query = call[1];
     expect(query.buckets).toEqual([{ field: 'timestamp', interval: 'month', alias: undefined }]);
+  });
+
+  it('REST route passes numeric buckets to the aggregate query', async () => {
+    const result: AggregateResult = { groups: [], totalGroups: 0 };
+    const deps = createMockDeps(schema, result);
+    const routes = generateRestRoutes(schema, deps);
+    const route = routes.find(r => r.pattern === '/api/v1/transactions/aggregate')!;
+
+    const req: RestRequest = {
+      method: 'POST',
+      path: '/api/v1/transactions/aggregate',
+      params: {},
+      query: {},
+      body: {
+        fields: [{ field: 'amount', fn: 'sum', alias: 'total' }],
+        buckets: [{ field: 'amount', min: 0, max: 1000, numBuckets: 5 }],
+      },
+      user: createMockUser(),
+    };
+
+    await route.handler(req, createCtx(deps));
+
+    const call = (deps.objectManager.aggregate as ReturnType<typeof vi.fn>).mock.calls[0]!;
+    const query = call[1];
+    expect(query.buckets).toEqual([{ field: 'amount', min: 0, max: 1000, numBuckets: 5, alias: undefined }]);
+  });
+
+  it('GraphQL resolver passes numeric buckets to the aggregate query', async () => {
+    const result: AggregateResult = { groups: [], totalGroups: 0 };
+    const deps = createMockDeps(schema, result);
+    const { resolvers } = generateResolvers(schema, deps);
+    const resolver = (resolvers['Query'] as Record<string, unknown>)['transactionAggregate'] as (parent: unknown, args: unknown, ctx: ResolverContext) => Promise<AggregateResult>;
+
+    await resolver(undefined, {
+      fields: [{ field: 'amount', fn: 'SUM', alias: 'total' }],
+      buckets: [{ field: 'amount', numeric: { field: 'amount', min: 0, max: 1000, numBuckets: 5 } }],
+    }, createCtx(deps));
+
+    const call = (deps.objectManager.aggregate as ReturnType<typeof vi.fn>).mock.calls[0]!;
+    const query = call[1];
+    expect(query.buckets).toEqual([{ field: 'amount', min: 0, max: 1000, numBuckets: 5, alias: undefined }]);
   });
 });

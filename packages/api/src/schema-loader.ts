@@ -925,7 +925,10 @@ function convertObjectType(objType: ObjectType): ObjectTypeDefinition {
     // Extract index definitions from directives
     const hasUnique = field.directives.some(d => d.kind === 'unique');
     const hasIndexed = field.directives.some(d => d.kind === 'indexed');
-    const hasSearchable = field.directives.some(d => d.kind === 'searchable');
+    const searchableDirective = field.directives.find(d => d.kind === 'searchable') as
+      | { kind: 'searchable'; weight?: number; analyzer?: string }
+      | undefined;
+    const hasSearchable = !!searchableDirective;
 
     if (hasUnique) {
       indexes.push({ field: field.name, indexType: 'BTREE', unique: true });
@@ -933,7 +936,15 @@ function convertObjectType(objType: ObjectType): ObjectTypeDefinition {
       indexes.push({ field: field.name, indexType: 'BTREE' });
     }
     if (hasSearchable) {
-      indexes.push({ field: field.name, indexType: 'FULLTEXT' });
+      // Propagate @searchable(weight:) into IndexDefinition.weight so the
+      // search runtime can use it as a per-field score multiplier.
+      indexes.push({
+        field: field.name,
+        indexType: 'FULLTEXT',
+        ...(searchableDirective?.weight !== undefined
+          ? { weight: searchableDirective.weight }
+          : {}),
+      });
     }
   }
 

@@ -13,6 +13,8 @@ import type {
   AggregateQuery,
   AggregateResult,
   PlatformError,
+  SetAlgebraInput,
+  FilterExpression,
 } from '@altius/spi';
 import type { ObjectManager } from '../objects/object-manager.js';
 
@@ -127,5 +129,82 @@ export class ObjectSetManager {
     }
 
     return this.objectManager.aggregate(def.objectType, aggregation, ctx);
+  }
+
+  /**
+   * Combine two object sets of the same object type into a new set.
+   *
+   * - UNION: objects in either set (OR of filters)
+   * - INTERSECT: objects in both sets (AND of filters)
+   * - DIFFERENCE: objects in the left set but not the right (left filter AND NOT right filter)
+   *
+   * The resulting set inherits the left set's objectType and orderBy. The
+   * limit is unset (the union/intersect/difference may need more rows than
+   * either input).
+   */
+  async combine(
+    input: SetAlgebraInput,
+    ctx: RequestContext,
+  ): Promise<ObjectSetDefinition> {
+    const left = await this.store.get(ctx, input.leftSetId);
+    if (!left) {
+      throw {
+        code: 'OBJECT_SET_NOT_FOUND',
+        category: 'not_found',
+        message: `Left object set ${input.leftSetId} not found`,
+        retryable: false,
+      } as PlatformError;
+    }
+    const right = await this.store.get(ctx, input.rightSetId);
+    if (!right) {
+      throw {
+        code: 'OBJECT_SET_NOT_FOUND',
+        category: 'not_found',
+        message: `Right object set ${input.rightSetId} not found`,
+        retryable: false,
+      } as PlatformError;
+    }
+    if (left.objectType !== right.objectType) {
+      throw {
+        code: 'TYPE_MISMATCH',
+        category: 'validation',
+        message: `Cannot combine sets of different types: ${left.objectType} vs ${right.objectType}`,
+        retryable: false,
+      } as PlatformError;
+    }
+
+    const leftFilter = left.filter ?? { and: [] };
+    const rightFilter = right.filter ?? { and: [] };
+
+    let combinedFilter: FilterExpression;
+    switch (input.op) {
+      case 'UNION':
+        combinedFilter = { or: [leftFilter, rightFilter] };
+        break;
+      case 'INTERSECT':
+        combinedFilter = { and: [leftFilter, rightFilter] };
+        break;
+      case 'DIFFERENCE':
+        combinedFilter = { and: [leftFilter, { not: rightFilter }] };
+        break;
+      default:
+        throw {
+          code: 'INVALID_OPERATION',
+          category: 'validation',
+          message: `Unknown set algebra operation: ${input.op}`,
+          retryable: false,
+        } as PlatformError;
+    }
+
+    return this.store.create(ctx, {
+      name: input.name,
+      description: input.description,
+      objectType: left.objectType,
+      filter: combinedFilter,
+      orderBy: left.orderBy,
+      isPublic: input.isPublic ?? false,
+      createdBy: ctx.actorId ?? 'system',
+      tenantId: ctx.tenantId,
+    });
   }
 }

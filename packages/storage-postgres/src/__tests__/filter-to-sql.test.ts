@@ -207,4 +207,96 @@ describe('filterToSql', () => {
       expect(result.params).toEqual(['t-1']);
     });
   });
+
+  // -------------------------------------------------------------------
+  // Link-scoped filters (dotted field paths)
+  // -------------------------------------------------------------------
+
+  describe('link-scoped filters', () => {
+    const ctx = {
+      currentType: 'Patient',
+      schema: 'public',
+      resolveLink: (lt: string) =>
+        lt === 'admittedTo'
+          ? { name: 'admittedTo', fromType: 'Patient', toType: 'Ward', cardinality: 'MANY_TO_ONE' as const }
+          : lt === 'treats'
+            ? { name: 'treats', fromType: 'Ward', toType: 'Patient', cardinality: 'ONE_TO_MANY' as const }
+            : undefined,
+    };
+
+    it('generates an EXISTS subquery for a dotted field (outbound)', () => {
+      const result = filterToSql(
+        { field: 'admittedTo.name', operator: 'eq', value: 'ICU' },
+        1,
+        ctx,
+      );
+      expect(result.text).toContain('EXISTS');
+      expect(result.text).toContain('admitted_to');
+      expect(result.text).toContain('ward');
+      expect(result.text).toContain('t."name" = $1');
+      expect(result.text).toContain('l."_from_id" = patient."_id"');
+      expect(result.params).toEqual(['ICU', 'Patient']);
+    });
+
+    it('generates an EXISTS subquery for a dotted field (inbound, to-side)', () => {
+      const result = filterToSql(
+        { field: 'treats.familyName', operator: 'eq', value: 'Smith' },
+        1,
+        { ...ctx, currentType: 'Ward' },
+      );
+      expect(result.text).toContain('EXISTS');
+      // Ward is the fromType of 'treats', so outbound: _from_id = ward._id
+      expect(result.text).toContain('l."_from_id" = ward."_id"');
+      expect(result.text).toContain('t."family_name" = $1');
+      expect(result.params).toEqual(['Smith', 'Ward']);
+    });
+
+    it('generates an EXISTS subquery for a dotted field (inbound, to-side)', () => {
+      // treats is Ward→Patient. currentType=Patient → Patient is the toType,
+      // so the join is inbound: l."_to_id" = patient."_id".
+      const result = filterToSql(
+        { field: 'treats.familyName', operator: 'eq', value: 'Smith' },
+        1,
+        ctx, // currentType is Patient
+      );
+      expect(result.text).toContain('EXISTS');
+      expect(result.text).toContain('l."_to_id" = patient."_id"');
+      expect(result.text).toContain('t."family_name" = $1');
+      expect(result.params).toEqual(['Smith', 'Patient']);
+    });
+
+    it('returns FALSE when the link type is unknown', () => {
+      const result = filterToSql(
+        { field: 'unknownLink.name', operator: 'eq', value: 'X' },
+        1,
+        ctx,
+      );
+      expect(result.text).toBe('FALSE');
+      expect(result.params).toEqual([]);
+    });
+
+    it('falls back to flat field when no context is provided', () => {
+      // No ctx → dotted field treated as literal column name (backward compat).
+      // fieldCol quotes the whole string as one identifier.
+      const result = filterToSql({ field: 'admittedTo.name', operator: 'eq', value: 'ICU' });
+      expect(result.text).toBe('"admitted_to.name" = $1');
+      expect(result.params).toEqual(['ICU']);
+    });
+
+    it('propagates context through logical predicates', () => {
+      const result = filterToSql(
+        {
+          and: [
+            { field: 'status', operator: 'eq', value: 'active' },
+            { field: 'admittedTo.name', operator: 'eq', value: 'ICU' },
+          ],
+        },
+        1,
+        ctx,
+      );
+      expect(result.text).toContain('EXISTS');
+      expect(result.text).toContain('"status" = $1');
+      expect(result.params).toEqual(['active', 'ICU', 'Patient']);
+    });
+  });
 });

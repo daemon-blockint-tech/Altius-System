@@ -544,6 +544,36 @@ function generateSharedTypes(): string {
     '  isPublic: Boolean',
     '}',
     '',
+    '# ─── Object Set Execution & Algebra ───',
+    '',
+    'type ObjectSetExecutionResult {',
+    '  items: [JSON!]!',
+    '  totalCount: Int!',
+    '  hasNextPage: Boolean!',
+    '  cursor: String',
+    '}',
+    '',
+    'input ObjectSetExecutionInput {',
+    '  limit: Int',
+    '  offset: Int',
+    '  after: String',
+    '}',
+    '',
+    'enum SetAlgebraOp {',
+    '  UNION',
+    '  INTERSECT',
+    '  DIFFERENCE',
+    '}',
+    '',
+    'input SetAlgebraInput {',
+    '  op: SetAlgebraOp!',
+    '  leftSetId: ID!',
+    '  rightSetId: ID!',
+    '  name: String!',
+    '  description: String',
+    '  isPublic: Boolean',
+    '}',
+    '',
     '# ─── Relationship (care-team) grants (v0.2.0 A1) ───',
     '',
     'input RelationshipInput {',
@@ -621,6 +651,44 @@ function generateSharedTypes(): string {
     '  progress: BulkProgress!',
     '  summary: BulkSummary',
     '  errors: [BulkItemError!]',
+    '}',
+    '',
+    '# ─── Function Lifecycle (draft → publish → deprecate, test, rollback) ───',
+    '',
+    'enum FunctionRevisionStatus {',
+    '  DRAFT',
+    '  PUBLISHED',
+    '  DEPRECATED',
+    '}',
+    '',
+    'type FunctionRevision {',
+    '  id: ID!',
+    '  functionName: String!',
+    '  revision: Int!',
+    '  status: FunctionRevisionStatus!',
+    '  runtime: String!',
+    '  entry: String!',
+    '  source: String',
+    '  testInputs: [JSON!]',
+    '  expectedOutputs: [JSON!]',
+    '  tenantId: String!',
+    '  createdBy: String!',
+    '  createdAt: DateTime!',
+    '  publishedAt: DateTime',
+    '}',
+    '',
+    'input CreateFunctionRevisionInput {',
+    '  functionName: String!',
+    '  runtime: String!',
+    '  entry: String!',
+    '  source: String',
+    '  testInputs: [JSON!]',
+    '  expectedOutputs: [JSON!]',
+    '}',
+    '',
+    'type TestRunResult {',
+    '  passed: Boolean!',
+    '  results: [JSON!]!',
     '}',
     '',
     '# ─── LLM / AIP (Section AIP) ───',
@@ -940,6 +1008,27 @@ export function generateGraphQLSchema(schema: ParsedSchema, options?: GraphQLSch
   ].join('\n'));
 
   sections.push([
+    'input NumericBucketInput {',
+    '  field: String!',
+    '  min: Float!',
+    '  max: Float!',
+    '  numBuckets: Int!',
+    '  alias: String',
+    '}',
+  ].join('\n'));
+
+  // Union input type — GraphQL doesn't support union inputs directly, so we
+  // use a wrapper with both date and numeric fields. The resolver checks
+  // which is present.
+  sections.push([
+    'input BucketInput {',
+    '  field: String!',
+    '  date: DateBucketInput',
+    '  numeric: NumericBucketInput',
+    '}',
+  ].join('\n'));
+
+  sections.push([
     'input AggregateOrderByInput {',
     '  field: String!',
     '  direction: SortDirection = ASC',
@@ -1016,7 +1105,7 @@ export function generateGraphQLSchema(schema: ParsedSchema, options?: GraphQLSch
       `  ${lower}s(filter: ${obj.name}Filter, orderBy: ${obj.name}OrderBy, first: Int, after: String, last: Int, before: String, asOf: DateTime): ${obj.name}Connection!`,
     );
     queryFields.push(
-      `  ${lower}Aggregate(filter: ${obj.name}Filter, groupBy: [String!], buckets: [DateBucketInput!], fields: [AggregateFieldInput!]!, orderBy: [AggregateOrderByInput!], limit: Int, offset: Int): AggregateResult!`,
+      `  ${lower}Aggregate(filter: ${obj.name}Filter, groupBy: [String!], buckets: [BucketInput!], fields: [AggregateFieldInput!]!, orderBy: [AggregateOrderByInput!], limit: Int, offset: Int): AggregateResult!`,
     );
     queryFields.push(
       `  search${obj.name}s(query: String!, fields: [String!], filter: ${obj.name}Filter, first: Int, after: String): SearchResult_${obj.name}!`,
@@ -1056,6 +1145,8 @@ export function generateGraphQLSchema(schema: ParsedSchema, options?: GraphQLSch
   queryFields.push('  applicableActions(objectType: String!, objectId: ID!): [String!]!');
   queryFields.push('  objectSet(id: ID!): ObjectSet');
   queryFields.push('  objectSets(objectType: String): [ObjectSet!]!');
+  queryFields.push('  executeObjectSet(id: ID!, input: ObjectSetExecutionInput): ObjectSetExecutionResult!');
+  queryFields.push('  executeObjectSetAggregate(id: ID!): AggregateResult!');
   // FDP/CDM read-only projection (Section S1.0). Records are a version-pinned
   // CDM shape with per-record provenance; returned as JSON since the projection
   // is profile-driven and intentionally flexible (mirrors GET /api/v1/cdm/*).
@@ -1104,6 +1195,7 @@ export function generateGraphQLSchema(schema: ParsedSchema, options?: GraphQLSch
   mutationFields.push('  createObjectSet(input: CreateObjectSetInput!): ObjectSet!');
   mutationFields.push('  updateObjectSet(id: ID!, input: UpdateObjectSetInput!): ObjectSet!');
   mutationFields.push('  deleteObjectSet(id: ID!): Boolean!');
+  mutationFields.push('  combineObjectSets(input: SetAlgebraInput!): ObjectSet!');
   // Care-team relationship grants (v0.2.0 A1) — mirror REST /api/v1/relationships.
   mutationFields.push('  grantRelationship(input: RelationshipInput!): RelationshipResult!');
   mutationFields.push('  revokeRelationship(input: RelationshipInput!): RelationshipResult!');
@@ -1112,6 +1204,13 @@ export function generateGraphQLSchema(schema: ParsedSchema, options?: GraphQLSch
   // LLM generate + embed (Section AIP) — mirror REST /api/v1/llm/*.
   mutationFields.push('  generate(input: GenerateInput!): GenerateResult!');
   mutationFields.push('  embed(input: EmbedInput!): EmbedResult!');
+  // Function lifecycle
+  queryFields.push('  functionRevision(id: ID!): FunctionRevision');
+  queryFields.push('  functionRevisions(functionName: String!): [FunctionRevision!]!');
+  mutationFields.push('  createFunctionRevision(input: CreateFunctionRevisionInput!): FunctionRevision!');
+  mutationFields.push('  publishFunctionRevision(id: ID!): FunctionRevision!');
+  mutationFields.push('  testFunctionRevision(id: ID!): TestRunResult!');
+  mutationFields.push('  rollbackFunction(functionName: String!, toRevisionId: ID!): FunctionRevision!');
   // TODO: submitBulkAction mutation deferred — requires BulkActionJob resolver
   // and async job tracking infrastructure. Re-add when bulk action pipeline is built.
   if (mutationFields.length > 0) {

@@ -410,11 +410,11 @@ export class PostgresStorageProvider implements StorageProvider {
   }
 
   async queryObjects(ctx: RequestContext, type: string, filter: FilterExpression, options?: QueryOptions): Promise<ObjectPage> {
-    return withRetry(() => pgQueryObjects(this._pool, ctx, type, filter, options, this._dataSchema));
+    return withRetry(() => pgQueryObjects(this._pool, ctx, type, filter, options, this._dataSchema, undefined, (lt) => this._getLinkTypeDef(lt)));
   }
 
   async aggregateObjects(ctx: RequestContext, type: string, query: AggregateQuery): Promise<AggregateResult> {
-    return withRetry(() => pgAggregateObjects(this._pool, ctx, type, query, this._dataSchema));
+    return withRetry(() => pgAggregateObjects(this._pool, ctx, type, query, this._dataSchema, undefined, (lt) => this._getLinkTypeDef(lt)));
   }
 
   async searchObjects(ctx: RequestContext, type: string, query: SearchQuery): Promise<SearchResult> {
@@ -422,7 +422,18 @@ export class PostgresStorageProvider implements StorageProvider {
     const ot = schema?.objectTypes.find((t) => t.name === type);
     const ftsIdx = ot?.indexes?.find((i) => i.indexType === 'FULLTEXT');
     const ftsLang = ftsIdx?.language ?? 'english';
-    return withRetry(() => pgSearchObjects(this._pool, ctx, type, query, this._dataSchema, undefined, ftsLang));
+    // Build a weight resolver from the schema's FULLTEXT index definitions
+    // so @searchable(weight:) propagates into search scoring.
+    const weightMap = new Map<string, number>();
+    for (const idx of ot?.indexes ?? []) {
+      if (idx.indexType === 'FULLTEXT' && idx.weight !== undefined) {
+        weightMap.set(idx.field, idx.weight);
+      }
+    }
+    const resolveFieldWeight = weightMap.size > 0
+      ? (fieldName: string) => weightMap.get(fieldName)
+      : undefined;
+    return withRetry(() => pgSearchObjects(this._pool, ctx, type, query, this._dataSchema, undefined, ftsLang, (lt) => this._getLinkTypeDef(lt), resolveFieldWeight));
   }
 
   async bulkMutate(ctx: RequestContext, request: BulkMutationRequest): Promise<BulkMutationResult> {

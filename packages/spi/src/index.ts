@@ -119,8 +119,18 @@ export type {
 export type {
   ObjectSetDefinition,
   ObjectSetStore,
+  SetAlgebraOp,
+  SetAlgebraInput,
 } from './object-set.js';
 
 export { stepDepth, totalHops } from './traversal-depth.js';
+
+// Agent threads (durable conversation persistence)
+export type {
+  MessageRole,
+  ThreadMessage,
+  AgentThread,
+  AgentThreadStore,
+} from './agent-threads.js';
 export { parseSearchQuery } from './search-query-parser.js';
 export type { ParsedSearchQuery, SearchTerm } from './search-query-parser.js';

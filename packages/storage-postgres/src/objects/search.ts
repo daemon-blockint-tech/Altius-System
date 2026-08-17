@@ -19,6 +19,7 @@ import type {
   SearchResult,
   SearchHit,
   OntologyObject,
+  LinkTypeDefinition,
 } from '@altius/spi';
 import { parseSearchQuery, type SearchTerm } from '@altius/spi';
 import { snakeCase, pgIdent, fieldCol } from '../schema/type-mapping.js';
@@ -87,6 +88,8 @@ export async function searchObjects(
   schema = 'public',
   tx?: PgTransaction,
   ftsLanguage = 'english',
+  resolveLink?: (linkType: string) => LinkTypeDefinition | undefined,
+  resolveFieldWeight?: (fieldName: string) => number | undefined,
 ): Promise<SearchResult> {
   const q = resolveQueryable(pool, tx);
   const table = tableName(type, schema);
@@ -181,7 +184,8 @@ export async function searchObjects(
       if (!searchFields.includes(field)) continue;
       params.push(term.value);
       const tsIdx = params.length;
-      parts.push(`4 * ts_rank_cd(${ftsCol}, plainto_tsquery('${ftsLang}', $${tsIdx}))`);
+      const weight = resolveFieldWeight?.(field) ?? 1;
+      parts.push(`${weight} * 4 * ts_rank_cd(${ftsCol}, plainto_tsquery('${ftsLang}', $${tsIdx}))`);
     }
     return parts.length > 0 ? ` + ${parts.join(' + ')}` : '';
   };
@@ -197,7 +201,8 @@ export async function searchObjects(
   };
 
   /** Build a score contribution for a term across all fields.
-   *  Per-field: exact=3, prefix=2, substring=1 for words; phrase=3 (contiguous). */
+   *  Per-field: exact=3, prefix=2, substring=1 for words; phrase=3 (contiguous).
+   *  Each per-field contribution is multiplied by the field's @searchable(weight:). */
   const buildTermScore = (term: SearchTerm): string => {
     const escaped = term.value.replace(/[%_\\]/g, '\\$&');
     // substring pattern (already used by buildTermMatch, but score needs its own param slots)
@@ -209,14 +214,16 @@ export async function searchObjects(
     // prefix pattern
     params.push(`${escaped}%`);
     const prefixIdx = params.length;
-    const parts = fieldCols.map((c) => {
+    const parts = fieldCols.map((col, i) => {
+      const fieldName = searchFields[i]!;
+      const weight = resolveFieldWeight?.(fieldName) ?? 1;
       if (term.kind === 'phrase') {
-        return `CASE WHEN ${c} ILIKE $${subIdx} ESCAPE '\\' THEN 3 ELSE 0 END`;
+        return `${weight} * CASE WHEN ${col} ILIKE $${subIdx} ESCAPE '\\' THEN 3 ELSE 0 END`;
       }
-      return `CASE` +
-        ` WHEN ${c} ILIKE $${exactIdx} ESCAPE '\\' THEN 3` +
-        ` WHEN ${c} ILIKE $${prefixIdx} ESCAPE '\\' THEN 2` +
-        ` WHEN ${c} ILIKE $${subIdx} ESCAPE '\\' THEN 1` +
+      return `${weight} * CASE` +
+        ` WHEN ${col} ILIKE $${exactIdx} ESCAPE '\\' THEN 3` +
+        ` WHEN ${col} ILIKE $${prefixIdx} ESCAPE '\\' THEN 2` +
+        ` WHEN ${col} ILIKE $${subIdx} ESCAPE '\\' THEN 1` +
         ` ELSE 0 END`;
     });
     const score = parts.join(' + ');
@@ -256,7 +263,8 @@ export async function searchObjects(
 
   // Apply additional filter
   if (query.filter) {
-    const filterFragment = filterToSql(query.filter, params.length + 1);
+    const filterCtx = resolveLink ? { currentType: type, schema, resolveLink } : undefined;
+    const filterFragment = filterToSql(query.filter, params.length + 1, filterCtx);
     if (filterFragment.text !== 'TRUE') {
       whereClauses.push(filterFragment.text);
     }

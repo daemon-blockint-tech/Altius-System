@@ -17,6 +17,7 @@ import type {
   QueryOptions,
   ObjectPage,
   DateTime,
+  LinkTypeDefinition,
 } from '@altius/spi';
 import { snakeCase, pgIdent, fieldCol } from '../schema/type-mapping.js';
 import { filterToSql } from './filter-to-sql.js';
@@ -411,6 +412,7 @@ export async function queryObjects(
   options?: QueryOptions,
   schema = 'public',
   tx?: PgTransaction,
+  resolveLink?: (linkType: string) => LinkTypeDefinition | undefined,
 ): Promise<ObjectPage> {
   const q = resolveQueryable(pool, tx);
 
@@ -455,7 +457,8 @@ export async function queryObjects(
   }
 
   // User filter translation (offset by existing params)
-  const filterFragment = filterToSql(filter, baseParams.length + 1);
+  const filterCtx = resolveLink ? { currentType: type, schema, resolveLink } : undefined;
+  const filterFragment = filterToSql(filter, baseParams.length + 1, filterCtx);
   if (filterFragment.text !== 'TRUE') {
     whereClauses.push(filterFragment.text);
   }

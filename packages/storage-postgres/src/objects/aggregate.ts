@@ -13,6 +13,7 @@ import type {
   AggregateGroup,
   DateBucket,
   NumericBucket,
+  LinkTypeDefinition,
 } from '@altius/spi';
 import { snakeCase, pgIdent, fieldCol, fieldColName } from '../schema/type-mapping.js';
 import { filterToSql } from './filter-to-sql.js';
@@ -33,6 +34,7 @@ export async function aggregateObjects(
   query: AggregateQuery,
   schema = 'public',
   tx?: PgTransaction,
+  resolveLink?: (linkType: string) => LinkTypeDefinition | undefined,
 ): Promise<AggregateResult> {
   const q = resolveQueryable(pool, tx);
   const table = tableName(type, schema);
@@ -141,7 +143,8 @@ export async function aggregateObjects(
   const whereClauses = [`"_tenant_id" = $1`, `"_deleted_at" IS NULL`];
 
   if (query.filter) {
-    const filterFragment = filterToSql(query.filter, baseParams.length + 1);
+    const filterCtx = resolveLink ? { currentType: type, schema, resolveLink } : undefined;
+    const filterFragment = filterToSql(query.filter, baseParams.length + 1, filterCtx);
     if (filterFragment.text !== 'TRUE') {
       whereClauses.push(filterFragment.text);
     }

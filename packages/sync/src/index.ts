@@ -105,9 +105,12 @@ export type {
   CdcStats,
   CdcConsumerConfig,
   KafkaCdcSourceConfig,
+  ReconciliationDiscrepancy,
+  ReconciliationReport,
+  ReconciliationOptions,
 } from "./cdc/index.js";
 
-export { CdcConsumer, KafkaCdcSource } from "./cdc/index.js";
+export { CdcConsumer, KafkaCdcSource, ReconciliationService } from "./cdc/index.js";
 
 // Conflict resolution (Section 6.6)
 export type {

@@ -109,12 +109,21 @@ function clone<T>(obj: T): T {
 // Filter evaluation
 // ---------------------------------------------------------------------------
 
-function evaluateFilter(obj: Record<string, unknown>, filter: FilterExpression): boolean {
+/**
+ * Resolves linked objects for link-scoped filters.
+ *
+ * Given an object ID and a link type, returns the objects on the other end
+ * of that link (non-deleted, tenant-scoped). Used by evaluateFilter to
+ * support dotted field paths like `admittedTo.name`.
+ */
+export type LinkResolver = (obj: Record<string, unknown>, linkType: string) => Record<string, unknown>[];
+
+function evaluateFilter(obj: Record<string, unknown>, filter: FilterExpression, linkResolver?: LinkResolver): boolean {
   if (isFieldPredicate(filter)) {
-    return evaluateFieldPredicate(obj, filter);
+    return evaluateFieldPredicate(obj, filter, linkResolver);
   }
   if (isLogicalPredicate(filter)) {
-    return evaluateLogicalPredicate(obj, filter);
+    return evaluateLogicalPredicate(obj, filter, linkResolver);
   }
   return true;
 }
@@ -174,7 +183,23 @@ function compareForRange(a: unknown, b: unknown): number | undefined {
   return undefined;
 }
 
-function evaluateFieldPredicate(obj: Record<string, unknown>, pred: FieldPredicate): boolean {
+function evaluateFieldPredicate(obj: Record<string, unknown>, pred: FieldPredicate, linkResolver?: LinkResolver): boolean {
+  // Link-scoped filter: dotted field path.
+  const dot = pred.field.indexOf('.');
+  if (dot > 0 && linkResolver) {
+    const linkType = pred.field.substring(0, dot);
+    const targetField = pred.field.substring(dot + 1);
+    const linked = linkResolver(obj, linkType);
+    if (linked.length === 0) return false;
+    // ANY linked object's target field must satisfy the predicate.
+    // For 'neq' and 'not exists', the semantics invert: the predicate
+    // holds if NO linked object matches the positive form. To keep it
+    // simple and consistent with SQL EXISTS, link-scoped predicates are
+    // existential: the filter matches if at least one linked object
+    // satisfies the operator applied to the target field.
+    const innerPred: FieldPredicate = { ...pred, field: targetField };
+    return linked.some((target) => evaluateFieldPredicate(target, innerPred));
+  }
   const val = obj[pred.field];
   switch (pred.operator) {
     case 'eq':
@@ -221,15 +246,15 @@ function evaluateFieldPredicate(obj: Record<string, unknown>, pred: FieldPredica
   }
 }
 
-function evaluateLogicalPredicate(obj: Record<string, unknown>, pred: LogicalPredicate): boolean {
+function evaluateLogicalPredicate(obj: Record<string, unknown>, pred: LogicalPredicate, linkResolver?: LinkResolver): boolean {
   if (pred.and) {
-    return pred.and.every((f) => evaluateFilter(obj, f));
+    return pred.and.every((f) => evaluateFilter(obj, f, linkResolver));
   }
   if (pred.or) {
-    return pred.or.some((f) => evaluateFilter(obj, f));
+    return pred.or.some((f) => evaluateFilter(obj, f, linkResolver));
   }
   if (pred.not) {
-    return !evaluateFilter(obj, pred.not);
+    return !evaluateFilter(obj, pred.not, linkResolver);
   }
   return true;
 }
@@ -530,6 +555,43 @@ export class MemoryStorageProvider implements StorageProvider {
     const schema = this._schemas.get(this._currentSchemaVersion);
     if (!schema) return undefined;
     return schema.objectTypes.find((ot) => ot.name === objectType);
+  }
+
+  /**
+   * Build a LinkResolver for evaluateFilter. Given a source object and a
+   * link type, returns the objects on the other end of that link (non-deleted,
+   * same tenant). Used for dotted field paths like `admittedTo.name`.
+   */
+  private _makeLinkResolver(
+    ctx: RequestContext,
+    maps: MemMaps,
+    sourceType: string,
+  ): LinkResolver {
+    return (obj: Record<string, unknown>, linkType: string): Record<string, unknown>[] => {
+      const linkDef = this._getLinkTypeDef(linkType);
+      if (!linkDef) return [];
+      // Direction: if the source type is the fromType, outbound; else inbound.
+      const outbound = linkDef.fromType === sourceType;
+      const targetType = outbound ? linkDef.toType : linkDef.fromType;
+      const objId = obj['_id'] as string;
+      const result: Record<string, unknown>[] = [];
+      for (const link of maps.links.values()) {
+        if (link._tenantId !== ctx.tenantId) continue;
+        if (link._type !== linkType) continue;
+        if (link._deletedAt) continue;
+        if (outbound) {
+          if (link._fromId !== objId) continue;
+          // Objects map is keyed by `${type}:${id}`.
+          const target = maps.objects.get(`${targetType}:${link._toId}`);
+          if (target && !target._deletedAt) result.push(target as Record<string, unknown>);
+        } else {
+          if (link._toId !== objId) continue;
+          const target = maps.objects.get(`${targetType}:${link._fromId}`);
+          if (target && !target._deletedAt) result.push(target as Record<string, unknown>);
+        }
+      }
+      return result;
+    };
   }
 
   private _registerIndex(objectType: string, index: IndexDefinition): void {
@@ -941,7 +1003,7 @@ export class MemoryStorageProvider implements StorageProvider {
       if (obj._tenantId !== ctx.tenantId) return false;
       if (obj._type !== type) return false;
       if (!options?.includeDeleted && obj._deletedAt) return false;
-      return evaluateFilter(obj as Record<string, unknown>, filter);
+      return evaluateFilter(obj as Record<string, unknown>, filter, this._makeLinkResolver(ctx, maps, type));
     });
 
     const totalCount = items.length;
@@ -1048,7 +1110,7 @@ export class MemoryStorageProvider implements StorageProvider {
       if (obj._tenantId !== ctx.tenantId) return false;
       if (obj._type !== type) return false;
       if (obj._deletedAt) return false;
-      if (query.filter) return evaluateFilter(obj as Record<string, unknown>, query.filter);
+      if (query.filter) return evaluateFilter(obj as Record<string, unknown>, query.filter, this._makeLinkResolver(ctx, maps, type));
       return true;
     });
 
@@ -1210,7 +1272,17 @@ export class MemoryStorageProvider implements StorageProvider {
     //   - If `orGroups` exist, at least one group must match (all its terms)
     //   - Per-field match quality: exact=3, prefix=2, substring=1 for words;
     //     phrases score 3 (contiguous match is always exact-quality).
-    //     Sums across fields. Matches the Postgres provider weight-for-weight.
+    //     Sums across fields, multiplied by @searchable(weight:).
+    //     Matches the Postgres provider weight-for-weight.
+    const otDef = this._getObjectTypeDef(type);
+    const weightMap = new Map<string, number>();
+    for (const idx of otDef?.indexes ?? []) {
+      if (idx.indexType === 'FULLTEXT' && idx.weight !== undefined) {
+        weightMap.set(idx.field, idx.weight);
+      }
+    }
+    const fieldWeight = (field: string): number => weightMap.get(field) ?? 1;
+
     const fieldScore = (val: string, term: SearchTerm): number => {
       const lower = val.toLowerCase();
       const t = term.value;
@@ -1237,7 +1309,7 @@ export class MemoryStorageProvider implements StorageProvider {
           const val = obj[field];
           if (typeof val !== 'string') continue;
           if (!val.toLowerCase().includes(term.value)) continue;
-          termScore += fieldScore(val, term);
+          termScore += fieldWeight(field) * fieldScore(val, term);
           if (!highlights[field]) highlights[field] = [];
           highlights[field].push(val);
         }
@@ -1270,7 +1342,7 @@ export class MemoryStorageProvider implements StorageProvider {
               const val = obj[field];
               if (typeof val !== 'string') continue;
               if (!val.toLowerCase().includes(term.value)) continue;
-              termScore += fieldScore(val, term);
+              termScore += fieldWeight(field) * fieldScore(val, term);
               if (!highlights[field]) highlights[field] = [];
               highlights[field].push(val);
             }
@@ -1283,7 +1355,7 @@ export class MemoryStorageProvider implements StorageProvider {
       }
 
       // Apply additional filter if present
-      if (query.filter && !evaluateFilter(obj as Record<string, unknown>, query.filter)) {
+      if (query.filter && !evaluateFilter(obj as Record<string, unknown>, query.filter, this._makeLinkResolver(ctx, this._getEffectiveMaps(ctx), type))) {
         continue;
       }
 

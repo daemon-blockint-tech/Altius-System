@@ -34,3 +34,22 @@ export interface ObjectSetStore {
   update(ctx: RequestContext, id: string, updates: Partial<Pick<ObjectSetDefinition, 'name' | 'description' | 'filter' | 'orderBy' | 'limit' | 'aggregation' | 'isPublic'>>): Promise<ObjectSetDefinition>;
   delete(ctx: RequestContext, id: string): Promise<void>;
 }
+
+/** Set algebra operations for combining two object sets. */
+export type SetAlgebraOp = 'UNION' | 'INTERSECT' | 'DIFFERENCE';
+
+/**
+ * Combine two object sets of the same object type into a new set.
+ *
+ * - UNION: objects in either set (OR of filters)
+ * - INTERSECT: objects in both sets (AND of filters)
+ * - DIFFERENCE: objects in the left set but not the right (AND of left filter with NOT of right filter)
+ */
+export interface SetAlgebraInput {
+  op: SetAlgebraOp;
+  leftSetId: string;
+  rightSetId: string;
+  name: string;
+  description?: string;
+  isPublic?: boolean;
+}

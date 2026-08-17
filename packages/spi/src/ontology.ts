@@ -343,6 +343,14 @@ export interface IndexDefinition {
    * tsvector column and used at query time for plainto_tsquery.
    */
   language?: string;
+  /**
+   * Full-text search field weight (from @searchable(weight:)).
+   * Only meaningful when indexType is FULLTEXT. Multiplies the relevance
+   * score for matches in this field, so a field with weight 2.0 contributes
+   * twice as much to the ranking as a field with weight 1.0 (the default).
+   * Mirrors Foundry/Foundry-style per-field search weighting.
+   */
+  weight?: number;
 }
 
 // ---------------------------------------------------------------------------

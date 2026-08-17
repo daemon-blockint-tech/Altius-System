@@ -18,6 +18,7 @@
 import type { ParsedSchema, ObjectType, ActionType, FunctionType, FieldDefinition, LinkType, LinkDirective } from '@altius/odl';
 import { DataPurpose, MAX_LINK_QUERY_LIMIT } from '@altius/spi';
 import type { OntologyObject, OntologyLink, FilterExpression, AggregateQuery, AggregateField, AggregateFunction, BucketInterval, SearchQuery, ErrorCategory, RequestContext } from '@altius/spi';
+import type { FunctionRevision } from '@altius/engine';
 import { ToolRegistry } from '@altius/actions';
 import type { ActionActor, ActionContext, ActionManifest } from '@altius/actions';
 import type { RedactionResult, AuditQueryFilter } from '@altius/security';
@@ -697,6 +698,9 @@ export function generateResolvers(
   // LLM generate + embed resolvers (Section AIP).
   generateLlmResolvers(resolvers, deps);
 
+  // Function lifecycle resolvers (draft → publish → test → rollback).
+  generateFunctionLifecycleResolvers(resolvers, deps);
+
   // Audit trail read resolver (Section 7.2.1) — mirrors REST /api/v1/audit.
   generateAuditResolvers(resolvers, deps);
 
@@ -1291,7 +1295,11 @@ function generateAggregateResolver(
     args: {
       filter?: Record<string, unknown>;
       groupBy?: string[];
-      buckets?: Array<{ field: string; interval: string; alias?: string }>;
+      buckets?: Array<{
+        field: string;
+        date?: { field: string; interval: string; alias?: string };
+        numeric?: { field: string; min: number; max: number; numBuckets: number; alias?: string };
+      }>;
       fields: Array<{ field: string; fn: string; alias?: string }>;
       orderBy?: Array<{ field: string; direction: 'asc' | 'desc' }>;
       limit?: number;
@@ -1339,7 +1347,8 @@ function generateAggregateResolver(
         aliasNames.add(f.alias ?? `${f.fn.toLowerCase()}_${f.field}`);
       }
       for (const b of args.buckets ?? []) {
-        aliasNames.add(b.alias ?? b.field);
+        const alias = b.date?.alias ?? b.numeric?.alias ?? b.field;
+        aliasNames.add(alias);
       }
       const namedFields = [
         ...args.fields.filter(f => f.field !== '*').map(f => f.field),
@@ -1412,11 +1421,32 @@ function generateAggregateResolver(
       const query: AggregateQuery = {
         fields,
         groupBy: args.groupBy,
-        buckets: args.buckets?.map(b => ({
-          field: b.field,
-          interval: b.interval.toLowerCase() as BucketInterval,
-          alias: b.alias,
-        })),
+        buckets: args.buckets?.map(b => {
+          if (b.date) {
+            return {
+              field: b.date.field,
+              interval: b.date.interval.toLowerCase() as BucketInterval,
+              alias: b.date.alias,
+            };
+          }
+          if (b.numeric) {
+            const { min, max, numBuckets } = b.numeric;
+            if (numBuckets <= 0) {
+              throw new Error(`NumericBucket for field "${b.numeric.field}" numBuckets must be positive`);
+            }
+            if (min >= max) {
+              throw new Error(`NumericBucket for field "${b.numeric.field}" min must be less than max`);
+            }
+            return {
+              field: b.numeric.field,
+              min,
+              max,
+              numBuckets,
+              alias: b.numeric.alias,
+            };
+          }
+          throw new Error(`Bucket for field "${b.field}" must specify either date or numeric`);
+        }),
         filter: combinedFilter,
         orderBy: args.orderBy,
         limit: args.limit,
@@ -2044,6 +2074,92 @@ function generateObjectSetResolvers(
       throw wrapError(err, ctx.requestContext.traceId);
     }
   };
+
+  // Query: executeObjectSet(id: ID!, input: ObjectSetExecutionInput): ObjectSetExecutionResult!
+  resolvers['Query']!['executeObjectSet'] = async (
+    _parent: unknown,
+    args: { id: string; input?: { limit?: number; offset?: number; after?: string } },
+    ctx: ResolverContext,
+  ) => {
+    try {
+      if (!deps.objectSetManager) {
+        throw createAltiusError({
+          code: 'NOT_CONFIGURED',
+          category: 'system',
+          message: 'Object set manager is not configured',
+          retryable: false,
+          traceId: ctx.requestContext.traceId,
+        });
+      }
+      const page = await deps.objectSetManager.execute(args.id, ctx.requestContext, {
+        limit: args.input?.limit,
+        offset: args.input?.offset,
+      });
+      return {
+        items: page.items.map((o) => o as Record<string, unknown>),
+        totalCount: page.totalCount,
+        hasNextPage: page.hasNextPage,
+        cursor: page.cursor ?? null,
+      };
+    } catch (err) {
+      throw wrapError(err, ctx.requestContext.traceId);
+    }
+  };
+
+  // Query: executeObjectSetAggregate(id: ID!): AggregateResult!
+  resolvers['Query']!['executeObjectSetAggregate'] = async (
+    _parent: unknown,
+    args: { id: string },
+    ctx: ResolverContext,
+  ) => {
+    try {
+      if (!deps.objectSetManager) {
+        throw createAltiusError({
+          code: 'NOT_CONFIGURED',
+          category: 'system',
+          message: 'Object set manager is not configured',
+          retryable: false,
+          traceId: ctx.requestContext.traceId,
+        });
+      }
+      return await deps.objectSetManager.executeAggregate(args.id, ctx.requestContext);
+    } catch (err) {
+      throw wrapError(err, ctx.requestContext.traceId);
+    }
+  };
+
+  // Mutation: combineObjectSets(input: SetAlgebraInput!): ObjectSet!
+  resolvers['Mutation']!['combineObjectSets'] = async (
+    _parent: unknown,
+    args: { input: Record<string, unknown> },
+    ctx: ResolverContext,
+  ) => {
+    try {
+      if (!deps.objectSetManager) {
+        throw createAltiusError({
+          code: 'NOT_CONFIGURED',
+          category: 'system',
+          message: 'Object set manager is not configured',
+          retryable: false,
+          traceId: ctx.requestContext.traceId,
+        });
+      }
+      const def = await deps.objectSetManager.combine(
+        {
+          op: args.input['op'] as 'UNION' | 'INTERSECT' | 'DIFFERENCE',
+          leftSetId: args.input['leftSetId'] as string,
+          rightSetId: args.input['rightSetId'] as string,
+          name: args.input['name'] as string,
+          description: args.input['description'] as string | undefined,
+          isPublic: (args.input['isPublic'] as boolean) ?? false,
+        },
+        ctx.requestContext,
+      );
+      return objectSetToGraphQL(def);
+    } catch (err) {
+      throw wrapError(err, ctx.requestContext.traceId);
+    }
+  };
 }
 
 /**
@@ -2521,6 +2637,187 @@ function generateTraverseResolver(
         // Post-authorization count: the provider's would leak how much was withheld.
         totalCount: nodes.length,
       };
+    } catch (err) {
+      throw wrapError(err, ctx.requestContext.traceId);
+    }
+  };
+}
+
+// ─── Function Lifecycle Resolvers ──────────────────────────────────────
+
+function functionRevisionToGraphQL(rev: FunctionRevision): Record<string, unknown> {
+  return {
+    id: rev.id,
+    functionName: rev.functionName,
+    revision: rev.revision,
+    status: rev.status.toUpperCase(),
+    runtime: rev.runtime,
+    entry: rev.entry,
+    source: rev.source ?? null,
+    testInputs: rev.testInputs ?? null,
+    expectedOutputs: rev.expectedOutputs ?? null,
+    tenantId: rev.tenantId,
+    createdBy: rev.createdBy,
+    createdAt: rev.createdAt,
+    publishedAt: rev.publishedAt ?? null,
+  };
+}
+
+function generateFunctionLifecycleResolvers(
+  resolvers: ResolverMap,
+  deps: ApiDependencies,
+): void {
+  // Query: functionRevision(id: ID!): FunctionRevision
+  resolvers['Query']!['functionRevision'] = async (
+    _parent: unknown,
+    args: { id: string },
+    ctx: ResolverContext,
+  ) => {
+    try {
+      if (!deps.functionRegistry) return null;
+      const rev = deps.functionRegistry.getRevision(args.id);
+      return rev ? functionRevisionToGraphQL(rev) : null;
+    } catch (err) {
+      throw wrapError(err, ctx.requestContext.traceId);
+    }
+  };
+
+  // Query: functionRevisions(functionName: String!): [FunctionRevision!]!
+  resolvers['Query']!['functionRevisions'] = async (
+    _parent: unknown,
+    args: { functionName: string },
+    ctx: ResolverContext,
+  ) => {
+    try {
+      if (!deps.functionRegistry) return [];
+      return deps.functionRegistry.listRevisions(args.functionName).map(functionRevisionToGraphQL);
+    } catch (err) {
+      throw wrapError(err, ctx.requestContext.traceId);
+    }
+  };
+
+  // Mutation: createFunctionRevision(input: CreateFunctionRevisionInput!): FunctionRevision!
+  resolvers['Mutation']!['createFunctionRevision'] = async (
+    _parent: unknown,
+    args: { input: Record<string, unknown> },
+    ctx: ResolverContext,
+  ) => {
+    try {
+      if (!deps.functionRegistry) {
+        throw createAltiusError({
+          code: 'NOT_CONFIGURED',
+          category: 'system',
+          message: 'Function registry is not configured',
+          retryable: false,
+          traceId: ctx.requestContext.traceId,
+        });
+      }
+      const rev = deps.functionRegistry.createDraft({
+        functionName: args.input['functionName'] as string,
+        runtime: args.input['runtime'] as string,
+        entry: args.input['entry'] as string,
+        source: args.input['source'] as string | undefined,
+        testInputs: args.input['testInputs'] as Record<string, unknown>[] | undefined,
+        expectedOutputs: args.input['expectedOutputs'] as unknown[] | undefined,
+        tenantId: ctx.requestContext.tenantId,
+        createdBy: ctx.user.id,
+      });
+      return functionRevisionToGraphQL(rev);
+    } catch (err) {
+      throw wrapError(err, ctx.requestContext.traceId);
+    }
+  };
+
+  // Mutation: publishFunctionRevision(id: ID!): FunctionRevision!
+  resolvers['Mutation']!['publishFunctionRevision'] = async (
+    _parent: unknown,
+    args: { id: string },
+    ctx: ResolverContext,
+  ) => {
+    try {
+      if (!deps.functionRegistry) {
+        throw createAltiusError({
+          code: 'NOT_CONFIGURED',
+          category: 'system',
+          message: 'Function registry is not configured',
+          retryable: false,
+          traceId: ctx.requestContext.traceId,
+        });
+      }
+      const rev = deps.functionRegistry.publish(args.id);
+      return functionRevisionToGraphQL(rev);
+    } catch (err) {
+      throw wrapError(err, ctx.requestContext.traceId);
+    }
+  };
+
+  // Mutation: testFunctionRevision(id: ID!): TestRunResult!
+  resolvers['Mutation']!['testFunctionRevision'] = async (
+    _parent: unknown,
+    args: { id: string },
+    ctx: ResolverContext,
+  ) => {
+    try {
+      if (!deps.functionRegistry || !deps.functionExecutor) {
+        throw createAltiusError({
+          code: 'NOT_CONFIGURED',
+          category: 'system',
+          message: 'Function registry or executor is not configured',
+          retryable: false,
+          traceId: ctx.requestContext.traceId,
+        });
+      }
+      const rev = deps.functionRegistry.getRevision(args.id);
+      if (!rev) {
+        throw createAltiusError({
+          code: 'NOT_FOUND',
+          category: 'not_found',
+          message: `Function revision ${args.id} not found`,
+          retryable: false,
+          traceId: ctx.requestContext.traceId,
+        });
+      }
+      const fnType = deps.schema.functionTypes.find((f) => f.name === rev.functionName);
+      if (!fnType) {
+        throw createAltiusError({
+          code: 'NOT_FOUND',
+          category: 'not_found',
+          message: `FunctionType ${rev.functionName} not found in schema`,
+          retryable: false,
+          traceId: ctx.requestContext.traceId,
+        });
+      }
+      const result = await deps.functionRegistry.runTests(args.id, async (input) => {
+        const execResult = await deps.functionExecutor!.execute(
+          rev.functionName,
+          input,
+        );
+        return execResult.result;
+      });
+      return { passed: result.passed, results: result.results };
+    } catch (err) {
+      throw wrapError(err, ctx.requestContext.traceId);
+    }
+  };
+
+  // Mutation: rollbackFunction(functionName: String!, toRevisionId: ID!): FunctionRevision!
+  resolvers['Mutation']!['rollbackFunction'] = async (
+    _parent: unknown,
+    args: { functionName: string; toRevisionId: string },
+    ctx: ResolverContext,
+  ) => {
+    try {
+      if (!deps.functionRegistry) {
+        throw createAltiusError({
+          code: 'NOT_CONFIGURED',
+          category: 'system',
+          message: 'Function registry is not configured',
+          retryable: false,
+          traceId: ctx.requestContext.traceId,
+        });
+      }
+      const rev = deps.functionRegistry.rollback(args.functionName, args.toRevisionId);
+      return functionRevisionToGraphQL(rev);
     } catch (err) {
       throw wrapError(err, ctx.requestContext.traceId);
     }

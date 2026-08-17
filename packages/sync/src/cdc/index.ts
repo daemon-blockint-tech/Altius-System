@@ -13,3 +13,11 @@ export { CdcConsumer } from './cdc-consumer.js';
 
 export type { KafkaCdcSourceConfig } from './kafka-cdc-source.js';
 export { KafkaCdcSource } from './kafka-cdc-source.js';
+
+// Reconciliation (Section 6.7)
+export type {
+  ReconciliationDiscrepancy,
+  ReconciliationReport,
+  ReconciliationOptions,
+} from './reconciliation.js';
+export { ReconciliationService } from './reconciliation.js';

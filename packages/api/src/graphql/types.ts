@@ -1,4 +1,4 @@
-import type { ObjectManager, LinkManager, ObjectSetManager, FunctionExecutor } from '@altius/engine';
+import type { ObjectManager, LinkManager, ObjectSetManager, FunctionExecutor, FunctionRegistry } from '@altius/engine';
 import type { ActionExecutor, ActionManifest } from '@altius/actions';
 import type {
   AuthorizationService,
@@ -109,6 +109,14 @@ export interface ApiDependencies {
    * provider-specific client (OpenAI, Anthropic, local model).
    */
   llmClient?: LLMClient;
+  /**
+   * Function registry for user-authored function lifecycle management
+   * (draft → publish → deprecate, test execution, rollback).
+   * When present, REST /api/v1/functions-lifecycle/* and GraphQL
+   * functionRevision/functionRevisions/publishFunctionRevision/
+   * testFunctionRevision/rollbackFunction mutations are registered.
+   */
+  functionRegistry?: FunctionRegistry;
 }
 
 /**

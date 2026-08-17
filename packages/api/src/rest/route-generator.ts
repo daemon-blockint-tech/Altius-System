@@ -20,6 +20,7 @@ import { DataPurpose } from '@altius/spi';
 import type { OntologyObject, FilterExpression, FieldPredicate, AggregateQuery, AggregateField, AggregateFunction, BucketInterval, SearchQuery, ObjectSetDefinition, RequestContext } from '@altius/spi';
 import type { ActionActor, ActionContext } from '@altius/actions';
 import type { RedactionResult } from '@altius/security';
+import type { FunctionRevision } from '@altius/engine';
 import type { ApiDependencies, ResolverContext } from '../graphql/types.js';
 import { DEFAULT_CONSENT_PURPOSE, DEFAULT_CONSENT_SUBJECT_TYPES, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, isConsentSubjectType } from '../graphql/types.js';
 import type { RestRequest, RestResponse, RestRoute } from './types.js';
@@ -443,6 +444,9 @@ export function generateRestRoutes(
   for (const fn of schema.functionTypes) {
     routes.push(generateFunctionRoute(fn, deps));
   }
+
+  // Function lifecycle routes (draft → publish → test → rollback)
+  routes.push(...generateFunctionLifecycleRoutes(deps));
 
   // Object Set routes
   routes.push(...generateObjectSetRoutes(schema, deps));
@@ -1363,7 +1367,7 @@ function generateAggregateRoute(
         // Build AggregateQuery from body
         const rawFields = (body['fields'] ?? []) as Array<{ field: string; fn: string; alias?: string }>;
         const groupBy = body['groupBy'] as string[] | undefined;
-        const rawBuckets = body['buckets'] as Array<{ field: string; interval: string; alias?: string }> | undefined;
+        const rawBuckets = body['buckets'] as Array<{ field: string; interval?: string; min?: number; max?: number; numBuckets?: number; alias?: string }> | undefined;
 
         const userFilter = body['filter'] as FilterExpression | undefined;
         const orderBy = body['orderBy'] as { field: string; direction: 'asc' | 'desc' }[] | undefined;
@@ -1458,11 +1462,35 @@ function generateAggregateRoute(
         const query: AggregateQuery = {
           fields,
           groupBy,
-          buckets: rawBuckets?.map(b => ({
-            field: b.field,
-            interval: b.interval.toLowerCase() as BucketInterval,
-            alias: b.alias,
-          })),
+          buckets: rawBuckets?.map(b => {
+            if (b.interval !== undefined) {
+              return {
+                field: b.field,
+                interval: b.interval.toLowerCase() as BucketInterval,
+                alias: b.alias,
+              };
+            }
+            // NumericBucket — validate at the boundary.
+            const min = Number(b.min);
+            const max = Number(b.max);
+            const numBuckets = Number(b.numBuckets);
+            if (!isFinite(min) || !isFinite(max) || !isFinite(numBuckets)) {
+              throw new Error(`NumericBucket for field "${b.field}" requires numeric min, max, and numBuckets`);
+            }
+            if (numBuckets <= 0) {
+              throw new Error(`NumericBucket for field "${b.field}" numBuckets must be positive`);
+            }
+            if (min >= max) {
+              throw new Error(`NumericBucket for field "${b.field}" min must be less than max`);
+            }
+            return {
+              field: b.field,
+              min,
+              max,
+              numBuckets,
+              alias: b.alias,
+            };
+          }),
           filter: combinedFilter,
           orderBy,
           limit: body['limit'] as number | undefined,
@@ -2338,4 +2366,161 @@ function generateObjectSetRoutes(schema: ParsedSchema, deps: ApiDependencies): R
       },
     },
   ];
+}
+
+// ─── Function Lifecycle REST routes ────────────────────────────────────
+
+function functionRevisionToRest(rev: FunctionRevision): Record<string, unknown> {
+  return {
+    id: rev.id,
+    functionName: rev.functionName,
+    revision: rev.revision,
+    status: rev.status,
+    runtime: rev.runtime,
+    entry: rev.entry,
+    source: rev.source ?? null,
+    testInputs: rev.testInputs ?? null,
+    expectedOutputs: rev.expectedOutputs ?? null,
+    tenantId: rev.tenantId,
+    createdBy: rev.createdBy,
+    createdAt: rev.createdAt,
+    publishedAt: rev.publishedAt ?? null,
+  };
+}
+
+function generateFunctionLifecycleRoutes(deps: ApiDependencies): RestRoute[] {
+  const routes: RestRoute[] = [];
+
+  // POST /api/v1/functions-lifecycle/revisions — create draft
+  routes.push({
+    method: 'POST',
+    pattern: '/api/v1/functions-lifecycle/revisions',
+    handler: async (req: RestRequest, ctx: ResolverContext): Promise<RestResponse> => {
+      try {
+        if (!deps.functionRegistry) {
+          return { status: 503, body: { error: { code: 'NOT_CONFIGURED', message: 'Function registry is not configured' } } };
+        }
+        const body = req.body as Record<string, unknown>;
+        const rev = deps.functionRegistry.createDraft({
+          functionName: body['functionName'] as string,
+          runtime: body['runtime'] as string,
+          entry: body['entry'] as string,
+          source: body['source'] as string | undefined,
+          testInputs: body['testInputs'] as Record<string, unknown>[] | undefined,
+          expectedOutputs: body['expectedOutputs'] as unknown[] | undefined,
+          tenantId: ctx.requestContext.tenantId,
+          createdBy: ctx.user.id,
+        });
+        return { status: 201, body: { data: functionRevisionToRest(rev) } };
+      } catch (err) {
+        return wrapErrorToRest(err, ctx.requestContext.traceId);
+      }
+    },
+  });
+
+  // GET /api/v1/functions-lifecycle/revisions/:id — get revision
+  routes.push({
+    method: 'GET',
+    pattern: '/api/v1/functions-lifecycle/revisions/:id',
+    handler: async (req: RestRequest, ctx: ResolverContext): Promise<RestResponse> => {
+      try {
+        if (!deps.functionRegistry) {
+          return { status: 503, body: { error: { code: 'NOT_CONFIGURED', message: 'Function registry is not configured' } } };
+        }
+        const rev = deps.functionRegistry.getRevision(req.params['id']!);
+        if (!rev) return { status: 404, body: { error: { code: 'NOT_FOUND', message: 'Revision not found' } } };
+        return { status: 200, body: { data: functionRevisionToRest(rev) } };
+      } catch (err) {
+        return wrapErrorToRest(err, ctx.requestContext.traceId);
+      }
+    },
+  });
+
+  // GET /api/v1/functions-lifecycle/revisions?functionName=Foo — list revisions
+  routes.push({
+    method: 'GET',
+    pattern: '/api/v1/functions-lifecycle/revisions',
+    handler: async (req: RestRequest, ctx: ResolverContext): Promise<RestResponse> => {
+      try {
+        if (!deps.functionRegistry) {
+          return { status: 503, body: { error: { code: 'NOT_CONFIGURED', message: 'Function registry is not configured' } } };
+        }
+        const functionName = req.query['functionName'] as string | undefined;
+        if (!functionName) {
+          return { status: 400, body: { error: { code: 'BAD_REQUEST', message: 'functionName query parameter is required' } } };
+        }
+        const revs = deps.functionRegistry.listRevisions(functionName);
+        return { status: 200, body: { data: revs.map(functionRevisionToRest) } };
+      } catch (err) {
+        return wrapErrorToRest(err, ctx.requestContext.traceId);
+      }
+    },
+  });
+
+  // POST /api/v1/functions-lifecycle/revisions/:id/publish — publish draft
+  routes.push({
+    method: 'POST',
+    pattern: '/api/v1/functions-lifecycle/revisions/:id/publish',
+    handler: async (req: RestRequest, ctx: ResolverContext): Promise<RestResponse> => {
+      try {
+        if (!deps.functionRegistry) {
+          return { status: 503, body: { error: { code: 'NOT_CONFIGURED', message: 'Function registry is not configured' } } };
+        }
+        const rev = deps.functionRegistry.publish(req.params['id']!);
+        return { status: 200, body: { data: functionRevisionToRest(rev) } };
+      } catch (err) {
+        return wrapErrorToRest(err, ctx.requestContext.traceId);
+      }
+    },
+  });
+
+  // POST /api/v1/functions-lifecycle/revisions/:id/test — run tests
+  routes.push({
+    method: 'POST',
+    pattern: '/api/v1/functions-lifecycle/revisions/:id/test',
+    handler: async (req: RestRequest, ctx: ResolverContext): Promise<RestResponse> => {
+      try {
+        if (!deps.functionRegistry || !deps.functionExecutor) {
+          return { status: 503, body: { error: { code: 'NOT_CONFIGURED', message: 'Function registry or executor is not configured' } } };
+        }
+        const rev = deps.functionRegistry.getRevision(req.params['id']!);
+        if (!rev) return { status: 404, body: { error: { code: 'NOT_FOUND', message: 'Revision not found' } } };
+        const fnType = deps.schema.functionTypes.find((f) => f.name === rev.functionName);
+        if (!fnType) return { status: 404, body: { error: { code: 'NOT_FOUND', message: `FunctionType ${rev.functionName} not found` } } };
+        const result = await deps.functionRegistry.runTests(req.params['id']!, async (input) => {
+          const execResult = await deps.functionExecutor!.execute(
+            rev.functionName,
+            input,
+          );
+          return execResult.result;
+        });
+        return { status: 200, body: { data: result } };
+      } catch (err) {
+        return wrapErrorToRest(err, ctx.requestContext.traceId);
+      }
+    },
+  });
+
+  // POST /api/v1/functions-lifecycle/rollback — rollback to a previous revision
+  routes.push({
+    method: 'POST',
+    pattern: '/api/v1/functions-lifecycle/rollback',
+    handler: async (req: RestRequest, ctx: ResolverContext): Promise<RestResponse> => {
+      try {
+        if (!deps.functionRegistry) {
+          return { status: 503, body: { error: { code: 'NOT_CONFIGURED', message: 'Function registry is not configured' } } };
+        }
+        const body = req.body as Record<string, unknown>;
+        const rev = deps.functionRegistry.rollback(
+          body['functionName'] as string,
+          body['toRevisionId'] as string,
+        );
+        return { status: 200, body: { data: functionRevisionToRest(rev) } };
+      } catch (err) {
+        return wrapErrorToRest(err, ctx.requestContext.traceId);
+      }
+    },
+  });
+
+  return routes;
 }
