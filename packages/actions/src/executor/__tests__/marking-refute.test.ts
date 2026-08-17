@@ -156,7 +156,7 @@ type TouchSlot @actionType { ward: Ward! @param }
       })),
     });
 
-    const result = await executor.execute(manifest, { ward: 'w-1' }, wardStaff, ctx, schema);
+    await executor.execute(manifest, { ward: 'w-1' }, wardStaff, ctx, schema);
 
 
     expect(updateObject).not.toHaveBeenCalled();
@@ -183,7 +183,7 @@ type TouchSlot @actionType { ward: Ward! @param }
       })),
     });
 
-    const result = await executor.execute(manifest, { ward: 'w-1' }, wardStaff, ctx, schema);
+    await executor.execute(manifest, { ward: 'w-1' }, wardStaff, ctx, schema);
 
 
     expect(updateObject).not.toHaveBeenCalled();
