@@ -276,6 +276,13 @@ function generateLinkFieldResolvers(
     // Field type IS the link type → return link records (history); otherwise
     // the field type is the linked object type → return target objects.
     const returnsLinkRecords = targetTypeName === link.type;
+    // The ObjectType whose data this field discloses, which is what a marking
+    // applies to. Normally the field's own type; when the field returns link
+    // RECORDS the marked thing is still the object at the far end, since the
+    // records carry its id and the link's properties.
+    const exposedObjectType = returnsLinkRecords
+      ? (direction === 'outbound' ? linkTypeDef?.to : linkTypeDef?.from)
+      : targetTypeName;
     // @link(history: true) fields (e.g. Patient.admissions) include soft-deleted
     // links so completed/discharged records remain visible — parity with the
     // FHIR/CDM Encounter projections.
@@ -290,6 +297,16 @@ function generateLinkFieldResolvers(
         const parentId = parent[primaryName] as string | undefined;
         if (!parentId) return isList ? { edges: [], pageInfo: { hasNextPage: false, hasPreviousPage: false, startCursor: null, endCursor: null }, totalCount: 0 } : null;
         const { user, requestContext } = ctx;
+
+        // The marking that matters here is the one on the LINKED type, not the
+        // parent: this field exposes the target's data. Reaching a marked type
+        // through a link on an unmarked parent is otherwise a way around the
+        // control — the same discovery the gate on the type's own query blocks.
+        if (!isTypeVisible(deps.markingPolicy, user, exposedObjectType)) {
+          return isList
+            ? { edges: [], pageInfo: { hasNextPage: false, hasPreviousPage: false, startCursor: null, endCursor: null }, totalCount: 0 }
+            : null;
+        }
 
         // Client-supplied pagination for list link fields. Without this,
         // links with >1000 rows were silently truncated — no pagination,
@@ -433,6 +450,11 @@ function generateHistoryFieldResolver(
       const id = parent[primaryName] as string | undefined;
       if (!id) return [];
       const { user, requestContext } = ctx;
+
+      // History returns prior versions of this object, so it discloses exactly
+      // what the marking protects — and would otherwise be a way to read a
+      // marked type whose own query resolver refuses.
+      if (!isTypeVisible(deps.markingPolicy, user, obj.name)) return [];
 
       // Authorize — the caller must have view access to the object itself.
       // Without this, history would bypass the FGA check that gates every
@@ -1271,6 +1293,21 @@ function generateAggregateResolver(
       const { user, requestContext } = ctx;
 
       // Authorization: restrict aggregation to authorized objects
+      // Mandatory markings gate DISCOVERY, so every surface that can reveal a
+      // marked object has to carry the check — not just the two that read one
+      // by id. The check runs BEFORE authorisation because a marking restricts
+      // rather than expands: a caller holding the `viewer` relation, or admin,
+      // must still be refused. Answering as if the type were absent (rather
+      // than a permission error) is the same reasoning as the id resolvers:
+      // a 403 confirms the type exists and that something is being withheld.
+      if (!isTypeVisible(deps.markingPolicy, user, typeName)) {
+        await writeReadAudit(deps.auditWriter, ctx, {
+          type: 'read', objectType: typeName,
+          query: `query ${lower}Aggregate`, result: 'denied',
+        });
+        return { groups: [], totalGroups: 0 };
+      }
+
       const allowedIds = await resolveAllowedIds(deps, user.id, fgaType, user.tenantId);
       if (allowedIds.length === 0) {
         return { groups: [], totalGroups: 0 };
@@ -1424,6 +1461,21 @@ function generateSearchResolver(
           retryable: false,
           traceId: requestContext.traceId,
         });
+      }
+
+      // Mandatory markings gate DISCOVERY, so every surface that can reveal a
+      // marked object has to carry the check — not just the two that read one
+      // by id. The check runs BEFORE authorisation because a marking restricts
+      // rather than expands: a caller holding the `viewer` relation, or admin,
+      // must still be refused. Answering as if the type were absent (rather
+      // than a permission error) is the same reasoning as the id resolvers:
+      // a 403 confirms the type exists and that something is being withheld.
+      if (!isTypeVisible(deps.markingPolicy, user, typeName)) {
+        await writeReadAudit(deps.auditWriter, ctx, {
+          type: 'read', objectType: typeName,
+          query: `query search${typeName}s`, result: 'denied',
+        });
+        return { hits: [], totalCount: 0, hasNextPage: false };
       }
 
       // Authorization: restrict search to authorized objects
@@ -2374,6 +2426,18 @@ function generateTraverseResolver(
           ...(step.filter ? { filter: step.filter as never } : {}),
         };
       });
+
+      // Mandatory markings gate DISCOVERY, and a traversal reveals the start
+      // object's neighbourhood. Runs before the authorisation check below
+      // because a marking restricts rather than expands — holding `viewer` on
+      // the start object must not get past it.
+      if (!isTypeVisible(deps.markingPolicy, user, typeName)) {
+        await writeReadAudit(deps.auditWriter, ctx, {
+          type: 'read', objectType: typeName, objectId: args.startId,
+          query: `query traverse${typeName}`, result: 'denied',
+        });
+        return { nodes: [], edges: [], totalCount: 0 };
+      }
 
       // Entering the graph requires being able to see where you start from,
       // or a caller learns the neighbourhood of an object they cannot read.

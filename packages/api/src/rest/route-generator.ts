@@ -26,6 +26,8 @@ import type { RestRequest, RestResponse, RestRoute } from './types.js';
 import { createRestErrorResponse, wrapErrorToRest, mapCodeToCategory, mapErrorToHttpStatus } from './errors.js';
 import { invokeFunction } from '../functions/invoke-function.js';
 import { generateLlmRoutes } from './llm-routes.js';
+import { isTypeVisible } from '../markings/enforce.js';
+import { writeReadAuditFor } from './audit-read.js';
 import { lowerFirst, toSnakeCase, searchableTextFields } from '../utils.js';
 import { paginateWithConsent } from '../consent-pagination.js';
 import { collectRawRecords } from '../cdm/router.js';
@@ -1982,6 +1984,34 @@ function generateObjectSetRoutes(schema: ParsedSchema, deps: ApiDependencies): R
             });
           }
 
+          // The global REST marking gate (server.ts) keys on the route's STATIC
+          // objectType, and enforce.ts treats an absent one as "nothing to
+          // check". An object set names its type at RUNTIME, so these two
+          // routes sailed past a control that 404s the equivalent per-type
+          // route — POST a set over a marked type, then execute it.
+          //
+          // 404, not 403, for the same reason as everywhere else: markings
+          // restrict discovery, and a 403 confirms what is being withheld.
+          if (!isTypeVisible(deps.markingPolicy, user, def.objectType)) {
+            await writeReadAuditFor(
+              deps.auditWriter,
+              { id: user.id, roles: user.roles, tenantId: user.tenantId },
+              {
+                type: 'read',
+                objectType: def.objectType,
+                query: `GET ${req.path}`,
+                result: 'denied',
+              },
+            );
+            return createRestErrorResponse({
+              code: 'NOT_FOUND',
+              category: 'not_found',
+              message: `Object set ${id} not found`,
+              retryable: false,
+              traceId: ctx.requestContext.traceId,
+            });
+          }
+
           // Validate schema type before querying storage — fail closed if unknown
           const obj = schema.objectTypes.find((o) => o.name === def.objectType);
           if (!obj) {
@@ -2144,6 +2174,34 @@ function generateObjectSetRoutes(schema: ParsedSchema, deps: ApiDependencies): R
           if (!def) {
             return createRestErrorResponse({
               code: 'OBJECT_SET_NOT_FOUND',
+              category: 'not_found',
+              message: `Object set ${id} not found`,
+              retryable: false,
+              traceId: ctx.requestContext.traceId,
+            });
+          }
+
+          // The global REST marking gate (server.ts) keys on the route's STATIC
+          // objectType, and enforce.ts treats an absent one as "nothing to
+          // check". An object set names its type at RUNTIME, so these two
+          // routes sailed past a control that 404s the equivalent per-type
+          // route — POST a set over a marked type, then execute it.
+          //
+          // 404, not 403, for the same reason as everywhere else: markings
+          // restrict discovery, and a 403 confirms what is being withheld.
+          if (!isTypeVisible(deps.markingPolicy, user, def.objectType)) {
+            await writeReadAuditFor(
+              deps.auditWriter,
+              { id: user.id, roles: user.roles, tenantId: user.tenantId },
+              {
+                type: 'read',
+                objectType: def.objectType,
+                query: `GET ${req.path}`,
+                result: 'denied',
+              },
+            );
+            return createRestErrorResponse({
+              code: 'NOT_FOUND',
               category: 'not_found',
               message: `Object set ${id} not found`,
               retryable: false,
