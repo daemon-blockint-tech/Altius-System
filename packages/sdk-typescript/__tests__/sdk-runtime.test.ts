@@ -403,6 +403,121 @@ describe('Generated SDK runtime', () => {
       vi.useRealTimers();
     });
 
+    it('does not double-subscribe when a new stream is opened while disconnected', async () => {
+      // subscribe() queues its own sendSubscribe AND records it as a
+      // resubscriber. A retry timer already pending then queues every
+      // resubscriber on top, so the newcomer is in the queue twice and the ack
+      // sends its subscribe twice under one id — the same protocol violation
+      // 4ba0250 fixed on the retry-after-retry path, reached another way.
+      vi.useFakeTimers();
+      const client = new Altius({ endpoint: 'http://localhost:3000/graphql', token: 't' });
+
+      client.patient.onAnyChange(() => {});
+      await vi.advanceTimersByTimeAsync(10);
+      MockWebSocket.instances[0]!._receive(JSON.stringify({ type: 'connection_ack' }));
+      MockWebSocket.instances[0]!.close();
+
+      // A second stream opens during the backoff window, before any retry.
+      client.ward.onAnyChange(() => {});
+      await vi.advanceTimersByTimeAsync(2000);
+
+      const last = MockWebSocket.instances[MockWebSocket.instances.length - 1]!;
+      last._receive(JSON.stringify({ type: 'connection_ack' }));
+
+      const subscribes = last.sent.filter(m => m.includes('"subscribe"'));
+      // One per subscription, not three.
+      expect(subscribes).toHaveLength(2);
+      vi.useRealTimers();
+    });
+
+    it('does not resurrect a subscription cancelled mid-reconnect', async () => {
+      // The retry snapshots the replay list, opens a socket, and only flushes on
+      // ack. Unsubscribing inside that window cannot send `complete` (the socket
+      // is not OPEN yet), so nothing tells the server to stop — and if the
+      // snapshot is still flushed, the subscribe goes out for a stream the
+      // caller has let go, re-registering its callback. The caller then receives
+      // events after unsubscribing, which for a React table means setState on an
+      // unmounted component.
+      vi.useFakeTimers();
+      const received = vi.fn();
+      const client = new Altius({ endpoint: 'http://localhost:3000/graphql', token: 't' });
+
+      const sub = client.patient.onAnyChange(received);
+      await vi.advanceTimersByTimeAsync(10);
+      MockWebSocket.instances[0]!._receive(JSON.stringify({ type: 'connection_ack' }));
+      MockWebSocket.instances[0]!.close();
+
+      // Retry fires and opens a socket, still awaiting ack.
+      await vi.advanceTimersByTimeAsync(1500);
+      const retry = MockWebSocket.instances[1]!;
+
+      sub.unsubscribe();
+      retry._receive(JSON.stringify({ type: 'connection_ack' }));
+
+      expect(retry.sent.filter(m => m.includes('"subscribe"'))).toHaveLength(0);
+      vi.useRealTimers();
+    });
+
+    it('reports a server-terminated stream and stops replaying it', async () => {
+      // The server ends a subscription with `error` or `complete` — auth
+      // expiry, revoked permission, a filter it will not accept. Only
+      // wsSubscriptions was cleaned, so the caller was never told (a dead
+      // stream looking alive, the exact failure this feature exists to end)
+      // and the next reconnect re-sent the subscribe, resurrecting a stream
+      // the server had deliberately refused.
+      vi.useFakeTimers();
+      const onClose = vi.fn();
+      const client = new Altius({ endpoint: 'http://localhost:3000/graphql', token: 't' });
+
+      client.patient.onAnyChange(() => {}, undefined, onClose);
+      await vi.advanceTimersByTimeAsync(10);
+      const ws = MockWebSocket.instances[0]!;
+      ws._receive(JSON.stringify({ type: 'connection_ack' }));
+      const subId = JSON.parse(ws.sent.find(m => m.includes('"subscribe"'))!).id as string;
+
+      ws._receive(JSON.stringify({ type: 'error', id: subId, payload: [{ message: 'forbidden' }] }));
+
+      expect(onClose).toHaveBeenCalledTimes(1);
+
+      // And it must not come back: with nothing left to replay, a subsequent
+      // close should not even open a socket.
+      ws.close();
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(MockWebSocket.instances).toHaveLength(1);
+      vi.useRealTimers();
+    });
+
+    it('ignores a close from a socket that has already been superseded', async () => {
+      // ensureWebSocket only reuses a socket in OPEN or CONNECTING, so one in
+      // CLOSING is replaced. The old socket's close listener then fires and
+      // unconditionally sets wsSocket = null / wsReady = false / clears the
+      // subscriptions — clobbering the bookkeeping of the socket that replaced
+      // it. The client believes it has no connection while holding a live one,
+      // and opens yet another on the next subscribe.
+      vi.useFakeTimers();
+      const client = new Altius({ endpoint: 'http://localhost:3000/graphql', token: 't' });
+
+      client.patient.onAnyChange(() => {});
+      await vi.advanceTimersByTimeAsync(10);
+      const a = MockWebSocket.instances[0]!;
+      a._receive(JSON.stringify({ type: 'connection_ack' }));
+
+      // A is CLOSING, so the next subscribe must open B.
+      a.readyState = MockWebSocket.CLOSING;
+      client.ward.onAnyChange(() => {});
+      await vi.advanceTimersByTimeAsync(10);
+      expect(MockWebSocket.instances).toHaveLength(2);
+
+      // A's close arrives late. It must not touch B.
+      a.close();
+      client.bed.onAnyChange(() => {});
+      await vi.advanceTimersByTimeAsync(10);
+
+      expect(MockWebSocket.instances).toHaveLength(2);
+      vi.useRealTimers();
+    });
+
+
     it('does not reconnect after the caller unsubscribes', async () => {
       // Letting go of a stream is not losing one; reconnecting here would
       // resurrect a subscription the caller has already abandoned.

@@ -1084,7 +1084,12 @@ export class Altius {
     const delay = Math.min(1000 * Math.pow(2, attempt - 1), 30000);
     setTimeout(() => {
       if (this.wsResubscribers.size === 0) return;
-      for (const replay of this.wsResubscribers.values()) this.wsReadyQueue.push(replay);
+      // REPLACE rather than append. A subscription opened during the
+      // backoff window has already queued itself and is also a
+      // resubscriber, so appending would queue it twice and the ack would
+      // send its subscribe twice under one id. wsResubscribers holds every
+      // live subscription exactly once, which makes it the authority.
+      this.wsReadyQueue = [...this.wsResubscribers.values()];
       this.ensureWebSocket();
     }, delay);
   }
@@ -1107,7 +1112,19 @@ export class Altius {
       // after a refresh must present the NEW token, or the socket
       // re-authenticates with a credential that has already expired.
       void this.resolveToken().then((token) => {
+        // The socket can close while the token is resolving; sending on a
+        // closed socket throws InvalidStateError.
+        if (socket.readyState !== WebSocket.OPEN) return;
         socket.send(JSON.stringify({ type: 'connection_init', payload: { Authorization: token ? `Bearer ${token}` : '' } }));
+      }).catch(() => {
+        // KNOWN GAP: the provider refused (an expired session throws here).
+        // Swallowed only to stop an unhandled rejection. connection_init is
+        // never sent, so the socket sits until the server times it out and
+        // the caller is not told. Closing it here would be reported, but a
+        // close schedules a reconnect that re-resolves the same failing
+        // token and loops. Fixing it properly means distinguishing "cannot
+        // authenticate" from "transport dropped" so the first does not
+        // retry — a design change, not a patch.
       });
     });
     socket.addEventListener('message', (event) => {
@@ -1125,13 +1142,31 @@ export class Altius {
       } else if (msg.type === 'next' && msg.id) {
         const handler = this.wsSubscriptions.get(msg.id);
         if (handler) handler(msg.payload);
-      } else if (msg.type === 'error' && msg.id) {
-        this.wsSubscriptions.delete(msg.id);
-      } else if (msg.type === 'complete' && msg.id) {
-        this.wsSubscriptions.delete(msg.id);
+      } else if ((msg.type === 'error' || msg.type === 'complete') && msg.id) {
+        // The SERVER ended this one — auth expiry, revoked permission, a
+        // filter it will not accept. Forgetting only the message handler
+        // left the caller believing a dead stream was live, and left the
+        // resubscriber in place so the next reconnect re-sent a subscribe
+        // the server had already refused.
+        //
+        // If the caller unsubscribed first these maps are already empty, so
+        // the `complete` the server echoes back is correctly silent.
+        const endedId = msg.id;
+        const onClose = this.wsCloseHandlers.get(endedId);
+        this.wsSubscriptions.delete(endedId);
+        this.wsResubscribers.delete(endedId);
+        this.wsCloseHandlers.delete(endedId);
+        this.wsResumeHandlers.delete(endedId);
+        if (onClose) { try { onClose(); } catch { /* never break the socket loop */ } }
       }
     });
     socket.addEventListener('close', () => {
+      // A socket in CLOSING is not reused, so it can be replaced before its
+      // own close fires. Acting on that late event would null the wsSocket
+      // of the socket that superseded it, clear the live subscriptions and
+      // schedule a reconnect against a connection that is already healthy —
+      // leaving the client convinced it has none while holding one.
+      if (this.wsSocket !== socket) return;
       for (const onClose of this.wsCloseHandlers.values()) {
         try { onClose(); } catch { /* a handler must not stop the others */ }
       }
@@ -1184,6 +1219,13 @@ export class Altius {
       previousValues causedBy { actionType actionId } timestamp
     } }`;
     const sendSubscribe = () => {
+      // The queue is a snapshot taken when a retry was scheduled, and it is
+      // only flushed on ack. unsubscribe() inside that window cannot send
+      // `complete` because the socket is not OPEN yet, so this is the only
+      // place left that can stop a cancelled stream being re-established.
+      // Guarding here rather than at each queueing site covers the first
+      // subscribe, the retry replay, and anything queued later.
+      if (!this.wsResubscribers.has(subId)) return;
       const socket = this.ensureWebSocket();
       const payload = filter && id === null ? { query, variables: { filter } } : { query };
       socket.send(JSON.stringify({ id: subId, type: 'subscribe', payload }));
