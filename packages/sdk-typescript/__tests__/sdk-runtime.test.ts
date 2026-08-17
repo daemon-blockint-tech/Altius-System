@@ -375,6 +375,34 @@ describe('Generated SDK runtime', () => {
       vi.useRealTimers();
     });
 
+    it('sends one subscribe per subscription even after repeated failed retries', async () => {
+      // wsReadyQueue is flushed only on connection_ack. If a retry socket dies
+      // before acking, its queued replay is still sitting there when the next
+      // retry queues another — so the eventual ack sends the same subscribe
+      // several times under one id, which is a protocol violation the server
+      // is entitled to close the connection over.
+      vi.useFakeTimers();
+      const client = new Altius({ endpoint: 'http://localhost:3000/graphql', token: 't' });
+
+      client.patient.onAnyChange(() => {});
+      await vi.advanceTimersByTimeAsync(10);
+      MockWebSocket.instances[0]!._receive(JSON.stringify({ type: 'connection_ack' }));
+      MockWebSocket.instances[0]!.close();
+
+      // First retry opens a socket that dies before acking.
+      await vi.advanceTimersByTimeAsync(1500);
+      MockWebSocket.instances[1]!.close();
+
+      // Second retry finally succeeds.
+      await vi.advanceTimersByTimeAsync(3000);
+      const last = MockWebSocket.instances[MockWebSocket.instances.length - 1]!;
+      last._receive(JSON.stringify({ type: 'connection_ack' }));
+
+      const subscribes = last.sent.filter(m => m.includes('"subscribe"'));
+      expect(subscribes).toHaveLength(1);
+      vi.useRealTimers();
+    });
+
     it('does not reconnect after the caller unsubscribes', async () => {
       // Letting go of a stream is not losing one; reconnecting here would
       // resurrect a subscription the caller has already abandoned.
