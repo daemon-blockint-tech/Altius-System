@@ -52,7 +52,7 @@ import {
   IsolatedNodeFunctionRuntime,
   CelFunctionRuntime,
   ComputedFieldEvaluator,
-  NoOpLLMClient,
+  createLLMClient,
 } from '@altius/engine';
 import { ActionExecutor, CelClient, SideEffectExecutor } from '@altius/actions';
 import type { SecurityLayer, CelEvaluator, EventBus as SideEffectEventBus, HttpClient as SideEffectHttpClient, LinkTupleMap } from '@altius/actions';
@@ -936,7 +936,9 @@ async function main(): Promise<void> {
     consentPurposes,
     ...(consentSubjectTypes ? { consentSubjectTypes } : {}),
     cdmEnabled,
-    llmClient: new NoOpLLMClient(),
+    // Selected from LLM_PROVIDER; the no-op when it is unset, so a platform
+    // with no provider still boots and answers 503 on the LLM routes.
+    llmClient: createLLMClient(),
   };
 
   // ── Express + HTTP Server ──

@@ -303,6 +303,18 @@ services:
       # auth only — see docker-compose.prod-test.yaml). Opt-in; unset → fail-closed
       # (claimless tokens rejected). Single-tenant deployments set OIDC_DEFAULT_TENANT.
       OIDC_DEFAULT_TENANT: ${OIDC_DEFAULT_TENANT:-}
+      # LLM provider for /api/v1/llm/*, the GraphQL LLM fields and the MCP
+      # tools. Unset → no provider: the platform boots and those routes answer
+      # 503, which is the correct default for a deployment that does not use
+      # them. Set to `anthropic` WITH ANTHROPIC_API_KEY to enable; naming a
+      # provider without its credential fails the boot rather than starting a
+      # gateway that looks healthy and 503s every LLM call.
+      LLM_PROVIDER: ${LLM_PROVIDER:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # Optional: model default, gateway/proxy base URL, per-request timeout.
+      LLM_MODEL: ${LLM_MODEL:-}
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
+      LLM_TIMEOUT_MS: ${LLM_TIMEOUT_MS:-}
       # Deployment policy: platform roles allowed to grant relationships / record
       # consent. Generic default is `admin` only — no NHS roles are forced here.
       # NHS deployments set these in .env (see .env.example):

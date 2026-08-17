@@ -74,3 +74,7 @@ export {
 
 // LLM Client
 export { NoOpLLMClient } from './llm/noop-llm-client.js';
+export { AnthropicLLMClient, LLMProviderError, readTextDeltas } from './llm/anthropic-llm-client.js';
+export type { AnthropicLLMClientConfig } from './llm/anthropic-llm-client.js';
+export { createLLMClient } from './llm/create-llm-client.js';
+export type { LLMEnv } from './llm/create-llm-client.js';
