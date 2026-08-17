@@ -1,19 +1,10 @@
 # syntax=docker/dockerfile:1
 # API Gateway — GraphQL + REST + FHIR
-FROM node:20-alpine AS builder
-
-RUN corepack enable && corepack prepare pnpm@9.15.4 --activate
-
-WORKDIR /app
-
-COPY pnpm-lock.yaml pnpm-workspace.yaml package.json turbo.json tsconfig.json tsconfig.build.json ./
-# --parents preserves the packages/<name>/ and domain-packs/<name>/ directory
-# structure for each matched package.json (plain wildcard COPY collapses every
-# match into a single flat file, silently breaking the workspace).
-COPY --parents packages/*/package.json domain-packs/*/package.json ./
-
-RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
-    pnpm install --frozen-lockfile
+#
+# `deps-app` resolves to the shared install stage in Dockerfile.deps (see
+# docker-bake.hcl) — build via `docker buildx bake api` or
+# `COMPOSE_BAKE=true docker compose build`, not a plain `docker build -f`.
+FROM deps-app AS builder
 
 COPY packages/ packages/
 COPY domain-packs/ domain-packs/
@@ -45,5 +36,8 @@ RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
 USER node
 
 EXPOSE 4000
+
+HEALTHCHECK --interval=10s --timeout=5s --start-period=15s --retries=10 \
+    CMD wget --quiet --tries=1 --spider http://localhost:4000/.well-known/apollo/server-health || exit 1
 
 CMD ["node", "packages/api/dist/server.js"]

@@ -139,10 +139,10 @@ describe('GraphQL schema codegen', () => {
       const sdl = getSchema();
       const queryBlock = extractTypeBlock(sdl, 'type Query');
       expect(queryBlock).toContain('patient(id: ID!): Patient');
-      expect(queryBlock).toContain('patients(filter: PatientFilter, orderBy: PatientOrderBy, first: Int, after: String, last: Int, before: String): PatientConnection!');
+      expect(queryBlock).toContain('patients(filter: PatientFilter, orderBy: PatientOrderBy, first: Int, after: String, last: Int, before: String, asOf: DateTime): PatientConnection!');
 
       expect(queryBlock).toContain('ward(id: ID!): Ward');
-      expect(queryBlock).toContain('wards(filter: WardFilter, orderBy: WardOrderBy, first: Int, after: String, last: Int, before: String): WardConnection!');
+      expect(queryBlock).toContain('wards(filter: WardFilter, orderBy: WardOrderBy, first: Int, after: String, last: Int, before: String, asOf: DateTime): WardConnection!');
     });
 
     it('includes availableTools query', () => {

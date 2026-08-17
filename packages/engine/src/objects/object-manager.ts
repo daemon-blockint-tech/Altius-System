@@ -390,6 +390,9 @@ export class ObjectManager {
    *
    * Rewrites the declared @primary field onto `_id` first, then resolves LAZY
    * computed fields on every hit, as get() does for a single object.
+   *
+   * Defaults the field set to the type's declared @searchable fields when the
+   * caller names none — see searchableFieldNames for why that matters.
    */
   async search(
     type: string,
@@ -401,6 +404,10 @@ export class ObjectManager {
       [SpanAttributes.TENANT_ID]: ctx.tenantId,
       [SpanAttributes.OPERATION]: 'search',
     }, async () => {
+      if (!query.fields || query.fields.length === 0) {
+        const declared = this.searchableFieldNames(type);
+        if (declared.length > 0) query = { ...query, fields: declared };
+      }
       const primary = this.primaryFieldName(type);
       if (primary) {
         query = {
@@ -425,6 +432,35 @@ export class ObjectManager {
    * schema is passed through rather than rejected here — the provider owns
    * that error.
    */
+  /**
+   * The type's declared @searchable field names, in declaration order.
+   *
+   * A search that names no fields used to mean "every text field", which each
+   * provider resolved for itself and neither resolved from the schema:
+   * Postgres queried information_schema on every call and searched every
+   * text/varchar column, and the memory provider searched whichever string
+   * keys happened to be PRESENT on each candidate object — so the field set
+   * varied row to row.
+   *
+   * Both readings ignore @searchable, which is the declaration that decides
+   * this. It is also the only one the storage can serve: @searchable is what
+   * emits the pg_trgm GIN index (schema-loader FULLTEXT → ddl-objects), so a
+   * search across every text column cannot use an index for the unindexed ones
+   * and degrades to a full scan on exactly the queries meant to be fast.
+   *
+   * Empty when the type declares nothing searchable, and the caller then
+   * leaves query.fields unset so the providers keep their existing
+   * search-everything fallback — narrowing an undeclared type to zero fields
+   * would turn "no @searchable directives yet" into "search returns nothing".
+   */
+  private searchableFieldNames(type: string): string[] {
+    const objectType = this.schema.objectTypes.find((o) => o.name === type);
+    if (!objectType) return [];
+    return objectType.fields
+      .filter((f) => f.directives.some((d) => d.kind === 'searchable'))
+      .map((f) => f.name);
+  }
+
   private primaryFieldName(type: string): string | undefined {
     const objectType = this.schema.objectTypes.find((o) => o.name === type);
     const primary = objectType?.fields.find((f) => f.directives.some((d) => d.kind === 'primary'));

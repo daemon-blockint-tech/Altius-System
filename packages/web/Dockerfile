@@ -1,17 +1,15 @@
+# syntax=docker/dockerfile:1
 # Operational web UI — static bundle served by nginx, /graphql proxied to the gateway.
-FROM node:20-alpine AS builder
+#
+# `deps-full` resolves to the shared install stage in Dockerfile.deps (see
+# docker-bake.hcl) — build via `docker buildx bake web` or
+# `COMPOSE_BAKE=true docker compose build`, not a plain `docker build -f`.
+FROM deps-full AS builder
 
-RUN corepack enable && corepack prepare pnpm@9.15.4 --activate
-
-WORKDIR /app
-
-COPY package.json pnpm-workspace.yaml pnpm-lock.yaml turbo.json tsconfig.json tsconfig.build.json ./
 COPY packages/ packages/
 COPY domain-packs/ domain-packs/
 COPY tests/ tests/
 COPY tools/ tools/
-
-RUN pnpm install --frozen-lockfile
 
 # Nothing environment-specific is baked in. vite inlines VITE_* at build time,
 # so anything set here would pin the image to one deployment; OIDC settings are
@@ -39,6 +37,9 @@ COPY packages/web/docker-entrypoint.sh /docker-entrypoint.d/99-altius-config.sh
 RUN chmod +x /docker-entrypoint.d/99-altius-config.sh
 
 EXPOSE 8080
+
+HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=5 \
+    CMD wget --quiet --tries=1 --spider http://localhost:8080/index.html || exit 1
 
 # nginx:alpine ships an entrypoint that needs root to bind and drop privileges;
 # the worker processes themselves run as nginx.

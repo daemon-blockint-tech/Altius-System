@@ -38,7 +38,8 @@ import type {
   SearchHit,
 } from '@altius/spi';
 import type { BucketInterval } from '@altius/spi';
-import { MAX_LINK_QUERY_LIMIT, DEFAULT_LINK_QUERY_LIMIT, encodePageCursor, decodePageCursor } from '@altius/spi';
+import { MAX_LINK_QUERY_LIMIT, DEFAULT_LINK_QUERY_LIMIT, encodePageCursor, decodePageCursor, parseSearchQuery } from '@altius/spi';
+import type { SearchTerm } from '@altius/spi';
 import { stepDepth, totalHops } from '@altius/spi';
 
 // ---------------------------------------------------------------------------
@@ -1157,19 +1158,11 @@ export class MemoryStorageProvider implements StorageProvider {
       return { hits: [], totalCount: 0, hasNextPage: false };
     }
 
-    // ONE literal substring, not a bag of terms.
-    //
-    // This provider used to split the query on whitespace and match ANY term,
-    // while Postgres has always sent a single `%query%` ILIKE pattern. So
-    // search('acme corp') returned rows containing "acme" OR "corp" here and
-    // only rows containing the contiguous phrase there — the same SPI call,
-    // two different result sets, with the conformance suite green against the
-    // one that is not production.
-    //
-    // Postgres wins the tie deliberately: it is what deployments actually run,
-    // so aligning the test double changes no shipped behaviour, while
-    // "improving" Postgres to match this provider would have.
-    const queryLower = query.query.toLowerCase();
+    const parsed = parseSearchQuery(query.query);
+    if (parsed.required.length === 0 && parsed.orGroups.length === 0) {
+      // Only exclusions or empty — no positive match possible.
+      return { hits: [], totalCount: 0, hasNextPage: false };
+    }
 
     // Collect candidate objects (tenant-scoped, type-matched, non-deleted)
     const maps = this._getEffectiveMaps(ctx);
@@ -1180,32 +1173,83 @@ export class MemoryStorageProvider implements StorageProvider {
       return true;
     });
 
-    // Score and filter
+    // Score and filter using the parsed query.
+    //   - All `required` terms must match (AND)
+    //   - No `excluded` term may match
+    //   - If `orGroups` exist, at least one group must match (all its terms)
+    //   - Per-field match quality: exact=3, prefix=2, substring=1 for words;
+    //     phrases score 3 (contiguous match is always exact-quality).
+    //     Sums across fields. Matches the Postgres provider weight-for-weight.
+    const fieldScore = (val: string, term: SearchTerm): number => {
+      const lower = val.toLowerCase();
+      const t = term.value;
+      if (lower === t) return 3;
+      if (lower.startsWith(t)) return 2;
+      if (term.kind === 'phrase') return 3; // contiguous phrase match
+      return 1; // substring
+    };
+
     const scored: SearchHit[] = [];
     for (const obj of candidates) {
-      // Determine which fields to search
       const searchFields = query.fields
         ? query.fields
         : Object.keys(obj).filter((k) => !k.startsWith('_') && typeof obj[k] === 'string');
 
-      // Score is the number of FIELDS containing the substring, matching the
-      // Postgres `SUM(CASE WHEN col ILIKE ... THEN 1 ELSE 0 END)` expression.
-      // Counting occurrences within a field would rank differently.
       let score = 0;
+      let matched = true;
       const highlights: Record<string, string[]> = {};
 
-      for (const field of searchFields) {
-        const val = obj[field];
-        if (typeof val !== 'string') continue;
-        if (!val.toLowerCase().includes(queryLower)) continue;
-        score += 1;
-        if (!highlights[field]) {
-          highlights[field] = [];
+      // Required: all must match somewhere in the searched fields
+      for (const term of parsed.required) {
+        let termScore = 0;
+        for (const field of searchFields) {
+          const val = obj[field];
+          if (typeof val !== 'string') continue;
+          if (!val.toLowerCase().includes(term.value)) continue;
+          termScore += fieldScore(val, term);
+          if (!highlights[field]) highlights[field] = [];
+          highlights[field].push(val);
         }
-        highlights[field].push(val);
+        if (termScore === 0) { matched = false; break; }
+        score += termScore;
       }
+      if (!matched) continue;
 
-      if (score === 0) continue;
+      // Excluded: no field may match
+      let excludedHit = false;
+      for (const term of parsed.excluded) {
+        for (const field of searchFields) {
+          const val = obj[field];
+          if (typeof val !== 'string') continue;
+          if (val.toLowerCase().includes(term.value)) { excludedHit = true; break; }
+        }
+        if (excludedHit) break;
+      }
+      if (excludedHit) continue;
+
+      // OR groups: at least one group must match (all terms in it)
+      if (parsed.orGroups.length > 0) {
+        let orSatisfied = false;
+        for (const group of parsed.orGroups) {
+          let groupScore = 0;
+          let allMatched = true;
+          for (const term of group) {
+            let termScore = 0;
+            for (const field of searchFields) {
+              const val = obj[field];
+              if (typeof val !== 'string') continue;
+              if (!val.toLowerCase().includes(term.value)) continue;
+              termScore += fieldScore(val, term);
+              if (!highlights[field]) highlights[field] = [];
+              highlights[field].push(val);
+            }
+            if (termScore === 0) { allMatched = false; break; }
+            groupScore += termScore;
+          }
+          if (allMatched) { orSatisfied = true; score += groupScore; break; }
+        }
+        if (!orSatisfied) continue;
+      }
 
       // Apply additional filter if present
       if (query.filter && !evaluateFilter(obj as Record<string, unknown>, query.filter)) {

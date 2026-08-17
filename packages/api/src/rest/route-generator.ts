@@ -268,6 +268,32 @@ function parseOrderBy(
 }
 
 /**
+ * Parse `?asOf=<ISO-8601>` into QueryOptions.asOfTime.
+ *
+ * Same param name as the single-object `asOf` on the history route, because it
+ * is the same question asked of a set. QueryOptions.asOfTime is implemented by
+ * both providers and pinned by the temporal conformance category, but nothing
+ * above the SPI ever set it: the history endpoint answered "what did THIS
+ * object look like then" and no route answered it for a collection — which is
+ * the form the useful questions take ("who was DISCHARGED last Tuesday"),
+ * because it has to be evaluated against that day's rows, not today's.
+ */
+function parseAsOf(query: Record<string, unknown>): ParseResult<string | undefined> {
+  const raw = query['asOf'];
+  if (raw == null) return { ok: true, value: undefined };
+
+  const value = String(Array.isArray(raw) ? raw[0] : raw);
+  // Rejected rather than coerced, for the reason the history route gives:
+  // Date.parse('last tuesday') is NaN, but Date.parse('2026') silently means
+  // January 1st, and a historical answer the caller did not ask for still
+  // looks like a real record.
+  if (Number.isNaN(Date.parse(value))) {
+    return { ok: false, message: `asOf must be an ISO-8601 timestamp, got "${value}"` };
+  }
+  return { ok: true, value };
+}
+
+/**
  * Parse pagination from query params.
  */
 function parsePagination(query: Record<string, string | string[] | undefined>): { offset: number; limit: number; after?: string } {
@@ -525,6 +551,18 @@ function generateListRoute(
         }
         const orderBy = parsedOrderBy.value;
 
+        const parsedAsOf = parseAsOf(req.query);
+        if (!parsedAsOf.ok) {
+          return createRestErrorResponse({
+            code: 'VALIDATION_ERROR',
+            category: 'validation',
+            message: parsedAsOf.message,
+            retryable: false,
+            traceId: requestContext.traceId,
+          });
+        }
+        const asOfTime = parsedAsOf.value;
+
         // SEC-14: Validate filter fields against redacted fields
         const visibleFields = deps.authorizationService.getVisibleFields(user.id, user.roles, typeName);
         if (visibleFields) {
@@ -586,7 +624,9 @@ function generateListRoute(
             limit,
             async (windowLimit) => {
               const scan = await deps.objectManager.query(
-                typeName, combinedFilter, { limit: windowLimit, offset: 0, ...(orderBy ? { orderBy } : {}) }, requestContext,
+                typeName, combinedFilter,
+                { limit: windowLimit, offset: 0, ...(orderBy ? { orderBy } : {}), ...(asOfTime ? { asOfTime } : {}) },
+                requestContext,
               );
               return { items: scan.items, total: scan.totalCount };
             },
@@ -606,7 +646,7 @@ function generateListRoute(
           const page = await deps.objectManager.query(
             typeName,
             combinedFilter,
-            { limit, offset, ...(orderBy ? { orderBy } : {}) },
+            { limit, offset, ...(orderBy ? { orderBy } : {}), ...(asOfTime ? { asOfTime } : {}) },
             requestContext,
           );
           items = mapAndRedact(page.items);

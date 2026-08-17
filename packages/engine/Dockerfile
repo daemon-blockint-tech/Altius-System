@@ -1,19 +1,10 @@
 # syntax=docker/dockerfile:1
 # Ontology Engine — object lifecycle, validation, events
-FROM node:20-alpine AS builder
-
-RUN corepack enable && corepack prepare pnpm@9.15.4 --activate
-
-WORKDIR /app
-
-COPY package.json pnpm-workspace.yaml pnpm-lock.yaml turbo.json tsconfig.json tsconfig.build.json ./
-# --parents preserves directory structure so `pnpm install` sees the full
-# workspace and resolves against the lockfile before any source is copied —
-# this layer then stays cached across source-only changes.
-COPY --parents packages/*/package.json domain-packs/*/package.json tests/*/package.json tools/*/package.json ./
-
-RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
-    pnpm install --frozen-lockfile
+#
+# `deps-full` resolves to the shared install stage in Dockerfile.deps (see
+# docker-bake.hcl) — build via `docker buildx bake engine` or
+# `COMPOSE_BAKE=true docker compose build`, not a plain `docker build -f`.
+FROM deps-full AS builder
 
 COPY packages/ packages/
 COPY domain-packs/ domain-packs/
@@ -52,5 +43,8 @@ RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
 USER node
 
 EXPOSE 4001
+
+HEALTHCHECK --interval=10s --timeout=3s --start-period=10s --retries=5 \
+    CMD wget --quiet --tries=1 --spider http://localhost:4001/health || exit 1
 
 CMD ["node", "packages/engine/dist/server.js"]

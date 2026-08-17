@@ -126,3 +126,45 @@ describe('query — limit enforcement', () => {
     expect(result.items).toHaveLength(0);
   });
 });
+
+// ── Search: match-quality scoring ────────────────────────────────────────
+//
+// Score sums per-field match quality (exact 3, prefix 2, substring 1) rather
+// than a flat 1 per matching field. Pinned here because the two providers must
+// agree weight for weight — the Postgres CASE expression in
+// storage-postgres/src/objects/search.ts is the other half of this contract,
+// and a flat score let an incidental substring tie an exact hit.
+
+describe('search — match-quality scoring', () => {
+  it('ranks exact above prefix above substring', async () => {
+    await provider.createObject(ctx, 'Item', { title: 'ward' });          // exact   → 3
+    await provider.createObject(ctx, 'Item', { title: 'ward round' });    // prefix  → 2
+    await provider.createObject(ctx, 'Item', { title: 'the ward is' });   // substr  → 1
+
+    const result = await provider.searchObjects(ctx, 'Item', { query: 'ward', fields: ['title'] });
+
+    expect(result.hits.map((h) => [h.object.title, h.score])).toEqual([
+      ['ward', 3],
+      ['ward round', 2],
+      ['the ward is', 1],
+    ]);
+  });
+
+  it('is case-insensitive when grading the match', async () => {
+    await provider.createObject(ctx, 'Item', { title: 'WARD' });
+    const result = await provider.searchObjects(ctx, 'Item', { query: 'ward', fields: ['title'] });
+    expect(result.hits[0]?.score).toBe(3);
+  });
+
+  it('sums across fields rather than taking the best single field', async () => {
+    // 1 (substring in title) + 2 (prefix in category) = 3, which is why the
+    // weights are summed and not maxed: a row that matches weakly in two
+    // places is as relevant as one exact hit, and max() would score it 2.
+    await provider.createObject(ctx, 'Item', { title: 'a ward b', category: 'ward x' });
+
+    const result = await provider.searchObjects(ctx, 'Item', {
+      query: 'ward', fields: ['title', 'category'],
+    });
+    expect(result.hits[0]?.score).toBe(3);
+  });
+});

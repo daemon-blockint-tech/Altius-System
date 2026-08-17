@@ -1,0 +1,39 @@
+# syntax=docker/dockerfile:1
+# Shared workspace-install base stages, built once and reused across the six
+# Node service Dockerfiles (packages/{security,sync,engine,web}/Dockerfile use
+# deps-full; packages/{api,actions}/Dockerfile use deps-app) via Bake named
+# build contexts (see docker-bake.hcl). This dedupes the identical
+# `pnpm install` layer that used to be repeated — and separately cached — in
+# every service image.
+#
+# NOT resolved by plain `docker build -f packages/<x>/Dockerfile .` — that
+# only works through `docker buildx bake <target>` or
+# `COMPOSE_BAKE=true docker compose build`, both of which understand the
+# `target:deps-full` / `target:deps-app` context references.
+
+# security, sync, engine, web install the full workspace (they COPY tests/ and
+# tools/ into their build stage too).
+FROM node:20-alpine AS deps-full
+
+RUN corepack enable && corepack prepare pnpm@9.15.4 --activate
+
+WORKDIR /app
+
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml turbo.json tsconfig.json tsconfig.build.json ./
+COPY --parents packages/*/package.json domain-packs/*/package.json tests/*/package.json tools/*/package.json ./
+
+RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
+    pnpm install --frozen-lockfile
+
+# api and actions only need packages/ and domain-packs/.
+FROM node:20-alpine AS deps-app
+
+RUN corepack enable && corepack prepare pnpm@9.15.4 --activate
+
+WORKDIR /app
+
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json turbo.json tsconfig.json tsconfig.build.json ./
+COPY --parents packages/*/package.json domain-packs/*/package.json ./
+
+RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
+    pnpm install --frozen-lockfile

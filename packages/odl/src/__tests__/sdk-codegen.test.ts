@@ -251,7 +251,7 @@ describe('TypeScript SDK codegen', () => {
       const code = getIndexTs();
       expect(code).toContain('get patient()');
       expect(code).toContain('get: (id: string): Promise<Patient | null>');
-      expect(code).toContain('list: (filter?: PatientFilter, pagination?: PaginationArgs): Promise<PatientConnection>');
+      expect(code).toContain('list: (filter?: PatientFilter, pagination?: PaginationArgs, asOf?: string): Promise<PatientConnection>');
       expect(code).toContain('onChange: (id: string, callback: (event: ChangeEvent<Patient>) => void): Subscription');
     });
 

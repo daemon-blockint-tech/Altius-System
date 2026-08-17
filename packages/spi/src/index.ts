@@ -121,3 +121,5 @@ export type {
 } from './object-set.js';
 
 export { stepDepth, totalHops } from './traversal-depth.js';
+export { parseSearchQuery } from './search-query-parser.js';
+export type { ParsedSearchQuery, SearchTerm } from './search-query-parser.js';

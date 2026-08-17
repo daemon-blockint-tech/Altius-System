@@ -1013,7 +1013,7 @@ export function generateGraphQLSchema(schema: ParsedSchema, options?: GraphQLSch
     const lower = lowerFirst(obj.name);
     queryFields.push(`  ${lower}(id: ID!): ${obj.name}`);
     queryFields.push(
-      `  ${lower}s(filter: ${obj.name}Filter, orderBy: ${obj.name}OrderBy, first: Int, after: String, last: Int, before: String): ${obj.name}Connection!`,
+      `  ${lower}s(filter: ${obj.name}Filter, orderBy: ${obj.name}OrderBy, first: Int, after: String, last: Int, before: String, asOf: DateTime): ${obj.name}Connection!`,
     );
     queryFields.push(
       `  ${lower}Aggregate(filter: ${obj.name}Filter, groupBy: [String!], buckets: [DateBucketInput!], fields: [AggregateFieldInput!]!, orderBy: [AggregateOrderByInput!], limit: Int, offset: Int): AggregateResult!`,

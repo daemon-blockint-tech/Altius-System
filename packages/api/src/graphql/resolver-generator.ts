@@ -912,7 +912,7 @@ function generateQueryResolvers(
           limit,
           async (windowLimit) => {
             const scan = await deps.objectManager.query(
-              typeName, combinedFilter, { limit: windowLimit, offset: 0, orderBy: convertOrderBy(args.orderBy) }, requestContext,
+              typeName, combinedFilter, { limit: windowLimit, offset: 0, orderBy: convertOrderBy(args.orderBy), ...(args.asOf ? { asOfTime: args.asOf as string } : {}) }, requestContext,
             );
             return { items: scan.items, total: scan.totalCount };
           },
@@ -932,7 +932,7 @@ function generateQueryResolvers(
           : result.totalCount;
       } else {
         const page = await deps.objectManager.query(
-          typeName, combinedFilter, { limit, offset, orderBy: convertOrderBy(args.orderBy) }, requestContext,
+          typeName, combinedFilter, { limit, offset, orderBy: convertOrderBy(args.orderBy), ...(args.asOf ? { asOfTime: args.asOf as string } : {}) }, requestContext,
         );
         items = mapAndRedact(page.items);
         totalCount = page.totalCount;

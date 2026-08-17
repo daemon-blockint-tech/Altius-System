@@ -1,14 +1,13 @@
 # Altius capability backlog
 
-Generated from code-verification passes, most recently 16 Aug 2026. **189** capabilities graded: **11 full, 85 partial, 91 absent**.
+Generated from code-verification passes, most recently 17 Aug 2026. **189** capabilities graded: **11 full, 90 partial, 86 absent**.
 
-> **The grades are a snapshot from 16 Aug; the code is not.** Eighty-six changes have landed since,
-> thirty-eight of them on 17 Aug, and the "Already landed" section below records each with the rows it
-> invalidates. Thirty-one rows are now graded on a sentence that no longer holds — twenty-three of
-> them on some form of "no frontend package exists", which stopped being true when `packages/web`
-> landed. Those rows have **not** been re-graded and most are still `absent` on their actual
-> capability; what changed is the stated reason. Treat the counts above as the last full measurement,
-> not as the current state.
+> **The grades are a snapshot from 17 Aug; the code is not.** Eighty-six changes have landed since
+> the original 16 Aug measurement, thirty-eight of them on 17 Aug, and the "Already landed" section
+> below records each with the rows it invalidates. A re-grading pass on 17 Aug re-verified all rows
+> whose evidence was falsified by those changes. Five rows moved from `absent` to `partial`; no row
+> reached `full`. The remaining rows whose evidence is stale but whose grade did not change are
+> documented in the "Rows whose stated evidence is now false" section below.
 >
 > One thing the counts cannot tell you and that changes how to read every row: **CI executed for the
 > first time on 17 Aug.** Until then GitHub Actions had never run on this repository (0 runs, verified
@@ -317,6 +316,119 @@ REST, GraphQL and MCP all accept a TraversalPath with no platform code required.
 
 The remaining rows have never been re-read since the original pass. Treat their
 evidence as dated, not wrong.
+
+
+## Re-grading pass, 17 Aug 2026
+
+A full re-grading pass ran against all rows whose evidence was falsified by the
+86 changes that landed after the 16 Aug snapshot. Each row was read against
+current source; grades were reassigned using the bar "a competent user gets the
+whole capability without writing platform code."
+
+**Result: 5 rows moved from `absent` to `partial`. No row reached `full`.**
+
+The five grade changes:
+
+1. `security-gov/markings-mandatory-access-control-labels-wit` — `absent` → `partial`.
+   `MarkingPolicy` with conjunctive/disjunctive categories, hierarchical rank, and
+   fail-closed semantics now exists (packages/security/src/markings/marking-policy.ts).
+   Read-path enforcement is wired across GraphQL, REST, and MCP. NOT `full`: three
+   write-path bypasses remain open (`354e6d7`, FAILING BY DESIGN), and no marking
+   administration API or per-user marking membership store exists.
+
+2. `misc-1/classification-based-access-controls-hierarc` — `absent` → `partial`.
+   The marking policy implements hierarchical rank (Top Secret satisfies Secret)
+   and disjunctive releasability (any one marking in a DISJUNCTIVE category). NOT
+   `full`: same write-path bypasses as markings; no classification inheritance or
+   propagation to derived objects; no administrative API.
+
+3. `misc-1/llm-application-platform-aip-multi-model-cat` — `absent` → `partial`.
+   `AnthropicLLMClient` implements real `complete()` and `stream()` against the
+   Anthropic Messages API (packages/engine/src/llm/anthropic-llm-client.ts).
+   `createLLMClient` fails the boot when a provider is named without its credential.
+   NOT `full`: `embed()` and `vectorSearch()` throw; no model catalog, prompt
+   engineering, AIP Logic orchestration, or token governance.
+
+4. `misc-1/third-party-application-platform-developer-c` — `absent` → `partial`.
+   The OSDK analogue is functional: CLI `odl generate sdk <paths...>` is wired
+   (packages/odl/src/cli/index.ts:257), the published `@altius/sdk` package has
+   1349 lines of generated client with real fetch/WebSocket transport, and 9
+   runtime tests pass. NOT `full`: no developer console, no OAuth client/secret
+   management, no scoped tokens, no service-user identities.
+
+5. `aip-agents/managed-multi-provider-llm-gateway-model-acc` — `absent` → `partial`.
+   A provider abstraction (`createLLMClient`) and a real Anthropic client exist with
+   credential handling and fail-closed boot. NOT `full`: no model catalog, no
+   per-tenant enablement, no capacity/quota enforcement, only one provider
+   implemented, `embed()`/`vectorSearch()` throw.
+
+**Rows whose evidence is stale but whose grade did not change** are documented in
+the "Rows whose stated evidence is now false" section below. The most common
+pattern: 23 frontend rows were graded `absent` on "no frontend package exists" —
+`packages/web` now exists (React 19 + Vite, OIDC PKCE login, one object table,
+action forms), but the actual capabilities those rows grade (widget library, app
+builder, graph visualization, mobile, etc.) remain `absent` or `partial` on their
+own merits. The reason changed; the grade did not.
+
+Other evidence-only updates not requiring a grade change:
+- `platform-ops/continuous-delivery-upgrade-orchestration-ap` (`partial`): "CD side
+  is still empty" is stale — docker-publish.yml now builds and pushes 5 images to
+  GHCR. Still `partial`: no environments, promotion, canary, or rollback.
+- `sync-ingest-ops/platform-health-checks-operational-monitorin` (`partial`): "no
+  shipped deployment can achieve" sync gauges is stale — SYNC_SCHEDULER_ENABLED is
+  now in the Helm config. Still `partial`: other health gaps remain.
+- `sync-ingest-ops/source-system-sync-cdc-ingestion-with-edit-v` (`partial`):
+  "scheduler remains unreachable in either shipped deployment" is stale —
+  SYNC_SCHEDULER_ENABLED is now in Helm. Still `partial`: reconciliation still
+  refused, manifests still broken.
+- `ai-agent-surface/external-ai-ide-access-via-mcp-external-agen` (`partial`):
+  "tool discovery is not permission-scoped" is stale — `scopeToolList` now derives
+  per-caller tools. Still `partial`: admin gating per-pack, no IDE package.
+- `ai-agent-surface/llm-agent-tool-access-to-platform-ontology-m` (`partial`):
+  "dev-mode fallback admits unauthenticated callers as 9-role admin" is stale —
+  now requires explicit opt-in flag. Still `partial`: no builder/ops tools, OAuth
+  token-validation only.
+- `misc-3/mcp-agent-integration-ontology-mcp-exposing-` (`partial`): "query
+  functions invisible to MCP" is stale (`4b94483`); "dry-run over MCP" is also
+  stale (tools.ts now passes dryRun through). Still `partial`: no object-type SQL,
+  no agents-as-tools composition.
+- `widgets/aip-llm-widgets-aip-chatbot-aip-generated-co` (`partial`): "NO LLM
+  client in the repo" is stale — AnthropicLLMClient exists. Still `partial`: no
+  chat UI, no generation endpoint exposed to a widget.
+- `aip-agents/ontology-derived-llm-tool-registry-tool-fact` (`partial`):
+  "schema.functionTypes are never turned into tools" is stale (`4b94483`).
+  Still `partial`: only 1/4 packs enable MCP, no provider-native export, dry-run
+  facade.
+- `misc-2/ai-fde-agentic-platform-assistant-mode-scope` (`absent`): "No LLM
+  client" is stale. Still `absent`: no agent, no planner, no clarification loop.
+- `aip-agents/agent-construction-and-orchestration-chatbot` (`absent`): "no LLM
+  to drive one" is stale. Still `absent`: no agent construction, no orchestration,
+  no thread persistence.
+- `aip-agents/llm-compute-token-metering-and-attribution` (`absent`): "no LLM
+  call to meter" is stale. Still `absent`: no token accounting, no per-model cost
+  attribution, no budget/quota enforcement.
+- `security-gov/ai-agent-write-governance-human-approved-non` (`partial`): "no
+  dry-run over MCP" and "MCP search reads are unaudited" are both stale. Still
+  `partial`: no human-in-the-loop hold, no PolicyGuard implementation.
+- `misc-3/required-property-enforcement-non-null-valid` (`partial`): "@default
+  is never materialized" is stale (`7b05b44` fixed it). Still `partial`: error
+  codes differ per provider, no structured VALIDATION_ERROR, no validation HTTP
+  status.
+- `actions-concurrency/action-side-effect-webhooks-to-external-syst` (`partial`):
+  "delivery failure is completely silent" is partly stale (`7e9b761` wired a pino
+  adapter). Still `partial`: no metric, inline delivery, no durable queue.
+- `scenarios-sim/business-logic-as-ontology-bound-functions-f` (`partial`):
+  "GraphQL only" and "no MCP tool" are stale (REST route + MCP function tools
+  landed). Still `partial`: function-backed Actions don't exist, no shipped pack
+  uses functions.
+- `ontology-core/functions-user-authored-code-logic-on-object` (`partial`):
+  "functions are unreachable over MCP" is stale (`4b94483`). Still `partial`:
+  function-backed actions and user-defined aggregations absent.
+- `misc-2/user-authored-serverless-functions-typescrip` (`partial`):
+  "FunctionTypes are absent from MCP" is stale (`4b94483`). Still `partial`: no
+  Python, no repository/test/publish lifecycle, isolation not a security boundary.
+
+**New counts: 11 full, 90 partial, 86 absent** (5 moved from `absent` to `partial`).
 
 
 ## Repo orientation
@@ -969,11 +1081,13 @@ Use the indexed code graph before grepping: `search_graph`, `query_graph`. On a 
 
 ### `misc-1/classification-based-access-controls-hierarc` — Classification-based access controls (hierarchical markings, disjunctive releasability, inherited data classification)
 
-**Status:** `absent`
+**Status:** `partial`
 
-**Evidence (read 15 Aug):** The security package has audit/, auth/, authz/, consent/ only. Authorization is ReBAC via OpenFGA with PermissionLevel = schema|object|action|field (packages/security/src/authz/types.ts:9-13) and field visibility driven by relation→field lists (FieldPermissionConfig, packages/security/src/authz/types.ts:31-46). Grep across packages/, Orion/, domain-packs/ for marking, releasability, clearance, portion-mark, handling-caveat returns zero hits (the single 'marking' hit, packages/api/src/cdm/mappers.ts:18, is a comment about a constant-field name prefix). The OpenFGA model (Orion/openfga-model.json) declares only ordinary object types and relations. The nearest primitive is the @sensitive directive, which derives a deny-by-default field-permission config (packages/api/src/schema-loader.ts:548-560) — a per-field visibility flag, not a marking.
+> ✅ **RE-VERIFIED against source, 17 Aug 2026.** absent → partial. Hierarchical rank and disjunctive categories exist in the marking policy; write-path bypasses and inheritance remain open.
 
-**Gap:** No marking objects, no hierarchy or dominance evaluation, no disjunctive (OR-of-markings) releasability, and no propagation of classification from source data to derived objects. @sensitive is boolean and per-field, resolved by role relation, and does not inherit.
+**Evidence (read 17 Aug):** The marking policy (packages/security/src/markings/marking-policy.ts) implements the two constructs this row said were absent: (1) hierarchical markings — `MarkingDefinition.rank` allows a higher-ranked marking to satisfy a lower-ranked requirement (e.g. Top Secret satisfies Secret); (2) disjunctive releasability — `MarkingCategoryMode.DISJUNCTIVE` requires any one marking in the category, so "release to GBR or CAN" is expressible. Categories combine conjunctively across each other. Read-path enforcement is wired across GraphQL, REST, and MCP (see the markings row above). The old evidence's grep for "marking, releasability, clearance" returning zero hits is stale — `packages/security/src/markings/` and `packages/api/src/markings/` now exist.
+
+**Gap:** NOT `full` for the same write-path reason as the markings row: three action-executor bypasses (`354e6d7`, FAILING BY DESIGN) reach `updateObject` on a marked type. Additionally, no classification inheritance/propagation exists — there is no mechanism to propagate a source-data classification to derived objects (computed fields, aggregations, linked objects). No administrative API for managing classification categories or user clearances at runtime.
 
 ### `misc-1/cross-application-commands-declared-client-s` — Cross-application commands (declared client-side operations, command chains, commands-as-chatbot-tools)
 
@@ -993,11 +1107,13 @@ Use the indexed code graph before grepping: `search_graph`, `query_graph`. On a 
 
 ### `misc-1/llm-application-platform-aip-multi-model-cat` — LLM application platform (AIP: multi-model catalog, prompt engineering, AIP Logic block orchestration, token/rate governance)
 
-**Status:** `absent`
+**Status:** `partial`
 
-**Evidence (read 15 Aug):** No LLM is ever invoked. No package.json across packages/* declares an LLM SDK (full dependency set is Apollo/GraphQL, grpc, OpenFGA, OTel, express, jose, kafkajs, pg, pino, prom-client, ioredis, ws, yaml, commander). Grep for openai/anthropic finds only doc comments naming agent clients (packages/mcp-server/src/index.ts:5, packages/mcp-server/src/server.ts:7) and two format exporters, toAnthropicTools/toOpenAiTools (packages/actions/src/tools/tool-registry.ts:411,430), which have no caller outside their own package and tests. Grep for 'model catalog', prompt, and 'token budget' finds no implementation (the sole 'prompt' hit is a comment in packages/actions/src/tools/types.ts). Rate limiting exists (packages/api/src/governance/rate-limiter.ts, redis-rate-limiter.ts) but is HTTP request rate limiting, with no token accounting.
+> ✅ **RE-VERIFIED against source, 17 Aug 2026.** absent → partial. A real Anthropic LLM client exists; the broader AIP platform (catalog, prompt engineering, orchestration, token governance) does not.
 
-**Gap:** No model catalog or provider abstraction, no prompt authoring/versioning/testing, no logic-block orchestration, and no token metering, budgets, or per-model governance. Altius is the tool-provider side (MCP), never the LLM caller.
+**Evidence (read 17 Aug):** A real LLM client now exists and is invoked. `AnthropicLLMClient` (packages/engine/src/llm/anthropic-llm-client.ts) implements `complete()` and `stream()` against the Anthropic Messages API using `fetch` — no vendor SDK dependency. `createLLMClient` (packages/engine/src/llm/create-llm-client.ts) selects the provider from `LLM_PROVIDER` env, fails the boot when a provider is named without its credential (rather than falling back to the no-op stub), and `NoOpLLMClient` remains the default when no provider is configured. API keys are read at construction, never logged, returned, or placed in URLs. REST `/api/v1/llm/*`, GraphQL fields, and MCP tools now route to the real client instead of 503'ing. The old evidence "No LLM is ever invoked" is stale.
+
+**Gap:** NOT `full` — `embed()` and `vectorSearch()` intentionally throw: Anthropic publishes no embeddings endpoint, and neither storage provider supports vector indexing/search. No model catalog with per-tenant enablement. No prompt authoring, versioning, or testing surface. No AIP Logic block orchestration (no chain/parallel/conditional block composition). No token metering, budgets, or per-model rate governance. The LLM client is a provider surface, not the full AIP platform.
 
 ### `misc-1/no-code-operational-app-building-workshop-wi` — No-code operational app building (Workshop widgets, layouts, variables; Object Views)
 
@@ -1017,11 +1133,13 @@ Use the indexed code graph before grepping: `search_graph`, `query_graph`. On a 
 
 ### `misc-1/third-party-application-platform-developer-c` — Third-party application platform (Developer Console: OAuth clients, scoped tokens, service users, OSDK)
 
-**Status:** `absent`
+**Status:** `partial`
 
-**Evidence (read 15 Aug):** None of the four named pieces exist. Auth is bearer-JWT verification only: OidcAuthenticator validates signature/expiry/issuer against a single configured audience (packages/security/src/auth/oidc-authenticator.ts:42-88) — there is no scope claim handling anywhere, and a repo-wide grep for scopes, apiKey, client_secret, or registerClient across packages/ (excluding tests) returns zero hits. The shipped identity realm defines one public client with no service accounts and no client scopes (Orion/keycloak/altius-realm.json: clientId 'altius', publicClient true, serviceAccountsEnabled unset). MCP treats an agent as an ordinary OIDC principal with no separate identity (packages/mcp-server/src/auth.ts:1-9). The OSDK analogue is dead code: generateSdk exists (packages/odl/src/codegen/sdk.ts:416) but its only callers are packages/odl/src/__tests__/sdk-codegen.test.ts — the CLI exposes only `generate graphql` and `generate openfga` (packages/odl/src/cli/index.ts:204-252), and the shipped package is a stub: packages/sdk-typescript/src/index.ts:1-7 is a comment plus `export {}`.
+> ✅ **RE-VERIFIED against source, 17 Aug 2026.** absent → partial. The OSDK piece is now functional end to end; OAuth client management, scoped tokens, and service users remain absent.
 
-**Gap:** No developer console or self-service client registration, no OAuth client/secret management, no scoped tokens or consent screens, no service-user identities, and no published/generated SDK. Third parties get only an OpenAPI document (packages/api/src/server.ts:1083) and a hand-provisioned Keycloak user token.
+**Evidence (read 17 Aug):** The OSDK analogue is no longer dead code. The CLI exposes `odl generate sdk <paths...>` (packages/odl/src/cli/index.ts:257, calling generateSdk at :267), accepting multiple schema directories and merging them. The published package `@altius/sdk` (packages/sdk-typescript/src/index.ts) is a 1349-line generated client with per-type get/list/onChange accessors, per-action methods, enums, filter types, and security-aware types (@sensitive fields typed as `T | Redacted`). Runtime transport uses `fetch` for query/mutate and `WebSocket` for subscribe — no "Not implemented" throws remain. Prebuild/pretypecheck/pretest scripts generate from all four domain packs (core, nhs-acute, aml, supply-chain). 9 runtime tests cover construction, query, list, mutation, error handling, and subscriptions. The old evidence "the CLI exposes only generate graphql and generate openfga" and "the shipped package is a stub: export {}" are both stale.
+
+**Gap:** NOT `full` — three of four named pieces are still absent: (1) No developer console or self-service client registration; (2) No OAuth client/secret management, scoped tokens, or consent screens — auth is bearer-JWT validation only with no scope claim handling; (3) No service-user identities (the shipped Keycloak realm defines one public client, no service accounts). The SDK is a typed HTTP/WebSocket client, not React bindings.
 
 ### `misc-1/time-series-and-process-monitoring-applicati` — Time-series and process monitoring applications (Vertex thresholds, Machinery process mining)
 
@@ -1210,11 +1328,13 @@ Use the indexed code graph before grepping: `search_graph`, `query_graph`. On a 
 
 ### `security-gov/markings-mandatory-access-control-labels-wit` — Markings: mandatory access-control labels with centralized administration
 
-**Status:** `absent`
+**Status:** `partial`
 
-**Evidence (read 15 Aug):** No marking/classification/label construct exists. Repo-wide grep for "marking" hits only prose (AGENT.md:159,294) and an unrelated comment (packages/api/src/cdm/mappers.ts:18). The ODL directive vocabulary (packages/odl/src/parser/types.ts:23-88) has no marking/classification/clearance directive — the only sensitivity primitive is @sensitive (types.ts:39), a per-field boolean whose enforcement is discretionary role→field mapping from permissions/field-permissions.yaml (packages/api/src/schema-loader.ts:309-316; deny-by-default fallback at 550-602) applied by AuthorizationService.redactFields (packages/security/src/authz/authorization-service.ts:281-315). No marking registry, no user marking-membership, no conjunctive category evaluation. The only governance write APIs in the platform are relationship grants (packages/api/src/relationships/router.ts:196) and consent records (packages/api/src/consent/router.ts:154) — there is no marking administration surface.
+> ✅ **RE-VERIFIED against source, 17 Aug 2026.** absent → partial. Marking policy and read-path enforcement exist; write-path bypasses remain open.
 
-**Gap:** Entire mandatory-control layer is greenfield: label model, per-user marking membership, conjunctive check at read/write, and a central admin API. The one shared authenticate→FGA check→redact→consent read pipeline (resolver-generator.ts:353-382, route-generator.ts:583-613) is a clean single insertion point.
+**Evidence (read 17 Aug):** A mandatory access-control marking system now exists. `MarkingPolicy` (packages/security/src/markings/marking-policy.ts) defines `MarkingDefinition` (name, optional category, optional rank), `MarkingCategoryDefinition` with mode `CONJUNCTIVE` | `DISJUNCTIVE`, and `MarkingPolicyConfig` with `byObjectType` mapping. Semantics: every required marking must be held in a conjunctive category; any one suffices in a disjunctive category; categories combine conjunctively; higher rank satisfies lower rank in hierarchical categories; undefined markings fail closed (unsatisfiable). Read-path enforcement is wired: `isTypeVisible` and `missingMarkings` (packages/api/src/markings/enforce.ts) are called across GraphQL resolvers (resolver-generator.ts), REST routes, and MCP — the `marking-read-surfaces` change (`a61f2c1`) closed nine of ten read-surface gaps. The `markings-merged` merge (`7fa80cd`, PR #6) brought the feature onto `main` with a shared `DEV_USER` definition carrying `markings: []` so no dev role bypasses a mandatory control.
+
+**Gap:** NOT `full` — three write-path bypasses remain OPEN (`marking-write-bypass`, `354e6d7`, FAILING BY DESIGN): (1) an undeclared caller-controlled param object enters CEL context verbatim; (2) a mistyped link row routes a write to a marked type; (3) a stored property shadows the `@link` field name, affecting target resolution. All three reach `updateObject` on a marked Patient. No marking administration API exists — markings are configured via `MarkingPolicyConfig` at boot, not via a runtime admin endpoint. No per-user marking membership store — the policy evaluates against a caller's `markings` claim, but no API manages those claims.
 
 ### `security-gov/permission-checking-access-explanation-tooli` — Permission checking / access-explanation tooling
 
@@ -1509,10 +1629,12 @@ Use the indexed code graph before grepping: `search_graph`, `query_graph`. On a 
 **Status:** `partial`
 
 > ✅ **RE-VERIFIED against source, 15 Aug 2026.** Evidence below is current, not inherited.
+>
+> **RE-VERIFIED 17 Aug 2026 — still partial — two gaps closed.** MCP now routes through ObjectManager (tools.ts:635-636), so computed fields appear in MCP search results. EAGER cache strategy is now accepted and evaluated (computed-field-evaluator.ts:345), no longer silently dropped. Five gaps remain: no filter/sort/aggregate on computed fields, CSV export omits them, no caching (N+1), no write-time pre-compute for EAGER, lookupField reads only first linked object.
 
 **Evidence (read 15 Aug):** Computed values now reach list and search on the main surfaces. ObjectManager.query merges them at packages/engine/src/objects/object-manager.ts:349 and search at :387, both via withComputed (:415-433, bounded waves, no truncation); the evaluator is constructed and injected in production at packages/api/src/server.ts:367,392. Values survive to the wire because objectToRest (packages/api/src/rest/route-generator.ts:72-83) and objectToGraphQL (packages/api/src/graphql/resolver-generator.ts:219-230) copy every declared field, and @computed fields are declared fields. Export NDJSON, CDM and FHIR inherit it through objectManager.query (packages/api/src/cdm/router.ts:261, fhir/router.ts:227). Demoters found today: (1) aggregate is still a raw pass-through — object-manager.ts:357-367 calls storage.aggregateObjects with no computed step, so no derived value can be counted, summed or grouped on; (2) filtering/sorting is refused by construction — packages/api/src/rest/route-generator.ts:137-140 queryableFields excludes link and @computed fields, and packages/odl/src/codegen/index.ts:83-86 getScalarFields excludes them from generated GraphQL filter inputs; (3) surface asymmetry — CSV export drops computed columns (route-generator.ts:692 filters `d.kind === 'computed'`) while NDJSON from the same route keeps them, and the MCP search tool bypasses ObjectManager entirely (packages/mcp-server/src/tools.ts:331 `deps.storage.queryObjects`), so no MCP client ever sees a derived property; (4) no caching and N+1 persists — computed-field-evaluator.ts:1-11 states LAZY-only with recompute on every read, evaluateAll (:322-339) loops fields sequentially with at least one storage round trip each, and aggregateLinks fetches every linked object per row; (5) config parsed and read by nothing: `cache: EAGER|TTL` is parsed (packages/odl/src/parser/index.ts:330) but getComputedFields keeps only `!cache || cache === 'LAZY'` (computed-field-evaluator.ts:314), so an EAGER-declared property silently never resolves, with no validation error. All three shipped packs use the LAZY countLinks form (domain-packs/{aml/schema/case.odl:18, supply-chain/schema/facility.odl:16, nhs-acute/schema/ward.odl:12}).
 
-**Gap:** Derived values still cannot be filtered, sorted, aggregated, or seen over MCP; CSV export omits them; nothing is cached (per-row, per-field storage round trips, N+1 inside the link aggregates); EAGER/TTL cache strategies are parsed and then silently discarded, making the field disappear; lookupField still reads only the first linked object (no multi-value lookup).
+**Gap:** Derived values still cannot be filtered, sorted, or aggregated; CSV export omits them (route-generator.ts:739); nothing is cached (per-row, per-field storage round trips, N+1 inside the link aggregates); EAGER is now evaluated but with no write-time pre-compute; lookupField still reads only the first linked object (no multi-value lookup). MCP now shows computed values (tools.ts:635-636 routes through ObjectManager).
 
 ### `ontology-core/functions-user-authored-code-logic-on-object` — Functions: user-authored code logic on objects (FOO, function-backed actions, custom aggregations)
 
@@ -1661,11 +1783,13 @@ Use the indexed code graph before grepping: `search_graph`, `query_graph`. On a 
 
 ### `aip-agents/managed-multi-provider-llm-gateway-model-acc` — Managed multi-provider LLM gateway (model access, enablement, capacity)
 
-**Status:** `absent`
+**Status:** `partial`
 
-**Evidence (read 15 Aug):** No LLM provider dependency exists in any workspace package. Grepped every packages/*/package.json for "openai", "@anthropic-ai/*", "ai", "langchain", "@langchain/*", "cohere", "@mistralai", "ollama", "tiktoken" — zero matches. Repo-wide grep over packages/ and Orion/ for llm|LLM|openai|anthropic|completion returns only doc-comment prose (packages/mcp-server/src/index.ts:5 "AI agents (Claude Code, Cursor, Anthropic SDK, OpenAI SDK)", server.ts:7,16) plus OIDC bearer-token code — no client, no model registry, no provider abstraction, no capacity or enablement config. packages/actions/src/tools/tool-registry.ts:411,430 emit Anthropic/OpenAI *tool-definition JSON*, which is a schema shape, not a model call. No model-related env var appears in the packages/api/src/server.ts env block (server.ts:23 documents CEL_EVALUATOR_URL and peers; nothing LLM).
+> ✅ **RE-VERIFIED against source, 17 Aug 2026.** absent → partial. A provider client with credential handling exists; model catalog, per-tenant enablement, and capacity/quota do not.
 
-**Gap:** Everything. There is no code path in the repo that calls a language model. A gateway would need at minimum a provider client, a model catalog with per-tenant enablement, credential handling, and rate/quota enforcement — none of the four exist.
+**Evidence (read 17 Aug):** A provider abstraction and a real client now exist. `createLLMClient` (packages/engine/src/llm/create-llm-client.ts) is the provider factory: reads `LLM_PROVIDER` env, returns `NoOpLLMClient` when unset or 'none', returns `AnthropicLLMClient` when 'anthropic', and fails the boot when a provider is named without its credential (`ANTHROPIC_API_KEY`). `AnthropicLLMClient` (packages/engine/src/llm/anthropic-llm-client.ts) implements `complete()` and `stream()` against the Anthropic Messages API using `fetch` — no vendor SDK dependency. The `LLMClient` interface (packages/spi/src) defines `complete`, `stream`, `embed`, `vectorSearch` — the latter two throw intentionally. The old evidence "no client, no model registry, no provider abstraction" is stale on the first and third clauses.
+
+**Gap:** NOT `full` — no model catalog (no list of available models, no per-model configuration). No per-tenant enablement (a provider is configured globally, not per tenant). No capacity or quota enforcement (no rate limits per model, no concurrent-request caps, no cost allocation). Only one provider (Anthropic) is implemented; no OpenAI, Cohere, Mistral, or Ollama adapter. `embed()` and `vectorSearch()` throw. The gateway is a single-provider client, not a managed multi-provider gateway.
 
 
 ## Schema, interfaces & agents
@@ -1755,7 +1879,9 @@ Use the indexed code graph before grepping: `search_graph`, `query_graph`. On a 
 
 **Update (16 Aug):** the Postgres as-of path is now VERIFIED by execution — the full suite runs green against PostgreSQL 17.7 + Apache AGE (664/664, 332 per provider), so the `DISTINCT ON ("_id") ... WHERE "_updated_at" <= $n` history query and the `asOfVersion` refusal both behave identically to the memory provider rather than merely being reviewed.
 
-**Gap:** `getObjectAtTime` is still not exposed on any API surface (REST/GraphQL/MCP/SDK), and there is no link history API. `asOfTime` is honoured at the SPI but no route or resolver passes it yet, so it is reachable from platform code only.
+**Update (17 Aug):** `asOfTime` is now exposed on all collection surfaces. REST list routes parse `?asOf=<ISO-8601>` and pass it to `QueryOptions.asOfTime` (route-generator.ts:554-564, applied at :628 and :649). GraphQL list queries accept `asOf: DateTime` (odl/src/codegen/index.ts:1016) and the resolver forwards it to `QueryOptions.asOfTime` (resolver-generator.ts:915, :935). The generated SDK `list(filter, pagination, asOf)` accessor passes it through as the `$asOf` GraphQL variable (odl/src/codegen/sdk.ts:375-377). OpenAPI documents the `asOf` parameter (openapi.ts:148-156). `getObjectAtTime` was already exposed on REST (`GET /{plural}/:id/history?asOf=<ts>`) and GraphQL (`history(asOf: String)`) before this pass. Tests: packages/api/src/__tests__/list-as-of.test.ts (6 cases: REST asOf pass-through, validation, absence; GraphQL SDL, pass-through, absence). 790 API tests pass, 349 ODL tests pass, 31 SDK tests pass. Row stays `partial` because link temporal queries are entirely absent — no SPI method, no storage implementation, no API surface.
+
+**Gap:** No link history API exists — there is no SPI method, storage implementation, or API surface for querying link state at a point in time ("what links existed last Tuesday"). Object edit history and object point-in-time queries are fully exposed across REST, GraphQL, and SDK; link temporal queries are entirely absent.
 
 ### `storage-conformance/property-system-base-types-required-unique-c` — Property system: base types, required/unique constraints
 
@@ -1947,7 +2073,9 @@ Use the indexed code graph before grepping: `search_graph`, `query_graph`. On a 
 
 **Evidence (read 14 Aug):** The DDL/runtime mismatch IS fixed: packages/storage-postgres/src/schema/ddl-objects.ts:104-109 now emits `CREATE INDEX ... USING gin (col gin_trgm_ops)` for FULLTEXT IndexDefinitions (no tsvector anywhere), and packages/storage-postgres/src/schema/index.ts:90-97 emits `CREATE EXTENSION IF NOT EXISTS pg_trgm` when any FULLTEXT index exists; both run in production wiring via generateDDL → applySchema (postgres-storage-provider.ts:213, :301-302), itself called at boot (packages/api/src/server.ts:209). FULLTEXT indexes come from @searchable (packages/api/src/schema-loader.ts:695-698). Runtime is unchanged ILIKE (packages/storage-postgres/src/objects/search.ts:96-135). Conditions on index use: search.ts:127-135 ORs `col ILIKE $n` across EVERY requested field, so Postgres can only use indexes if all branches are trgm-indexed; with no explicit fields, search.ts:110-120 searches every text column, most of which have no index. The API's default is worse than 'unindexed': packages/api/src/graphql/resolver-generator.ts:886-888 and packages/api/src/rest/route-generator.ts:919-921 default `fields` to ALL visible fields from the column policy, which for the reference pack (domain-packs/nhs-acute/permissions/field-permissions.yaml:11-21) includes `id` and `dateOfBirth`; search.ts:130 maps them via fieldCol → `"id"` (no such column — @primary is dropped at schema-loader.ts:672-673 and stored as _id) and `"date_of_birth"` (DATE per type-mapping.ts:15) → `ILIKE` on a DATE/nonexistent column is a SQL error, not a slow scan. Also `@searchable(weight:)` is parsed (packages/odl/src/parser/types.ts:83) and dropped — it never reaches IndexDefinition or the CASE-WHEN scoring. The integration proof (packages/storage-postgres/src/__tests__/search.integration.test.ts:113-130) EXPLAINs a hand-written `"title" ILIKE '%summar%'`, not the SQL searchObjects actually generates (no ESCAPE, no parameter, no tenant/deleted predicates, no OR).
 
-**Gap:** Index-backed only on the field-restricted path over @searchable columns; the default (fields omitted) path is a scan when no column policy exists and raises a Postgres error (undefined column "id" / no ILIKE operator for DATE) when one does. No ranking (weight ignored), no stemming/tsquery, no relevance beyond match-count. Upgrading an existing deployment trips the DDL checksum guard (postgres-storage-provider.ts:239-247) until schema.version is bumped, because FULLTEXT DDL text changed.
+**Update (17 Aug):** Two of three gaps in the old evidence are CLOSED. (1) The default-fields SQL error is FIXED: when no explicit fields are provided, Postgres now queries `information_schema.columns` for text/varchar columns only (search.ts:113-122), and the GraphQL/REST resolvers intersect `visibleFields` with `searchableTextFields` (resolver-generator.ts:1528-1530, route-generator.ts:1554-1557) — `id` and `dateOfBirth` are excluded because `searchableTextFields` (utils.ts:37-52) skips primary/link/computed/list fields and non-text scalars. (2) Ranking is REAL: both providers implement boolean query parsing (required/excluded/orGroups), phrase matching (weight 3), and relevance scoring (`ORDER BY _search_score DESC` in Postgres, sorted in memory). Memory provider adds exact-match (3) and prefix-match (2) scoring on top. 104 search conformance tests cover phrase matching, word order, excluded terms, OR groups, and score ordering. The old claim "no ranking, no relevance beyond match-count" is stale.
+
+**Gap:** Two gaps remain. (1) `@searchable(weight:)` is parsed by the ODL parser (types.ts:83) and used in 5 domain-pack fields (customer.odl:11, facility.odl:7, supplier.odl:7, product.odl:8, patient.odl:10) but silently dropped — it never reaches IndexDefinition, the SPI, or the search scoring. A user who sets `weight: 2.0` on a field gets the same score as `weight: 1.0`. (2) No stemming, tsquery, or advanced FTS features — search is trigram-indexed ILIKE with boolean query parsing and relevance scoring, not a full text-search engine. Upgrading an existing deployment trips the DDL checksum guard (postgres-storage-provider.ts:239-247) until schema.version is bumped, because FULLTEXT DDL text changed.
 
 ### `defect-fixes/link-change-events-to-type-level-subscribers` — Link change events to type-level subscribers
 

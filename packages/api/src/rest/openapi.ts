@@ -144,6 +144,16 @@ function objectPaths(obj: ObjectType): Record<string, unknown> {
         { name: 'offset', in: 'query', schema: { type: 'integer', default: 0 } },
         { name: 'sort', in: 'query', schema: { type: 'string' }, description: 'Sort field' },
         { name: 'order', in: 'query', schema: { type: 'string', enum: ['asc', 'desc'] } },
+        {
+          name: 'asOf',
+          in: 'query',
+          schema: { type: 'string', format: 'date-time' },
+          description:
+            'Evaluate the query against the values that were live at this instant, ' +
+            'reading from version history. Filters and sorting apply to the historical ' +
+            'values. Objects created after it are absent; objects deleted before it stay ' +
+            'excluded. Same meaning as asOf on the history route, for a collection.',
+        },
         ...obj.fields
           .filter(f => !isPrimary(f) && !isComputed(f) && !isLink(f))
           .map(f => ({
