@@ -1363,18 +1363,18 @@ export class Altius {
   get dischargeRecord() {
     return {
       get: (id: string): Promise<DischargeRecord | null> =>
-        this.query<Record<string, unknown>>(`query { dischargeRecord(id: "${id}") { id patient ward destination dischargeDate notes _redactedFields _consentRestricted } }`)
+        this.query<Record<string, unknown>>(`query { dischargeRecord(id: "${id}") { id patient { id nhsNumber name family given dateOfBirth status triageCategory presentingComplaint createdAt createdBy updatedAt updatedBy validFrom validTo _redactedFields _consentRestricted } ward { id name specialty capacity location address _redactedFields _consentRestricted } destination dischargeDate notes _redactedFields _consentRestricted } }`)
           .then((d) => (d?.['dischargeRecord'] ?? null) as DischargeRecord | null),
 
       list: (filter?: DischargeRecordFilter, pagination?: PaginationArgs): Promise<DischargeRecordConnection> =>
-        this.query<Record<string, unknown>>(`query($filter: DischargeRecordFilter, $first: Int, $after: String) { dischargeRecords(filter: $filter, first: $first, after: $after) { edges { node { id patient ward destination dischargeDate notes _redactedFields _consentRestricted } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after })
+        this.query<Record<string, unknown>>(`query($filter: DischargeRecordFilter, $first: Int, $after: String) { dischargeRecords(filter: $filter, first: $first, after: $after) { edges { node { id patient { id nhsNumber name family given dateOfBirth status triageCategory presentingComplaint createdAt createdBy updatedAt updatedBy validFrom validTo _redactedFields _consentRestricted } ward { id name specialty capacity location address _redactedFields _consentRestricted } destination dischargeDate notes _redactedFields _consentRestricted } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after })
           .then((d) => d?.['dischargeRecords'] as DischargeRecordConnection),
 
       onChange: (id: string, callback: (event: ChangeEvent<DischargeRecord>) => void): Subscription =>
-        this.subscribe<DischargeRecord>('DischargeRecord', id, 'id patient ward destination dischargeDate notes _redactedFields _consentRestricted', callback),
+        this.subscribe<DischargeRecord>('DischargeRecord', id, 'id patient { id nhsNumber name family given dateOfBirth status triageCategory presentingComplaint createdAt createdBy updatedAt updatedBy validFrom validTo _redactedFields _consentRestricted } ward { id name specialty capacity location address _redactedFields _consentRestricted } destination dischargeDate notes _redactedFields _consentRestricted', callback),
 
       onAnyChange: (callback: (event: ChangeEvent<DischargeRecord>) => void, filter?: DischargeRecordFilter, onClose?: () => void, onResume?: () => void): Subscription =>
-        this.subscribe<DischargeRecord>('DischargeRecord', null, 'id patient ward destination dischargeDate notes _redactedFields _consentRestricted', callback, filter as Record<string, unknown> | undefined, onClose, onResume),
+        this.subscribe<DischargeRecord>('DischargeRecord', null, 'id patient { id nhsNumber name family given dateOfBirth status triageCategory presentingComplaint createdAt createdBy updatedAt updatedBy validFrom validTo _redactedFields _consentRestricted } ward { id name specialty capacity location address _redactedFields _consentRestricted } destination dischargeDate notes _redactedFields _consentRestricted', callback, filter as Record<string, unknown> | undefined, onClose, onResume),
     };
   }
   get patient() {
@@ -1414,18 +1414,18 @@ export class Altius {
   get transfer() {
     return {
       get: (id: string): Promise<Transfer | null> =>
-        this.query<Record<string, unknown>>(`query { transfer(id: "${id}") { id patient fromWard toWard transferDate reason _redactedFields _consentRestricted } }`)
+        this.query<Record<string, unknown>>(`query { transfer(id: "${id}") { id patient { id nhsNumber name family given dateOfBirth status triageCategory presentingComplaint createdAt createdBy updatedAt updatedBy validFrom validTo _redactedFields _consentRestricted } fromWard { id name specialty capacity location address _redactedFields _consentRestricted } toWard { id name specialty capacity location address _redactedFields _consentRestricted } transferDate reason _redactedFields _consentRestricted } }`)
           .then((d) => (d?.['transfer'] ?? null) as Transfer | null),
 
       list: (filter?: TransferFilter, pagination?: PaginationArgs): Promise<TransferConnection> =>
-        this.query<Record<string, unknown>>(`query($filter: TransferFilter, $first: Int, $after: String) { transfers(filter: $filter, first: $first, after: $after) { edges { node { id patient fromWard toWard transferDate reason _redactedFields _consentRestricted } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after })
+        this.query<Record<string, unknown>>(`query($filter: TransferFilter, $first: Int, $after: String) { transfers(filter: $filter, first: $first, after: $after) { edges { node { id patient { id nhsNumber name family given dateOfBirth status triageCategory presentingComplaint createdAt createdBy updatedAt updatedBy validFrom validTo _redactedFields _consentRestricted } fromWard { id name specialty capacity location address _redactedFields _consentRestricted } toWard { id name specialty capacity location address _redactedFields _consentRestricted } transferDate reason _redactedFields _consentRestricted } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after })
           .then((d) => d?.['transfers'] as TransferConnection),
 
       onChange: (id: string, callback: (event: ChangeEvent<Transfer>) => void): Subscription =>
-        this.subscribe<Transfer>('Transfer', id, 'id patient fromWard toWard transferDate reason _redactedFields _consentRestricted', callback),
+        this.subscribe<Transfer>('Transfer', id, 'id patient { id nhsNumber name family given dateOfBirth status triageCategory presentingComplaint createdAt createdBy updatedAt updatedBy validFrom validTo _redactedFields _consentRestricted } fromWard { id name specialty capacity location address _redactedFields _consentRestricted } toWard { id name specialty capacity location address _redactedFields _consentRestricted } transferDate reason _redactedFields _consentRestricted', callback),
 
       onAnyChange: (callback: (event: ChangeEvent<Transfer>) => void, filter?: TransferFilter, onClose?: () => void, onResume?: () => void): Subscription =>
-        this.subscribe<Transfer>('Transfer', null, 'id patient fromWard toWard transferDate reason _redactedFields _consentRestricted', callback, filter as Record<string, unknown> | undefined, onClose, onResume),
+        this.subscribe<Transfer>('Transfer', null, 'id patient { id nhsNumber name family given dateOfBirth status triageCategory presentingComplaint createdAt createdBy updatedAt updatedBy validFrom validTo _redactedFields _consentRestricted } fromWard { id name specialty capacity location address _redactedFields _consentRestricted } toWard { id name specialty capacity location address _redactedFields _consentRestricted } transferDate reason _redactedFields _consentRestricted', callback, filter as Record<string, unknown> | undefined, onClose, onResume),
     };
   }
   get ward() {
@@ -1567,18 +1567,18 @@ export class Altius {
   get inventoryRecord() {
     return {
       get: (id: string): Promise<InventoryRecord | null> =>
-        this.query<Record<string, unknown>>(`query { inventoryRecord(id: "${id}") { id quantity reservedQuantity stockLevel lastCountDate product facility _redactedFields _consentRestricted } }`)
+        this.query<Record<string, unknown>>(`query { inventoryRecord(id: "${id}") { id quantity reservedQuantity stockLevel lastCountDate product { id sku name category unitOfMeasure reorderPoint reorderQuantity _redactedFields _consentRestricted } facility { id name code type status location address country capacity _redactedFields _consentRestricted } _redactedFields _consentRestricted } }`)
           .then((d) => (d?.['inventoryRecord'] ?? null) as InventoryRecord | null),
 
       list: (filter?: InventoryRecordFilter, pagination?: PaginationArgs): Promise<InventoryRecordConnection> =>
-        this.query<Record<string, unknown>>(`query($filter: InventoryRecordFilter, $first: Int, $after: String) { inventoryRecords(filter: $filter, first: $first, after: $after) { edges { node { id quantity reservedQuantity stockLevel lastCountDate product facility _redactedFields _consentRestricted } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after })
+        this.query<Record<string, unknown>>(`query($filter: InventoryRecordFilter, $first: Int, $after: String) { inventoryRecords(filter: $filter, first: $first, after: $after) { edges { node { id quantity reservedQuantity stockLevel lastCountDate product { id sku name category unitOfMeasure reorderPoint reorderQuantity _redactedFields _consentRestricted } facility { id name code type status location address country capacity _redactedFields _consentRestricted } _redactedFields _consentRestricted } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after })
           .then((d) => d?.['inventoryRecords'] as InventoryRecordConnection),
 
       onChange: (id: string, callback: (event: ChangeEvent<InventoryRecord>) => void): Subscription =>
-        this.subscribe<InventoryRecord>('InventoryRecord', id, 'id quantity reservedQuantity stockLevel lastCountDate product facility _redactedFields _consentRestricted', callback),
+        this.subscribe<InventoryRecord>('InventoryRecord', id, 'id quantity reservedQuantity stockLevel lastCountDate product { id sku name category unitOfMeasure reorderPoint reorderQuantity _redactedFields _consentRestricted } facility { id name code type status location address country capacity _redactedFields _consentRestricted } _redactedFields _consentRestricted', callback),
 
       onAnyChange: (callback: (event: ChangeEvent<InventoryRecord>) => void, filter?: InventoryRecordFilter, onClose?: () => void, onResume?: () => void): Subscription =>
-        this.subscribe<InventoryRecord>('InventoryRecord', null, 'id quantity reservedQuantity stockLevel lastCountDate product facility _redactedFields _consentRestricted', callback, filter as Record<string, unknown> | undefined, onClose, onResume),
+        this.subscribe<InventoryRecord>('InventoryRecord', null, 'id quantity reservedQuantity stockLevel lastCountDate product { id sku name category unitOfMeasure reorderPoint reorderQuantity _redactedFields _consentRestricted } facility { id name code type status location address country capacity _redactedFields _consentRestricted } _redactedFields _consentRestricted', callback, filter as Record<string, unknown> | undefined, onClose, onResume),
     };
   }
   get product() {
@@ -1601,35 +1601,35 @@ export class Altius {
   get purchaseOrder() {
     return {
       get: (id: string): Promise<PurchaseOrder | null> =>
-        this.query<Record<string, unknown>>(`query { purchaseOrder(id: "${id}") { id orderNumber status supplier product quantity unitCost currency requestedDeliveryDate notes _redactedFields _consentRestricted } }`)
+        this.query<Record<string, unknown>>(`query { purchaseOrder(id: "${id}") { id orderNumber status supplier { id name code system display tier contactName contactEmail country leadTimeDays onTimeDeliveryRate _redactedFields _consentRestricted } product { id sku name category unitOfMeasure reorderPoint reorderQuantity _redactedFields _consentRestricted } quantity unitCost currency requestedDeliveryDate notes _redactedFields _consentRestricted } }`)
           .then((d) => (d?.['purchaseOrder'] ?? null) as PurchaseOrder | null),
 
       list: (filter?: PurchaseOrderFilter, pagination?: PaginationArgs): Promise<PurchaseOrderConnection> =>
-        this.query<Record<string, unknown>>(`query($filter: PurchaseOrderFilter, $first: Int, $after: String) { purchaseOrders(filter: $filter, first: $first, after: $after) { edges { node { id orderNumber status supplier product quantity unitCost currency requestedDeliveryDate notes _redactedFields _consentRestricted } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after })
+        this.query<Record<string, unknown>>(`query($filter: PurchaseOrderFilter, $first: Int, $after: String) { purchaseOrders(filter: $filter, first: $first, after: $after) { edges { node { id orderNumber status supplier { id name code system display tier contactName contactEmail country leadTimeDays onTimeDeliveryRate _redactedFields _consentRestricted } product { id sku name category unitOfMeasure reorderPoint reorderQuantity _redactedFields _consentRestricted } quantity unitCost currency requestedDeliveryDate notes _redactedFields _consentRestricted } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after })
           .then((d) => d?.['purchaseOrders'] as PurchaseOrderConnection),
 
       onChange: (id: string, callback: (event: ChangeEvent<PurchaseOrder>) => void): Subscription =>
-        this.subscribe<PurchaseOrder>('PurchaseOrder', id, 'id orderNumber status supplier product quantity unitCost currency requestedDeliveryDate notes _redactedFields _consentRestricted', callback),
+        this.subscribe<PurchaseOrder>('PurchaseOrder', id, 'id orderNumber status supplier { id name code system display tier contactName contactEmail country leadTimeDays onTimeDeliveryRate _redactedFields _consentRestricted } product { id sku name category unitOfMeasure reorderPoint reorderQuantity _redactedFields _consentRestricted } quantity unitCost currency requestedDeliveryDate notes _redactedFields _consentRestricted', callback),
 
       onAnyChange: (callback: (event: ChangeEvent<PurchaseOrder>) => void, filter?: PurchaseOrderFilter, onClose?: () => void, onResume?: () => void): Subscription =>
-        this.subscribe<PurchaseOrder>('PurchaseOrder', null, 'id orderNumber status supplier product quantity unitCost currency requestedDeliveryDate notes _redactedFields _consentRestricted', callback, filter as Record<string, unknown> | undefined, onClose, onResume),
+        this.subscribe<PurchaseOrder>('PurchaseOrder', null, 'id orderNumber status supplier { id name code system display tier contactName contactEmail country leadTimeDays onTimeDeliveryRate _redactedFields _consentRestricted } product { id sku name category unitOfMeasure reorderPoint reorderQuantity _redactedFields _consentRestricted } quantity unitCost currency requestedDeliveryDate notes _redactedFields _consentRestricted', callback, filter as Record<string, unknown> | undefined, onClose, onResume),
     };
   }
   get shipment() {
     return {
       get: (id: string): Promise<Shipment | null> =>
-        this.query<Record<string, unknown>>(`query { shipment(id: "${id}") { id trackingNumber status transportMode quantity departureDate estimatedArrival actualArrival order origin destination _redactedFields _consentRestricted } }`)
+        this.query<Record<string, unknown>>(`query { shipment(id: "${id}") { id trackingNumber status transportMode quantity departureDate estimatedArrival actualArrival order { id orderNumber status quantity unitCost currency requestedDeliveryDate notes _redactedFields _consentRestricted } origin { id name code type status location address country capacity _redactedFields _consentRestricted } destination { id name code type status location address country capacity _redactedFields _consentRestricted } _redactedFields _consentRestricted } }`)
           .then((d) => (d?.['shipment'] ?? null) as Shipment | null),
 
       list: (filter?: ShipmentFilter, pagination?: PaginationArgs): Promise<ShipmentConnection> =>
-        this.query<Record<string, unknown>>(`query($filter: ShipmentFilter, $first: Int, $after: String) { shipments(filter: $filter, first: $first, after: $after) { edges { node { id trackingNumber status transportMode quantity departureDate estimatedArrival actualArrival order origin destination _redactedFields _consentRestricted } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after })
+        this.query<Record<string, unknown>>(`query($filter: ShipmentFilter, $first: Int, $after: String) { shipments(filter: $filter, first: $first, after: $after) { edges { node { id trackingNumber status transportMode quantity departureDate estimatedArrival actualArrival order { id orderNumber status quantity unitCost currency requestedDeliveryDate notes _redactedFields _consentRestricted } origin { id name code type status location address country capacity _redactedFields _consentRestricted } destination { id name code type status location address country capacity _redactedFields _consentRestricted } _redactedFields _consentRestricted } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after })
           .then((d) => d?.['shipments'] as ShipmentConnection),
 
       onChange: (id: string, callback: (event: ChangeEvent<Shipment>) => void): Subscription =>
-        this.subscribe<Shipment>('Shipment', id, 'id trackingNumber status transportMode quantity departureDate estimatedArrival actualArrival order origin destination _redactedFields _consentRestricted', callback),
+        this.subscribe<Shipment>('Shipment', id, 'id trackingNumber status transportMode quantity departureDate estimatedArrival actualArrival order { id orderNumber status quantity unitCost currency requestedDeliveryDate notes _redactedFields _consentRestricted } origin { id name code type status location address country capacity _redactedFields _consentRestricted } destination { id name code type status location address country capacity _redactedFields _consentRestricted } _redactedFields _consentRestricted', callback),
 
       onAnyChange: (callback: (event: ChangeEvent<Shipment>) => void, filter?: ShipmentFilter, onClose?: () => void, onResume?: () => void): Subscription =>
-        this.subscribe<Shipment>('Shipment', null, 'id trackingNumber status transportMode quantity departureDate estimatedArrival actualArrival order origin destination _redactedFields _consentRestricted', callback, filter as Record<string, unknown> | undefined, onClose, onResume),
+        this.subscribe<Shipment>('Shipment', null, 'id trackingNumber status transportMode quantity departureDate estimatedArrival actualArrival order { id orderNumber status quantity unitCost currency requestedDeliveryDate notes _redactedFields _consentRestricted } origin { id name code type status location address country capacity _redactedFields _consentRestricted } destination { id name code type status location address country capacity _redactedFields _consentRestricted } _redactedFields _consentRestricted', callback, filter as Record<string, unknown> | undefined, onClose, onResume),
     };
   }
   get supplier() {

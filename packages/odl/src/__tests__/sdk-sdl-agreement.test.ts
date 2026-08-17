@@ -13,18 +13,6 @@
  * always a bug in one of them. This holds them to each other mechanically,
  * across every ObjectType and action at once, instead of one accessor at a time.
  *
- * KNOWN GAP: this checks the fixture schema, not the four domain packs the
- * published SDK is generated from. Extending it to those (see shippedOdl below)
- * FAILS today, and the failure is real: DischargeRecord.patient is typed
- * `Patient`, and the field-list builder emits it as a bare scalar, so
- * `query { dischargeRecord(id:...) { id patient ... } }` is invalid GraphQL —
- * "Field \"patient\" of type \"Patient\" must have a selection of subfields".
- * Every dischargeRecord read fails against a real server.
- *
- * Fixing it means teaching the field-list builder to expand object-typed fields
- * with a subselection AND a depth limit, because Patient.admissions ->
- * AdmittedTo -> Patient cycles. That is a codegen change with a cycle hazard,
- * not a one-liner, so it is recorded here rather than rushed.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -127,10 +115,11 @@ describe('generated SDK agrees with the generated SDL', () => {
     expect(documentsIn(sdk).length).toBeGreaterThan(10);
   });
 
-  it.fails('the shipped packs do NOT yet agree — recorded, not ignored', () => {
-    // it.fails inverts the assertion: this passes while the defect exists and
-    // starts FAILING the moment someone fixes it, which is the prompt to
-    // promote it to a normal assertion. A skipped test would just rot.
+  it('holds for every shipped domain pack, not just the fixture', () => {
+    // The published SDK is generated from these four. A pack-specific
+    // disagreement — an object-typed field needing a selection set, a name
+    // collision — does not show up against the fixture alone; this assertion
+    // was inverted for exactly one commit while that defect existed.
     checkAgreement('shipped packs', shippedOdl());
   });
 

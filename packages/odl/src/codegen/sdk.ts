@@ -360,10 +360,10 @@ function generateFilterInterface(obj: ObjectType, knownEnums: Set<string>): stri
   return lines.join('\n');
 }
 
-function generateObjectAccessor(obj: ObjectType): string {
+function generateObjectAccessor(obj: ObjectType, schema: ParsedSchema): string {
   const name = obj.name;
   const lower = lowerFirst(name);
-  const fields = getFieldNames(obj);
+  const fields = getFieldNames(obj, schema);
 
   return [
     `  get ${lower}() {`,
@@ -386,10 +386,29 @@ function generateObjectAccessor(obj: ObjectType): string {
   ].join('\n');
 }
 
-function getFieldNames(obj: ObjectType): string {
+function getFieldNames(obj: ObjectType, schema: ParsedSchema): string {
+  const objectTypes = new Map(schema.objectTypes.map(o => [o.name, o]));
+
   const declared = obj.fields
     .filter(f => !isLinkField(f) && !isComputedField(f))
-    .map(f => f.name);
+    .map(f => {
+      const nested = objectTypes.get(f.type.name);
+      if (!nested) return f.name;
+
+      // An OBJECT-typed field needs a selection set. Emitting it bare made
+      // every query for a type that has one invalid — "Field patient of type
+      // Patient must have a selection of subfields" — so e.g. no
+      // dischargeRecord could be read at all.
+      //
+      // Expanded exactly one level, scalars only. Never recursing is what makes
+      // this safe: Patient.admissions -> AdmittedTo -> Patient is a cycle, and
+      // a depth counter would only bound it. Excluding nested object fields
+      // from the inner selection makes a cycle structurally impossible instead.
+      const inner = nested.fields
+        .filter(nf => !isLinkField(nf) && !isComputedField(nf) && !objectTypes.has(nf.type.name))
+        .map(nf => nf.name);
+      return `${f.name} { ${[...inner, '_redactedFields', '_consentRestricted'].join(' ')} }`;
+    });
 
   // The redaction metadata, which every generated interface declares as a
   // required member (`_redactedFields: string[] | null`) and no generated query
@@ -451,7 +470,7 @@ function generateClientClass(schema: ParsedSchema): string {
   const accessors: string[] = [];
 
   for (const obj of schema.objectTypes) {
-    accessors.push(generateObjectAccessor(obj));
+    accessors.push(generateObjectAccessor(obj, schema));
   }
 
   accessors.push(generateActionsNamespace(schema));
