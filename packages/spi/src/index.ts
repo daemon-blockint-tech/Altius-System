@@ -131,6 +131,82 @@ export type {
 } from './alerting.js';
 export { pointSatisfies, findConsecutiveRun } from './alerting.js';
 
+// Governed LLM gateway
+export type {
+  LLMGateway,
+  ModelCatalogEntry,
+  ChatMessage,
+  ChatCompletionOptions,
+  ChatCompletionResponse,
+  LLMUsageRecord,
+  UsageQuery,
+  UsageSummary,
+  LLMUsageTracker,
+  RateLimitConfig,
+  RateLimitResult,
+  LLMRateLimiter,
+} from './llm-gateway.js';
+export { DEFAULT_RATE_LIMIT } from './llm-gateway.js';
+
+// Security governance
+export type {
+  JustificationStore,
+  JustificationRecord,
+  CreateJustificationInput,
+  JustificationQuery,
+  AccessExplanationService,
+  AccessExplanation,
+  AccessExplanationReason,
+  MarkingPropagationService,
+  MarkingPropagationRule,
+  PropagatedMarkings,
+  ScopedSessionStore,
+  ScopedSession,
+  CreateScopedSessionInput,
+} from './security-governance.js';
+
+// Ontology usage metrics
+export type {
+  OntologyUsageMetricsService,
+  OntologyUsageEvent,
+  OntologyOperationType,
+  ObjectTypeMetrics,
+  ActionFunctionMetrics,
+  OntologyUsageSummary,
+  UsageMetricsQuery,
+  UsageMonitoringRule,
+  MonitoringRuleResult,
+} from './usage-metrics.js';
+
+// Time-series transforms
+export type { SeriesSummary } from './ts-transforms.js';
+export {
+  resample,
+  rollingAggregate,
+  lag,
+  diff,
+  forwardFill,
+  linearInterpolate,
+  exponentialSmoothing,
+  addSeries,
+  subtractSeries,
+  multiplySeries,
+  divideSeries,
+  summarize,
+} from './ts-transforms.js';
+
+// Change proposals (HITL)
+export type {
+  ChangeProposalStore,
+  ChangeProposal,
+  ProposalType,
+  ProposalState,
+  ProposalChange,
+  CreateProposalInput,
+  UpdateProposalInput,
+  ProposalQuery,
+} from './change-proposals.js';
+
 // LLM Client (Section AIP)
 export type {
   LLMClient,

@@ -29,6 +29,8 @@ export type {
   FgaClientResolver,
 } from "./authz/index.js";
 export { AuthorizationError, AuthorizationService } from "./authz/index.js";
+export { DefaultAccessExplanationService } from "./authz/access-explanation-service.js";
+export type { AccessExplanationServiceOptions } from "./authz/access-explanation-service.js";
 
 // Audit trail (Section 7.2)
 export type { AuditStore, AuditQueryFilter, AuditWriteInput } from "./audit/index.js";

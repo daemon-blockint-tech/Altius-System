@@ -10,7 +10,7 @@ import type {
   MarkingPolicy,
 } from '@altius/security';
 import type { ParsedSchema } from '@altius/odl';
-import type { RequestContext, StorageProvider, LLMClient, BlobStore, TimeSeriesStore, BranchStore, CommentStore, NotificationStore, EmbeddingStore, AlertingService } from '@altius/spi';
+import type { RequestContext, StorageProvider, LLMClient, BlobStore, TimeSeriesStore, BranchStore, CommentStore, NotificationStore, EmbeddingStore, AlertingService, LLMGateway } from '@altius/spi';
 import { DataPurpose } from '@altius/spi';
 
 /**
@@ -213,6 +213,16 @@ export interface ApiDependencies {
    *   POST   /api/v1/alerting/evaluate
    */
   alertingService?: AlertingService;
+  /**
+   * Governed LLM gateway. When present, OpenAI-compatible chat completions
+   * and model catalog endpoints are registered:
+   *   GET  /api/v1/llm/models
+   *   POST /api/v1/llm/chat/completions
+   *   GET  /api/v1/llm/usage
+   *   GET  /api/v1/llm/usage/summary
+   *   GET/PUT /api/v1/llm/rate-limits
+   */
+  llmGateway?: LLMGateway;
 }
 
 /**

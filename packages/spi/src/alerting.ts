@@ -162,6 +162,7 @@ export interface AlertingService {
  */
 export function pointSatisfies(point: TimeSeriesPoint, operator: ThresholdOperator, threshold: number): boolean {
   const v = point.value;
+  if (typeof v !== 'number') return false;
   switch (operator) {
     case 'gt': return v > threshold;
     case 'gte': return v >= threshold;

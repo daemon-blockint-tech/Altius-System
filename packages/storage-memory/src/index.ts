@@ -7,3 +7,8 @@ export { InMemoryNotificationStore } from './in-memory-notification-store.js';
 export { InMemoryEmbeddingStore } from './in-memory-embedding-store.js';
 export { InMemoryAlertingService } from './in-memory-alerting-service.js';
 export type { InMemoryAlertingServiceOptions } from './in-memory-alerting-service.js';
+export { InMemoryLLMUsageTracker } from './in-memory-llm-usage-tracker.js';
+export { InMemoryLLMRateLimiter } from './in-memory-llm-rate-limiter.js';
+export { InMemoryJustificationStore, InMemoryScopedSessionStore } from './in-memory-security-governance.js';
+export { InMemoryOntologyUsageMetricsService } from './in-memory-usage-metrics.js';
+export { InMemoryChangeProposalStore } from './in-memory-change-proposals.js';

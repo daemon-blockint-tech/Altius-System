@@ -84,6 +84,7 @@ import { registerCommentRoutes } from './rest/comment-routes.js';
 import { registerNotificationRoutes } from './rest/notification-routes.js';
 import { registerEmbeddingRoutes } from './rest/embedding-routes.js';
 import { registerAlertingRoutes } from './rest/alerting-routes.js';
+import { registerLLMGatewayRoutes } from './rest/llm-gateway-routes.js';
 import { readPlatformVersion } from './version.js';
 import { createFhirRouter } from './fhir/index.js';
 import { createCdmRouter } from './cdm/index.js';
@@ -1433,6 +1434,9 @@ async function main(): Promise<void> {
 
   // ── Alerting routes ──
   registerAlertingRoutes(app, deps, authenticator, isDev);
+
+  // ── LLM gateway routes ──
+  registerLLMGatewayRoutes(app, deps, authenticator, isDev);
 
   // ── OpenAPI spec at /api/v1/openapi.json ──
   // Stamp the served contract with the real platform version (root package.json)
