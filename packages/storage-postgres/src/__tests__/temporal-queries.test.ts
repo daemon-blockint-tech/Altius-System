@@ -43,6 +43,10 @@ function createHistoryRow(overrides: Record<string, unknown> = {}): Record<strin
     _deleted_at: null,
     _history_id: 'hist-1',
     _history_created_at: new Date('2025-01-15T10:00:00Z'),
+    // Emitted onto the _history table by the DDL (ddl-objects.ts:23, additive
+    // migration at :83). Omitting it here is what left this suite unable to
+    // observe the mapper mishandling the column.
+    _actor_id: 'user-9',
     nhs_number: '1234567890',
     full_name: 'John Smith',
     date_of_birth: '1990-05-15',
@@ -53,6 +57,25 @@ function createHistoryRow(overrides: Record<string, unknown> = {}): Record<strin
 // ════════════════════════════════════════════════════════════════════
 
 describe('getObjectAtVersion', () => {
+  it('drops a system column instead of exposing it as a phantom property', async () => {
+    // Same defect the traversal mapper had: six hand-written system-column
+    // lists decided what counted as metadata and only object-crud gained
+    // _actor_id, so elsewhere it fell through to the user-property branch where
+    // the snake-to-camel mapper renames it "ActorId" — a key in no schema.
+    // Without a leading underscore, redactObject treats it as an ordinary
+    // field: nulled and named in _redactedFields under a field policy, or the
+    // writer identity handed to every caller without one.
+    //
+    // Discriminating: revert the predicate in temporal-queries.ts to the old
+    // enumerated list and this fails on the "ActorId" key.
+    const pool = createMockPool([createHistoryRow()]);
+
+    const result = await getObjectAtVersion(pool, createCtx(), 'Patient', 'patient-1', 3);
+
+    expect(result).not.toBeNull();
+    expect(Object.keys(result!)).not.toContain('ActorId');
+  });
+
   it('returns object at the requested version', async () => {
     const row = createHistoryRow({ _version: 5 });
     const pool = createMockPool([row]);
