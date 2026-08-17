@@ -33,6 +33,31 @@ function makeNhsNumber(seed: number): string {
   }
 }
 
+/**
+ * A latency budget only means something if the call succeeded.
+ *
+ * None of the clients throw: restGet/restPost return the parsed body whatever
+ * the status, and graphql returns `{ errors }` without rejecting. So a 500 in
+ * 3ms passed every budget in this file, and the whole suite stayed green
+ * through a period when every action failed — it was measuring how fast the
+ * stack could say no.
+ *
+ * Asserting this on the MEASURED call, not just the warm-up, is the point:
+ * the warm-up result was already discarded too.
+ */
+function succeeded<T>(payload: T): T {
+  const body = payload as Record<string, unknown>;
+  // GraphQL errors, and the REST error envelope from wrapErrorToRest.
+  expect(body['errors'] ?? body['error']).toBeUndefined();
+  expect(body['data']).toBeDefined();
+  // Action responses report failure in the body with a 200.
+  const data = body['data'] as Record<string, unknown>;
+  if (data && typeof data === 'object' && 'success' in data) {
+    expect(data['success']).toBe(true);
+  }
+  return payload;
+}
+
 /** Create a patient through the governed RegisterPatient action; return its id. */
 async function registerPatient(name: string, seed: number): Promise<string> {
   const res = await restPost<ActionResponse>('/actions/RegisterPatient', {
@@ -60,10 +85,11 @@ describe.skipIf(!dockerAvailable)('Performance Smoke Tests (MVP Section 8)', () 
       await restGet<RestItemResponse>(`/patients/${data.patients.doe.id}`);
 
       // Measure
-      const { durationMs } = await timed(() =>
+      const { durationMs, result } = await timed(() =>
         restGet<RestItemResponse>(`/patients/${data.patients.doe.id}`),
       );
 
+      succeeded(result);
       expect(durationMs).toBeLessThan(CONFIG.perf.singleObjectReadMs);
     });
 
@@ -78,10 +104,11 @@ describe.skipIf(!dockerAvailable)('Performance Smoke Tests (MVP Section 8)', () 
       await graphql(query, { id: data.patients.doe.id });
 
       // Measure
-      const { durationMs } = await timed(() =>
+      const { durationMs, result } = await timed(() =>
         graphql(query, { id: data.patients.doe.id }),
       );
 
+      succeeded(result);
       expect(durationMs).toBeLessThan(CONFIG.perf.singleObjectReadMs);
     });
   });
@@ -92,10 +119,11 @@ describe.skipIf(!dockerAvailable)('Performance Smoke Tests (MVP Section 8)', () 
       await restGet<RestListResponse>('/patients', { limit: '100' });
 
       // Measure
-      const { durationMs } = await timed(() =>
+      const { durationMs, result } = await timed(() =>
         restGet<RestListResponse>('/patients', { limit: '100' }),
       );
 
+      succeeded(result);
       expect(durationMs).toBeLessThan(CONFIG.perf.filteredListMs);
     });
 
@@ -113,8 +141,9 @@ describe.skipIf(!dockerAvailable)('Performance Smoke Tests (MVP Section 8)', () 
       await graphql(query);
 
       // Measure
-      const { durationMs } = await timed(() => graphql(query));
+      const { durationMs, result } = await timed(() => graphql(query));
 
+      succeeded(result);
       expect(durationMs).toBeLessThan(CONFIG.perf.filteredListMs);
     });
 
@@ -126,13 +155,14 @@ describe.skipIf(!dockerAvailable)('Performance Smoke Tests (MVP Section 8)', () 
       });
 
       // Measure
-      const { durationMs } = await timed(() =>
+      const { durationMs, result } = await timed(() =>
         restGet<RestListResponse>('/wards', {
           'filter[specialty]': 'General',
           limit: '100',
         }),
       );
 
+      succeeded(result);
       expect(durationMs).toBeLessThan(CONFIG.perf.filteredListMs);
     });
   });
@@ -144,7 +174,7 @@ describe.skipIf(!dockerAvailable)('Performance Smoke Tests (MVP Section 8)', () 
       expect(patientId).toBeDefined();
 
       // Measure action execution
-      const { durationMs } = await timed(() =>
+      const { durationMs, result } = await timed(() =>
         restPost<ActionResponse>('/actions/AdmitPatient', {
           patient: patientId,
           ward: data.wards.general.id,
@@ -154,6 +184,7 @@ describe.skipIf(!dockerAvailable)('Performance Smoke Tests (MVP Section 8)', () 
         }),
       );
 
+      succeeded(result);
       expect(durationMs).toBeLessThan(CONFIG.perf.actionExecutionMs);
     });
 
@@ -171,7 +202,7 @@ describe.skipIf(!dockerAvailable)('Performance Smoke Tests (MVP Section 8)', () 
       `;
 
       // Measure
-      const { durationMs } = await timed(() =>
+      const { durationMs, result } = await timed(() =>
         graphql(mutation, {
           input: {
             patient: patientId,
@@ -183,6 +214,7 @@ describe.skipIf(!dockerAvailable)('Performance Smoke Tests (MVP Section 8)', () 
         }),
       );
 
+      succeeded(result);
       expect(durationMs).toBeLessThan(CONFIG.perf.actionExecutionMs);
     });
   });
@@ -192,6 +224,9 @@ describe.skipIf(!dockerAvailable)('Performance Smoke Tests (MVP Section 8)', () 
       // Warm up
       await fetch(`${CONFIG.apiBaseUrl}/.well-known/apollo/server-health`);
 
+      // This one returns a Response, not a JSON envelope — it asserts res.ok
+      // inside the measured call, which is the same guarantee succeeded() gives
+      // the others.
       const { durationMs } = await timed(async () => {
         const res = await fetch(`${CONFIG.apiBaseUrl}/.well-known/apollo/server-health`);
         expect(res.ok).toBe(true);
