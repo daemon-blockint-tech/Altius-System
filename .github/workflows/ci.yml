@@ -149,6 +149,28 @@ jobs:
           up -d --wait --wait-timeout 600
       - name: Integration tests
         run: pnpm run test:integration
+      # Six consecutive runs failed on `container orion-web-1 is unhealthy`
+      # with no container output captured anywhere, so every attempt to fix it
+      # was a guess from the outside. `up --wait` prints only which container it
+      # gave up on; the reason lives in that container's log and in its last
+      # healthcheck result, and the teardown below destroys both.
+      - name: Diagnose stack on failure
+        if: failure()
+        run: |
+          set +e
+          COMPOSE="docker compose -f Orion/docker-compose.yaml -f Orion/docker-compose.test.yaml"
+          echo "::group::container status"
+          $COMPOSE ps -a
+          echo "::endgroup::"
+          echo "::group::healthcheck output"
+          for c in $($COMPOSE ps -aq); do
+            echo "--- $(docker inspect -f '{{.Name}}' $c)"
+            docker inspect -f '{{json .State.Health}}' $c
+          done
+          echo "::endgroup::"
+          echo "::group::container logs"
+          $COMPOSE logs --no-color --tail=200
+          echo "::endgroup::"
       - name: Tear down stack
         if: always()
         run: >-
@@ -212,6 +234,28 @@ jobs:
         run: CAPABILITY_E2E=1 pnpm --filter @altius/integration-tests exec vitest run capability-gating
       - name: Open-consent-vocabulary E2E
         run: CONSENT_VOCAB_E2E=1 pnpm --filter @altius/integration-tests exec vitest run open-consent-vocab
+      # Six consecutive runs failed on `container orion-web-1 is unhealthy`
+      # with no container output captured anywhere, so every attempt to fix it
+      # was a guess from the outside. `up --wait` prints only which container it
+      # gave up on; the reason lives in that container's log and in its last
+      # healthcheck result, and the teardown below destroys both.
+      - name: Diagnose stack on failure
+        if: failure()
+        run: |
+          set +e
+          COMPOSE="docker compose -f Orion/docker-compose.yaml -f Orion/docker-compose.test.yaml"
+          echo "::group::container status"
+          $COMPOSE ps -a
+          echo "::endgroup::"
+          echo "::group::healthcheck output"
+          for c in $($COMPOSE ps -aq); do
+            echo "--- $(docker inspect -f '{{.Name}}' $c)"
+            docker inspect -f '{{json .State.Health}}' $c
+          done
+          echo "::endgroup::"
+          echo "::group::container logs"
+          $COMPOSE logs --no-color --tail=200
+          echo "::endgroup::"
       - name: Tear down stack
         if: always()
         run: docker compose -f Orion/docker-compose.yaml down -v --remove-orphans
