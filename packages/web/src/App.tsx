@@ -70,6 +70,11 @@ export function App({ config }: { config: WebConfig }): ReactNode {
     [config.endpoint, session, authState],
   );
 
+  // Dispose the previous client when auth state changes. Without this the old
+  // instance keeps an authenticated socket open with its subscriptions, and
+  // reconnects it when the server drops it — while nothing references it.
+  useEffect(() => () => client.close(), [client]);
+
   // Memoised so ActionPanel refetches only when the client actually changes,
   // not on every render of this component.
   const loadActions = useMemo(

@@ -653,6 +653,29 @@ describe('Generated SDK runtime', () => {
       vi.useRealTimers();
     });
 
+    it('close() releases the socket and stops reconnecting', async () => {
+      // The client is recreated whenever auth state changes — sign-in, session
+      // expiry — and without a way to dispose one, the previous instance keeps
+      // an authenticated socket open with its subscriptions, and reconnects it
+      // when the server drops it. Nothing else holds a reference to it.
+      vi.useFakeTimers();
+      const client = new Altius({ endpoint: 'http://localhost:3000/graphql', token: 't' });
+
+      client.patient.onAnyChange(() => {});
+      await vi.advanceTimersByTimeAsync(10);
+      const ws = MockWebSocket.instances[0]!;
+      ws._receive(JSON.stringify({ type: 'connection_ack' }));
+
+      client.close();
+
+      expect(ws.readyState).toBe(MockWebSocket.CLOSED);
+
+      // And the close must not be mistaken for a drop worth recovering from.
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(MockWebSocket.instances).toHaveLength(1);
+      vi.useRealTimers();
+    });
+
     it('does not reconnect after the caller unsubscribes', async () => {
       // Letting go of a stream is not losing one; reconnecting here would
       // resurrect a subscription the caller has already abandoned.
