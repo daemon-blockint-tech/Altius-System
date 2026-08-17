@@ -662,6 +662,16 @@ export function generateResolvers(
     generateFunctionResolver(fn, resolvers, deps);
   }
 
+  // Interface resolveType (Section 8.1's `implements` support): every
+  // ontology object carries its concrete type as `_type`, so resolving an
+  // interface-typed value to its GraphQL object type is a direct lookup —
+  // no per-interface logic needed.
+  for (const iface of schema.interfaces) {
+    resolvers[iface.name] = {
+      __resolveType: (obj: { _type?: string }) => obj._type,
+    };
+  }
+
   // availableTools query (Section 5.7)
   resolvers['Query']!['availableTools'] = generateAvailableToolsResolver(schema, deps);
 

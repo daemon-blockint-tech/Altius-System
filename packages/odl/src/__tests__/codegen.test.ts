@@ -489,6 +489,96 @@ describe('GraphQL schema codegen', () => {
     });
   });
 
+  describe('interfaces', () => {
+    it('emits an interface block for each declared interface', () => {
+      const odl = `
+interface Auditable {
+  createdAt: DateTime!
+  createdBy: String!
+}
+type Thing @objectType {
+  id: ID! @primary
+  label: String!
+}
+`;
+      const parsed = parseOdl(odl);
+      const sdl = generateGraphQLSchema(parsed);
+      expect(sdl).toContain('interface Auditable {');
+      // Non-primary interface fields render nullable, matching the
+      // ObjectType policy — see generateInterfaceType's rationale.
+      expect(extractTypeBlock(sdl, 'interface Auditable')).toContain('createdAt: DateTime');
+      expect(extractTypeBlock(sdl, 'interface Auditable')).not.toContain('createdAt: DateTime!');
+      const schema = buildSchema(sdl);
+      expect(schema.getType('Auditable')).toBeDefined();
+    });
+
+    it('emits an implements clause and produces a buildable, conformant schema', () => {
+      const odl = `
+interface Auditable {
+  createdAt: DateTime!
+  createdBy: String!
+}
+type Thing implements Auditable @objectType {
+  id: ID! @primary
+  createdAt: DateTime!
+  createdBy: String!
+  label: String!
+}
+`;
+      const parsed = parseOdl(odl);
+      const sdl = generateGraphQLSchema(parsed);
+      expect(sdl).toContain('type Thing implements Auditable {');
+
+      // buildSchema runs GraphQL's own interface-conformance validation —
+      // this is the real end-to-end check that the emitted `implements`
+      // type actually satisfies its interface (nullability included).
+      const schema = buildSchema(sdl);
+      const thingType = schema.getType('Thing');
+      expect(thingType).toBeDefined();
+      const auditableType = schema.getType('Auditable');
+      expect(auditableType).toBeDefined();
+    });
+
+    it('supports multiple interfaces (implements A & B)', () => {
+      const odl = `
+interface Identifiable {
+  id: ID!
+}
+interface Auditable {
+  createdAt: DateTime!
+}
+type Thing implements Identifiable & Auditable @objectType {
+  id: ID! @primary
+  createdAt: DateTime!
+  label: String!
+}
+`;
+      const parsed = parseOdl(odl);
+      const sdl = generateGraphQLSchema(parsed);
+      expect(sdl).toContain('type Thing implements Identifiable & Auditable {');
+      expect(() => buildSchema(sdl)).not.toThrow();
+    });
+
+    it('resolves an interface-typed field without a build failure (the latent bug this closes)', () => {
+      // Before interface SDL emission, a field typed as an interface name
+      // referenced a type that codegen never generated — buildSchema would
+      // throw "Unknown type" for exactly this shape.
+      const odl = `
+interface Auditable {
+  createdAt: DateTime!
+}
+type Thing implements Auditable @objectType {
+  id: ID! @primary
+  createdAt: DateTime!
+  owner: Auditable
+}
+`;
+      const parsed = parseOdl(odl);
+      const sdl = generateGraphQLSchema(parsed);
+      expect(() => buildSchema(sdl)).not.toThrow();
+    });
+  });
+
   describe('minimal schema', () => {
     it('generates valid schema for a single ObjectType', () => {
       const odl = `

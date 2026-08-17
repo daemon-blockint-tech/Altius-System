@@ -745,6 +745,119 @@ describe('ODL Validator', () => {
     });
   });
 
+  describe('Rule 13: implements conformance', () => {
+    it('errors when ObjectType implements an unknown interface', () => {
+      const odl = `
+        type Patient implements Auditable @objectType {
+          id: ID! @primary
+        }
+      `;
+      const schema = parseOdl(odl);
+      const result = validateSchema(schema);
+
+      expect(result.valid).toBe(false);
+      const errs = findErrors(result, 'UNKNOWN_INTERFACE');
+      expect(errs).toHaveLength(1);
+      expect(errs[0]!.typeName).toBe('Patient');
+    });
+
+    it('errors when the implementer is missing an interface field', () => {
+      const odl = `
+        interface Auditable {
+          createdAt: DateTime!
+          createdBy: String!
+        }
+        type Patient implements Auditable @objectType {
+          id: ID! @primary
+          createdAt: DateTime!
+        }
+      `;
+      const schema = parseOdl(odl);
+      const result = validateSchema(schema);
+
+      expect(result.valid).toBe(false);
+      const errs = findErrors(result, 'INTERFACE_FIELD_MISSING');
+      expect(errs).toHaveLength(1);
+      expect(errs[0]!.fieldName).toBe('createdBy');
+    });
+
+    it('errors when an implemented field has a mismatched type', () => {
+      const odl = `
+        interface Auditable {
+          createdAt: DateTime!
+        }
+        type Patient implements Auditable @objectType {
+          id: ID! @primary
+          createdAt: String!
+        }
+      `;
+      const schema = parseOdl(odl);
+      const result = validateSchema(schema);
+
+      expect(result.valid).toBe(false);
+      const errs = findErrors(result, 'INTERFACE_FIELD_TYPE_MISMATCH');
+      expect(errs).toHaveLength(1);
+      expect(errs[0]!.message).toContain('DateTime!');
+    });
+
+    it('errors when an implemented field has mismatched nullability', () => {
+      const odl = `
+        interface Auditable {
+          createdAt: DateTime!
+        }
+        type Patient implements Auditable @objectType {
+          id: ID! @primary
+          createdAt: DateTime
+        }
+      `;
+      const schema = parseOdl(odl);
+      const result = validateSchema(schema);
+
+      expect(result.valid).toBe(false);
+      expect(findErrors(result, 'INTERFACE_FIELD_TYPE_MISMATCH')).toHaveLength(1);
+    });
+
+    it('accepts a conforming implementer', () => {
+      const odl = `
+        interface Auditable {
+          createdAt: DateTime!
+          createdBy: String!
+        }
+        type Patient implements Auditable @objectType {
+          id: ID! @primary
+          createdAt: DateTime!
+          createdBy: String!
+        }
+      `;
+      const schema = parseOdl(odl);
+      const result = validateSchema(schema);
+
+      expect(findErrors(result, 'UNKNOWN_INTERFACE')).toHaveLength(0);
+      expect(findErrors(result, 'INTERFACE_FIELD_MISSING')).toHaveLength(0);
+      expect(findErrors(result, 'INTERFACE_FIELD_TYPE_MISMATCH')).toHaveLength(0);
+    });
+
+    it('accepts an implementer of multiple interfaces (implements A & B)', () => {
+      const odl = `
+        interface Identifiable {
+          id: ID!
+        }
+        interface Auditable {
+          createdAt: DateTime!
+        }
+        type Patient implements Identifiable & Auditable @objectType {
+          id: ID! @primary
+          createdAt: DateTime!
+        }
+      `;
+      const schema = parseOdl(odl);
+      const result = validateSchema(schema);
+
+      expect(findErrors(result, 'UNKNOWN_INTERFACE')).toHaveLength(0);
+      expect(findErrors(result, 'INTERFACE_FIELD_MISSING')).toHaveLength(0);
+    });
+  });
+
   describe('Multiple errors at once', () => {
     it('reports multiple errors for a schema with many issues', () => {
       const odl = `
@@ -830,7 +943,7 @@ describe('ODL Validator', () => {
       // Manually add an implements clause to test the validator
       schema.objectTypes[0]!.interfaces = ['Nonexistent'];
       const result = validateSchema(schema);
-      const errs = result.errors.filter(e => e.code === 'UNKNOWN_INTERFACE_REF');
+      const errs = result.errors.filter(e => e.code === 'UNKNOWN_INTERFACE');
       expect(errs).toHaveLength(1);
       expect(errs[0]!.message).toContain('Nonexistent');
     });

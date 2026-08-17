@@ -11,6 +11,7 @@ import type {
   FunctionType,
   FieldDefinition,
   FieldDirective,
+  FieldTypeRef,
   InterfaceDefinition,
 } from '../parser/types.js';
 
@@ -46,6 +47,7 @@ export function validateSchema(schema: ParsedSchema): ValidationResult {
   // enumValues available for future use if needed:
   // const enumValues = new Map(schema.enums.map(e => [e.name, new Set(e.values.map(v => v.name))]));
   const interfaceNames = new Set(schema.interfaces.map(i => i.name));
+  const interfaceMap = new Map(schema.interfaces.map(i => [i.name, i]));
   const scalarNames = new Set(schema.scalars.map(s => s.name));
   const actionTypeNames = new Set(schema.actionTypes.map(a => a.name));
   const functionTypeNames = new Set(schema.functionTypes.map(f => f.name));
@@ -171,7 +173,6 @@ export function validateSchema(schema: ParsedSchema): ValidationResult {
   }
 
   // ─── Rule 15: ObjectType implements clauses reference valid interfaces with field conformance ───
-  const interfaceMap = new Map(schema.interfaces.map(i => [i.name, i]));
   for (const ot of schema.objectTypes) {
     validateInterfaceConformance(ot, interfaceMap, errors);
   }
@@ -680,9 +681,10 @@ function validateFunctionEntry(fn: FunctionType, errors: ValidationIssue[]): voi
 /**
  * Rule 15: ObjectType implements clauses reference valid interfaces and
  * each interface field appears on the implementer with identical type and
- * nonNull. An object type declaring `implements Foo` must (a) reference a
+ * nullability. An object type declaring `implements Foo` must (a) reference a
  * known interface and (b) carry every field Foo declares with the same
- * type name and nullability. Extra fields on the implementer are allowed.
+ * type name, nullability, and list shape. Extra fields on the implementer
+ * are allowed.
  */
 function validateInterfaceConformance(
   ot: ObjectType,
@@ -694,36 +696,48 @@ function validateInterfaceConformance(
     if (!iface) {
       errors.push({
         severity: 'error',
-        code: 'UNKNOWN_INTERFACE_REF',
+        code: 'UNKNOWN_INTERFACE',
         message: `ObjectType "${ot.name}" implements unknown interface "${ifaceName}".`,
         typeName: ot.name,
       });
       continue;
     }
-    const otFieldMap = new Map(ot.fields.map(f => [f.name, f]));
+
+    const ownFields = new Map(ot.fields.map(f => [f.name, f]));
     for (const ifaceField of iface.fields) {
-      const implField = otFieldMap.get(ifaceField.name);
-      if (!implField) {
+      const ownField = ownFields.get(ifaceField.name);
+      if (!ownField) {
         errors.push({
           severity: 'error',
           code: 'INTERFACE_FIELD_MISSING',
-          message: `ObjectType "${ot.name}" implements "${ifaceName}" but is missing field "${ifaceField.name}".`,
+          message: `ObjectType "${ot.name}" implements "${ifaceName}" but is missing required field "${ifaceField.name}: ${fieldTypeLabel(ifaceField)}".`,
           typeName: ot.name,
           fieldName: ifaceField.name,
         });
         continue;
       }
-      if (implField.type.name !== ifaceField.type.name || implField.type.nonNull !== ifaceField.type.nonNull) {
+      if (!fieldTypesMatch(ownField.type, ifaceField.type)) {
         errors.push({
           severity: 'error',
           code: 'INTERFACE_FIELD_TYPE_MISMATCH',
-          message: `ObjectType "${ot.name}.${ifaceField.name}" has type ${implField.type.name}${implField.type.nonNull ? '!' : ''} but interface "${ifaceName}" declares ${ifaceField.type.name}${ifaceField.type.nonNull ? '!' : ''}.`,
+          message: `ObjectType "${ot.name}" field "${ifaceField.name}" has type "${fieldTypeLabel(ownField)}" but interface "${ifaceName}" requires "${fieldTypeLabel(ifaceField)}".`,
           typeName: ot.name,
           fieldName: ifaceField.name,
         });
       }
     }
   }
+}
+
+function fieldTypesMatch(a: FieldTypeRef, b: FieldTypeRef): boolean {
+  if (a.name !== b.name || a.nonNull !== b.nonNull || a.isList !== b.isList) return false;
+  return !a.isList || a.listElementNonNull === b.listElementNonNull;
+}
+
+function fieldTypeLabel(f: FieldDefinition): string {
+  const { type } = f;
+  const elem = type.isList ? `[${type.name}${type.listElementNonNull ? '!' : ''}]` : type.name;
+  return `${elem}${type.nonNull ? '!' : ''}`;
 }
 
 export type { ValidationResult, ValidationIssue, ValidationSeverity } from './types.js';
