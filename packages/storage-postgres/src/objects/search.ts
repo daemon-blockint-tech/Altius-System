@@ -55,10 +55,16 @@ function rowToObject(row: Record<string, unknown>): OntologyObject {
   }
 
   // System columns are identified by the leading underscore, not by an
-  // enumerated list. Four copies of that list existed and only one of them
-  // gained "_actor_id" when the DDL did, so the other three fell through to the
-  // user-property branch and surfaced it as a phantom "ActorId" — a key in no
-  // schema, which redaction then treats as a normal field.
+  // enumerated list. Six copies of that list existed and only object-crud
+  // gained "_actor_id" when the DDL did, so the rule and its copies could
+  // disagree with nothing to notice.
+  //
+  // NOT VERIFIED: the suspected consequence was that the column fell through to
+  // the user-property branch and surfaced as a phantom "ActorId". A probe of
+  // the traversal path found identical output with this check and with the old
+  // enumerated list, so that consequence is unconfirmed and may be wrong. The
+  // refactor stands on removing six restatements of one rule; treat the
+  // severity claim as open until someone reproduces it against real Postgres.
   for (const [key, value] of Object.entries(row)) {
     if (!key.startsWith('_')) {
       const camelKey = key.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
