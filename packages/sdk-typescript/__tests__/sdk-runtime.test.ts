@@ -487,6 +487,37 @@ describe('Generated SDK runtime', () => {
       vi.useRealTimers();
     });
 
+    it('ignores a close from a socket that has already been superseded', async () => {
+      // ensureWebSocket only reuses a socket in OPEN or CONNECTING, so one in
+      // CLOSING is replaced. The old socket's close listener then fires and
+      // unconditionally sets wsSocket = null / wsReady = false / clears the
+      // subscriptions — clobbering the bookkeeping of the socket that replaced
+      // it. The client believes it has no connection while holding a live one,
+      // and opens yet another on the next subscribe.
+      vi.useFakeTimers();
+      const client = new Altius({ endpoint: 'http://localhost:3000/graphql', token: 't' });
+
+      client.patient.onAnyChange(() => {});
+      await vi.advanceTimersByTimeAsync(10);
+      const a = MockWebSocket.instances[0]!;
+      a._receive(JSON.stringify({ type: 'connection_ack' }));
+
+      // A is CLOSING, so the next subscribe must open B.
+      a.readyState = MockWebSocket.CLOSING;
+      client.ward.onAnyChange(() => {});
+      await vi.advanceTimersByTimeAsync(10);
+      expect(MockWebSocket.instances).toHaveLength(2);
+
+      // A's close arrives late. It must not touch B.
+      a.close();
+      client.bed.onAnyChange(() => {});
+      await vi.advanceTimersByTimeAsync(10);
+
+      expect(MockWebSocket.instances).toHaveLength(2);
+      vi.useRealTimers();
+    });
+
+
     it('does not reconnect after the caller unsubscribes', async () => {
       // Letting go of a stream is not losing one; reconnecting here would
       // resurrect a subscription the caller has already abandoned.
