@@ -63,9 +63,9 @@ describe("metrics", () => {
       );
     });
 
-    it("has exactly 10 metric names", () => {
+    it("has exactly 20 metric names", () => {
       const values = Object.values(MetricNames);
-      expect(values).toHaveLength(10);
+      expect(values).toHaveLength(20);
     });
 
     it("all metric names follow altius.<layer>.<name> convention", () => {
@@ -89,6 +89,19 @@ describe("metrics", () => {
       expect(altiusMetrics.syncLagSeconds).toBeDefined();
       expect(altiusMetrics.syncConflicts).toBeDefined();
       expect(altiusMetrics.computedEvaluations).toBeDefined();
+      // LLM / AI pipeline metrics
+      expect(altiusMetrics.llmCalls).toBeDefined();
+      expect(altiusMetrics.llmDuration).toBeDefined();
+      expect(altiusMetrics.llmTokens).toBeDefined();
+      expect(altiusMetrics.llmRetries).toBeDefined();
+      expect(altiusMetrics.llmValidationFailures).toBeDefined();
+      // Function metrics
+      expect(altiusMetrics.functionInvocations).toBeDefined();
+      expect(altiusMetrics.functionDuration).toBeDefined();
+      // Workflow metrics
+      expect(altiusMetrics.workflowEvents).toBeDefined();
+      expect(altiusMetrics.workflowDuration).toBeDefined();
+      expect(altiusMetrics.workflowFailures).toBeDefined();
     });
 
     it("accepts a custom meter", () => {

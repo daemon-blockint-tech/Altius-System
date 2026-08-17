@@ -23,8 +23,40 @@
  * surface stays stable as we add more source records.
  */
 
-import type { FieldProvenance, AuditRecord, AuditStore } from '@altius/spi';
+import type { FieldProvenance, AuditRecord } from '@altius/spi';
 import type { LineageStore, LineageQueryOptions } from '../lineage/lineage-recorder.js';
+
+/**
+ * Minimal audit-reader interface the graph builder needs.
+ *
+ * The engine package does not depend on `@altius/security`, so we accept a
+ * structural subset of its `AuditStore` (the `query` method) rather than the
+ * full type. Both `PostgresAuditStore` and `MemoryAuditStore` satisfy this.
+ */
+export interface WorkflowAuditReader {
+  query(
+    filter: WorkflowAuditFilter,
+    options?: { limit?: number; offset?: number },
+  ): Promise<AuditRecord[]>;
+}
+
+/**
+ * Filter shape accepted by the security AuditStore.query method. Kept as a
+ * local type so the engine does not import from `@altius/security`; the
+ * fields are a structural match of `AuditQueryFilter` from that package.
+ */
+export interface WorkflowAuditFilter {
+  tenantId?: string;
+  objectType?: string;
+  objectId?: string;
+  operationType?: 'read' | 'create' | 'update' | 'delete' | 'action' | 'query' | 'link' | 'unlink';
+  traceId?: string;
+  actorId?: string;
+  actorType?: 'user' | 'system' | 'connector';
+  actionType?: string;
+  from?: string;
+  to?: string;
+}
 
 // ---------------------------------------------------------------------------
 // Graph model
@@ -74,7 +106,7 @@ export interface WorkflowGraph {
 
 export interface WorkflowGraphBuilderConfig {
   lineageStore: LineageStore;
-  auditStore: AuditStore;
+  auditStore: WorkflowAuditReader;
 }
 
 /**
@@ -87,7 +119,7 @@ export interface WorkflowGraphBuilderConfig {
  */
 export class WorkflowGraphBuilder {
   private readonly lineageStore: LineageStore;
-  private readonly auditStore: AuditStore;
+  private readonly auditStore: WorkflowAuditReader;
 
   constructor(config: WorkflowGraphBuilderConfig) {
     this.lineageStore = config.lineageStore;
@@ -135,6 +167,7 @@ export class WorkflowGraphBuilder {
       for (const rec of records) {
         const sourceNode = nodeForProvenanceSource(tenantId, rec.source, addObjectNode);
         if (!sourceNode) continue;
+        addNode(sourceNode);
         edges.push({
           id: edgeId('produced', sourceNode.id, objectNodeId(tenantId, rec.objectType, rec.objectId), rec.field),
           from: sourceNode.id,
@@ -154,8 +187,8 @@ export class WorkflowGraphBuilder {
         ? { objectType: options.rootObject.objectType, objectId: options.rootObject.objectId }
         : {}),
     };
-    const auditPage = await this.auditStore.queryAuditRecords(auditFilter, { limit: auditLimit });
-    for (const record of auditPage.records) {
+    const auditRecords = await this.auditStore.query(auditFilter, { limit: auditLimit });
+    for (const record of auditRecords) {
       const actorNode = nodeForAuditActor(tenantId, record, addNode);
       if (record.operation.objectType && record.operation.objectId) {
         addObjectNode(record.operation.objectType, record.operation.objectId);

@@ -113,6 +113,15 @@ export class LLMFunctionRuntime implements FunctionRuntime {
       );
     }
 
+    // The schema wraps the return value in an object keyed by the return
+    // field name (e.g. `{ result: 0.87 }`). Unwrap it so the function
+    // returns the declared scalar/object shape, not the validation envelope.
+    const returnField = ctx.fn.fields.find((f) => !f.directives.some((d) => d.kind === 'param'));
+    if (returnField && result.value && typeof result.value === 'object' && !Array.isArray(result.value)) {
+      const obj = result.value as Record<string, unknown>;
+      if (returnField.name in obj) return obj[returnField.name];
+    }
+
     return result.value;
   }
 }
@@ -168,7 +177,16 @@ export function schemaForFunction(fn: FunctionType): LLMSchema | undefined {
   const returnField = fn.fields.find((f) => !f.directives.some((d) => d.kind === 'param'));
   if (!returnField) return undefined;
 
-  return schemaForFieldType(returnField.type);
+  const fieldSchema = schemaForFieldType(returnField.type);
+  // Wrap in an object keyed by the return field name so the model returns
+  // `{ "<field>": <value> }` rather than a bare scalar — a bare scalar is
+  // valid JSON but ambiguous to a model asked for "the result", and an
+  // object gives the validator a clear key to check.
+  return {
+    type: 'object',
+    required: [returnField.name],
+    properties: { [returnField.name]: fieldSchema },
+  };
 }
 
 function schemaForFieldType(typeRef: FieldTypeRef): LLMSchema {

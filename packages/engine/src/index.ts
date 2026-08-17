@@ -135,6 +135,8 @@ export {
   type WorkflowNodeKind,
   type WorkflowEdge,
   type WorkflowEdgeKind,
+  type WorkflowAuditReader,
+  type WorkflowAuditFilter,
   objectNodeId,
   actionNodeId,
   functionNodeId,
