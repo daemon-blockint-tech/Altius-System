@@ -21,6 +21,8 @@ type patient
     define can_admit: clinician or nurse_in_charge or admin
     define can_discharge: clinician or nurse_in_charge
     define can_transfer: clinician or nurse_in_charge
+    define can_compute_triage_score: clinician or nurse_in_charge
+    define can_compute_length_of_stay: clinician or admin
 
 type bed
   relations

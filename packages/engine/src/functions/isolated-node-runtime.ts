@@ -29,6 +29,7 @@ import type {
   FunctionLogEntry,
   FunctionOntologyAccess,
 } from './function-executor.js';
+import { applySandboxProfile, type SandboxProfile, DEFAULT_SANDBOX_PROFILE } from './sandbox-profile.js';
 
 const WORKER_URL = new URL('../../function-worker.js', import.meta.url);
 
@@ -41,6 +42,8 @@ export interface IsolatedNodeRuntimeConfig {
   memoryLimitMb?: number;
   /** Runtime name to register under. Default 'node-isolated'. */
   name?: string;
+  /** Sandbox profile for filesystem/network restrictions. Default: no network, temp-only fs. */
+  sandboxProfile?: SandboxProfile;
 }
 
 type WorkerMessage =
@@ -54,12 +57,14 @@ export class IsolatedNodeFunctionRuntime implements FunctionRuntime {
   private readonly packDir?: string;
   private readonly timeoutMs: number;
   private readonly memoryLimitMb: number;
+  private readonly sandboxProfile: SandboxProfile;
 
   constructor(config: IsolatedNodeRuntimeConfig = {}) {
     this.name = config.name ?? 'node-isolated';
     this.packDir = config.packDir;
     this.timeoutMs = config.timeoutMs ?? 5_000;
     this.memoryLimitMb = config.memoryLimitMb ?? 128;
+    this.sandboxProfile = config.sandboxProfile ?? DEFAULT_SANDBOX_PROFILE;
   }
 
   async execute(ctx: FunctionRuntimeContext): Promise<unknown> {
@@ -68,14 +73,24 @@ export class IsolatedNodeFunctionRuntime implements FunctionRuntime {
       throw new Error(`${this.name}: function "${ctx.fn.name}" declares no entry module`);
     }
 
+    // Apply sandbox profile — restricts network and filesystem access
+    const sandbox = await applySandboxProfile(this.sandboxProfile, {
+      workDir: ctx.packDir ?? this.packDir,
+    });
+
     const child = fork(WORKER_URL, [], {
       // The whole point: the child must not inherit the gateway's secrets.
-      env: {},
+      // The sandbox env vars are added so the preload library can read the config.
+      env: sandbox.env,
       execArgv: [`--max-old-space-size=${this.memoryLimitMb}`],
       stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
     });
 
-    return await this.awaitResult(child, ctx, entry);
+    try {
+      return await this.awaitResult(child, ctx, entry);
+    } finally {
+      await sandbox.cleanup();
+    }
   }
 
   private awaitResult(child: ChildProcess, ctx: FunctionRuntimeContext, entry: string): Promise<unknown> {

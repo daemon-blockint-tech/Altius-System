@@ -362,8 +362,47 @@ export async function invokeFunction(
   // pipeline (ReBAC, consent, preconditions) bypassable by shipping the same
   // logic as a function instead.
   //
+  // Per-object ReBAC: if the function has an authz mapping (derived from an
+  // ObjectType-typed @param), check the FGA relation on the target object
+  // BEFORE the role-membership gate. This mirrors how actions are authorized:
+  // a function with a Patient @param checks can_<function> on that patient,
+  // not just whether the caller has a role.
+  const fnAuthzMapping = deps.functionAuthzMappings?.get(fn.name);
+  if (fnAuthzMapping) {
+    const objectId = input[fnAuthzMapping.objectIdParam] as string | undefined;
+    if (!objectId) {
+      const reason = `Function "${fn.name}" requires ${fnAuthzMapping.objectIdParam} for authorization, but it was not provided`;
+      await audit(fn, deps, ctx, 'denied', reason);
+      throw createAltiusError({
+        code: 'FORBIDDEN',
+        category: 'authorization',
+        message: reason,
+        retryable: false,
+        traceId: ctx.requestContext.traceId,
+      });
+    }
+    const rebacAllowed = await deps.authorizationService.check(
+      `user:${ctx.user.id}`,
+      fnAuthzMapping.relation,
+      `${fnAuthzMapping.objectType}:${objectId}`,
+      ctx.requestContext.tenantId,
+    );
+    if (!rebacAllowed) {
+      const reason = `Function "${fn.name}" denied: user does not have ${fnAuthzMapping.relation} on ${fnAuthzMapping.objectType}:${objectId}`;
+      await audit(fn, deps, ctx, 'denied', reason);
+      throw createAltiusError({
+        code: 'FORBIDDEN',
+        category: 'authorization',
+        message: reason,
+        retryable: false,
+        traceId: ctx.requestContext.traceId,
+      });
+    }
+  }
+
   // Roles, not a ReBAC relation: the inputs are scalars, so there is no object
-  // for OpenFGA to resolve a relation against.
+  // for OpenFGA to resolve a relation against — UNLESS a functionAuthzMapping
+  // was found above, in which case the ReBAC check has already passed.
   //
   // A function declaring no roles is denied rather than allowed — the
   // permissive reading is exactly the behaviour being fixed.

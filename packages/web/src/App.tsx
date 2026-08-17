@@ -120,13 +120,23 @@ export function App({ config }: { config: WebConfig }): ReactNode {
       <ObjectTable<Patient>
         caption="Patients"
         columns={[
-          { key: 'nhsNumber', header: 'NHS number' },
-          { key: 'name', header: 'Name' },
-          { key: 'status', header: 'Status' },
-          { key: 'triageCategory', header: 'Triage' },
+          // sortable mirrors PatientOrderBy: every one of these is an orderable
+          // scalar or enum the generated input declares, so the header cannot
+          // send a field the server would reject.
+          { key: 'nhsNumber', header: 'NHS number', sortable: true },
+          { key: 'name', header: 'Name', sortable: true },
+          { key: 'status', header: 'Status', sortable: true },
+          { key: 'triageCategory', header: 'Triage', sortable: true },
         ]}
-        load={({ first, after }) =>
-          client.patient.list(undefined, after === undefined ? { first } : { first, after })
+        load={({ first, after, orderBy }) =>
+          client.patient.list(
+            undefined,
+            after === undefined ? { first } : { first, after },
+            undefined,
+            // { field: 'ASC' } is the shape PatientOrderBy takes; the table
+            // reports one active key at a time.
+            orderBy ? { [orderBy.key]: orderBy.direction } : undefined,
+          )
         }
         subscribe={(onChange, onLost, onResumed) =>
           client.patient.onAnyChange(() => onChange(), undefined, onLost, onResumed)

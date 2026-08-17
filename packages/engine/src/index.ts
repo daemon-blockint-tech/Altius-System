@@ -85,6 +85,18 @@ export {
   type PipelineStage,
   type PipelineResult,
   type PipelineConfig,
+  applySandboxProfile,
+  validateSandboxProfile,
+  DEFAULT_SANDBOX_PROFILE,
+  type SandboxProfile,
+  type FsRule,
+  type NetworkRule,
+  type SandboxApplication,
+  WebhookPipelineTrigger,
+  type WebhookTriggerConfig,
+  type WebhookPipelineMapping,
+  type WebhookResult,
+  type WebhookProvider,
 } from './functions/index.js';
 
 // LLM Client

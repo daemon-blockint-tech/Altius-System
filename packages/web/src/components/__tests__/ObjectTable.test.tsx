@@ -279,4 +279,98 @@ describe('ObjectTable', () => {
     expect(screen.queryByText('Alice')).toBeNull();
     expect(screen.getByText('Bob')).toBeDefined();
   });
+
+  // ─── Sorting ───
+  //
+  // The SDL has always exposed `orderBy` on every list query; the generated
+  // SDK accessor omitted it, so no client could sort at all. These pin the
+  // widget half: what the header sends, and that paging is invalidated by it.
+
+  const SORTABLE: Column<Patient>[] = [
+    { key: 'name', header: 'Name', sortable: true },
+    { key: 'status', header: 'Status' },
+  ];
+
+  it('offers a sort control only on sortable columns', async () => {
+    const load = vi.fn().mockResolvedValue(connection([{ id: 'p-1', name: 'Alice', status: 'ACTIVE' }]));
+    render(<ObjectTable caption="Patients" columns={SORTABLE} load={load} />);
+    await waitFor(() => expect(screen.getByText('Alice')).toBeDefined());
+
+    expect(screen.getByRole('button', { name: /Name/ })).toBeDefined();
+    // Status is not sortable, so it is plain header text and not a control.
+    expect(screen.queryByRole('button', { name: /Status/ })).toBeNull();
+  });
+
+  it('cycles unsorted then ascending then descending then unsorted', async () => {
+    const load = vi.fn().mockResolvedValue(connection([{ id: 'p-1', name: 'Alice', status: 'ACTIVE' }]));
+    render(<ObjectTable caption="Patients" columns={SORTABLE} load={load} />);
+    await waitFor(() => expect(screen.getByText('Alice')).toBeDefined());
+
+    // First load carries no ordering — the server default.
+    expect(load).toHaveBeenNthCalledWith(1, { first: 25 });
+
+    screen.getByRole('button', { name: /Name/ }).click();
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(2));
+    expect(load).toHaveBeenNthCalledWith(2, { first: 25, orderBy: { key: 'name', direction: 'ASC' } });
+
+    screen.getByRole('button', { name: /Name/ }).click();
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(3));
+    expect(load).toHaveBeenNthCalledWith(3, { first: 25, orderBy: { key: 'name', direction: 'DESC' } });
+
+    // Third click returns to the server default rather than sticking on DESC —
+    // with a two-state toggle the unsorted order is unreachable once touched.
+    screen.getByRole('button', { name: /Name/ }).click();
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(4));
+    expect(load).toHaveBeenNthCalledWith(4, { first: 25 });
+  });
+
+  it('reports sort state through aria-sort', async () => {
+    const load = vi.fn().mockResolvedValue(connection([{ id: 'p-1', name: 'Alice', status: 'ACTIVE' }]));
+    const { container } = render(<ObjectTable caption="Patients" columns={SORTABLE} load={load} />);
+    await waitFor(() => expect(screen.getByText('Alice')).toBeDefined());
+
+    const nameTh = container.querySelectorAll('th')[0]!;
+    const statusTh = container.querySelectorAll('th')[1]!;
+    // 'none' is what tells a screen-reader user the column CAN be sorted;
+    // omitting the attribute entirely is what says it cannot.
+    expect(nameTh.getAttribute('aria-sort')).toBe('none');
+    expect(statusTh.getAttribute('aria-sort')).toBeNull();
+
+    screen.getByRole('button', { name: /Name/ }).click();
+    await waitFor(() => expect(nameTh.getAttribute('aria-sort')).toBe('ascending'));
+
+    screen.getByRole('button', { name: /Name/ }).click();
+    await waitFor(() => expect(nameTh.getAttribute('aria-sort')).toBe('descending'));
+  });
+
+  it('returns to the first page when the sort changes', async () => {
+    // The correctness case. A cursor encodes a position in ONE ordering, so
+    // re-sorting while holding page 2's cursor asks for "everything after row
+    // X" in an order where X sits somewhere else — silently skipping and
+    // repeating rows. Re-sorting must drop the cursor.
+    const page1 = connection([{ id: 'p-1', name: 'Alice', status: 'ACTIVE' }], {
+      hasNextPage: true,
+      endCursor: 'cursor-1',
+    });
+    const page2 = connection([{ id: 'p-2', name: 'Bob', status: 'ACTIVE' }]);
+    const load = vi.fn()
+      .mockResolvedValueOnce(page1)
+      .mockResolvedValueOnce(page2)
+      .mockResolvedValue(page1);
+
+    render(<ObjectTable caption="Patients" columns={SORTABLE} load={load} pageSize={1} />);
+    await waitFor(() => expect(screen.getByText('Alice')).toBeDefined());
+
+    screen.getByRole('button', { name: 'Next' }).click();
+    await waitFor(() => expect(screen.getByText('Bob')).toBeDefined());
+    expect(load).toHaveBeenNthCalledWith(2, { first: 1, after: 'cursor-1' });
+
+    screen.getByRole('button', { name: /Name/ }).click();
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(3));
+    // No `after` — not `after: undefined`, and not the stale cursor.
+    expect(load).toHaveBeenNthCalledWith(3, { first: 1, orderBy: { key: 'name', direction: 'ASC' } });
+
+    // And Previous is disabled again, so the cursor stack was cleared too.
+    expect(screen.getByRole('button', { name: 'Previous' }).hasAttribute('disabled')).toBe(true);
+  });
 });

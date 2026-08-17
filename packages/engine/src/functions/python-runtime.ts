@@ -27,6 +27,7 @@ import { resolve } from 'node:path';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import type { FunctionRuntime, FunctionRuntimeContext, FunctionLogEntry } from './function-executor.js';
+import { applySandboxProfile, type SandboxProfile, DEFAULT_SANDBOX_PROFILE } from './sandbox-profile.js';
 
 export interface PythonRuntimeConfig {
   /** Python executable path. Default: 'python3'. */
@@ -39,6 +40,8 @@ export interface PythonRuntimeConfig {
   maxMemoryBytes?: number;
   /** Pre-registered handlers keyed by entry (for testing). */
   handlers?: Record<string, string>;
+  /** Sandbox profile for filesystem/network restrictions. Default: no network, temp-only fs. */
+  sandboxProfile?: SandboxProfile;
 }
 
 export class PythonFunctionRuntime implements FunctionRuntime {
@@ -48,6 +51,7 @@ export class PythonFunctionRuntime implements FunctionRuntime {
   private readonly timeoutMs: number;
   private readonly maxMemoryBytes?: number;
   private readonly handlers: Record<string, string>;
+  private readonly sandboxProfile: SandboxProfile;
 
   constructor(config: PythonRuntimeConfig = {}) {
     this.pythonPath = config.pythonPath ?? 'python3';
@@ -55,6 +59,7 @@ export class PythonFunctionRuntime implements FunctionRuntime {
     this.timeoutMs = config.timeoutMs ?? 30_000;
     this.maxMemoryBytes = config.maxMemoryBytes;
     this.handlers = config.handlers ?? {};
+    this.sandboxProfile = config.sandboxProfile ?? DEFAULT_SANDBOX_PROFILE;
   }
 
   /** Expose maxMemoryBytes for future resource-limit enforcement. */
@@ -97,17 +102,20 @@ export class PythonFunctionRuntime implements FunctionRuntime {
     inputs: Record<string, unknown>,
     log: (level: FunctionLogEntry['level'], message: string) => void,
   ): Promise<unknown> {
-    // Write the source to a temp file so we can pass it to python3
-    const tmpDir = await mkdtemp(resolve(tmpdir(), 'altius-py-'));
+    // Apply sandbox profile — restricts network and filesystem access
+    const sandbox = await applySandboxProfile(this.sandboxProfile);
+    const tmpDir = sandbox.tempDir ?? await mkdtemp(resolve(tmpdir(), 'altius-py-'));
     const scriptPath = resolve(tmpDir, 'function.py');
     try {
       await writeFile(scriptPath, source, 'utf-8');
 
       return await new Promise((resolvePromise, rejectPromise) => {
-        const env: Record<string, string> = { ...process.env } as Record<string, string>;
-        // Strip potentially sensitive env vars
-        delete env['ALTius_SECRET'];
-        delete env['DATABASE_URL'];
+        // Start with sandbox env (which includes LD_PRELOAD if available)
+        const env: Record<string, string> = { ...sandbox.env };
+        // Add minimal Python runtime env vars
+        env['PATH'] = '/usr/bin:/bin:/usr/local/bin';
+        env['HOME'] = tmpDir;
+        env['PYTHONPATH'] = tmpDir;
 
         const child = spawn(this.pythonPath, [scriptPath], {
           env,
@@ -168,7 +176,10 @@ export class PythonFunctionRuntime implements FunctionRuntime {
         child.stdin.end();
       });
     } finally {
-      await rm(tmpDir, { recursive: true, force: true });
+      await sandbox.cleanup();
+      if (!sandbox.tempDir) {
+        await rm(tmpDir, { recursive: true, force: true });
+      }
     }
   }
 }

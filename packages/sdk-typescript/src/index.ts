@@ -32,6 +32,9 @@ export interface Edge<T> {
   cursor: string;
 }
 
+/** Matches the SDL `enum SortDirection`. */
+export type SortDirection = 'ASC' | 'DESC';
+
 export interface ActionError {
   code: string;
   message: string;
@@ -305,6 +308,13 @@ export interface BedFilter {
   NOT?: BedFilter;
 }
 
+export interface BedOrderBy {
+  id?: SortDirection;
+  number?: SortDirection;
+  type?: SortDirection;
+  status?: SortDirection;
+}
+
 export interface Consultant {
   id: string;
   gmcNumber: string | null;
@@ -325,6 +335,13 @@ export interface ConsultantFilter {
   AND?: ConsultantFilter[];
   OR?: ConsultantFilter[];
   NOT?: ConsultantFilter;
+}
+
+export interface ConsultantOrderBy {
+  id?: SortDirection;
+  gmcNumber?: SortDirection;
+  name?: SortDirection;
+  specialty?: SortDirection;
 }
 
 export interface DischargeRecord {
@@ -348,6 +365,13 @@ export interface DischargeRecordFilter {
   AND?: DischargeRecordFilter[];
   OR?: DischargeRecordFilter[];
   NOT?: DischargeRecordFilter;
+}
+
+export interface DischargeRecordOrderBy {
+  id?: SortDirection;
+  destination?: SortDirection;
+  dischargeDate?: SortDirection;
+  notes?: SortDirection;
 }
 
 export interface Patient {
@@ -397,6 +421,24 @@ export interface PatientFilter {
   NOT?: PatientFilter;
 }
 
+export interface PatientOrderBy {
+  id?: SortDirection;
+  nhsNumber?: SortDirection;
+  name?: SortDirection;
+  family?: SortDirection;
+  given?: SortDirection;
+  dateOfBirth?: SortDirection;
+  status?: SortDirection;
+  triageCategory?: SortDirection;
+  presentingComplaint?: SortDirection;
+  createdAt?: SortDirection;
+  createdBy?: SortDirection;
+  updatedAt?: SortDirection;
+  updatedBy?: SortDirection;
+  validFrom?: SortDirection;
+  validTo?: SortDirection;
+}
+
 export interface Staff {
   id: string;
   staffId: string | null;
@@ -420,6 +462,14 @@ export interface StaffFilter {
   NOT?: StaffFilter;
 }
 
+export interface StaffOrderBy {
+  id?: SortDirection;
+  staffId?: SortDirection;
+  name?: SortDirection;
+  role?: SortDirection;
+  specialty?: SortDirection;
+}
+
 export interface Transfer {
   id: string;
   patient: Patient | null;
@@ -440,6 +490,12 @@ export interface TransferFilter {
   AND?: TransferFilter[];
   OR?: TransferFilter[];
   NOT?: TransferFilter;
+}
+
+export interface TransferOrderBy {
+  id?: SortDirection;
+  transferDate?: SortDirection;
+  reason?: SortDirection;
 }
 
 export interface Ward {
@@ -470,6 +526,14 @@ export interface WardFilter {
   NOT?: WardFilter;
 }
 
+export interface WardOrderBy {
+  id?: SortDirection;
+  name?: SortDirection;
+  specialty?: SortDirection;
+  capacity?: SortDirection;
+  address?: SortDirection;
+}
+
 export interface Account {
   id: string;
   accountNumber: string | Redacted | null;
@@ -497,6 +561,17 @@ export interface AccountFilter {
   AND?: AccountFilter[];
   OR?: AccountFilter[];
   NOT?: AccountFilter;
+}
+
+export interface AccountOrderBy {
+  id?: SortDirection;
+  accountNumber?: SortDirection;
+  type?: SortDirection;
+  status?: SortDirection;
+  currency?: SortDirection;
+  customer?: SortDirection;
+  openDate?: SortDirection;
+  lastActivityDate?: SortDirection;
 }
 
 export interface Alert {
@@ -534,6 +609,20 @@ export interface AlertFilter {
   NOT?: AlertFilter;
 }
 
+export interface AlertOrderBy {
+  id?: SortDirection;
+  alertNumber?: SortDirection;
+  severity?: SortDirection;
+  status?: SortDirection;
+  ruleName?: SortDirection;
+  score?: SortDirection;
+  narrative?: SortDirection;
+  transaction?: SortDirection;
+  customer?: SortDirection;
+  assignedTo?: SortDirection;
+  createdDate?: SortDirection;
+}
+
 export interface Case {
   id: string;
   caseNumber: string | null;
@@ -563,6 +652,17 @@ export interface CaseFilter {
   AND?: CaseFilter[];
   OR?: CaseFilter[];
   NOT?: CaseFilter;
+}
+
+export interface CaseOrderBy {
+  id?: SortDirection;
+  caseNumber?: SortDirection;
+  status?: SortDirection;
+  priority?: SortDirection;
+  assignedAnalyst?: SortDirection;
+  summary?: SortDirection;
+  openDate?: SortDirection;
+  closeDate?: SortDirection;
 }
 
 export interface Customer {
@@ -598,6 +698,19 @@ export interface CustomerFilter {
   NOT?: CustomerFilter;
 }
 
+export interface CustomerOrderBy {
+  id?: SortDirection;
+  externalId?: SortDirection;
+  name?: SortDirection;
+  type?: SortDirection;
+  riskLevel?: SortDirection;
+  kycStatus?: SortDirection;
+  kycExpiryDate?: SortDirection;
+  country?: SortDirection;
+  dateOfBirth?: SortDirection;
+  taxId?: SortDirection;
+}
+
 export interface SuspiciousActivityReport {
   id: string;
   sarNumber: string | null;
@@ -625,6 +738,17 @@ export interface SuspiciousActivityReportFilter {
   AND?: SuspiciousActivityReportFilter[];
   OR?: SuspiciousActivityReportFilter[];
   NOT?: SuspiciousActivityReportFilter;
+}
+
+export interface SuspiciousActivityReportOrderBy {
+  id?: SortDirection;
+  sarNumber?: SortDirection;
+  status?: SortDirection;
+  filingDate?: SortDirection;
+  narrative?: SortDirection;
+  amount?: SortDirection;
+  reportingEntity?: SortDirection;
+  caseRef?: SortDirection;
 }
 
 export interface Transaction {
@@ -662,6 +786,20 @@ export interface TransactionFilter {
   NOT?: TransactionFilter;
 }
 
+export interface TransactionOrderBy {
+  id?: SortDirection;
+  referenceId?: SortDirection;
+  type?: SortDirection;
+  status?: SortDirection;
+  amount?: SortDirection;
+  currency?: SortDirection;
+  sourceAccount?: SortDirection;
+  destinationAccount?: SortDirection;
+  transactionDate?: SortDirection;
+  description?: SortDirection;
+  country?: SortDirection;
+}
+
 export interface Facility {
   id: string;
   name: string | null;
@@ -694,6 +832,17 @@ export interface FacilityFilter {
   NOT?: FacilityFilter;
 }
 
+export interface FacilityOrderBy {
+  id?: SortDirection;
+  name?: SortDirection;
+  code?: SortDirection;
+  type?: SortDirection;
+  status?: SortDirection;
+  address?: SortDirection;
+  country?: SortDirection;
+  capacity?: SortDirection;
+}
+
 export interface InventoryRecord {
   id: string;
   quantity: number | null;
@@ -717,6 +866,14 @@ export interface InventoryRecordFilter {
   AND?: InventoryRecordFilter[];
   OR?: InventoryRecordFilter[];
   NOT?: InventoryRecordFilter;
+}
+
+export interface InventoryRecordOrderBy {
+  id?: SortDirection;
+  quantity?: SortDirection;
+  reservedQuantity?: SortDirection;
+  stockLevel?: SortDirection;
+  lastCountDate?: SortDirection;
 }
 
 export interface Product {
@@ -745,6 +902,16 @@ export interface ProductFilter {
   AND?: ProductFilter[];
   OR?: ProductFilter[];
   NOT?: ProductFilter;
+}
+
+export interface ProductOrderBy {
+  id?: SortDirection;
+  sku?: SortDirection;
+  name?: SortDirection;
+  category?: SortDirection;
+  unitOfMeasure?: SortDirection;
+  reorderPoint?: SortDirection;
+  reorderQuantity?: SortDirection;
 }
 
 export interface PurchaseOrder {
@@ -778,6 +945,17 @@ export interface PurchaseOrderFilter {
   NOT?: PurchaseOrderFilter;
 }
 
+export interface PurchaseOrderOrderBy {
+  id?: SortDirection;
+  orderNumber?: SortDirection;
+  status?: SortDirection;
+  quantity?: SortDirection;
+  unitCost?: SortDirection;
+  currency?: SortDirection;
+  requestedDeliveryDate?: SortDirection;
+  notes?: SortDirection;
+}
+
 export interface Shipment {
   id: string;
   trackingNumber: string | null;
@@ -808,6 +986,17 @@ export interface ShipmentFilter {
   AND?: ShipmentFilter[];
   OR?: ShipmentFilter[];
   NOT?: ShipmentFilter;
+}
+
+export interface ShipmentOrderBy {
+  id?: SortDirection;
+  trackingNumber?: SortDirection;
+  status?: SortDirection;
+  transportMode?: SortDirection;
+  quantity?: SortDirection;
+  departureDate?: SortDirection;
+  estimatedArrival?: SortDirection;
+  actualArrival?: SortDirection;
 }
 
 export interface Supplier {
@@ -844,6 +1033,20 @@ export interface SupplierFilter {
   AND?: SupplierFilter[];
   OR?: SupplierFilter[];
   NOT?: SupplierFilter;
+}
+
+export interface SupplierOrderBy {
+  id?: SortDirection;
+  name?: SortDirection;
+  code?: SortDirection;
+  system?: SortDirection;
+  display?: SortDirection;
+  tier?: SortDirection;
+  contactName?: SortDirection;
+  contactEmail?: SortDirection;
+  country?: SortDirection;
+  leadTimeDays?: SortDirection;
+  onTimeDeliveryRate?: SortDirection;
 }
 
 // ─── Action types ───
@@ -1332,8 +1535,8 @@ export class Altius {
         this.query<Record<string, unknown>>(`query { bed(id: "${id}") { id number type status _redactedFields _consentRestricted } }`)
           .then((d) => (d?.['bed'] ?? null) as Bed | null),
 
-      list: (filter?: BedFilter, pagination?: PaginationArgs, asOf?: string): Promise<BedConnection> =>
-        this.query<Record<string, unknown>>(`query($filter: BedFilter, $first: Int, $after: String, $asOf: DateTime) { beds(filter: $filter, first: $first, after: $after, asOf: $asOf) { edges { node { id number type status _redactedFields _consentRestricted } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after, asOf })
+      list: (filter?: BedFilter, pagination?: PaginationArgs, asOf?: string, orderBy?: BedOrderBy): Promise<BedConnection> =>
+        this.query<Record<string, unknown>>(`query($filter: BedFilter, $orderBy: BedOrderBy, $first: Int, $after: String, $asOf: DateTime) { beds(filter: $filter, orderBy: $orderBy, first: $first, after: $after, asOf: $asOf) { edges { node { id number type status _redactedFields _consentRestricted } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, orderBy, first: pagination?.first, after: pagination?.after, asOf })
           .then((d) => d?.['beds'] as BedConnection),
 
       onChange: (id: string, callback: (event: ChangeEvent<Bed>) => void): Subscription =>
@@ -1349,8 +1552,8 @@ export class Altius {
         this.query<Record<string, unknown>>(`query { consultant(id: "${id}") { id gmcNumber name specialty _redactedFields _consentRestricted } }`)
           .then((d) => (d?.['consultant'] ?? null) as Consultant | null),
 
-      list: (filter?: ConsultantFilter, pagination?: PaginationArgs, asOf?: string): Promise<ConsultantConnection> =>
-        this.query<Record<string, unknown>>(`query($filter: ConsultantFilter, $first: Int, $after: String, $asOf: DateTime) { consultants(filter: $filter, first: $first, after: $after, asOf: $asOf) { edges { node { id gmcNumber name specialty _redactedFields _consentRestricted } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after, asOf })
+      list: (filter?: ConsultantFilter, pagination?: PaginationArgs, asOf?: string, orderBy?: ConsultantOrderBy): Promise<ConsultantConnection> =>
+        this.query<Record<string, unknown>>(`query($filter: ConsultantFilter, $orderBy: ConsultantOrderBy, $first: Int, $after: String, $asOf: DateTime) { consultants(filter: $filter, orderBy: $orderBy, first: $first, after: $after, asOf: $asOf) { edges { node { id gmcNumber name specialty _redactedFields _consentRestricted } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, orderBy, first: pagination?.first, after: pagination?.after, asOf })
           .then((d) => d?.['consultants'] as ConsultantConnection),
 
       onChange: (id: string, callback: (event: ChangeEvent<Consultant>) => void): Subscription =>
@@ -1366,8 +1569,8 @@ export class Altius {
         this.query<Record<string, unknown>>(`query { dischargeRecord(id: "${id}") { id patient { id nhsNumber name family given dateOfBirth status triageCategory presentingComplaint createdAt createdBy updatedAt updatedBy validFrom validTo _redactedFields _consentRestricted } ward { id name specialty capacity location address _redactedFields _consentRestricted } destination dischargeDate notes _redactedFields _consentRestricted } }`)
           .then((d) => (d?.['dischargeRecord'] ?? null) as DischargeRecord | null),
 
-      list: (filter?: DischargeRecordFilter, pagination?: PaginationArgs, asOf?: string): Promise<DischargeRecordConnection> =>
-        this.query<Record<string, unknown>>(`query($filter: DischargeRecordFilter, $first: Int, $after: String, $asOf: DateTime) { dischargeRecords(filter: $filter, first: $first, after: $after, asOf: $asOf) { edges { node { id patient { id nhsNumber name family given dateOfBirth status triageCategory presentingComplaint createdAt createdBy updatedAt updatedBy validFrom validTo _redactedFields _consentRestricted } ward { id name specialty capacity location address _redactedFields _consentRestricted } destination dischargeDate notes _redactedFields _consentRestricted } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after, asOf })
+      list: (filter?: DischargeRecordFilter, pagination?: PaginationArgs, asOf?: string, orderBy?: DischargeRecordOrderBy): Promise<DischargeRecordConnection> =>
+        this.query<Record<string, unknown>>(`query($filter: DischargeRecordFilter, $orderBy: DischargeRecordOrderBy, $first: Int, $after: String, $asOf: DateTime) { dischargeRecords(filter: $filter, orderBy: $orderBy, first: $first, after: $after, asOf: $asOf) { edges { node { id patient { id nhsNumber name family given dateOfBirth status triageCategory presentingComplaint createdAt createdBy updatedAt updatedBy validFrom validTo _redactedFields _consentRestricted } ward { id name specialty capacity location address _redactedFields _consentRestricted } destination dischargeDate notes _redactedFields _consentRestricted } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, orderBy, first: pagination?.first, after: pagination?.after, asOf })
           .then((d) => d?.['dischargeRecords'] as DischargeRecordConnection),
 
       onChange: (id: string, callback: (event: ChangeEvent<DischargeRecord>) => void): Subscription =>
@@ -1383,8 +1586,8 @@ export class Altius {
         this.query<Record<string, unknown>>(`query { patient(id: "${id}") { id nhsNumber name family given dateOfBirth status triageCategory presentingComplaint createdAt createdBy updatedAt updatedBy validFrom validTo _redactedFields _consentRestricted } }`)
           .then((d) => (d?.['patient'] ?? null) as Patient | null),
 
-      list: (filter?: PatientFilter, pagination?: PaginationArgs, asOf?: string): Promise<PatientConnection> =>
-        this.query<Record<string, unknown>>(`query($filter: PatientFilter, $first: Int, $after: String, $asOf: DateTime) { patients(filter: $filter, first: $first, after: $after, asOf: $asOf) { edges { node { id nhsNumber name family given dateOfBirth status triageCategory presentingComplaint createdAt createdBy updatedAt updatedBy validFrom validTo _redactedFields _consentRestricted } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after, asOf })
+      list: (filter?: PatientFilter, pagination?: PaginationArgs, asOf?: string, orderBy?: PatientOrderBy): Promise<PatientConnection> =>
+        this.query<Record<string, unknown>>(`query($filter: PatientFilter, $orderBy: PatientOrderBy, $first: Int, $after: String, $asOf: DateTime) { patients(filter: $filter, orderBy: $orderBy, first: $first, after: $after, asOf: $asOf) { edges { node { id nhsNumber name family given dateOfBirth status triageCategory presentingComplaint createdAt createdBy updatedAt updatedBy validFrom validTo _redactedFields _consentRestricted } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, orderBy, first: pagination?.first, after: pagination?.after, asOf })
           .then((d) => d?.['patients'] as PatientConnection),
 
       onChange: (id: string, callback: (event: ChangeEvent<Patient>) => void): Subscription =>
@@ -1400,8 +1603,8 @@ export class Altius {
         this.query<Record<string, unknown>>(`query { staff(id: "${id}") { id staffId name role specialty _redactedFields _consentRestricted } }`)
           .then((d) => (d?.['staff'] ?? null) as Staff | null),
 
-      list: (filter?: StaffFilter, pagination?: PaginationArgs, asOf?: string): Promise<StaffConnection> =>
-        this.query<Record<string, unknown>>(`query($filter: StaffFilter, $first: Int, $after: String, $asOf: DateTime) { staffs(filter: $filter, first: $first, after: $after, asOf: $asOf) { edges { node { id staffId name role specialty _redactedFields _consentRestricted } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after, asOf })
+      list: (filter?: StaffFilter, pagination?: PaginationArgs, asOf?: string, orderBy?: StaffOrderBy): Promise<StaffConnection> =>
+        this.query<Record<string, unknown>>(`query($filter: StaffFilter, $orderBy: StaffOrderBy, $first: Int, $after: String, $asOf: DateTime) { staffs(filter: $filter, orderBy: $orderBy, first: $first, after: $after, asOf: $asOf) { edges { node { id staffId name role specialty _redactedFields _consentRestricted } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, orderBy, first: pagination?.first, after: pagination?.after, asOf })
           .then((d) => d?.['staffs'] as StaffConnection),
 
       onChange: (id: string, callback: (event: ChangeEvent<Staff>) => void): Subscription =>
@@ -1417,8 +1620,8 @@ export class Altius {
         this.query<Record<string, unknown>>(`query { transfer(id: "${id}") { id patient { id nhsNumber name family given dateOfBirth status triageCategory presentingComplaint createdAt createdBy updatedAt updatedBy validFrom validTo _redactedFields _consentRestricted } fromWard { id name specialty capacity location address _redactedFields _consentRestricted } toWard { id name specialty capacity location address _redactedFields _consentRestricted } transferDate reason _redactedFields _consentRestricted } }`)
           .then((d) => (d?.['transfer'] ?? null) as Transfer | null),
 
-      list: (filter?: TransferFilter, pagination?: PaginationArgs, asOf?: string): Promise<TransferConnection> =>
-        this.query<Record<string, unknown>>(`query($filter: TransferFilter, $first: Int, $after: String, $asOf: DateTime) { transfers(filter: $filter, first: $first, after: $after, asOf: $asOf) { edges { node { id patient { id nhsNumber name family given dateOfBirth status triageCategory presentingComplaint createdAt createdBy updatedAt updatedBy validFrom validTo _redactedFields _consentRestricted } fromWard { id name specialty capacity location address _redactedFields _consentRestricted } toWard { id name specialty capacity location address _redactedFields _consentRestricted } transferDate reason _redactedFields _consentRestricted } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after, asOf })
+      list: (filter?: TransferFilter, pagination?: PaginationArgs, asOf?: string, orderBy?: TransferOrderBy): Promise<TransferConnection> =>
+        this.query<Record<string, unknown>>(`query($filter: TransferFilter, $orderBy: TransferOrderBy, $first: Int, $after: String, $asOf: DateTime) { transfers(filter: $filter, orderBy: $orderBy, first: $first, after: $after, asOf: $asOf) { edges { node { id patient { id nhsNumber name family given dateOfBirth status triageCategory presentingComplaint createdAt createdBy updatedAt updatedBy validFrom validTo _redactedFields _consentRestricted } fromWard { id name specialty capacity location address _redactedFields _consentRestricted } toWard { id name specialty capacity location address _redactedFields _consentRestricted } transferDate reason _redactedFields _consentRestricted } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, orderBy, first: pagination?.first, after: pagination?.after, asOf })
           .then((d) => d?.['transfers'] as TransferConnection),
 
       onChange: (id: string, callback: (event: ChangeEvent<Transfer>) => void): Subscription =>
@@ -1434,8 +1637,8 @@ export class Altius {
         this.query<Record<string, unknown>>(`query { ward(id: "${id}") { id name specialty capacity location address _redactedFields _consentRestricted } }`)
           .then((d) => (d?.['ward'] ?? null) as Ward | null),
 
-      list: (filter?: WardFilter, pagination?: PaginationArgs, asOf?: string): Promise<WardConnection> =>
-        this.query<Record<string, unknown>>(`query($filter: WardFilter, $first: Int, $after: String, $asOf: DateTime) { wards(filter: $filter, first: $first, after: $after, asOf: $asOf) { edges { node { id name specialty capacity location address _redactedFields _consentRestricted } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after, asOf })
+      list: (filter?: WardFilter, pagination?: PaginationArgs, asOf?: string, orderBy?: WardOrderBy): Promise<WardConnection> =>
+        this.query<Record<string, unknown>>(`query($filter: WardFilter, $orderBy: WardOrderBy, $first: Int, $after: String, $asOf: DateTime) { wards(filter: $filter, orderBy: $orderBy, first: $first, after: $after, asOf: $asOf) { edges { node { id name specialty capacity location address _redactedFields _consentRestricted } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, orderBy, first: pagination?.first, after: pagination?.after, asOf })
           .then((d) => d?.['wards'] as WardConnection),
 
       onChange: (id: string, callback: (event: ChangeEvent<Ward>) => void): Subscription =>
@@ -1451,8 +1654,8 @@ export class Altius {
         this.query<Record<string, unknown>>(`query { account(id: "${id}") { id accountNumber type status currency customer openDate lastActivityDate _redactedFields _consentRestricted } }`)
           .then((d) => (d?.['account'] ?? null) as Account | null),
 
-      list: (filter?: AccountFilter, pagination?: PaginationArgs, asOf?: string): Promise<AccountConnection> =>
-        this.query<Record<string, unknown>>(`query($filter: AccountFilter, $first: Int, $after: String, $asOf: DateTime) { accounts(filter: $filter, first: $first, after: $after, asOf: $asOf) { edges { node { id accountNumber type status currency customer openDate lastActivityDate _redactedFields _consentRestricted } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after, asOf })
+      list: (filter?: AccountFilter, pagination?: PaginationArgs, asOf?: string, orderBy?: AccountOrderBy): Promise<AccountConnection> =>
+        this.query<Record<string, unknown>>(`query($filter: AccountFilter, $orderBy: AccountOrderBy, $first: Int, $after: String, $asOf: DateTime) { accounts(filter: $filter, orderBy: $orderBy, first: $first, after: $after, asOf: $asOf) { edges { node { id accountNumber type status currency customer openDate lastActivityDate _redactedFields _consentRestricted } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, orderBy, first: pagination?.first, after: pagination?.after, asOf })
           .then((d) => d?.['accounts'] as AccountConnection),
 
       onChange: (id: string, callback: (event: ChangeEvent<Account>) => void): Subscription =>
@@ -1468,8 +1671,8 @@ export class Altius {
         this.query<Record<string, unknown>>(`query { alert(id: "${id}") { id alertNumber severity status ruleName score narrative transaction customer assignedTo createdDate _redactedFields _consentRestricted } }`)
           .then((d) => (d?.['alert'] ?? null) as Alert | null),
 
-      list: (filter?: AlertFilter, pagination?: PaginationArgs, asOf?: string): Promise<AlertConnection> =>
-        this.query<Record<string, unknown>>(`query($filter: AlertFilter, $first: Int, $after: String, $asOf: DateTime) { alerts(filter: $filter, first: $first, after: $after, asOf: $asOf) { edges { node { id alertNumber severity status ruleName score narrative transaction customer assignedTo createdDate _redactedFields _consentRestricted } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after, asOf })
+      list: (filter?: AlertFilter, pagination?: PaginationArgs, asOf?: string, orderBy?: AlertOrderBy): Promise<AlertConnection> =>
+        this.query<Record<string, unknown>>(`query($filter: AlertFilter, $orderBy: AlertOrderBy, $first: Int, $after: String, $asOf: DateTime) { alerts(filter: $filter, orderBy: $orderBy, first: $first, after: $after, asOf: $asOf) { edges { node { id alertNumber severity status ruleName score narrative transaction customer assignedTo createdDate _redactedFields _consentRestricted } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, orderBy, first: pagination?.first, after: pagination?.after, asOf })
           .then((d) => d?.['alerts'] as AlertConnection),
 
       onChange: (id: string, callback: (event: ChangeEvent<Alert>) => void): Subscription =>
@@ -1485,8 +1688,8 @@ export class Altius {
         this.query<Record<string, unknown>>(`query { case(id: "${id}") { id caseNumber status priority assignedAnalyst summary openDate closeDate _redactedFields _consentRestricted } }`)
           .then((d) => (d?.['case'] ?? null) as Case | null),
 
-      list: (filter?: CaseFilter, pagination?: PaginationArgs, asOf?: string): Promise<CaseConnection> =>
-        this.query<Record<string, unknown>>(`query($filter: CaseFilter, $first: Int, $after: String, $asOf: DateTime) { cases(filter: $filter, first: $first, after: $after, asOf: $asOf) { edges { node { id caseNumber status priority assignedAnalyst summary openDate closeDate _redactedFields _consentRestricted } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after, asOf })
+      list: (filter?: CaseFilter, pagination?: PaginationArgs, asOf?: string, orderBy?: CaseOrderBy): Promise<CaseConnection> =>
+        this.query<Record<string, unknown>>(`query($filter: CaseFilter, $orderBy: CaseOrderBy, $first: Int, $after: String, $asOf: DateTime) { cases(filter: $filter, orderBy: $orderBy, first: $first, after: $after, asOf: $asOf) { edges { node { id caseNumber status priority assignedAnalyst summary openDate closeDate _redactedFields _consentRestricted } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, orderBy, first: pagination?.first, after: pagination?.after, asOf })
           .then((d) => d?.['cases'] as CaseConnection),
 
       onChange: (id: string, callback: (event: ChangeEvent<Case>) => void): Subscription =>
@@ -1502,8 +1705,8 @@ export class Altius {
         this.query<Record<string, unknown>>(`query { customer(id: "${id}") { id externalId name type riskLevel kycStatus kycExpiryDate country dateOfBirth taxId _redactedFields _consentRestricted } }`)
           .then((d) => (d?.['customer'] ?? null) as Customer | null),
 
-      list: (filter?: CustomerFilter, pagination?: PaginationArgs, asOf?: string): Promise<CustomerConnection> =>
-        this.query<Record<string, unknown>>(`query($filter: CustomerFilter, $first: Int, $after: String, $asOf: DateTime) { customers(filter: $filter, first: $first, after: $after, asOf: $asOf) { edges { node { id externalId name type riskLevel kycStatus kycExpiryDate country dateOfBirth taxId _redactedFields _consentRestricted } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after, asOf })
+      list: (filter?: CustomerFilter, pagination?: PaginationArgs, asOf?: string, orderBy?: CustomerOrderBy): Promise<CustomerConnection> =>
+        this.query<Record<string, unknown>>(`query($filter: CustomerFilter, $orderBy: CustomerOrderBy, $first: Int, $after: String, $asOf: DateTime) { customers(filter: $filter, orderBy: $orderBy, first: $first, after: $after, asOf: $asOf) { edges { node { id externalId name type riskLevel kycStatus kycExpiryDate country dateOfBirth taxId _redactedFields _consentRestricted } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, orderBy, first: pagination?.first, after: pagination?.after, asOf })
           .then((d) => d?.['customers'] as CustomerConnection),
 
       onChange: (id: string, callback: (event: ChangeEvent<Customer>) => void): Subscription =>
@@ -1519,8 +1722,8 @@ export class Altius {
         this.query<Record<string, unknown>>(`query { suspiciousActivityReport(id: "${id}") { id sarNumber status filingDate narrative amount reportingEntity caseRef _redactedFields _consentRestricted } }`)
           .then((d) => (d?.['suspiciousActivityReport'] ?? null) as SuspiciousActivityReport | null),
 
-      list: (filter?: SuspiciousActivityReportFilter, pagination?: PaginationArgs, asOf?: string): Promise<SuspiciousActivityReportConnection> =>
-        this.query<Record<string, unknown>>(`query($filter: SuspiciousActivityReportFilter, $first: Int, $after: String, $asOf: DateTime) { suspiciousActivityReports(filter: $filter, first: $first, after: $after, asOf: $asOf) { edges { node { id sarNumber status filingDate narrative amount reportingEntity caseRef _redactedFields _consentRestricted } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after, asOf })
+      list: (filter?: SuspiciousActivityReportFilter, pagination?: PaginationArgs, asOf?: string, orderBy?: SuspiciousActivityReportOrderBy): Promise<SuspiciousActivityReportConnection> =>
+        this.query<Record<string, unknown>>(`query($filter: SuspiciousActivityReportFilter, $orderBy: SuspiciousActivityReportOrderBy, $first: Int, $after: String, $asOf: DateTime) { suspiciousActivityReports(filter: $filter, orderBy: $orderBy, first: $first, after: $after, asOf: $asOf) { edges { node { id sarNumber status filingDate narrative amount reportingEntity caseRef _redactedFields _consentRestricted } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, orderBy, first: pagination?.first, after: pagination?.after, asOf })
           .then((d) => d?.['suspiciousActivityReports'] as SuspiciousActivityReportConnection),
 
       onChange: (id: string, callback: (event: ChangeEvent<SuspiciousActivityReport>) => void): Subscription =>
@@ -1536,8 +1739,8 @@ export class Altius {
         this.query<Record<string, unknown>>(`query { transaction(id: "${id}") { id referenceId type status amount currency sourceAccount destinationAccount transactionDate description country _redactedFields _consentRestricted } }`)
           .then((d) => (d?.['transaction'] ?? null) as Transaction | null),
 
-      list: (filter?: TransactionFilter, pagination?: PaginationArgs, asOf?: string): Promise<TransactionConnection> =>
-        this.query<Record<string, unknown>>(`query($filter: TransactionFilter, $first: Int, $after: String, $asOf: DateTime) { transactions(filter: $filter, first: $first, after: $after, asOf: $asOf) { edges { node { id referenceId type status amount currency sourceAccount destinationAccount transactionDate description country _redactedFields _consentRestricted } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after, asOf })
+      list: (filter?: TransactionFilter, pagination?: PaginationArgs, asOf?: string, orderBy?: TransactionOrderBy): Promise<TransactionConnection> =>
+        this.query<Record<string, unknown>>(`query($filter: TransactionFilter, $orderBy: TransactionOrderBy, $first: Int, $after: String, $asOf: DateTime) { transactions(filter: $filter, orderBy: $orderBy, first: $first, after: $after, asOf: $asOf) { edges { node { id referenceId type status amount currency sourceAccount destinationAccount transactionDate description country _redactedFields _consentRestricted } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, orderBy, first: pagination?.first, after: pagination?.after, asOf })
           .then((d) => d?.['transactions'] as TransactionConnection),
 
       onChange: (id: string, callback: (event: ChangeEvent<Transaction>) => void): Subscription =>
@@ -1553,8 +1756,8 @@ export class Altius {
         this.query<Record<string, unknown>>(`query { facility(id: "${id}") { id name code type status location address country capacity _redactedFields _consentRestricted } }`)
           .then((d) => (d?.['facility'] ?? null) as Facility | null),
 
-      list: (filter?: FacilityFilter, pagination?: PaginationArgs, asOf?: string): Promise<FacilityConnection> =>
-        this.query<Record<string, unknown>>(`query($filter: FacilityFilter, $first: Int, $after: String, $asOf: DateTime) { facilitys(filter: $filter, first: $first, after: $after, asOf: $asOf) { edges { node { id name code type status location address country capacity _redactedFields _consentRestricted } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after, asOf })
+      list: (filter?: FacilityFilter, pagination?: PaginationArgs, asOf?: string, orderBy?: FacilityOrderBy): Promise<FacilityConnection> =>
+        this.query<Record<string, unknown>>(`query($filter: FacilityFilter, $orderBy: FacilityOrderBy, $first: Int, $after: String, $asOf: DateTime) { facilitys(filter: $filter, orderBy: $orderBy, first: $first, after: $after, asOf: $asOf) { edges { node { id name code type status location address country capacity _redactedFields _consentRestricted } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, orderBy, first: pagination?.first, after: pagination?.after, asOf })
           .then((d) => d?.['facilitys'] as FacilityConnection),
 
       onChange: (id: string, callback: (event: ChangeEvent<Facility>) => void): Subscription =>
@@ -1570,8 +1773,8 @@ export class Altius {
         this.query<Record<string, unknown>>(`query { inventoryRecord(id: "${id}") { id quantity reservedQuantity stockLevel lastCountDate product { id sku name category unitOfMeasure reorderPoint reorderQuantity _redactedFields _consentRestricted } facility { id name code type status location address country capacity _redactedFields _consentRestricted } _redactedFields _consentRestricted } }`)
           .then((d) => (d?.['inventoryRecord'] ?? null) as InventoryRecord | null),
 
-      list: (filter?: InventoryRecordFilter, pagination?: PaginationArgs, asOf?: string): Promise<InventoryRecordConnection> =>
-        this.query<Record<string, unknown>>(`query($filter: InventoryRecordFilter, $first: Int, $after: String, $asOf: DateTime) { inventoryRecords(filter: $filter, first: $first, after: $after, asOf: $asOf) { edges { node { id quantity reservedQuantity stockLevel lastCountDate product { id sku name category unitOfMeasure reorderPoint reorderQuantity _redactedFields _consentRestricted } facility { id name code type status location address country capacity _redactedFields _consentRestricted } _redactedFields _consentRestricted } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after, asOf })
+      list: (filter?: InventoryRecordFilter, pagination?: PaginationArgs, asOf?: string, orderBy?: InventoryRecordOrderBy): Promise<InventoryRecordConnection> =>
+        this.query<Record<string, unknown>>(`query($filter: InventoryRecordFilter, $orderBy: InventoryRecordOrderBy, $first: Int, $after: String, $asOf: DateTime) { inventoryRecords(filter: $filter, orderBy: $orderBy, first: $first, after: $after, asOf: $asOf) { edges { node { id quantity reservedQuantity stockLevel lastCountDate product { id sku name category unitOfMeasure reorderPoint reorderQuantity _redactedFields _consentRestricted } facility { id name code type status location address country capacity _redactedFields _consentRestricted } _redactedFields _consentRestricted } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, orderBy, first: pagination?.first, after: pagination?.after, asOf })
           .then((d) => d?.['inventoryRecords'] as InventoryRecordConnection),
 
       onChange: (id: string, callback: (event: ChangeEvent<InventoryRecord>) => void): Subscription =>
@@ -1587,8 +1790,8 @@ export class Altius {
         this.query<Record<string, unknown>>(`query { product(id: "${id}") { id sku name category unitOfMeasure reorderPoint reorderQuantity _redactedFields _consentRestricted } }`)
           .then((d) => (d?.['product'] ?? null) as Product | null),
 
-      list: (filter?: ProductFilter, pagination?: PaginationArgs, asOf?: string): Promise<ProductConnection> =>
-        this.query<Record<string, unknown>>(`query($filter: ProductFilter, $first: Int, $after: String, $asOf: DateTime) { products(filter: $filter, first: $first, after: $after, asOf: $asOf) { edges { node { id sku name category unitOfMeasure reorderPoint reorderQuantity _redactedFields _consentRestricted } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after, asOf })
+      list: (filter?: ProductFilter, pagination?: PaginationArgs, asOf?: string, orderBy?: ProductOrderBy): Promise<ProductConnection> =>
+        this.query<Record<string, unknown>>(`query($filter: ProductFilter, $orderBy: ProductOrderBy, $first: Int, $after: String, $asOf: DateTime) { products(filter: $filter, orderBy: $orderBy, first: $first, after: $after, asOf: $asOf) { edges { node { id sku name category unitOfMeasure reorderPoint reorderQuantity _redactedFields _consentRestricted } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, orderBy, first: pagination?.first, after: pagination?.after, asOf })
           .then((d) => d?.['products'] as ProductConnection),
 
       onChange: (id: string, callback: (event: ChangeEvent<Product>) => void): Subscription =>
@@ -1604,8 +1807,8 @@ export class Altius {
         this.query<Record<string, unknown>>(`query { purchaseOrder(id: "${id}") { id orderNumber status supplier { id name code system display tier contactName contactEmail country leadTimeDays onTimeDeliveryRate _redactedFields _consentRestricted } product { id sku name category unitOfMeasure reorderPoint reorderQuantity _redactedFields _consentRestricted } quantity unitCost currency requestedDeliveryDate notes _redactedFields _consentRestricted } }`)
           .then((d) => (d?.['purchaseOrder'] ?? null) as PurchaseOrder | null),
 
-      list: (filter?: PurchaseOrderFilter, pagination?: PaginationArgs, asOf?: string): Promise<PurchaseOrderConnection> =>
-        this.query<Record<string, unknown>>(`query($filter: PurchaseOrderFilter, $first: Int, $after: String, $asOf: DateTime) { purchaseOrders(filter: $filter, first: $first, after: $after, asOf: $asOf) { edges { node { id orderNumber status supplier { id name code system display tier contactName contactEmail country leadTimeDays onTimeDeliveryRate _redactedFields _consentRestricted } product { id sku name category unitOfMeasure reorderPoint reorderQuantity _redactedFields _consentRestricted } quantity unitCost currency requestedDeliveryDate notes _redactedFields _consentRestricted } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after, asOf })
+      list: (filter?: PurchaseOrderFilter, pagination?: PaginationArgs, asOf?: string, orderBy?: PurchaseOrderOrderBy): Promise<PurchaseOrderConnection> =>
+        this.query<Record<string, unknown>>(`query($filter: PurchaseOrderFilter, $orderBy: PurchaseOrderOrderBy, $first: Int, $after: String, $asOf: DateTime) { purchaseOrders(filter: $filter, orderBy: $orderBy, first: $first, after: $after, asOf: $asOf) { edges { node { id orderNumber status supplier { id name code system display tier contactName contactEmail country leadTimeDays onTimeDeliveryRate _redactedFields _consentRestricted } product { id sku name category unitOfMeasure reorderPoint reorderQuantity _redactedFields _consentRestricted } quantity unitCost currency requestedDeliveryDate notes _redactedFields _consentRestricted } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, orderBy, first: pagination?.first, after: pagination?.after, asOf })
           .then((d) => d?.['purchaseOrders'] as PurchaseOrderConnection),
 
       onChange: (id: string, callback: (event: ChangeEvent<PurchaseOrder>) => void): Subscription =>
@@ -1621,8 +1824,8 @@ export class Altius {
         this.query<Record<string, unknown>>(`query { shipment(id: "${id}") { id trackingNumber status transportMode quantity departureDate estimatedArrival actualArrival order { id orderNumber status quantity unitCost currency requestedDeliveryDate notes _redactedFields _consentRestricted } origin { id name code type status location address country capacity _redactedFields _consentRestricted } destination { id name code type status location address country capacity _redactedFields _consentRestricted } _redactedFields _consentRestricted } }`)
           .then((d) => (d?.['shipment'] ?? null) as Shipment | null),
 
-      list: (filter?: ShipmentFilter, pagination?: PaginationArgs, asOf?: string): Promise<ShipmentConnection> =>
-        this.query<Record<string, unknown>>(`query($filter: ShipmentFilter, $first: Int, $after: String, $asOf: DateTime) { shipments(filter: $filter, first: $first, after: $after, asOf: $asOf) { edges { node { id trackingNumber status transportMode quantity departureDate estimatedArrival actualArrival order { id orderNumber status quantity unitCost currency requestedDeliveryDate notes _redactedFields _consentRestricted } origin { id name code type status location address country capacity _redactedFields _consentRestricted } destination { id name code type status location address country capacity _redactedFields _consentRestricted } _redactedFields _consentRestricted } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after, asOf })
+      list: (filter?: ShipmentFilter, pagination?: PaginationArgs, asOf?: string, orderBy?: ShipmentOrderBy): Promise<ShipmentConnection> =>
+        this.query<Record<string, unknown>>(`query($filter: ShipmentFilter, $orderBy: ShipmentOrderBy, $first: Int, $after: String, $asOf: DateTime) { shipments(filter: $filter, orderBy: $orderBy, first: $first, after: $after, asOf: $asOf) { edges { node { id trackingNumber status transportMode quantity departureDate estimatedArrival actualArrival order { id orderNumber status quantity unitCost currency requestedDeliveryDate notes _redactedFields _consentRestricted } origin { id name code type status location address country capacity _redactedFields _consentRestricted } destination { id name code type status location address country capacity _redactedFields _consentRestricted } _redactedFields _consentRestricted } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, orderBy, first: pagination?.first, after: pagination?.after, asOf })
           .then((d) => d?.['shipments'] as ShipmentConnection),
 
       onChange: (id: string, callback: (event: ChangeEvent<Shipment>) => void): Subscription =>
@@ -1638,8 +1841,8 @@ export class Altius {
         this.query<Record<string, unknown>>(`query { supplier(id: "${id}") { id name code system display tier contactName contactEmail country leadTimeDays onTimeDeliveryRate _redactedFields _consentRestricted } }`)
           .then((d) => (d?.['supplier'] ?? null) as Supplier | null),
 
-      list: (filter?: SupplierFilter, pagination?: PaginationArgs, asOf?: string): Promise<SupplierConnection> =>
-        this.query<Record<string, unknown>>(`query($filter: SupplierFilter, $first: Int, $after: String, $asOf: DateTime) { suppliers(filter: $filter, first: $first, after: $after, asOf: $asOf) { edges { node { id name code system display tier contactName contactEmail country leadTimeDays onTimeDeliveryRate _redactedFields _consentRestricted } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, first: pagination?.first, after: pagination?.after, asOf })
+      list: (filter?: SupplierFilter, pagination?: PaginationArgs, asOf?: string, orderBy?: SupplierOrderBy): Promise<SupplierConnection> =>
+        this.query<Record<string, unknown>>(`query($filter: SupplierFilter, $orderBy: SupplierOrderBy, $first: Int, $after: String, $asOf: DateTime) { suppliers(filter: $filter, orderBy: $orderBy, first: $first, after: $after, asOf: $asOf) { edges { node { id name code system display tier contactName contactEmail country leadTimeDays onTimeDeliveryRate _redactedFields _consentRestricted } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }`, { filter, orderBy, first: pagination?.first, after: pagination?.after, asOf })
           .then((d) => d?.['suppliers'] as SupplierConnection),
 
       onChange: (id: string, callback: (event: ChangeEvent<Supplier>) => void): Subscription =>

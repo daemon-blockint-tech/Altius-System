@@ -33,6 +33,26 @@ export interface Column<T> {
   header: string;
   /** Defaults to reading `row[key]` and stringifying it. */
   render?: (row: T) => ReactNode;
+  /**
+   * Offer a sort control on this column.
+   *
+   * Opt-in per column rather than on by default, because not every selected
+   * field is sortable server-side: the generated `${Name}OrderBy` input accepts
+   * only orderable scalars and enums, and omits link and @computed fields. A
+   * header that sorted by sending a field the input does not declare would fail
+   * the whole query as an unknown field, so the caller — which knows the
+   * generated type — decides.
+   */
+  sortable?: boolean;
+}
+
+/**
+ * The active sort. `direction` uses the SDL's own spelling so the caller can
+ * hand it to a generated `${Name}OrderBy` without translating.
+ */
+export interface SortState<T> {
+  key: keyof T & string;
+  direction: 'ASC' | 'DESC';
 }
 
 /** The subset of the SDK's generated `FooConnection` this component needs. */
@@ -51,7 +71,15 @@ export interface ObjectTableProps<T> {
   /** Table caption. Required — a data table without one is unusable by screen reader. */
   caption: string;
   columns: Column<T>[];
-  load: (pagination: { first: number; after?: string }) => Promise<ConnectionLike<T>>;
+  /**
+   * Fetch a page. `orderBy` is present only while a sort is active, so a caller
+   * that offers no sortable column can keep ignoring it.
+   */
+  load: (pagination: {
+    first: number;
+    after?: string;
+    orderBy?: SortState<T>;
+  }) => Promise<ConnectionLike<T>>;
   pageSize?: number;
   /** Stable row identity. Defaults to `row.id`. */
   rowKey?: (row: T) => string;
@@ -103,17 +131,24 @@ export function ObjectTable<T extends RowMetadata>({
   const [cursorStack, setCursorStack] = useState<Array<string | undefined>>([]);
   const [cursor, setCursor] = useState<string | undefined>(undefined);
 
+  /** Null means "server default order" — the state a third header click returns to. */
+  const [sort, setSort] = useState<SortState<T> | null>(null);
+
   // A slow first page must not overwrite a faster second one. Every load takes
   // a ticket and only the newest ticket is allowed to commit.
   const ticket = useRef(0);
 
   const fetchPage = useCallback(
-    async (after: string | undefined) => {
+    async (after: string | undefined, orderBy: SortState<T> | null) => {
       const mine = ++ticket.current;
       setStatus('loading');
       setError(null);
       try {
-        const result = await load(after === undefined ? { first: pageSize } : { first: pageSize, after });
+        const result = await load({
+          first: pageSize,
+          ...(after === undefined ? {} : { after }),
+          ...(orderBy === null ? {} : { orderBy }),
+        });
         if (mine !== ticket.current) return;
         setConnection(result);
         setStatus('ready');
@@ -127,13 +162,15 @@ export function ObjectTable<T extends RowMetadata>({
   );
 
   useEffect(() => {
-    void fetchPage(cursor);
-  }, [fetchPage, cursor]);
+    void fetchPage(cursor, sort);
+  }, [fetchPage, cursor, sort]);
 
   // Read by the live-update effect so that changing page does not tear down and
   // re-establish the subscription — the socket should outlive paging.
   const cursorRef = useRef(cursor);
   cursorRef.current = cursor;
+  const sortRef = useRef(sort);
+  sortRef.current = sort;
 
   useEffect(() => {
     if (!subscribe) return;
@@ -146,7 +183,7 @@ export function ObjectTable<T extends RowMetadata>({
       if (pending) return;
       pending = setTimeout(() => {
         pending = null;
-        void fetchPage(cursorRef.current);
+        void fetchPage(cursorRef.current, sortRef.current);
       }, LIVE_COALESCE_MS);
     }, () => {
       // Dropped. Say so rather than let a stale table look current.
@@ -156,7 +193,7 @@ export function ObjectTable<T extends RowMetadata>({
       // events that happened while the socket was down are gone, so the page
       // on screen may already be wrong.
       setLive(true);
-      void fetchPage(cursorRef.current);
+      void fetchPage(cursorRef.current, sortRef.current);
     });
 
     return () => {
@@ -164,6 +201,29 @@ export function ObjectTable<T extends RowMetadata>({
       if (pending) clearTimeout(pending);
     };
   }, [subscribe, fetchPage]);
+
+  /**
+   * Cycle a column: unsorted → ascending → descending → unsorted.
+   *
+   * Three states rather than two so the server's own default order stays
+   * reachable; with a toggle, the first click is irreversible for the rest of
+   * the session.
+   *
+   * Paging is reset, not preserved. A cursor encodes a position in ONE
+   * ordering — the server derives it from the sort keys — so carrying it across
+   * a re-sort asks for "everything after row X" in an order where X sits
+   * somewhere else, which silently skips and repeats rows. Returning to the
+   * first page is the only answer that is not quietly wrong.
+   */
+  const toggleSort = (key: keyof T & string) => {
+    setCursor(undefined);
+    setCursorStack([]);
+    setSort(current => {
+      if (current === null || current.key !== key) return { key, direction: 'ASC' };
+      if (current.direction === 'ASC') return { key, direction: 'DESC' };
+      return null;
+    });
+  };
 
   const goNext = () => {
     const end = connection?.pageInfo.endCursor;
@@ -185,7 +245,9 @@ export function ObjectTable<T extends RowMetadata>({
       <div role="alert">
         <p>Could not load {caption}.</p>
         <p>{error}</p>
-        <button type="button" onClick={() => void fetchPage(cursor)}>
+        {/* Retries the SAME page and the SAME sort — a retry that silently
+            dropped the ordering would look like the sort control failing. */}
+        <button type="button" onClick={() => void fetchPage(cursor, sort)}>
           Retry
         </button>
       </div>
@@ -204,11 +266,40 @@ export function ObjectTable<T extends RowMetadata>({
         </caption>
         <thead>
           <tr>
-            {columns.map(col => (
-              <th key={col.key} scope="col">
-                {col.header}
-              </th>
-            ))}
+            {columns.map(col => {
+              const active = sort?.key === col.key ? sort.direction : null;
+              return (
+                <th
+                  key={col.key}
+                  scope="col"
+                  // Announced by screen readers as the sort state of this
+                  // column. 'none' on a sortable-but-unsorted column is what
+                  // tells the user it CAN be sorted; omitting it entirely on
+                  // an unsortable column is what says it cannot.
+                  {...(col.sortable
+                    ? { 'aria-sort': active === 'ASC' ? 'ascending' as const : active === 'DESC' ? 'descending' as const : 'none' as const }
+                    : {})}
+                >
+                  {col.sortable ? (
+                    <button
+                      type="button"
+                      onClick={() => toggleSort(col.key)}
+                      disabled={status === 'loading'}
+                      data-sort={active ?? 'none'}
+                    >
+                      {col.header}
+                      {/* aria-hidden: aria-sort on the th already conveys this,
+                          and reading a glyph as well is duplicate noise. */}
+                      <span aria-hidden="true">
+                        {active === 'ASC' ? ' ▲' : active === 'DESC' ? ' ▼' : ''}
+                      </span>
+                    </button>
+                  ) : (
+                    col.header
+                  )}
+                </th>
+              );
+            })}
           </tr>
         </thead>
         <tbody>

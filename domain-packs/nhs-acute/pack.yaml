@@ -20,7 +20,7 @@ provides:
   objectTypes: 7
   linkTypes: 6
   actionTypes: 5
-  functions: 0
+  functions: 2
   connectors: 1
   widgets: 0
   qualityRules: 0
@@ -36,6 +36,7 @@ schema:
   - schema/transfer.odl
   - schema/links.odl
   - schema/actions.odl
+  - schema/functions.odl
 
 actions:
   - actions/admit-patient.yaml

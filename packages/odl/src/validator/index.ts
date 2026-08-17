@@ -668,7 +668,34 @@ function validateFunctionEntry(fn: FunctionType, errors: ValidationIssue[]): voi
     return;
   }
   const validExtensions = ['.js', '.ts', '.mjs'];
-  if (!validExtensions.some(ext => fn.entry.endsWith(ext))) {
+  // CEL functions use the entry as a CEL expression, not a file path.
+  // Python functions may use inline source or .py files.
+  const isCel = fn.runtime === 'cel';
+  const isPython = fn.runtime === 'python';
+  if (isCel) {
+    // CEL entry is an expression — no file extension required, just non-empty.
+    if (!fn.entry || fn.entry.trim().length === 0) {
+      errors.push({
+        severity: 'error',
+        code: 'FUNCTION_ENTRY_EXTENSION',
+        message: `FunctionType "${fn.name}" has empty CEL entry expression.`,
+        typeName: fn.name,
+      });
+    }
+  } else if (isPython) {
+    // Python entry may be inline source or a .py file path.
+    if (!fn.entry.endsWith('.py') && !fn.entry.includes('\n') && !/^(import |from |def |class |print\()/.test(fn.entry.trim())) {
+      // Not inline source and not a .py file — check if it's a file path
+      if (!validExtensions.some(ext => fn.entry.endsWith(ext))) {
+        errors.push({
+          severity: 'error',
+          code: 'FUNCTION_ENTRY_EXTENSION',
+          message: `FunctionType "${fn.name}" entry "${fn.entry}" must be a .py file or inline Python source.`,
+          typeName: fn.name,
+        });
+      }
+    }
+  } else if (!validExtensions.some(ext => fn.entry.endsWith(ext))) {
     errors.push({
       severity: 'error',
       code: 'FUNCTION_ENTRY_EXTENSION',

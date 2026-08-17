@@ -1,0 +1,35 @@
+# NHS Acute Domain Pack — Functions
+#
+# CEL-based functions for clinical risk scoring.
+# These demonstrate the @function directive with per-object ReBAC:
+# each function takes a Patient @param and is authorized against
+# the patient object before execution.
+
+extend schema @namespace(name: "nhs.acute", version: "0.2.0")
+
+# Compute a triage priority score from the patient's triage category
+# and a manually-assigned severity multiplier.
+# Authorized per-patient via can_compute_triage_score on Patient.
+type ComputeTriageScore @function(
+  runtime: "cel",
+  entry: "triageScore * severityMultiplier",
+  requiredRoles: "clinician,nurse_in_charge"
+) {
+  # The patient to score — an ObjectType @param triggers per-object ReBAC.
+  patient: Patient! @param
+  # The patient's triage category score (1-5, where 1 is most urgent).
+  triageScore: Int! @param
+  # A severity multiplier (1.0 = normal, 2.0 = high concern).
+  severityMultiplier: Float! @param
+}
+
+# Compute length of stay in days from admission date.
+# Authorized per-patient via can_compute_length_of_stay on Patient.
+type ComputeLengthOfStay @function(
+  runtime: "cel",
+  entry: "daysSinceAdmission",
+  requiredRoles: "clinician,ward_clerk"
+) {
+  patient: Patient! @param
+  daysSinceAdmission: Int! @param
+}

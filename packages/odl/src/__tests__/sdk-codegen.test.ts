@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { parseOdl } from '../parser/index.js';
 import { generateSdk } from '../codegen/sdk.js';
+import { generateGraphQLSchema } from '../codegen/index.js';
 import { NHS_ACUTE_ODL } from './fixtures/nhs-acute-odl.js';
 
 // ─── Helpers ───
@@ -251,8 +252,54 @@ describe('TypeScript SDK codegen', () => {
       const code = getIndexTs();
       expect(code).toContain('get patient()');
       expect(code).toContain('get: (id: string): Promise<Patient | null>');
-      expect(code).toContain('list: (filter?: PatientFilter, pagination?: PaginationArgs, asOf?: string): Promise<PatientConnection>');
+      expect(code).toContain('list: (filter?: PatientFilter, pagination?: PaginationArgs, asOf?: string, orderBy?: PatientOrderBy): Promise<PatientConnection>');
       expect(code).toContain('onChange: (id: string, callback: (event: ChangeEvent<Patient>) => void): Subscription');
+    });
+
+    it('sends orderBy as a declared GraphQL variable on the list query', () => {
+      const code = getIndexTs();
+      // The variable must be DECLARED and PASSED, not just accepted by the TS
+      // signature — an undeclared $orderBy is a validation error at the server
+      // and a silently unsorted page if it is merely dropped.
+      expect(code).toContain('$orderBy: PatientOrderBy');
+      expect(code).toContain('orderBy: $orderBy');
+    });
+
+    it('offers only order-by fields the SDL input also declares', () => {
+      const code = getIndexTs();
+      const sdl = generateGraphQLSchema(parseOdl(NHS_ACUTE_ODL));
+
+      const names = (block: string, sep: string): string[] =>
+        block.split('\n').map(l => l.trim()).filter(Boolean)
+          .map(l => l.split(sep)[0]!.trim()).sort();
+
+      // Every object type, not just Patient: the two generators apply the same
+      // rule in two places, and a drift on any one type ships a query the
+      // server rejects.
+      for (const type of ['Patient', 'Ward', 'Bed', 'Consultant']) {
+        const sdkBlock = new RegExp(`export interface ${type}OrderBy \\{([^}]*)\\}`).exec(code)?.[1] ?? '';
+        const sdlBlock = new RegExp(`input ${type}OrderBy \\{([^}]*)\\}`).exec(sdl)?.[1] ?? '';
+        expect(sdkBlock, `${type} missing from SDK`).not.toBe('');
+        expect(sdlBlock, `${type} missing from SDL`).not.toBe('');
+
+        // Equality, not subset: a field the SDK omits is a sort the caller
+        // cannot reach, and one it invents is an unknown-field error at the
+        // server — for something the SDK's own types promised.
+        expect(names(sdkBlock, '?'), `${type}OrderBy drifted from the SDL`)
+          .toEqual(names(sdlBlock, ':'));
+      }
+    });
+
+    it('excludes computed fields from orderBy, matching the SDL input', () => {
+      const code = getIndexTs();
+      // Ward.currentOccupancy is @computed. The engine CAN sort on it (it
+      // materialises candidates and sorts in memory), but the SDL input does
+      // not accept one, so offering it here would generate a query the server
+      // refuses. Widening this is an SDL change first, and this test is what
+      // makes the two move together.
+      const sdkBlock = /export interface WardOrderBy \{([^}]*)\}/.exec(code)?.[1] ?? '';
+      expect(sdkBlock).not.toBe('');
+      expect(sdkBlock).not.toMatch(/currentOccupancy/);
     });
 
     it('generates ward accessor', () => {

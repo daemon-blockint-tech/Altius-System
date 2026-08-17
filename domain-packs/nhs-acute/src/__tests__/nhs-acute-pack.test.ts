@@ -61,6 +61,7 @@ const ODL_FILES = [
   { kind: 'pack' as const, file: 'transfer.odl' },
   { kind: 'pack' as const, file: 'links.odl' },
   { kind: 'pack' as const, file: 'actions.odl' },
+  { kind: 'pack' as const, file: 'functions.odl' },
 ];
 
 /** NHS pack-only ODL file names (for pack.yaml manifest checks). */
@@ -574,7 +575,7 @@ describe('NHS Acute Domain Pack — pack.yaml manifest', () => {
     const pack = parseYaml(content) as Record<string, unknown>;
 
     const schemaFiles = pack['schema'] as string[];
-    expect(schemaFiles).toHaveLength(10);
+    expect(schemaFiles).toHaveLength(11);
     for (const odlFile of PACK_ODL_FILES) {
       expect(schemaFiles).toContain(`schema/${odlFile}`);
     }

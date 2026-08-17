@@ -196,6 +196,9 @@ function generateSharedTypes(): string {
     '  cursor: string;',
     '}',
     '',
+    '/** Matches the SDL `enum SortDirection`. */',
+    "export type SortDirection = 'ASC' | 'DESC';",
+    '',
     'export interface ActionError {',
     '  code: string;',
     '  message: string;',
@@ -360,6 +363,37 @@ function generateFilterInterface(obj: ObjectType, knownEnums: Set<string>): stri
   return lines.join('\n');
 }
 
+/**
+ * Fields the SDL's `${Name}OrderBy` input accepts.
+ *
+ * MUST mirror generateOrderBy in codegen/index.ts — the same non-link,
+ * non-computed scalar restricted to orderable types or enums. A field this
+ * offers that the SDL input lacks is not a loose type, it is a query the
+ * server rejects at validation: the caller gets "unknown field" for something
+ * the SDK told them existed.
+ *
+ * Computed fields are excluded here because the SDL excludes them. The engine
+ * CAN now sort on a computed field (it materialises candidates and sorts in
+ * memory), so this is the remaining half of that capability — widening it is a
+ * change to the SDL input first, and to this only in step with it.
+ */
+const SDK_ORDERABLE_TYPES = new Set(['ID', 'String', 'Int', 'Float', 'Date', 'DateTime', 'Duration', 'URI']);
+
+function generateOrderByInterface(obj: ObjectType, knownEnums: Set<string>): string {
+  const lines: string[] = [];
+  lines.push(`export interface ${obj.name}OrderBy {`);
+
+  for (const field of obj.fields) {
+    if (isLinkField(field) || isComputedField(field)) continue;
+    if (SDK_ORDERABLE_TYPES.has(field.type.name) || knownEnums.has(field.type.name)) {
+      lines.push(`  ${field.name}?: SortDirection;`);
+    }
+  }
+
+  lines.push('}');
+  return lines.join('\n');
+}
+
 function generateObjectAccessor(obj: ObjectType, schema: ParsedSchema): string {
   const name = obj.name;
   const lower = lowerFirst(name);
@@ -372,8 +406,8 @@ function generateObjectAccessor(obj: ObjectType, schema: ParsedSchema): string {
     `        this.query<Record<string, unknown>>(\`query { ${lower}(id: "\${id}") { ${fields} } }\`)`,
     `          .then((d) => (d?.['${lower}'] ?? null) as ${name} | null),`,
     '',
-    `      list: (filter?: ${name}Filter, pagination?: PaginationArgs, asOf?: string): Promise<${name}Connection> =>`,
-    `        this.query<Record<string, unknown>>(\`query($filter: ${name}Filter, $first: Int, $after: String, $asOf: DateTime) { ${lower}s(filter: $filter, first: $first, after: $after, asOf: $asOf) { edges { node { ${fields} } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }\`, { filter, first: pagination?.first, after: pagination?.after, asOf })`,
+    `      list: (filter?: ${name}Filter, pagination?: PaginationArgs, asOf?: string, orderBy?: ${name}OrderBy): Promise<${name}Connection> =>`,
+    `        this.query<Record<string, unknown>>(\`query($filter: ${name}Filter, $orderBy: ${name}OrderBy, $first: Int, $after: String, $asOf: DateTime) { ${lower}s(filter: $filter, orderBy: $orderBy, first: $first, after: $after, asOf: $asOf) { edges { node { ${fields} } cursor } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }\`, { filter, orderBy, first: pagination?.first, after: pagination?.after, asOf })`,
     `          .then((d) => d?.['${lower}s'] as ${name}Connection),`,
     '',
     `      onChange: (id: string, callback: (event: ChangeEvent<${name}>) => void): Subscription =>`,
@@ -875,6 +909,8 @@ export function generateSdk(schema: ParsedSchema): SdkOutput {
     sections.push(generateConnectionType(obj.name));
     sections.push('');
     sections.push(generateFilterInterface(obj, knownEnums));
+    sections.push('');
+    sections.push(generateOrderByInterface(obj, knownEnums));
     sections.push('');
   }
 

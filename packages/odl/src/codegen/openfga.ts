@@ -147,6 +147,47 @@ export function deriveActionAuthzMapping(
   };
 }
 
+/** How a function is ReBAC-authorized: a relation on the object a @param names. */
+export interface FunctionAuthzMapping {
+  /** FGA relation checked on the target object (e.g. `can_compute_score`). */
+  relation: string;
+  /** FGA object type, snake_case. */
+  objectType: string;
+  /** The function @param holding the target object's id. */
+  objectIdParam: string;
+}
+
+/**
+ * Derive how a FunctionType is ReBAC-authorized, or `undefined` when it has
+ * no ObjectType-typed `@param` to check a relation against.
+ *
+ * Mirrors `deriveActionAuthzMapping` but for functions: the first
+ * ObjectType-typed field becomes the authorization target, and the
+ * relation is derived from the function name (prefixed with `can_` to
+ * distinguish from action relations).
+ */
+export function deriveFunctionAuthzMapping(
+  fn: {
+    name: string;
+    fields: readonly { name: string; type: { name: string }; directives: readonly { kind: string }[] }[];
+  },
+  objectTypeNames: Set<string>,
+): FunctionAuthzMapping | undefined {
+  const objectParam = fn.fields.find(
+    (f) => f.directives.some((d) => d.kind === 'param') && objectTypeNames.has(f.type.name),
+  );
+  if (!objectParam) return undefined;
+
+  // Function relations are prefixed to distinguish from action relations:
+  // can_compute_risk_score vs can_admit
+  const relation = 'can_' + toSnakeCase(fn.name);
+  return {
+    relation,
+    objectType: toSnakeCase(objectParam.type.name),
+    objectIdParam: objectParam.name,
+  };
+}
+
 function actionToPermissionName(
   actionName: string,
   _targetTypeName: string,

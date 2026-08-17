@@ -1,4 +1,5 @@
 import type { ObjectManager, LinkManager, ObjectSetManager, FunctionExecutor, FunctionRegistry } from '@altius/engine';
+import type { FunctionAuthzMapping } from '@altius/odl';
 import type { ActionExecutor, ActionManifest } from '@altius/actions';
 import type {
   AuthorizationService,
@@ -117,6 +118,14 @@ export interface ApiDependencies {
    * testFunctionRevision/rollbackFunction mutations are registered.
    */
   functionRegistry?: FunctionRegistry;
+  /**
+   * Per-function ReBAC authorization mappings, derived from the ODL schema.
+   * Maps function name → FGA relation + object type + objectIdParam.
+   * When present, invokeFunction checks the relation on the target object
+   * BEFORE the role-membership gate, so a function with an ObjectType @param
+   * is authorized per-object (like actions) rather than by role alone.
+   */
+  functionAuthzMappings?: Map<string, FunctionAuthzMapping>;
 }
 
 /**

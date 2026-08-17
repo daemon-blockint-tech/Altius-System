@@ -43,3 +43,21 @@ export {
   type PipelineResult,
   type PipelineConfig,
 } from './function-pipeline.js';
+
+export {
+  applySandboxProfile,
+  validateSandboxProfile,
+  DEFAULT_SANDBOX_PROFILE,
+  type SandboxProfile,
+  type FsRule,
+  type NetworkRule,
+  type SandboxApplication,
+} from './sandbox-profile.js';
+
+export {
+  WebhookPipelineTrigger,
+  type WebhookTriggerConfig,
+  type WebhookPipelineMapping,
+  type WebhookResult,
+  type WebhookProvider,
+} from './webhook-pipeline-trigger.js';
