@@ -171,19 +171,18 @@ export function FacilitiesScreen({
 
   if (status === 'error') {
     return (
-      <main className="shell__main">
-        <header className="main__header" role="alert">
-          <h1 className="main__title">Facility</h1>
+      <main className="ed-main">
+        <div className="ed-error" role="alert">
           <p>Could not load facilities.</p>
-          <p style={{ font: '400 13px var(--font-mono)', color: 'var(--muted)', marginBottom: '16px' }}>{error}</p>
+          <p>{error}</p>
           <button
             type="button"
-            className="trace-bar__link"
+            className="ed-trace__link"
             onClick={() => void fetchPage(cursor, sort ? { [sort.key]: sort.direction } as FacilityOrderBy : null)}
           >
             Retry
           </button>
-        </header>
+        </div>
       </main>
     );
   }
@@ -192,55 +191,55 @@ export function FacilitiesScreen({
   const total = connection?.totalCount ?? 0;
 
   return (
-    <main className="shell__main">
-      <header className="main__header">
-        <span className="main__eyebrow">SUPPLY.CHAIN · OBJECT TYPE</span>
-        <h1 className="main__title">Facility</h1>
-        <p className="main__lede">
+    <main className="ed-main">
+      <header className="ed-main__header">
+        <span className="ed-main__eyebrow">SUPPLY.CHAIN · OBJECT TYPE</span>
+        <h1 className="ed-main__title">Facility</h1>
+        <p className="ed-main__lede">
           Six object types load from this pack. Facility is where inventory, shipments and
           disruption meet. The list below is scoped by the <code>assigned</code> relation —
           rows you hold no relation to are removed by the ReBAC pre-filter before the page is built.
         </p>
 
         {stats && (
-          <div className="stats-strip">
-            <div className="stats-strip__cell">
-              <span className="stats-strip__label">VISIBLE</span>
-              <span className="stats-strip__value">
+          <div className="ed-stat-strip">
+            <div className="ed-stat ed-stat--first">
+              <span className="ed-stat__label">VISIBLE</span>
+              <span className="ed-stat__value">
                 {stats.visible}
-                <span className="stats-strip__unit"> / {stats.total}</span>
+                <span className="ed-stat__unit"> / {stats.total}</span>
               </span>
             </div>
-            <div className="stats-strip__cell">
-              <span className="stats-strip__label">DISRUPTED</span>
-              <span className="stats-strip__value">{stats.disrupted}</span>
+            <div className="ed-stat">
+              <span className="ed-stat__label">DISRUPTED</span>
+              <span className="ed-stat__value">{stats.disrupted}</span>
             </div>
-            <div className="stats-strip__cell">
-              <span className="stats-strip__label">MEAN UTILISATION</span>
-              <span className="stats-strip__value">
+            <div className="ed-stat">
+              <span className="ed-stat__label">MEAN UTILISATION</span>
+              <span className="ed-stat__value">
                 {stats.meanUtilisation}
-                <span className="stats-strip__unit">%</span>
+                <span className="ed-stat__unit">%</span>
               </span>
             </div>
-            <div className="stats-strip__cell">
-              <span className="stats-strip__label">CDC LAG</span>
-              <span className="stats-strip__value">
+            <div className="ed-stat ed-stat--last">
+              <span className="ed-stat__label">CDC LAG</span>
+              <span className="ed-stat__value">
                 {live ? stats.cdcLagSeconds : '—'}
-                <span className="stats-strip__unit">s</span>
+                <span className="ed-stat__unit">s</span>
               </span>
             </div>
           </div>
         )}
 
-        <div className="filter-bar">
-          <div className="filter-bar__chips">
+        <div className="ed-filter-bar">
+          <div className="ed-filter-pills">
             {activeFilters.flatMap(af =>
               af.values.map(v => (
-                <span key={`${af.field}=${v}`} className="filter-chip">
+                <span key={`${af.field}=${v}`} className="ed-filter-pill">
                   {af.field} = {v}{' '}
                   <button
                     type="button"
-                    className="filter-chip__remove"
+                    className="ed-filter-pill__remove"
                     onClick={() => onRemoveFilter(af.field, v)}
                     aria-label={`Remove filter ${af.field} = ${v}`}
                   >
@@ -249,17 +248,17 @@ export function FacilitiesScreen({
                 </span>
               )),
             )}
-            <button type="button" className="filter-add" onClick={() => onAddFilter('status')}>
+            <button type="button" className="ed-filter-pill ed-filter-pill--add" onClick={() => onAddFilter('status')}>
               + status
             </button>
-            <button type="button" className="filter-add" onClick={() => onAddFilter('type')}>
+            <button type="button" className="ed-filter-pill ed-filter-pill--add" onClick={() => onAddFilter('type')}>
               + type
             </button>
           </div>
-          <label className="filter-search">
-            <span className="filter-search__icon">⌕</span>
+          <label className="ed-search">
+            <span className="ed-search__icon">⌕</span>
             <input
-              className="filter-search__input"
+              className="ed-search__input"
               placeholder="search name or code"
               value={search}
               onChange={e => {
@@ -272,12 +271,12 @@ export function FacilitiesScreen({
         </div>
       </header>
 
-      <div style={{ padding: '8px 44px 40px', maxWidth: '1180px' }}>
+      <div className="ed-table-wrap">
         {status === 'loading' && rows.length === 0 ? (
-          <div className="loading">Loading facilities…</div>
+          <p className="ed-loading">Loading facilities…</p>
         ) : (
           <>
-            <table className="editorial-table">
+            <table className="ed-table">
               <thead>
                 <tr>
                   <th style={{ cursor: 'pointer' }} onClick={() => toggleSort('name')}>
@@ -298,49 +297,49 @@ export function FacilitiesScreen({
                 ))}
                 {rows.length === 0 && (
                   <tr>
-                    <td colSpan={4} style={{ padding: '24px 0', color: 'var(--faint)' }}>
+                    <td colSpan={4} className="ed-cell-empty" style={{ padding: '24px 0' }}>
                       No facilities to show.
                     </td>
                   </tr>
                 )}
                 {stats && total < stats.total && (
-                  <tr>
-                    <td colSpan={4} className="filtered-notice">
-                      {stats.total - total} facilities are not listed. You hold no{' '}
-                      <code>assigned</code> relation to them, so they were filtered before the query
-                      ran — absent, not refused. <a href="#">See why</a>
+                  <tr className="ed-table__absent-row">
+                    <td colSpan={4}>
+                      <span className="ed-table__absent-note">
+                        {stats.total - total} facilities are not listed. You hold no{' '}
+                        <code>assigned</code> relation to them, so they were filtered before the query
+                        ran — absent, not refused. <a href="#" className="ed-table__absent-link">See why</a>
+                      </span>
                     </td>
                   </tr>
                 )}
               </tbody>
             </table>
 
-            <nav className="pagination" aria-label="Facilities pagination">
+            <nav className="ed-pagination" aria-label="Facilities pagination">
               <button
                 type="button"
-                className="pagination__prev"
+                className={`ed-pagination__btn${cursorStack.length === 0 ? ' ed-pagination__btn--disabled' : ''}`}
                 onClick={goPrevious}
                 disabled={cursorStack.length === 0 || status === 'loading'}
-                style={{ border: 'none', background: 'none', cursor: cursorStack.length === 0 ? 'default' : 'pointer' }}
               >
                 ← previous
               </button>
               <button
                 type="button"
-                className="pagination__next"
+                className={`ed-pagination__btn${!connection?.pageInfo.hasNextPage ? ' ed-pagination__btn--disabled' : ''}`}
                 onClick={goNext}
                 disabled={!connection?.pageInfo.hasNextPage || status === 'loading'}
-                style={{ border: 'none', background: 'none', cursor: connection?.pageInfo.hasNextPage ? 'pointer' : 'default' }}
               >
                 next {PAGE_SIZE} →
               </button>
-              <span className="pagination__count">
+              <span className="ed-pagination__count">
                 showing {rows.length > 0 ? `1–${rows.length}` : '0'} of {total}
               </span>
             </nav>
 
             {!live && (
-              <p role="status" style={{ marginTop: 12, color: 'var(--viz-pressure)' }}>
+              <p role="status" style={{ marginTop: 12, color: 'var(--ed-pressure)' }}>
                 Live updates disconnected — this list may be out of date.
               </p>
             )}
@@ -368,20 +367,20 @@ function FacilityRow({
   const utilPct = facility.currentUtilization ?? 0;
   const utilClass =
     facility.status === 'DISRUPTED'
-      ? 'util-bar__fill--disrupted'
+      ? 'ed-util__fill--disrupted'
       : utilPct >= 85
-        ? 'util-bar__fill--pressure'
-        : 'util-bar__fill--healthy';
+        ? 'ed-util__fill--pressure'
+        : 'ed-util__fill--healthy';
 
   const statusGlyph =
     facility.status === 'DISRUPTED' ? (
-      <span className="status-dot status-dot--disrupted" />
+      <span className="ed-status__dot ed-status__dot--disrupted" />
     ) : facility.status === 'MAINTENANCE' ? (
-      <span className="status-dot status-dot--maintenance" />
+      <span className="ed-status__dot ed-status__dot--maintenance" />
     ) : facility.status === 'CLOSED' ? (
-      <span className="status-dot status-dot--closed" />
+      <span className="ed-status__dot ed-status__dot--closed" />
     ) : (
-      <span className="status-dot" />
+      <span className="ed-status__dot" />
     );
 
   const capacityRedacted = facility._redactedFields?.includes('capacity') ?? false;
@@ -394,8 +393,8 @@ function FacilityRow({
     >
       <td>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-          <span className="editorial-table__name">{facility.name ?? '—'}</span>
-          <span className="editorial-table__code">
+          <span className="ed-table__row-name">{facility.name ?? '—'}</span>
+          <span className="ed-table__row-code">
             {facility.code ?? '—'} · {facility.type ?? '—'} · {facility.country ?? '—'}
           </span>
         </div>
@@ -404,44 +403,44 @@ function FacilityRow({
         <span
           className={
             facility.status === 'DISRUPTED'
-              ? 'editorial-table__status editorial-table__status--disrupted'
-              : 'editorial-table__status'
+              ? 'ed-status ed-status--disrupted'
+              : 'ed-status'
           }
         >
           {statusGlyph}
           {facility.status ?? '—'}
         </span>
       </td>
-      <td style={{ textAlign: 'right' }}>
+      <td className="ed-table__numeric">
         {facility._consentRestricted ? (
-          <span className="cell-consent">consent withheld</span>
+          <span className="ed-cell-consent">consent withheld</span>
         ) : capacityRedacted ? (
-          <span className="cell-redacted">redacted</span>
+          <span className="ed-cell-redacted">redacted</span>
         ) : facility.capacity != null ? (
-          <span className="numeral" style={{ font: '450 13px var(--font-mono)' }}>
+          <span>
             {facility.capacity.toLocaleString()}
           </span>
         ) : (
-          <span className="cell-empty">—</span>
+          <span className="ed-cell-empty">—</span>
         )}
       </td>
       <td>
         {facility._consentRestricted ? (
-          <span className="cell-consent">consent withheld</span>
+          <span className="ed-cell-consent">consent withheld</span>
         ) : utilRedacted ? (
-          <span className="cell-redacted">redacted</span>
+          <span className="ed-cell-redacted">redacted</span>
         ) : facility.currentUtilization != null ? (
-          <div className="util-bar">
-            <div className="util-bar__track">
+          <div className="ed-util">
+            <div className="ed-util__track">
               <div
-                className={`util-bar__fill ${utilClass}`}
+                className={`ed-util__fill ${utilClass}`}
                 style={{ width: `${Math.min(utilPct, 100)}%` }}
               />
             </div>
-            <span className="util-bar__pct">{utilPct}%</span>
+            <span className="ed-util__pct">{utilPct}%</span>
           </div>
         ) : (
-          <span className="cell-empty">—</span>
+          <span className="ed-cell-empty">—</span>
         )}
       </td>
     </tr>

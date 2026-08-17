@@ -43,33 +43,33 @@ export interface TraceBarProps {
 
 export function TraceBar({ trace, label = 'LAST READ', onOpenTrace }: TraceBarProps): ReactNode {
   return (
-    <footer className="shell__trace-bar">
-      <span className="trace-bar__label">{label}</span>
-      <div className="trace-bar__stages">
+    <footer className="ed-trace" role="contentinfo">
+      <span className="ed-trace__label">{label}</span>
+      <div className="ed-trace__stages">
         {PIPELINE_STAGES.map(stage => (
           <span
             key={stage}
             className={
               trace && stage === trace.activeStage
-                ? 'trace-bar__stage trace-bar__stage--active'
-                : 'trace-bar__stage'
+                ? 'ed-trace__stage ed-trace__stage--active'
+                : 'ed-trace__stage'
             }
           >
             {stage}
           </span>
         ))}
         {trace && (
-          <span className="trace-bar__meta">
+          <span className="ed-trace__meta">
             {trace.durationMs}ms · audit {trace.auditId}
           </span>
         )}
       </div>
       {onOpenTrace ? (
-        <button type="button" className="trace-bar__link" onClick={onOpenTrace}>
+        <button type="button" className="ed-trace__link" onClick={onOpenTrace}>
           open trace
         </button>
       ) : (
-        <a href="#" className="trace-bar__link">open trace</a>
+        <a href="#" className="ed-trace__link">open trace</a>
       )}
     </footer>
   );

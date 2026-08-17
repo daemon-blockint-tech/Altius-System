@@ -346,16 +346,16 @@ function renderScreen(
   // NHS acute — patient worklist (the existing screen, in the shell).
   if (screenId === 'facilities' && packId === 'nhs-acute') {
     return (
-      <main className="shell__main">
-        <header className="main__header">
-          <span className="main__eyebrow">NHS.ACUTE · OBJECT TYPE</span>
-          <h1 className="main__title">Patients</h1>
-          <p className="main__lede">
+      <main className="ed-main">
+        <header className="ed-main__header">
+          <span className="ed-main__eyebrow">NHS.ACUTE · OBJECT TYPE</span>
+          <h1 className="ed-main__title">Patients</h1>
+          <p className="ed-main__lede">
             The patient worklist. Reads are FGA-filtered, field-redacted and consent-gated
             server-side — the UI adds no data access of its own.
           </p>
         </header>
-        <div style={{ padding: '8px 44px 40px', maxWidth: '1180px' }}>
+        <div className="ed-table-wrap">
           <ObjectTable<Patient>
             caption="Patients"
             columns={[
@@ -391,11 +391,11 @@ function renderScreen(
   const allScreens = JOBS.flatMap(j => j.screens);
   const match = allScreens.find(s => s.id === screenId);
   return (
-    <main className="shell__main">
-      <header className="main__header">
-        <span className="main__eyebrow">{packId.toUpperCase().replace('-', '.')} · SCREEN</span>
-        <h1 className="main__title">{match?.label ?? screenId}</h1>
-        <p className="main__lede">
+    <main className="ed-main">
+      <header className="ed-main__header">
+        <span className="ed-main__eyebrow">{packId.toUpperCase().replace('-', '.')} · SCREEN</span>
+        <h1 className="ed-main__title">{match?.label ?? screenId}</h1>
+        <p className="ed-main__lede">
           This screen is defined in the navigation but its data surface is not yet wired.
           The governed API endpoints exist — this placeholder will be replaced with a live view.
         </p>

@@ -21,7 +21,7 @@ export interface GovernancePrincipal {
   relationsSummary: ReactNode;
 }
 
-export interface GovernanceHiddenItem {
+export interface GovernanceHidden {
   title: string;
   detail: ReactNode;
 }
@@ -33,53 +33,55 @@ export interface GovernanceEvent {
 
 export interface GovernanceRailProps {
   principal: GovernancePrincipal;
-  hidden: GovernanceHiddenItem[];
+  hidden: GovernanceHidden[];
   events: GovernanceEvent[];
   live: boolean;
 }
 
 export function GovernanceRail({ principal, hidden, events, live }: GovernanceRailProps): ReactNode {
   return (
-    <aside className="shell__governance-rail">
+    <aside className="ed-gov-rail" aria-label="Governance">
       {/* Signed in */}
       <div>
-        <span className="gov-rail__heading">SIGNED IN</span>
-        <p className="gov-rail__user-name">{principal.name}</p>
-        <p className="gov-rail__user-meta">
+        <span className="ed-gov-rail__label">SIGNED IN</span>
+        <p className="ed-gov-rail__user-name">{principal.name}</p>
+        <p className="ed-gov-rail__user-meta">
           {principal.email}<br />
           tenant {principal.tenant} · sub {principal.sub}
         </p>
-        <p className="gov-rail__user-relations">{principal.relationsSummary}</p>
+        <p className="ed-gov-rail__user-relations">{principal.relationsSummary}</p>
       </div>
 
-      <div className="gov-rail__divider" />
+      <div className="ed-gov-rail__divider" />
 
       {/* What this view hides */}
       <div>
-        <span className="gov-rail__heading">WHAT THIS VIEW HIDES</span>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <span className="ed-gov-rail__label">WHAT THIS VIEW HIDES</span>
+        <div>
           {hidden.map((item, i) => (
-            <div key={i} className="gov-rail__hidden-item">
-              <p className="gov-rail__hidden-title">{item.title}</p>
-              <p className="gov-rail__hidden-desc">{item.detail}</p>
+            <div key={i} className="ed-gov-hidden__item">
+              <p className="ed-gov-hidden__title">{item.title}</p>
+              <p className="ed-gov-hidden__detail">{item.detail}</p>
             </div>
           ))}
         </div>
       </div>
 
-      <div className="gov-rail__divider" />
+      <div className="ed-gov-rail__divider" />
 
       {/* Event feed */}
       <div>
-        <div className="gov-rail__feed-header">
-          <span className="gov-rail__heading" style={{ margin: 0 }}>EVENT FEED</span>
-          <span className="gov-rail__feed-live">{live ? 'live' : 'paused'}</span>
+        <div className="ed-gov-feed__header">
+          <span className="ed-gov-rail__label" style={{ marginBottom: 0 }}>
+            EVENT FEED
+          </span>
+          <span className="ed-gov-feed__live">{live ? 'live' : 'paused'}</span>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        <div className="ed-gov-feed__list">
           {events.map((event, i) => (
-            <div key={i} className="gov-rail__feed-item">
-              <span className="gov-rail__feed-time">{event.time}</span>
-              <span className="gov-rail__feed-text">{event.text}</span>
+            <div key={i} className="ed-gov-feed__event">
+              <span className="ed-gov-feed__time">{event.time}</span>
+              <span className="ed-gov-feed__text">{event.text}</span>
             </div>
           ))}
         </div>
