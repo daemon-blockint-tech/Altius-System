@@ -77,7 +77,19 @@ export interface FieldPredicate {
      * {@link GeoBoundingBox}; matches when the point's lat/lng fall inside the
      * (inclusive) box. Implemented by both providers without PostGIS.
      */
-    | 'within';
+    | 'within'
+    /**
+     * Spatial radius search for a GeoPoint field. `value` is a
+     * {@link GeoRadiusFilter}; matches when the point is within the given
+     * radius (in meters) of the centre point. Uses the Haversine formula.
+     */
+    | 'near'
+    /**
+     * Spatial polygon containment for a GeoPoint field. `value` is a
+     * {@link GeoPolygonFilter}; matches when the point falls inside the
+     * polygon (ray-casting algorithm).
+     */
+    | 'withinPolygon';
   value?: unknown;
 }
 
@@ -87,6 +99,22 @@ export interface GeoBoundingBox {
   minLng: number;
   maxLat: number;
   maxLng: number;
+}
+
+/** Radius filter for the `near` spatial predicate. */
+export interface GeoRadiusFilter {
+  /** Centre latitude. */
+  lat: number;
+  /** Centre longitude. */
+  lng: number;
+  /** Radius in meters. */
+  radiusMeters: number;
+}
+
+/** Polygon filter for the `withinPolygon` spatial predicate. */
+export interface GeoPolygonFilter {
+  /** Ordered list of polygon vertices (minimum 3). */
+  points: Array<{ lat: number; lng: number }>;
 }
 
 export interface LogicalPredicate {
@@ -155,6 +183,14 @@ export interface RequestContext {
   tenantId: string;
   actorId?: string;
   traceId?: string;
+  /**
+   * Ontology branch name. Defaults to 'main' when not specified.
+   *
+   * A branch is an isolated object graph: writes on a branch are visible
+   * only to reads on that branch until the branch is merged back to main.
+   * This enables what-if scenario analysis without affecting production data.
+   */
+  branch?: string;
 }
 
 // ---------------------------------------------------------------------------

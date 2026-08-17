@@ -908,7 +908,7 @@ function convertObjectType(objType: ObjectType): ObjectTypeDefinition {
     // Skip 'id' — handled as system column _id
     if (field.directives.some(d => d.kind === 'primary')) continue;
     // Skip computed fields — not stored
-    if (field.directives.some(d => d.kind === 'computed' || d.kind === 'reducer')) continue;
+    if (field.directives.some(d => d.kind === 'computed' || d.kind === 'reducer' || d.kind === 'timeSeries')) continue;
     // Skip @link virtual fields — resolved at query time
     if (field.directives.some(d => d.kind === 'link')) continue;
 

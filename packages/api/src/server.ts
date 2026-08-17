@@ -78,6 +78,9 @@ import { generateAuditRoutes } from './rest/audit-routes.js';
 import { generateLlmRoutes, generateWorkflowRoutes } from './rest/index.js';
 import { generateTraverseRoutes } from './rest/traverse-route.js';
 import { registerAttachmentRoutes } from './rest/attachment-routes.js';
+import { registerTimeSeriesRoutes } from './rest/timeseries-routes.js';
+import { registerBranchRoutes } from './rest/branch-routes.js';
+import { registerCommentRoutes } from './rest/comment-routes.js';
 import { readPlatformVersion } from './version.js';
 import { createFhirRouter } from './fhir/index.js';
 import { createCdmRouter } from './cdm/index.js';
@@ -1409,6 +1412,15 @@ async function main(): Promise<void> {
 
   // ── Attachment upload/download routes (raw body, not JSON) ──
   registerAttachmentRoutes(app, deps, authenticator, isDev);
+
+  // ── Time-series read/write routes ──
+  registerTimeSeriesRoutes(app, deps, authenticator, isDev);
+
+  // ── Branch management routes ──
+  registerBranchRoutes(app, deps, authenticator, isDev);
+
+  // ── Comments and collaboration routes ──
+  registerCommentRoutes(app, deps, authenticator, isDev);
 
   // ── OpenAPI spec at /api/v1/openapi.json ──
   // Stamp the served contract with the real platform version (root package.json)

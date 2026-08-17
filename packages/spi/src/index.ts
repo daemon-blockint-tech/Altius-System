@@ -19,6 +19,8 @@ export type {
   FilterExpression,
   FieldPredicate,
   GeoBoundingBox,
+  GeoRadiusFilter,
+  GeoPolygonFilter,
   LogicalPredicate,
   TraversalPath,
   TraversalStep,
@@ -67,6 +69,34 @@ export type { StorageProvider } from './storage-provider.js';
 
 // Blob Store (media/attachment properties)
 export type { BlobStore, AttachmentRef, BlobPutResult, BlobContent } from './blob-store.js';
+
+// Time Series Store (time-series properties)
+export type {
+  TimeSeriesStore,
+  TimeSeriesPoint,
+  TimeSeriesQuery,
+  TimeSeriesBucket,
+  TimeSeriesBucketPoint,
+  TimeSeriesResult,
+} from './time-series.js';
+
+// Branching (ontology branches, proposals, merge)
+export type {
+  BranchStore,
+  Branch,
+  MergeProposal,
+  MergeResult,
+} from './branching.js';
+
+// Comments and collaboration
+export type {
+  CommentStore,
+  Comment,
+  CommentQuery,
+  CommentListResult,
+  CommentNotification,
+} from './comments.js';
+export { parseMentions } from './comments.js';
 
 // LLM Client (Section AIP)
 export type {

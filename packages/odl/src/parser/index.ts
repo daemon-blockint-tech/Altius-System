@@ -399,6 +399,12 @@ function parseFieldDirective(d: DirectiveNode): FieldDirective | null {
         format: getStringArg(d, 'format'),
         hidden: getBooleanArg(d, 'hidden'),
       };
+    case 'timeSeries':
+      return {
+        kind: 'timeSeries',
+        retention: getStringArg(d, 'retention') ?? undefined,
+        defaultBucket: getStringArg(d, 'defaultBucket') ?? undefined,
+      };
     default:
       return null;
   }

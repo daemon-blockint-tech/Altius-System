@@ -214,6 +214,13 @@ export function validateSchema(schema: ParsedSchema): ValidationResult {
     validateReducers(ot, linkTypeMap, errors);
   }
 
+  // ─── Rule 19: @timeSeries fields are on numeric/string types and not combined with conflicting directives ───
+  for (const ot of schema.objectTypes) {
+    for (const field of ot.fields) {
+      validateTimeSeriesField(ot.name, field, errors);
+    }
+  }
+
   return {
     valid: errors.length === 0,
     errors,
@@ -969,6 +976,43 @@ function validateReducers(
         fieldName: field.name,
       });
     }
+  }
+}
+
+/**
+ * Rule 19: @timeSeries fields must be on numeric or string types, and must
+ * not combine with @primary, @link, @computed, @reducer, or @unique.
+ */
+function validateTimeSeriesField(
+  typeName: string,
+  field: FieldDefinition,
+  errors: ValidationIssue[],
+): void {
+  const ts = field.directives.find(d => d.kind === 'timeSeries');
+  if (!ts) return;
+
+  const allowedTypes = new Set(['Float', 'Int', 'String']);
+  if (!allowedTypes.has(field.type.name)) {
+    errors.push({
+      severity: 'error',
+      code: 'TIMESERIES_INVALID_TYPE',
+      message: `Field "${typeName}.${field.name}" has @timeSeries but is of type "${field.type.name}". @timeSeries is only allowed on Float, Int, or String.`,
+      typeName,
+      fieldName: field.name,
+    });
+  }
+
+  const conflicting = field.directives.filter(
+    d => d.kind === 'primary' || d.kind === 'link' || d.kind === 'computed' || d.kind === 'reducer' || d.kind === 'unique',
+  );
+  for (const d of conflicting) {
+    errors.push({
+      severity: 'error',
+      code: 'TIMESERIES_CONFLICT',
+      message: `Field "${typeName}.${field.name}" has @timeSeries which cannot be combined with @${d.kind}.`,
+      typeName,
+      fieldName: field.name,
+    });
   }
 }
 

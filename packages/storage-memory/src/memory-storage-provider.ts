@@ -183,6 +183,34 @@ function compareForRange(a: unknown, b: unknown): number | undefined {
   return undefined;
 }
 
+/**
+ * Haversine distance between two lat/lng points in meters.
+ */
+function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371000; // Earth radius in meters
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+/**
+ * Ray-casting point-in-polygon test. Returns true if (lat,lng) is inside
+ * the polygon defined by the ordered list of vertices.
+ */
+function pointInPolygon(lat: number, lng: number, points: Array<{ lat: number; lng: number }>): boolean {
+  let inside = false;
+  for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+    const xi = points[i]!.lng, yi = points[i]!.lat;
+    const xj = points[j]!.lng, yj = points[j]!.lat;
+    if (((yi > lat) !== (yj > lat)) && (lng < ((xj - xi) * (lat - yi)) / (yj - yi) + xi)) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
 function evaluateFieldPredicate(obj: Record<string, unknown>, pred: FieldPredicate, linkResolver?: LinkResolver): boolean {
   // Link-scoped filter: dotted field path.
   const dot = pred.field.indexOf('.');
@@ -240,6 +268,22 @@ function evaluateFieldPredicate(obj: Record<string, unknown>, pred: FieldPredica
         typeof box.minLng !== 'number' || typeof box.maxLng !== 'number'
       ) return false;
       return pt.lat >= box.minLat && pt.lat <= box.maxLat && pt.lng >= box.minLng && pt.lng <= box.maxLng;
+    }
+    case 'near': {
+      const filter = pred.value as { lat?: unknown; lng?: unknown; radiusMeters?: unknown } | null | undefined;
+      if (!filter || typeof val !== 'object' || val === null) return false;
+      const pt = val as { lat?: unknown; lng?: unknown };
+      if (typeof pt.lat !== 'number' || typeof pt.lng !== 'number') return false;
+      if (typeof filter.lat !== 'number' || typeof filter.lng !== 'number' || typeof filter.radiusMeters !== 'number') return false;
+      return haversineMeters(pt.lat, pt.lng, filter.lat, filter.lng) <= filter.radiusMeters;
+    }
+    case 'withinPolygon': {
+      const filter = pred.value as { points?: unknown } | null | undefined;
+      if (!filter || typeof val !== 'object' || val === null) return false;
+      const pt = val as { lat?: unknown; lng?: unknown };
+      if (typeof pt.lat !== 'number' || typeof pt.lng !== 'number') return false;
+      if (!Array.isArray(filter.points) || filter.points.length < 3) return false;
+      return pointInPolygon(pt.lat, pt.lng, filter.points as Array<{ lat: number; lng: number }>);
     }
     default:
       return false;

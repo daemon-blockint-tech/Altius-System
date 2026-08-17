@@ -10,7 +10,7 @@ import type {
   MarkingPolicy,
 } from '@altius/security';
 import type { ParsedSchema } from '@altius/odl';
-import type { RequestContext, StorageProvider, LLMClient, BlobStore } from '@altius/spi';
+import type { RequestContext, StorageProvider, LLMClient, BlobStore, TimeSeriesStore, BranchStore, CommentStore } from '@altius/spi';
 import { DataPurpose } from '@altius/spi';
 
 /**
@@ -150,6 +150,36 @@ export interface ApiDependencies {
    * properties cannot be written with actual blob content.
    */
   blobStore?: BlobStore;
+  /**
+   * Time-series store for @timeSeries properties. When present, REST
+   * endpoints for reading/writing time-series data are registered:
+   *   GET    /api/v1/{plural}/:id/series/:property
+   *   POST   /api/v1/{plural}/:id/series/:property
+   *   DELETE /api/v1/{plural}/:id/series/:property
+   * Absent → time-series endpoints are not registered.
+   */
+  timeSeriesStore?: TimeSeriesStore;
+  /**
+   * Branch store for ontology branching. When present, REST endpoints
+   * for branch management and merge proposals are registered:
+   *   GET/POST /api/v1/branches
+   *   GET/DELETE /api/v1/branches/:name
+   *   POST /api/v1/branches/:name/merge
+   *   GET/POST /api/v1/proposals
+   *   POST /api/v1/proposals/:id/submit|approve|reject
+   */
+  branchStore?: BranchStore;
+  /**
+   * Comment store for threads and @-mentions on ontology objects.
+   * When present, REST endpoints for comments and notifications are
+   * registered:
+   *   GET/POST /api/v1/{plural}/:id/comments
+   *   PUT/DELETE /api/v1/comments/:commentId
+   *   POST /api/v1/comments/:commentId/resolve|unresolve
+   *   GET /api/v1/notifications
+   *   POST /api/v1/notifications/:id/read
+   */
+  commentStore?: CommentStore;
 }
 
 /**

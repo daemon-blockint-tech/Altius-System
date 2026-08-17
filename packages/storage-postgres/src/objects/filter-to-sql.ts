@@ -174,6 +174,50 @@ function fieldPredicateToSqlFlat(pred: FieldPredicate, offset: number, tableAlia
         params: [box.minLat, box.maxLat, box.minLng, box.maxLng],
       };
     }
+    case 'near': {
+      // Haversine distance in meters: 6371000 * 2 * atan2(sqrt(a), sqrt(1-a))
+      const filter = pred.value as { lat: number; lng: number; radiusMeters: number };
+      const lat = `(${col}->>'lat')::float8`;
+      const lng = `(${col}->>'lng')::float8`;
+      const earthR = 6371000;
+      const dLat = `(RADIANS($${offset + 1} - ${lat}))`;
+      const dLng = `(RADIANS($${offset + 2} - ${lng}))`;
+      const a = `SIN(${dLat}/2)*SIN(${dLat}/2) + COS(RADIANS(${lat}))*COS(RADIANS($${offset + 1}))*SIN(${dLng}/2)*SIN(${dLng}/2)`;
+      const dist = `${earthR} * 2 * ATAN2(SQRT(${a}), SQRT(1-${a}))`;
+      return {
+        text: `${dist} <= $${offset + 3}`,
+        params: [filter.lng, filter.lat, filter.radiusMeters],
+      };
+    }
+    case 'withinPolygon': {
+      // Ray-casting in SQL: iterate polygon edges and count crossings.
+      // This uses a LATERAL query with generate_series for the edge loop.
+      const filter = pred.value as { points: Array<{ lat: number; lng: number }> };
+      const pts = filter.points;
+      if (pts.length < 3) return { text: 'FALSE', params: [] };
+      const lat = `(${col}->>'lat')::float8`;
+      const lng = `(${col}->>'lng')::float8`;
+      // Build a JSON array for the polygon and use a lateral subquery
+      const polyJson = JSON.stringify(pts.map(p => [p.lng, p.lat]));
+      return {
+        text: `EXISTS (
+          WITH poly AS (SELECT '${polyJson}'::json AS pts),
+          edges AS (
+            SELECT i,
+              (poly.pts->i->0->>0)::float8 AS xi,
+              (poly.pts->i->1->>0)::float8 AS yi,
+              (poly.pts->((i+1) % json_array_length(poly.pts))->0->>0)::float8 AS xj,
+              (poly.pts->((i+1) % json_array_length(poly.pts))->1->>0)::float8 AS yj
+            FROM poly, generate_series(0, json_array_length(poly.pts) - 1) AS i
+          )
+          SELECT 1 FROM edges
+          WHERE ((yi > ${lat}) != (yj > ${lat}))
+            AND (${lng} < (xj - xi) * (${lat} - yi) / (yj - yi) + xi)
+          HAVING COUNT(*) % 2 = 1
+        )`,
+        params: [],
+      };
+    }
     default:
       return { text: 'TRUE', params: [] };
   }

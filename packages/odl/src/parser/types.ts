@@ -165,7 +165,24 @@ export type FieldDirective =
   | DeprecatedDirective
   | TerminologyDirective
   | SearchableDirective
-  | DisplayDirective;
+  | DisplayDirective
+  | TimeSeriesDirective;
+
+/**
+ * Declares a field as a time-series property. The field type must be
+ * Float, Int, or String. The stored object property holds the latest
+ * point value; the full series is accessed via the TimeSeriesStore.
+ *
+ *   temperature: Float @timeSeries
+ *   status: String @timeSeries(retention: "30d")
+ */
+export interface TimeSeriesDirective {
+  kind: 'timeSeries';
+  /** How long to retain raw points. e.g. "30d", "1y". Default: unlimited. */
+  retention?: string;
+  /** Default bucket interval for queries. e.g. "1h", "5m". */
+  defaultBucket?: string;
+}
 
 // ─── Type Directives ───
 

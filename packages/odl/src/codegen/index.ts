@@ -80,7 +80,7 @@ function isLinkField(field: FieldDefinition): boolean {
 }
 
 function isComputedField(field: FieldDefinition): boolean {
-  return field.directives.some(d => d.kind === 'computed' || d.kind === 'reducer');
+  return field.directives.some(d => d.kind === 'computed' || d.kind === 'reducer' || d.kind === 'timeSeries');
 }
 
 /** Get scalar fields (non-link, non-computed) suitable for filters. */
