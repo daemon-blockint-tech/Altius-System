@@ -41,6 +41,17 @@ import { GraphQLError } from 'graphql';
 import { expressMiddleware } from '@apollo/server/express4';
 import { ApolloServerPluginDrainHttpServer } from '@apollo/server/plugin/drainHttpServer';
 import { MemoryStorageProvider } from '@altius/storage-memory';
+import {
+  InMemoryBlobStore,
+  InMemoryTimeSeriesStore,
+  InMemoryBranchStore,
+  InMemoryCommentStore,
+  InMemoryNotificationStore,
+  InMemoryEmbeddingStore,
+  InMemoryAlertingService,
+  InMemoryLLMUsageTracker,
+  InMemoryLLMRateLimiter,
+} from '@altius/storage-memory';
 import { PostgresStorageProvider, PostgresLineageStore, PostgresAuditStore, PostgresConsentStore, PostgresSchemaRegistry, PostgresObjectSetStore } from '@altius/storage-postgres';
 import {
   ObjectManager, LineageRecorder,
@@ -57,12 +68,14 @@ import {
   CelFunctionRuntime,
   ComputedFieldEvaluator,
   createLLMClient,
+  DefaultLLMGateway,
   LLMFunctionRuntime,
   WorkflowGraphBuilder,
   WorkflowMonitor,
   InMemoryWorkflowEventStore,
   InMemoryLineageStore,
 } from '@altius/engine';
+import type { ModelCatalogEntry } from '@altius/spi';
 import { ActionExecutor, CelClient, SideEffectExecutor } from '@altius/actions';
 import type { SecurityLayer, CelEvaluator, EventBus as SideEffectEventBus, HttpClient as SideEffectHttpClient, LinkTupleMap } from '@altius/actions';
 import { AuthorizationService, OidcAuthenticator, AuditWriter, MemoryAuditStore, ConsentService, MemoryConsentStore, MarkingPolicy } from '@altius/security';
@@ -181,6 +194,68 @@ function describeError(err: unknown): string {
     }
   }
   return String(err);
+}
+
+/**
+ * Build the LLM model catalog from the environment.
+ *
+ * The catalog is what the governed gateway exposes at GET /api/v1/llm/models.
+ * Entries are derived from the configured providers — the primary and
+ * fallback models are always listed, plus any extra models declared via
+ * LLM_EXTRA_MODELS (a JSON array of ModelCatalogEntry).
+ *
+ * Without this, the gateway would have an empty catalog and reject every
+ * chat completion with "Model not found in catalog".
+ */
+function buildLlmModelCatalog(env: NodeJS.ProcessEnv): ModelCatalogEntry[] {
+  const models: ModelCatalogEntry[] = [];
+
+  const primaryModel = (env['LLM_DAEMON_MODEL'] ?? env['LLM_MODEL'] ?? '').trim();
+  if (primaryModel) {
+    models.push({
+      rid: `daemon:${primaryModel}`,
+      displayName: `Daemon Protocol — ${primaryModel}`,
+      provider: 'daemon',
+      modelId: primaryModel,
+      contextWindow: 128_000,
+      maxOutputTokens: 8_192,
+      supportsStreaming: true,
+      supportsTools: false,
+      zdr: false,
+      geo: 'any',
+      enabled: true,
+    });
+  }
+
+  const fallbackModel = (env['LLM_OPENROUTER_MODEL'] ?? '').trim();
+  if (fallbackModel) {
+    models.push({
+      rid: `openrouter:${fallbackModel}`,
+      displayName: `OpenRouter — ${fallbackModel}`,
+      provider: 'openrouter',
+      modelId: fallbackModel,
+      contextWindow: 128_000,
+      maxOutputTokens: 8_192,
+      supportsStreaming: true,
+      supportsTools: false,
+      zdr: false,
+      geo: 'any',
+      enabled: true,
+    });
+  }
+
+  // Extra models declared via env (JSON array of ModelCatalogEntry).
+  const extraRaw = env['LLM_EXTRA_MODELS']?.trim();
+  if (extraRaw) {
+    try {
+      const extra = JSON.parse(extraRaw) as ModelCatalogEntry[];
+      if (Array.isArray(extra)) models.push(...extra);
+    } catch {
+      logger.warn('LLM_EXTRA_MODELS is not valid JSON, ignoring');
+    }
+  }
+
+  return models;
 }
 
 async function main(): Promise<void> {
@@ -988,6 +1063,30 @@ async function main(): Promise<void> {
   const stopSyncMetricsGauge = syncBoot.scheduler ? startSyncMetricsGauge(syncBoot.scheduler) : (() => {});
 
   // ── API Dependencies ──
+
+  // LLM client selected from LLM_PROVIDER / LLM_FALLBACK_PROVIDER /
+  // LLM_EMBEDDING_PROVIDER. The no-op when all are unset, so a platform with
+  // no provider still boots and answers 503 on the LLM routes.
+  const llmClient = createLLMClient();
+
+  // LLM gateway — wraps the client with a model catalog, usage tracking, and
+  // rate limiting. Only constructed when the client is configured (not the
+  // no-op); a deployment without a provider skips the gateway and the
+  // /api/v1/llm/models, /chat/completions, /usage, /rate-limits routes are
+  // not registered.
+  let llmGateway: ApiDependencies['llmGateway'];
+  if (llmClient.isConfigured()) {
+    const llmModels = buildLlmModelCatalog(process.env);
+    const usageTracker = new InMemoryLLMUsageTracker();
+    const rateLimiter = new InMemoryLLMRateLimiter();
+    llmGateway = new DefaultLLMGateway({
+      llmClient,
+      models: llmModels,
+      usageTracker,
+      rateLimiter,
+    });
+  }
+
   const deps: ApiDependencies = {
     schema,
     objectManager,
@@ -1013,14 +1112,29 @@ async function main(): Promise<void> {
     consentPurposes,
     ...(consentSubjectTypes ? { consentSubjectTypes } : {}),
     cdmEnabled,
-    // Selected from LLM_PROVIDER; the no-op when it is unset, so a platform
-    // with no provider still boots and answers 503 on the LLM routes.
-    llmClient: createLLMClient(),
+    llmClient,
+    // Governed LLM gateway — only when a provider is configured.
+    ...(llmGateway ? { llmGateway } : {}),
     // Workflow visualization & monitoring surfaces. Both are opt-in: a
     // deployment without an audit store or lineage store does not register
     // the workflow routes.
     ...(workflowGraphBuilder ? { workflowGraphBuilder } : {}),
     workflowMonitor,
+
+    // ── In-memory stores for optional REST surfaces ──
+    // These are in-memory by default (lost on restart, not shared across
+    // pods). A production deployment replaces them with Postgres-backed
+    // implementations when persistence is required. The REST routes are
+    // registered unconditionally — each route handler checks for the dep
+    // and returns 503 when absent, so omitting a store here is safe but
+    // the endpoint will not serve data.
+    blobStore: new InMemoryBlobStore(),
+    timeSeriesStore: new InMemoryTimeSeriesStore(),
+    branchStore: new InMemoryBranchStore(),
+    commentStore: new InMemoryCommentStore(),
+    notificationStore: new InMemoryNotificationStore(),
+    embeddingStore: new InMemoryEmbeddingStore(),
+    alertingService: new InMemoryAlertingService(),
   };
 
   // ── Express + HTTP Server ──
