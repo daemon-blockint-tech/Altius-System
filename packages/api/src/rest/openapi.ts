@@ -727,6 +727,72 @@ function platformPaths(): Record<string, unknown> {
         },
       },
     },
+    // ── Data Freshness ──
+    '/api/v1/data-freshness/sync': {
+      post: {
+        tags: ['DataFreshness'],
+        summary: 'Record a sync completion for an object type or datasource',
+        operationId: 'recordDataFreshnessSync',
+        requestBody: { required: true, content: jsonObject },
+        responses: {
+          '201': { description: 'Freshness record', content: jsonObject },
+          '400': { description: 'Validation error' },
+          '401': unauthorized,
+        },
+      },
+    },
+    '/api/v1/data-freshness/types/{type}': {
+      get: {
+        tags: ['DataFreshness'],
+        summary: 'Get freshness for an object type',
+        operationId: 'getFreshnessForType',
+        parameters: [{ name: 'type', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: {
+          '200': { description: 'Freshness record', content: jsonObject },
+          '401': unauthorized,
+          '404': { description: 'Not found' },
+        },
+      },
+      delete: {
+        tags: ['DataFreshness'],
+        summary: 'Delete a freshness record for an object type',
+        operationId: 'deleteFreshnessForType',
+        parameters: [{ name: 'type', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: {
+          '204': { description: 'Deleted' },
+          '401': unauthorized,
+        },
+      },
+    },
+    '/api/v1/data-freshness': {
+      get: {
+        tags: ['DataFreshness'],
+        summary: 'Query freshness records',
+        operationId: 'queryFreshness',
+        parameters: [
+          { name: 'objectType', in: 'query', schema: { type: 'string' } },
+          { name: 'datasource', in: 'query', schema: { type: 'string' } },
+          { name: 'maxAgeSeconds', in: 'query', schema: { type: 'integer' } },
+          { name: 'minAgeSeconds', in: 'query', schema: { type: 'integer' } },
+        ],
+        responses: {
+          '200': { description: 'Freshness records', content: jsonObject },
+          '401': unauthorized,
+        },
+      },
+    },
+    '/api/v1/data-freshness/summary': {
+      get: {
+        tags: ['DataFreshness'],
+        summary: 'Get a freshness summary for the tenant',
+        operationId: 'getFreshnessSummary',
+        parameters: [{ name: 'maxAgeSeconds', in: 'query', schema: { type: 'integer' } }],
+        responses: {
+          '200': { description: 'Freshness summary', content: jsonObject },
+          '401': unauthorized,
+        },
+      },
+    },
   };
 }
 

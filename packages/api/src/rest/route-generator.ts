@@ -27,6 +27,7 @@ import type { RestRequest, RestResponse, RestRoute } from './types.js';
 import { createRestErrorResponse, wrapErrorToRest, mapCodeToCategory, mapErrorToHttpStatus } from './errors.js';
 import { invokeFunction } from '../functions/invoke-function.js';
 import { generateLlmRoutes } from './llm-routes.js';
+import { generateDataFreshnessRoutes } from './data-freshness-routes.js';
 import { isTypeVisible } from '../markings/enforce.js';
 import { writeReadAuditFor } from './audit-read.js';
 import { lowerFirst, toSnakeCase, searchableTextFields } from '../utils.js';
@@ -456,6 +457,9 @@ export function generateRestRoutes(
 
   // LLM routes (generate + embed)
   routes.push(...generateLlmRoutes(deps));
+
+  // Data freshness routes
+  routes.push(...generateDataFreshnessRoutes(deps));
 
   return routes;
 }

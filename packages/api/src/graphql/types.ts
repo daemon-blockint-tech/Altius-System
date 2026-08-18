@@ -10,7 +10,7 @@ import type {
   MarkingPolicy,
 } from '@altius/security';
 import type { ParsedSchema } from '@altius/odl';
-import type { RequestContext, StorageProvider, LLMClient, BlobStore, TimeSeriesStore, BranchStore, CommentStore, NotificationStore, EmbeddingStore, AlertingService, LLMGateway } from '@altius/spi';
+import type { RequestContext, StorageProvider, LLMClient, BlobStore, TimeSeriesStore, BranchStore, CommentStore, NotificationStore, EmbeddingStore, AlertingService, LLMGateway, DataFreshnessService } from '@altius/spi';
 import { DataPurpose } from '@altius/spi';
 
 /**
@@ -223,6 +223,17 @@ export interface ApiDependencies {
    *   GET/PUT /api/v1/llm/rate-limits
    */
   llmGateway?: LLMGateway;
+  /**
+   * Data freshness service — per-type and per-datasource last-synced
+   * timestamps. When present, REST endpoints for freshness queries are
+   * registered:
+   *   POST   /api/v1/data-freshness/sync        (record a sync)
+   *   GET    /api/v1/data-freshness/:type        (freshness for object type)
+   *   GET    /api/v1/data-freshness              (query freshness records)
+   *   GET    /api/v1/data-freshness/summary      (freshness summary)
+   *   DELETE /api/v1/data-freshness/:type        (delete freshness record)
+   */
+  dataFreshnessService?: DataFreshnessService;
 }
 
 /**

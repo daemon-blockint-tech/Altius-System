@@ -299,6 +299,8 @@ describe('InMemoryWorkshopPlatformService', () => {
     expect(await service.getWidgetCatalogEntry(OTHER, 'tenant_widget')).toBeNull();
     expect(await service.listWidgetCatalog(OTHER)).toHaveLength(builtins);
     expect(await service.getWidgetCatalogEntry(OTHER, 'object_table')).not.toBeNull();
+  });
+
   // ── Object Views ──
 
   it('creates and retrieves an object view', async () => {

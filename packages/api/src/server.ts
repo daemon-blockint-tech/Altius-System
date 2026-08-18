@@ -51,6 +51,7 @@ import {
   InMemoryAlertingService,
   InMemoryLLMUsageTracker,
   InMemoryLLMRateLimiter,
+  InMemoryDataFreshnessService,
 } from '@altius/storage-memory';
 import { PostgresStorageProvider, PostgresLineageStore, PostgresAuditStore, PostgresConsentStore, PostgresSchemaRegistry, PostgresObjectSetStore,
   PostgresLLMUsageTracker, PostgresLLMRateLimiter,
@@ -1183,6 +1184,8 @@ async function main(): Promise<void> {
     notificationStore: pgPool ? new PostgresNotificationStore(pgPool) : new InMemoryNotificationStore(),
     embeddingStore: pgPool ? new PostgresEmbeddingStore(pgPool) : new InMemoryEmbeddingStore(),
     alertingService: new InMemoryAlertingService(),
+    // Data freshness — in-memory only (no Postgres implementation yet).
+    dataFreshnessService: new InMemoryDataFreshnessService(),
   };
 
   // ── Express + HTTP Server ──

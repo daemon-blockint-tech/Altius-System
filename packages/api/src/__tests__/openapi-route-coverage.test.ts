@@ -61,6 +61,14 @@ function mockDeps(schema: ReturnType<typeof parseOdl>): ApiDependencies {
     } as never,
     authenticator: {} as never,
     storage: {} as never,
+    dataFreshnessService: {
+      recordSync: vi.fn().mockResolvedValue({}),
+      getFreshnessForType: vi.fn().mockResolvedValue(null),
+      getFreshnessForDatasource: vi.fn().mockResolvedValue(null),
+      queryFreshness: vi.fn().mockResolvedValue([]),
+      getSummary: vi.fn().mockResolvedValue({}),
+      deleteFreshness: vi.fn().mockResolvedValue(undefined),
+    } as never,
   } as ApiDependencies;
 }
 
