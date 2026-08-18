@@ -60,3 +60,6 @@ export { InMemoryEmbeddingService } from './in-memory-embedding.js';
 export { InMemoryLayoutDeviceCaptureService } from './in-memory-layout-device-capture.js';
 export { InMemoryWidgetLibraryService } from './in-memory-widget-library.js';
 export { InMemoryPlatformResourceService } from './in-memory-platform-resources.js';
+export { InMemoryOntologyManagerService } from './in-memory-ontology-manager.js';
+export type { SchemaReader, UsageStatsReader } from './in-memory-ontology-manager.js';
+export { InMemoryWorkshopUxService } from './in-memory-workshop-ux.js';

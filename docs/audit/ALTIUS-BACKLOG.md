@@ -1106,19 +1106,19 @@ Use the indexed code graph before grepping: `search_graph`, `query_graph`. On a 
 
 ### `misc-3/visual-ontology-management-application-ontol` — Visual ontology management application (Ontology Manager: discover, edit types/properties/links/actions, function/action observability tabs)
 
-**Status:** `absent`
+**Status:** `partial`
 
-**Evidence (read 15 Aug):** No frontend or UI layer exists anywhere in the repo. Grepped every packages/*/package.json for react|vue|svelte|next|@tanstack/react: zero matches; the complete dependency set across all packages is @apollo/server, @graphql-tools/schema, @grpc/*, @openfga/sdk, @opentelemetry/*, commander, cors, express, graphql, graphql-subscriptions, graphql-ws, helmet, ioredis, jose, kafkajs, pg, pino, prom-client, ws, yaml. Searched all source for 'ontology-manager' and 'OntologyManager': 0 files. Orion/docker-compose.yaml declares only backend services (postgresql, redpanda, openfga, keycloak, debezium, redis, otel-collector, cel-evaluator, api-gateway, ontology-engine, action-executor, sync-engine, security-service) — no web/UI service.
+**Evidence (Phase 11):** `OntologyManagerService` SPI (packages/spi/src/ontology-manager.ts) defines ontology discovery (listTypes, getTypeDetail with properties/links/actions/functions, searchTypes, listActions, listFunctions), ontology editing (change proposals with kind: add/modify/remove type/property/link/action, validation with breaking-change detection and migration plan requirement, submit/review/apply lifecycle: draft→submitted→approved/rejected→applied), and observability tabs (TypeObservability with reads/writes/searches/activeUsers/errors, ActionObservability with executions/errors/duration, FunctionObservability). `InMemoryOntologyManagerService` (packages/storage-memory/src/in-memory-ontology-manager.ts) implements all operations with injectable schema reader and usage stats reader. 14 tests in phase11-services.test.ts.
 
-**Gap:** Everything. Schema authoring is file-based ODL compiled by CLI (packages/odl/src/cli/index.ts); there is no editing surface, no discovery browser, and no observability tabs. A user must write ODL text and redeploy.
+**Gap:** No UI. No actual schema mutation (applyProposal marks as applied but doesn't modify the real schema). No REST/GraphQL routes. No persistent storage. No real-time schema diff visualization. No function/action observability pipeline integration.
 
 ### `misc-3/workshop-application-ux-platform-features-st` — Workshop application UX platform features (state saving/sharing, redact mode, performance profiler, translations/i18n incl. AIP auto-translate)
 
-**Status:** `absent`
+**Status:** `partial`
 
-**Evidence (read 15 Aug):** No application/UI layer exists to carry these features — no frontend package, and no UI dependency in any packages/*/package.json (full dependency list is server-side only: express, @apollo/server, graphql, pg, ioredis, kafkajs, jose, prom-client, etc.). Searched all *.ts/*.yaml/*.json for workshop|Workshop (0 files), 'redact mode' (0), i18n (0), AIP (0), playback (0), profiler (0). The 'translation' hits are the CDM/FHIR terminology mapper (packages/api/src/cdm/terminology.ts), which maps clinical code systems, not UI strings. redactFieldsBatch (packages/mcp-server/src/tools.ts:304, from packages/security authz) is server-side field-level authorization redaction applied to query results — unrelated to a user-facing redact mode.
+**Evidence (Phase 11):** `WorkshopUxService` SPI (packages/spi/src/workshop-ux.ts) defines app state saving/sharing (SavedAppState with appId, state JSON, owner, sharedWith, isPublic, isDefault, version, fork), redact mode (RedactModeConfig with enabled/level: off/partial/full, redactedFields/allowedFields glob patterns, redactInExports/redactInScreenshots, shouldRedact with pattern matching), performance profiler (PerformanceProfile with render metrics: renderCount/avgRenderMs/p95RenderMs/slowestComponent, network metrics: requestCount/avgRequestMs/p95RequestMs/failedRequests, memory metrics), and translations/i18n (TranslationEntry with key/locale/value/autoTranslated/source: manual/aip/import, TranslationBundle with missingCount/autoTranslatedCount, autoTranslate with skip-existing-manual). `InMemoryWorkshopUxService` (packages/storage-memory/src/in-memory-workshop-ux.ts) implements all operations. 14 tests in phase11-services.test.ts.
 
-**Gap:** Everything. There is no app-building surface, therefore no app state to save or share, no redact toggle, no client profiler, and no i18n pipeline. ObjectSets (packages/spi/src/object-set.ts:12) are the closest saveable artifact and they carry no sharing, versioning, or presentation state.
+**Gap:** No UI. No real LLM-powered auto-translate (in-memory stub copies base values with locale marker). No REST/GraphQL routes. No persistent storage. No actual screenshot/export redaction. No client-side profiler integration.
 
 
 ## Workshop app building

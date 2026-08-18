@@ -530,6 +530,36 @@ export type {
   UploadAndLinkInput,
 } from './platform-resources.js';
 
+// Ontology manager
+export type {
+  OntologyManagerService,
+  OntologyTypeSummary,
+  OntologyTypeDetail,
+  OntologyPropertyDetail,
+  OntologyLinkDetail,
+  OntologyActionDetail,
+  OntologyFunctionDetail,
+  OntologyChangeProposal,
+  CreateChangeProposalInput,
+  TypeObservability,
+  ActionObservability,
+  FunctionObservability,
+} from './ontology-manager.js';
+
+// Workshop UX platform
+export type {
+  WorkshopUxService,
+  SavedAppState,
+  SaveAppStateInput,
+  RedactModeConfig,
+  UpdateRedactModeInput,
+  PerformanceProfile,
+  RecordProfileInput,
+  TranslationEntry,
+  SetTranslationInput,
+  TranslationBundle,
+} from './workshop-ux.js';
+
 // LLM Client (Section AIP)
 export type {
   LLMClient,
