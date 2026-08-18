@@ -485,6 +485,51 @@ export type {
   SendCopilotMessageInput,
 } from './embedded-copilots.js';
 
+// Embedding and cross-app
+export type {
+  EmbeddingService,
+  RegisteredApp,
+  RegisterAppInput,
+  EmbeddingManifest,
+  CrossAppCommand,
+  SendCommandInput,
+  AppPairing,
+  CreateAppPairingInput,
+} from './embedding.js';
+
+// Layout and device capture
+export type {
+  LayoutDeviceCaptureService,
+  UiStateEntry,
+  SetUiStateInput,
+  DeviceCapture,
+  RecordCaptureInput,
+  ResolvedDeepLink,
+} from './layout-device-capture.js';
+
+// Widget library
+export type {
+  WidgetLibraryService,
+  WidgetDefinition,
+  AppDefinition,
+  AppPage,
+  AppSection,
+  WidgetInstance,
+  AppVariable,
+  CreateAppDefinitionInput,
+} from './widget-library.js';
+
+// Platform resources
+export type {
+  PlatformResourceService,
+  PlatformResource,
+  CreateResourceInput,
+  ResourceObjectLink,
+  LinkResourceInput,
+  UploadAndLinkResult,
+  UploadAndLinkInput,
+} from './platform-resources.js';
+
 // LLM Client (Section AIP)
 export type {
   LLMClient,
