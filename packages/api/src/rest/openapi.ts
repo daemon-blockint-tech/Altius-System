@@ -793,6 +793,140 @@ function platformPaths(): Record<string, unknown> {
         },
       },
     },
+    // ── Security Governance ──
+    '/api/v1/security/explain': {
+      post: {
+        tags: ['Security'],
+        summary: 'Explain why access was granted or denied',
+        operationId: 'explainAccess',
+        requestBody: { required: true, content: jsonObject },
+        responses: {
+          '200': { description: 'Access explanation', content: jsonObject },
+          '400': { description: 'Validation error' },
+          '401': unauthorized,
+        },
+      },
+    },
+    '/api/v1/security/justifications': {
+      post: {
+        tags: ['Security'],
+        summary: 'Record a justification for a sensitive action',
+        operationId: 'createJustification',
+        requestBody: { required: true, content: jsonObject },
+        responses: {
+          '201': { description: 'Justification record', content: jsonObject },
+          '400': { description: 'Validation error' },
+          '401': unauthorized,
+        },
+      },
+      get: {
+        tags: ['Security'],
+        summary: 'Query justifications',
+        operationId: 'listJustifications',
+        parameters: [
+          { name: 'userId', in: 'query', schema: { type: 'string' } },
+          { name: 'actionName', in: 'query', schema: { type: 'string' } },
+          { name: 'objectType', in: 'query', schema: { type: 'string' } },
+          { name: 'limit', in: 'query', schema: { type: 'integer' } },
+          { name: 'offset', in: 'query', schema: { type: 'integer' } },
+        ],
+        responses: {
+          '200': { description: 'Justification records', content: jsonObject },
+          '401': unauthorized,
+        },
+      },
+    },
+    '/api/v1/security/justifications/{id}': {
+      get: {
+        tags: ['Security'],
+        summary: 'Get a justification by ID',
+        operationId: 'getJustification',
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: {
+          '200': { description: 'Justification record', content: jsonObject },
+          '401': unauthorized,
+          '404': { description: 'Not found' },
+        },
+      },
+    },
+    '/api/v1/security/justifications/{id}/approve': {
+      post: {
+        tags: ['Security'],
+        summary: 'Approve a justification',
+        operationId: 'approveJustification',
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: {
+          '200': { description: 'Approved', content: jsonObject },
+          '401': unauthorized,
+          '404': { description: 'Not found' },
+        },
+      },
+    },
+    '/api/v1/security/sessions': {
+      post: {
+        tags: ['Security'],
+        summary: 'Create a scoped session with restricted markings',
+        operationId: 'createScopedSession',
+        requestBody: { required: true, content: jsonObject },
+        responses: {
+          '201': { description: 'Scoped session', content: jsonObject },
+          '400': { description: 'Validation error' },
+          '401': unauthorized,
+        },
+      },
+      get: {
+        tags: ['Security'],
+        summary: 'List scoped sessions',
+        operationId: 'listScopedSessions',
+        parameters: [{ name: 'userId', in: 'query', schema: { type: 'string' } }],
+        responses: {
+          '200': { description: 'Scoped sessions', content: jsonObject },
+          '401': unauthorized,
+        },
+      },
+    },
+    '/api/v1/security/sessions/{id}': {
+      get: {
+        tags: ['Security'],
+        summary: 'Get a scoped session by ID',
+        operationId: 'getScopedSession',
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: {
+          '200': { description: 'Scoped session', content: jsonObject },
+          '401': unauthorized,
+          '404': { description: 'Not found' },
+        },
+      },
+    },
+    '/api/v1/security/sessions/{id}/revoke': {
+      post: {
+        tags: ['Security'],
+        summary: 'Revoke a scoped session',
+        operationId: 'revokeScopedSession',
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: {
+          '200': { description: 'Revoked', content: jsonObject },
+          '401': unauthorized,
+          '404': { description: 'Not found' },
+        },
+      },
+    },
+    '/api/v1/security/sessions/{id}/check': {
+      get: {
+        tags: ['Security'],
+        summary: 'Check if a marking is allowed in a scoped session',
+        operationId: 'checkMarkingAllowed',
+        parameters: [
+          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
+          { name: 'marking', in: 'query', required: true, schema: { type: 'string' } },
+        ],
+        responses: {
+          '200': { description: 'Check result', content: jsonObject },
+          '401': unauthorized,
+          '404': { description: 'Session not found' },
+        },
+      },
+    },
   };
 }
 

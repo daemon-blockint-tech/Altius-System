@@ -69,6 +69,23 @@ function mockDeps(schema: ReturnType<typeof parseOdl>): ApiDependencies {
       getSummary: vi.fn().mockResolvedValue({}),
       deleteFreshness: vi.fn().mockResolvedValue(undefined),
     } as never,
+    accessExplanationService: {
+      explain: vi.fn().mockResolvedValue({}),
+    } as never,
+    justificationStore: {
+      create: vi.fn().mockResolvedValue({}),
+      get: vi.fn().mockResolvedValue(null),
+      list: vi.fn().mockResolvedValue({ records: [], totalCount: 0 }),
+      approve: vi.fn().mockResolvedValue(undefined),
+    } as never,
+    scopedSessionStore: {
+      create: vi.fn().mockResolvedValue({}),
+      get: vi.fn().mockResolvedValue(null),
+      getActiveForUser: vi.fn().mockResolvedValue(null),
+      list: vi.fn().mockResolvedValue([]),
+      revoke: vi.fn().mockResolvedValue(undefined),
+      isMarkingAllowed: vi.fn().mockResolvedValue(true),
+    } as never,
   } as ApiDependencies;
 }
 

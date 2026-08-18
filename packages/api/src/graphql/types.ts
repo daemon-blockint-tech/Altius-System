@@ -10,7 +10,7 @@ import type {
   MarkingPolicy,
 } from '@altius/security';
 import type { ParsedSchema } from '@altius/odl';
-import type { RequestContext, StorageProvider, LLMClient, BlobStore, TimeSeriesStore, BranchStore, CommentStore, NotificationStore, EmbeddingStore, AlertingService, LLMGateway, DataFreshnessService } from '@altius/spi';
+import type { RequestContext, StorageProvider, LLMClient, BlobStore, TimeSeriesStore, BranchStore, CommentStore, NotificationStore, EmbeddingStore, AlertingService, LLMGateway, DataFreshnessService, JustificationStore, AccessExplanationService, ScopedSessionStore } from '@altius/spi';
 import { DataPurpose } from '@altius/spi';
 
 /**
@@ -234,6 +234,24 @@ export interface ApiDependencies {
    *   DELETE /api/v1/data-freshness/:type        (delete freshness record)
    */
   dataFreshnessService?: DataFreshnessService;
+  /**
+   * Security governance services. When present, REST endpoints for
+   * access explanation, justification capture, and scoped sessions
+   * are registered:
+   *   POST   /api/v1/security/explain              (explain access decision)
+   *   POST   /api/v1/security/justifications       (record justification)
+   *   GET    /api/v1/security/justifications        (query justifications)
+   *   GET    /api/v1/security/justifications/:id    (get justification)
+   *   POST   /api/v1/security/justifications/:id/approve (approve)
+   *   POST   /api/v1/security/sessions              (create scoped session)
+   *   GET    /api/v1/security/sessions              (list scoped sessions)
+   *   GET    /api/v1/security/sessions/:id          (get scoped session)
+   *   POST   /api/v1/security/sessions/:id/revoke   (revoke scoped session)
+   *   GET    /api/v1/security/sessions/:id/check    (check marking allowed)
+   */
+  justificationStore?: JustificationStore;
+  accessExplanationService?: AccessExplanationService;
+  scopedSessionStore?: ScopedSessionStore;
 }
 
 /**

@@ -28,6 +28,7 @@ import { createRestErrorResponse, wrapErrorToRest, mapCodeToCategory, mapErrorTo
 import { invokeFunction } from '../functions/invoke-function.js';
 import { generateLlmRoutes } from './llm-routes.js';
 import { generateDataFreshnessRoutes } from './data-freshness-routes.js';
+import { generateSecurityGovernanceRoutes } from './security-governance-routes.js';
 import { isTypeVisible } from '../markings/enforce.js';
 import { writeReadAuditFor } from './audit-read.js';
 import { lowerFirst, toSnakeCase, searchableTextFields } from '../utils.js';
@@ -460,6 +461,9 @@ export function generateRestRoutes(
 
   // Data freshness routes
   routes.push(...generateDataFreshnessRoutes(deps));
+
+  // Security governance routes (access explanation, justifications, scoped sessions)
+  routes.push(...generateSecurityGovernanceRoutes(deps));
 
   return routes;
 }

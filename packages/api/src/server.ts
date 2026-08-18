@@ -52,6 +52,8 @@ import {
   InMemoryLLMUsageTracker,
   InMemoryLLMRateLimiter,
   InMemoryDataFreshnessService,
+  InMemoryJustificationStore,
+  InMemoryScopedSessionStore,
 } from '@altius/storage-memory';
 import { PostgresStorageProvider, PostgresLineageStore, PostgresAuditStore, PostgresConsentStore, PostgresSchemaRegistry, PostgresObjectSetStore,
   PostgresLLMUsageTracker, PostgresLLMRateLimiter,
@@ -83,7 +85,7 @@ import {
 import type { ModelCatalogEntry } from '@altius/spi';
 import { ActionExecutor, CelClient, SideEffectExecutor } from '@altius/actions';
 import type { SecurityLayer, CelEvaluator, EventBus as SideEffectEventBus, HttpClient as SideEffectHttpClient, LinkTupleMap } from '@altius/actions';
-import { AuthorizationService, OidcAuthenticator, AuditWriter, MemoryAuditStore, ConsentService, MemoryConsentStore, MarkingPolicy } from '@altius/security';
+import { AuthorizationService, OidcAuthenticator, AuditWriter, MemoryAuditStore, ConsentService, MemoryConsentStore, MarkingPolicy, DefaultAccessExplanationService } from '@altius/security';
 import type { OpenFgaClientInterface, FgaClientResolver } from '@altius/security';
 import type { StorageProvider, RequestContext } from '@altius/spi';
 import { createGraphQLServer, buildResolverContext } from './graphql/index.js';
@@ -1186,6 +1188,12 @@ async function main(): Promise<void> {
     alertingService: new InMemoryAlertingService(),
     // Data freshness — in-memory only (no Postgres implementation yet).
     dataFreshnessService: new InMemoryDataFreshnessService(),
+    // Security governance — real AccessExplanationService wired to the live
+    // AuthorizationService; JustificationStore and ScopedSessionStore are
+    // in-memory only (no Postgres implementation yet).
+    justificationStore: new InMemoryJustificationStore(),
+    accessExplanationService: new DefaultAccessExplanationService({ authorizationService }),
+    scopedSessionStore: new InMemoryScopedSessionStore(),
   };
 
   // ── Express + HTTP Server ──
