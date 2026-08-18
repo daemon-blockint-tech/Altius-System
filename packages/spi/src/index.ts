@@ -570,6 +570,7 @@ export type {
   AppModule, ModuleInterface, ModuleInstance,
   ReactiveVariable, VariableSource, VariableTransformation, VariableLineage,
   WidgetCatalogEntry,
+  ObjectView, ObjectViewColumn, ObjectViewFilter, CreateObjectViewInput,
 } from './workshop-platform.js';
 
 // LLM Client (Section AIP)

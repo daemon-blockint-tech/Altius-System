@@ -362,6 +362,63 @@ export interface WidgetCatalogEntry {
 }
 
 // ===========================================================================
+// Object Views
+// ===========================================================================
+
+/** A column in an object view table. */
+export interface ObjectViewColumn {
+  propertyName: string;
+  displayName: string;
+  width?: number;
+  visible: boolean;
+  order: number;
+  format?: 'text' | 'date' | 'number' | 'currency' | 'percent' | 'boolean' | 'link' | 'image';
+  formatOptions?: Record<string, unknown>;
+}
+
+/** A filter in an object view. */
+export interface ObjectViewFilter {
+  propertyName: string;
+  operator: string;
+  value: unknown;
+}
+
+/** An object view — a pre-configured view of an object type. */
+export interface ObjectView {
+  id: string;
+  tenantId: string;
+  name: string;
+  description: string;
+  objectType: string;
+  columns: ObjectViewColumn[];
+  filters: ObjectViewFilter[];
+  sortBy?: Array<{ propertyName: string; direction: 'asc' | 'desc' }>;
+  groupBy?: string[];
+  pageSize: number;
+  isDefault: boolean;
+  isPublic: boolean;
+  ownerId: string;
+  sharedWith: string[];
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Input for creating an object view. */
+export interface CreateObjectViewInput {
+  name: string;
+  description?: string;
+  objectType: string;
+  columns: ObjectViewColumn[];
+  filters?: ObjectViewFilter[];
+  sortBy?: Array<{ propertyName: string; direction: 'asc' | 'desc' }>;
+  groupBy?: string[];
+  pageSize?: number;
+  isDefault?: boolean;
+  isPublic?: boolean;
+}
+
+// ===========================================================================
 // Service
 // ===========================================================================
 
@@ -432,4 +489,15 @@ export interface WorkshopPlatformService {
   listWidgetCatalog(ctx: RequestContext, category?: WidgetCatalogEntry['category']): Promise<WidgetCatalogEntry[]>;
   getWidgetCatalogEntry(ctx: RequestContext, type: string): Promise<WidgetCatalogEntry | null>;
   registerWidgetCatalogEntry(ctx: RequestContext, entry: Omit<WidgetCatalogEntry, 'id'>): Promise<WidgetCatalogEntry>;
+
+  // ── Object Views ──
+  createObjectView(ctx: RequestContext, input: CreateObjectViewInput): Promise<ObjectView>;
+  getObjectView(ctx: RequestContext, id: string): Promise<ObjectView | null>;
+  listObjectViews(ctx: RequestContext, objectType?: string): Promise<ObjectView[]>;
+  updateObjectView(ctx: RequestContext, id: string, updates: Partial<CreateObjectViewInput>): Promise<ObjectView>;
+  deleteObjectView(ctx: RequestContext, id: string): Promise<void>;
+  /** Get the default object view for a type. */
+  getDefaultObjectView(ctx: RequestContext, objectType: string): Promise<ObjectView | null>;
+  /** Set the default object view for a type. */
+  setDefaultObjectView(ctx: RequestContext, id: string): Promise<ObjectView>;
 }

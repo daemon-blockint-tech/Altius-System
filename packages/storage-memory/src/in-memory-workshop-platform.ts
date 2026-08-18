@@ -12,6 +12,7 @@ import type {
   AppModule, ModuleInterface,
   ReactiveVariable, VariableSource, VariableTransformation, VariableLineage,
   WidgetCatalogEntry,
+  ObjectView, CreateObjectViewInput,
   RequestContext,
 } from '@altius/spi';
 
@@ -103,6 +104,14 @@ export class InMemoryWorkshopPlatformService implements WorkshopPlatformService 
   private readonly modules = new Map<string, Map<string, AppModule>>();
   private readonly variables = new Map<string, Map<string, ReactiveVariable>>();
   private readonly widgets = new Map<string, Map<string, WidgetCatalogEntry>>();
+  private readonly widgets = new Map<string, WidgetCatalogEntry>();
+  private readonly objectViews = new Map<string, Map<string, ObjectView>>();
+
+  constructor() {
+    for (const w of DEFAULT_WIDGETS) {
+      this.widgets.set(w.type, { id: randomUUID(), ...w });
+    }
+  }
 
   // ── Cross-app interactivity ──
 
@@ -381,6 +390,71 @@ export class InMemoryWorkshopPlatformService implements WorkshopPlatformService 
     return e;
   }
 
+  // ── Object Views ──
+
+  async createObjectView(ctx: RequestContext, input: CreateObjectViewInput): Promise<ObjectView> {
+    const id = randomUUID();
+    const now = new Date().toISOString();
+    const view: ObjectView = {
+      id, tenantId: ctx.tenantId, name: input.name, description: input.description ?? '',
+      objectType: input.objectType, columns: input.columns, filters: input.filters ?? [],
+      sortBy: input.sortBy, groupBy: input.groupBy, pageSize: input.pageSize ?? 50,
+      isDefault: input.isDefault ?? false, isPublic: input.isPublic ?? false,
+      ownerId: ctx.actorId ?? 'system', sharedWith: [], version: 1,
+      createdAt: now, updatedAt: now,
+    };
+    // If this view is set as default, unset other defaults for the same type
+    if (view.isDefault) await this.unsetOtherDefaults(ctx, input.objectType, id);
+    this.getObjectViewMap(ctx.tenantId).set(id, view);
+    return view;
+  }
+  async getObjectView(ctx: RequestContext, id: string): Promise<ObjectView | null> {
+    return this.objectViews.get(ctx.tenantId)?.get(id) ?? null;
+  }
+  async listObjectViews(ctx: RequestContext, objectType?: string): Promise<ObjectView[]> {
+    const m = this.objectViews.get(ctx.tenantId);
+    if (!m) return [];
+    let list = Array.from(m.values());
+    if (objectType) list = list.filter(v => v.objectType === objectType);
+    return list.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  }
+  async updateObjectView(ctx: RequestContext, id: string, updates: Partial<CreateObjectViewInput>): Promise<ObjectView> {
+    const v = this.objectViews.get(ctx.tenantId)?.get(id);
+    if (!v) throw new Error(`Object view not found: ${id}`);
+    const updated: ObjectView = {
+      ...v, ...updates,
+      version: v.version + 1, updatedAt: new Date().toISOString(),
+    };
+    if (updates.isDefault && updates.isDefault) await this.unsetOtherDefaults(ctx, v.objectType, id);
+    this.getObjectViewMap(ctx.tenantId).set(id, updated);
+    return updated;
+  }
+  async deleteObjectView(ctx: RequestContext, id: string): Promise<void> {
+    this.objectViews.get(ctx.tenantId)?.delete(id);
+  }
+  async getDefaultObjectView(ctx: RequestContext, objectType: string): Promise<ObjectView | null> {
+    const views = await this.listObjectViews(ctx, objectType);
+    return views.find(v => v.isDefault) ?? null;
+  }
+  async setDefaultObjectView(ctx: RequestContext, id: string): Promise<ObjectView> {
+    const v = this.objectViews.get(ctx.tenantId)?.get(id);
+    if (!v) throw new Error(`Object view not found: ${id}`);
+    await this.unsetOtherDefaults(ctx, v.objectType, id);
+    const updated = { ...v, isDefault: true, updatedAt: new Date().toISOString() };
+    this.getObjectViewMap(ctx.tenantId).set(id, updated);
+    return updated;
+  }
+
+  private async unsetOtherDefaults(ctx: RequestContext, objectType: string, exceptId: string): Promise<void> {
+    const m = this.objectViews.get(ctx.tenantId);
+    if (!m) return;
+    for (const [id, v] of m) {
+      if (v.objectType === objectType && id !== exceptId && v.isDefault) {
+        m.set(id, { ...v, isDefault: false });
+      }
+    }
+  }
+
   // ── Private helpers ──
 
   private async updateAppPages(ctx: RequestContext, appId: string, fn: (app: WorkshopAppDefinition) => WorkshopAppPage[]): Promise<WorkshopAppDefinition> {
@@ -407,4 +481,5 @@ export class InMemoryWorkshopPlatformService implements WorkshopPlatformService 
   private getMobileSessionMap(t: string) { let m = this.mobileSessions.get(t); if (!m) { m = new Map(); this.mobileSessions.set(t, m); } return m; }
   private getModuleMap(t: string) { let m = this.modules.get(t); if (!m) { m = new Map(); this.modules.set(t, m); } return m; }
   private getVariableMap(t: string) { let m = this.variables.get(t); if (!m) { m = new Map(); this.variables.set(t, m); } return m; }
+  private getObjectViewMap(t: string) { let m = this.objectViews.get(t); if (!m) { m = new Map(); this.objectViews.set(t, m); } return m; }
 }
