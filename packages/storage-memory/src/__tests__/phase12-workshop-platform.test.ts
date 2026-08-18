@@ -261,4 +261,74 @@ describe('InMemoryWorkshopPlatformService', () => {
     expect(table?.mobileOptimized).toBe(true);
     expect(map?.mobileOptimized).toBe(false);
   });
+
+  // ── Object Views ──
+
+  it('creates and retrieves an object view', async () => {
+    const view = await service.createObjectView(CTX, {
+      name: 'Patient Overview', objectType: 'Patient',
+      columns: [
+        { propertyName: 'name', displayName: 'Name', visible: true, order: 0, width: 200 },
+        { propertyName: 'age', displayName: 'Age', visible: true, order: 1, format: 'number' },
+      ],
+    });
+    expect(view.name).toBe('Patient Overview');
+    expect(view.columns).toHaveLength(2);
+    const fetched = await service.getObjectView(CTX, view.id);
+    expect(fetched?.objectType).toBe('Patient');
+  });
+
+  it('lists object views by type', async () => {
+    await service.createObjectView(CTX, { name: 'V1', objectType: 'Patient', columns: [] });
+    await service.createObjectView(CTX, { name: 'V2', objectType: 'Patient', columns: [] });
+    await service.createObjectView(CTX, { name: 'V3', objectType: 'Order', columns: [] });
+    expect((await service.listObjectViews(CTX, 'Patient'))).toHaveLength(2);
+    expect((await service.listObjectViews(CTX, 'Order'))).toHaveLength(1);
+    expect((await service.listObjectViews(CTX))).toHaveLength(3);
+  });
+
+  it('updates an object view with version increment', async () => {
+    const view = await service.createObjectView(CTX, { name: 'V1', objectType: 'Patient', columns: [] });
+    const updated = await service.updateObjectView(CTX, view.id, { name: 'V1 Updated', pageSize: 100 });
+    expect(updated.name).toBe('V1 Updated');
+    expect(updated.version).toBe(2);
+    expect(updated.pageSize).toBe(100);
+  });
+
+  it('sets and gets default object view', async () => {
+    const v1 = await service.createObjectView(CTX, { name: 'V1', objectType: 'Patient', columns: [] });
+    await service.setDefaultObjectView(CTX, v1.id);
+    const def = await service.getDefaultObjectView(CTX, 'Patient');
+    expect(def?.id).toBe(v1.id);
+  });
+
+  it('creating a default view unsets other defaults for same type', async () => {
+    const v1 = await service.createObjectView(CTX, { name: 'V1', objectType: 'Patient', columns: [], isDefault: true });
+    const v2 = await service.createObjectView(CTX, { name: 'V2', objectType: 'Patient', columns: [], isDefault: true });
+    const def = await service.getDefaultObjectView(CTX, 'Patient');
+    expect(def?.id).toBe(v2.id);
+    const old = await service.getObjectView(CTX, v1.id);
+    expect(old?.isDefault).toBe(false);
+  });
+
+  it('deletes an object view', async () => {
+    const view = await service.createObjectView(CTX, { name: 'V1', objectType: 'Patient', columns: [] });
+    await service.deleteObjectView(CTX, view.id);
+    expect(await service.getObjectView(CTX, view.id)).toBeNull();
+  });
+
+  it('creates object view with filters and sort config', async () => {
+    const view = await service.createObjectView(CTX, {
+      name: 'Active Patients', objectType: 'Patient',
+      columns: [
+        { propertyName: 'name', displayName: 'Name', visible: true, order: 0 },
+      ],
+      filters: [{ propertyName: 'status', operator: 'eq', value: 'active' }],
+      sortBy: [{ propertyName: 'name', direction: 'asc' }],
+      groupBy: ['ward'],
+    });
+    expect(view.filters).toHaveLength(1);
+    expect(view.sortBy).toHaveLength(1);
+    expect(view.groupBy).toEqual(['ward']);
+  });
 });
