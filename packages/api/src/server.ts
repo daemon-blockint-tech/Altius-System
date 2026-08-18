@@ -52,7 +52,11 @@ import {
   InMemoryLLMUsageTracker,
   InMemoryLLMRateLimiter,
 } from '@altius/storage-memory';
-import { PostgresStorageProvider, PostgresLineageStore, PostgresAuditStore, PostgresConsentStore, PostgresSchemaRegistry, PostgresObjectSetStore } from '@altius/storage-postgres';
+import { PostgresStorageProvider, PostgresLineageStore, PostgresAuditStore, PostgresConsentStore, PostgresSchemaRegistry, PostgresObjectSetStore,
+  PostgresLLMUsageTracker, PostgresLLMRateLimiter,
+  PostgresEmbeddingStore, PostgresBlobStore, PostgresTimeSeriesStore,
+  PostgresBranchStore, PostgresCommentStore, PostgresNotificationStore,
+} from '@altius/storage-postgres';
 import {
   ObjectManager, LineageRecorder,
   LinkManager,
@@ -1074,11 +1078,22 @@ async function main(): Promise<void> {
   // no-op); a deployment without a provider skips the gateway and the
   // /api/v1/llm/models, /chat/completions, /usage, /rate-limits routes are
   // not registered.
+  //
+  // Usage tracking and rate limiting use Postgres-backed implementations when
+  // a Postgres storage provider is configured (durable, shared across replicas);
+  // in-memory otherwise (lost on restart, single-replica only).
+  const isPostgres = storage instanceof PostgresStorageProvider;
+  const pgPool = isPostgres ? (storage as PostgresStorageProvider).pool : null;
+
   let llmGateway: ApiDependencies['llmGateway'];
   if (llmClient.isConfigured()) {
     const llmModels = buildLlmModelCatalog(process.env);
-    const usageTracker = new InMemoryLLMUsageTracker();
-    const rateLimiter = new InMemoryLLMRateLimiter();
+    const usageTracker = pgPool
+      ? new PostgresLLMUsageTracker(pgPool)
+      : new InMemoryLLMUsageTracker();
+    const rateLimiter = pgPool
+      ? new PostgresLLMRateLimiter(pgPool)
+      : new InMemoryLLMRateLimiter();
     llmGateway = new DefaultLLMGateway({
       llmClient,
       models: llmModels,
@@ -1121,19 +1136,18 @@ async function main(): Promise<void> {
     ...(workflowGraphBuilder ? { workflowGraphBuilder } : {}),
     workflowMonitor,
 
-    // ── In-memory stores for optional REST surfaces ──
-    // These are in-memory by default (lost on restart, not shared across
-    // pods). A production deployment replaces them with Postgres-backed
-    // implementations when persistence is required. The REST routes are
-    // registered unconditionally — each route handler checks for the dep
-    // and returns 503 when absent, so omitting a store here is safe but
-    // the endpoint will not serve data.
-    blobStore: new InMemoryBlobStore(),
-    timeSeriesStore: new InMemoryTimeSeriesStore(),
-    branchStore: new InMemoryBranchStore(),
-    commentStore: new InMemoryCommentStore(),
-    notificationStore: new InMemoryNotificationStore(),
-    embeddingStore: new InMemoryEmbeddingStore(),
+    // ── Platform stores ──
+    // Postgres-backed when a Postgres storage provider is configured
+    // (durable, shared across replicas); in-memory otherwise (lost on
+    // restart, single-replica only). The REST routes are registered
+    // unconditionally — each route handler checks for the dep and returns
+    // 503 when absent.
+    blobStore: pgPool ? new PostgresBlobStore(pgPool) : new InMemoryBlobStore(),
+    timeSeriesStore: pgPool ? new PostgresTimeSeriesStore(pgPool) : new InMemoryTimeSeriesStore(),
+    branchStore: pgPool ? new PostgresBranchStore(pgPool) : new InMemoryBranchStore(),
+    commentStore: pgPool ? new PostgresCommentStore(pgPool) : new InMemoryCommentStore(),
+    notificationStore: pgPool ? new PostgresNotificationStore(pgPool) : new InMemoryNotificationStore(),
+    embeddingStore: pgPool ? new PostgresEmbeddingStore(pgPool) : new InMemoryEmbeddingStore(),
     alertingService: new InMemoryAlertingService(),
   };
 
