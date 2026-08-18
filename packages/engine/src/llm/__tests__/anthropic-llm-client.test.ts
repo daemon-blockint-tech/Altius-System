@@ -19,6 +19,9 @@ import {
   LLMProviderError,
   readTextDeltas,
 } from '../anthropic-llm-client.js';
+import { OpenAICompatibleLLMClient } from '../openai-compatible-llm-client.js';
+import { FallbackLLMClient } from '../fallback-llm-client.js';
+import { CompositeLLMClient } from '../composite-llm-client.js';
 import { createLLMClient } from '../create-llm-client.js';
 import { NoOpLLMClient } from '../noop-llm-client.js';
 
@@ -361,5 +364,96 @@ describe('createLLMClient', () => {
         LLM_TIMEOUT_MS: 'soon',
       }),
     ).toThrow(/positive number/);
+  });
+
+  it('builds a daemon client from LLM_DAEMON_* env vars', () => {
+    const built = createLLMClient({
+      LLM_PROVIDER: 'daemon',
+      LLM_DAEMON_API_KEY: 'dk',
+      LLM_DAEMON_MODEL: 'oc/deepseek-v4-flash-free',
+    });
+    expect(built).toBeInstanceOf(OpenAICompatibleLLMClient);
+    expect(built.isConfigured()).toBe(true);
+  });
+
+  it('throws when daemon is named but LLM_DAEMON_API_KEY is missing', () => {
+    expect(() => createLLMClient({ LLM_PROVIDER: 'daemon' })).toThrow(/LLM_DAEMON_API_KEY/);
+  });
+
+  it('builds an openrouter client from LLM_OPENROUTER_* env vars', () => {
+    const built = createLLMClient({
+      LLM_PROVIDER: 'openrouter',
+      LLM_OPENROUTER_API_KEY: 'ork',
+      LLM_OPENROUTER_MODEL: 'deepseek/deepseek-v4-flash',
+    });
+    expect(built).toBeInstanceOf(OpenAICompatibleLLMClient);
+    expect(built.isConfigured()).toBe(true);
+  });
+
+  it('throws when openrouter is named but LLM_OPENROUTER_API_KEY is missing', () => {
+    expect(() => createLLMClient({ LLM_PROVIDER: 'openrouter' })).toThrow(/LLM_OPENROUTER_API_KEY/);
+  });
+
+  it('wraps primary + fallback in a FallbackLLMClient when LLM_FALLBACK_PROVIDER is set', () => {
+    const built = createLLMClient({
+      LLM_PROVIDER: 'daemon',
+      LLM_DAEMON_API_KEY: 'dk',
+      LLM_FALLBACK_PROVIDER: 'openrouter',
+      LLM_OPENROUTER_API_KEY: 'ork',
+    });
+    expect(built).toBeInstanceOf(FallbackLLMClient);
+    expect(built.isConfigured()).toBe(true);
+  });
+
+  it('returns a FallbackLLMClient with a no-op primary when only LLM_FALLBACK_PROVIDER is set', () => {
+    const built = createLLMClient({
+      LLM_FALLBACK_PROVIDER: 'openrouter',
+      LLM_OPENROUTER_API_KEY: 'ork',
+    });
+    expect(built).toBeInstanceOf(FallbackLLMClient);
+    expect(built.isConfigured()).toBe(true);
+  });
+
+  it('supports openai as a provider with OPENAI_API_KEY fallback', () => {
+    const built = createLLMClient({
+      LLM_PROVIDER: 'openai',
+      OPENAI_API_KEY: 'oai',
+    });
+    expect(built).toBeInstanceOf(OpenAICompatibleLLMClient);
+    expect(built.isConfigured()).toBe(true);
+  });
+
+  it('wraps completion + embedding in a CompositeLLMClient when LLM_EMBEDDING_PROVIDER is set', () => {
+    const built = createLLMClient({
+      LLM_PROVIDER: 'daemon',
+      LLM_DAEMON_API_KEY: 'dk',
+      LLM_EMBEDDING_PROVIDER: 'openrouter',
+      LLM_OPENROUTER_API_KEY: 'ork',
+    });
+    expect(built).toBeInstanceOf(CompositeLLMClient);
+    expect(built.isConfigured()).toBe(true);
+  });
+
+  it('wraps fallback completion + embedding in a CompositeLLMClient', () => {
+    const built = createLLMClient({
+      LLM_PROVIDER: 'daemon',
+      LLM_DAEMON_API_KEY: 'dk',
+      LLM_FALLBACK_PROVIDER: 'openrouter',
+      LLM_OPENROUTER_API_KEY: 'ork',
+      LLM_EMBEDDING_PROVIDER: 'openrouter',
+    });
+    // The completion chain is a FallbackLLMClient, wrapped in a Composite.
+    expect(built).toBeInstanceOf(CompositeLLMClient);
+    expect(built.isConfigured()).toBe(true);
+  });
+
+  it('throws when LLM_EMBEDDING_PROVIDER is set but its key is missing', () => {
+    expect(() =>
+      createLLMClient({
+        LLM_PROVIDER: 'daemon',
+        LLM_DAEMON_API_KEY: 'dk',
+        LLM_EMBEDDING_PROVIDER: 'openrouter',
+      }),
+    ).toThrow(/LLM_OPENROUTER_API_KEY/);
   });
 });
