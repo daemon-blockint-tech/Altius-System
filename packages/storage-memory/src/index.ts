@@ -63,3 +63,4 @@ export { InMemoryPlatformResourceService } from './in-memory-platform-resources.
 export { InMemoryOntologyManagerService } from './in-memory-ontology-manager.js';
 export type { SchemaReader, UsageStatsReader } from './in-memory-ontology-manager.js';
 export { InMemoryWorkshopUxService } from './in-memory-workshop-ux.js';
+export { InMemoryWorkshopPlatformService } from './in-memory-workshop-platform.js';

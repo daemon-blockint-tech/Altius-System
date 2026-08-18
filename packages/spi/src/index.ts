@@ -560,6 +560,18 @@ export type {
   TranslationBundle,
 } from './workshop-ux.js';
 
+// Workshop platform
+export type {
+  WorkshopPlatformService,
+  DragMediaType, DragEvent,
+  WorkshopAppDefinition, WorkshopAppPage, WorkshopAppSection,
+  WorkshopWidgetInstance, AppHeader, AppOverlay, AppTemplate,
+  MobileAppConfig, MobileLaunchSession,
+  AppModule, ModuleInterface, ModuleInstance,
+  ReactiveVariable, VariableSource, VariableTransformation, VariableLineage,
+  WidgetCatalogEntry,
+} from './workshop-platform.js';
+
 // LLM Client (Section AIP)
 export type {
   LLMClient,
