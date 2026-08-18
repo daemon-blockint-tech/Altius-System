@@ -279,7 +279,6 @@ export type {
   FilterCondition,
   ConditionOperator,
   JoinType,
-  AggregateFunction,
   WindowType,
   RuleExecutionResult,
   CreateRuleInput,

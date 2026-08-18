@@ -9,8 +9,6 @@
  * proposal store with a full approval workflow.
  */
 
-import type { RequestContext } from './ontology.js';
-
 // ---------------------------------------------------------------------------
 // Proposal types
 // ---------------------------------------------------------------------------
