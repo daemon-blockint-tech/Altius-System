@@ -210,38 +210,17 @@ function describeError(err: unknown): string {
 function buildLlmModelCatalog(env: NodeJS.ProcessEnv): ModelCatalogEntry[] {
   const models: ModelCatalogEntry[] = [];
 
-  const primaryModel = (env['LLM_DAEMON_MODEL'] ?? env['LLM_MODEL'] ?? '').trim();
-  if (primaryModel) {
-    models.push({
-      rid: `daemon:${primaryModel}`,
-      displayName: `Daemon Protocol — ${primaryModel}`,
-      provider: 'daemon',
-      modelId: primaryModel,
-      contextWindow: 128_000,
-      maxOutputTokens: 8_192,
-      supportsStreaming: true,
-      supportsTools: false,
-      zdr: false,
-      geo: 'any',
-      enabled: true,
-    });
+  const provider = (env['LLM_PROVIDER'] ?? '').trim().toLowerCase();
+  const fallbackProvider = (env['LLM_FALLBACK_PROVIDER'] ?? '').trim().toLowerCase();
+
+  if (provider && provider !== 'none') {
+    const entry = catalogEntryForProvider(provider, env, 'primary');
+    if (entry) models.push(entry);
   }
 
-  const fallbackModel = (env['LLM_OPENROUTER_MODEL'] ?? '').trim();
-  if (fallbackModel) {
-    models.push({
-      rid: `openrouter:${fallbackModel}`,
-      displayName: `OpenRouter — ${fallbackModel}`,
-      provider: 'openrouter',
-      modelId: fallbackModel,
-      contextWindow: 128_000,
-      maxOutputTokens: 8_192,
-      supportsStreaming: true,
-      supportsTools: false,
-      zdr: false,
-      geo: 'any',
-      enabled: true,
-    });
+  if (fallbackProvider && fallbackProvider !== 'none') {
+    const entry = catalogEntryForProvider(fallbackProvider, env, 'fallback');
+    if (entry) models.push(entry);
   }
 
   // Extra models declared via env (JSON array of ModelCatalogEntry).
@@ -256,6 +235,61 @@ function buildLlmModelCatalog(env: NodeJS.ProcessEnv): ModelCatalogEntry[] {
   }
 
   return models;
+}
+
+/**
+ * Resolve a single model catalog entry for a completion provider.
+ *
+ * Mirrors the model-id resolution in `createLLMClient`'s `buildClient` so the
+ * catalog advertises the same model the underlying client will actually use,
+ * including provider-specific defaults. Without this, a deployment using
+ * `LLM_PROVIDER=openai` or `anthropic` would get an empty or mislabeled
+ * catalog and the gateway would reject every chat completion with
+ * "Model not found in catalog".
+ */
+function catalogEntryForProvider(
+  provider: string,
+  env: NodeJS.ProcessEnv,
+  role: 'primary' | 'fallback',
+): ModelCatalogEntry | undefined {
+  const p = role === 'fallback' ? 'LLM_FALLBACK_' : 'LLM_';
+  let modelId: string;
+  let displayName: string;
+
+  switch (provider) {
+    case 'anthropic':
+      modelId = env[`${p}MODEL`]?.trim() || env['LLM_MODEL']?.trim() || 'claude-sonnet-4-5';
+      displayName = `Anthropic — ${modelId}`;
+      break;
+    case 'daemon':
+      modelId = (env['LLM_DAEMON_MODEL'] ?? 'oc/deepseek-v4-flash-free').trim();
+      displayName = `Daemon Protocol — ${modelId}`;
+      break;
+    case 'openrouter':
+      modelId = (env['LLM_OPENROUTER_MODEL'] ?? 'deepseek/deepseek-v4-flash').trim();
+      displayName = `OpenRouter — ${modelId}`;
+      break;
+    case 'openai':
+      modelId = (env['LLM_OPENAI_MODEL'] ?? 'gpt-4o').trim();
+      displayName = `OpenAI — ${modelId}`;
+      break;
+    default:
+      return undefined;
+  }
+
+  return {
+    rid: `${provider}:${modelId}`,
+    displayName,
+    provider,
+    modelId,
+    contextWindow: 128_000,
+    maxOutputTokens: 8_192,
+    supportsStreaming: true,
+    supportsTools: false,
+    zdr: false,
+    geo: 'any',
+    enabled: true,
+  };
 }
 
 async function main(): Promise<void> {

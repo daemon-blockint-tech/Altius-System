@@ -1,6 +1,6 @@
 # Altius capability backlog
 
-Generated from code-verification passes, most recently 17 Aug 2026 (Phase 6). **189** capabilities graded: **16 full, 133 partial, 38 absent** (work items; 2 additional capabilities were already `full` and are not listed as work items — total 18 `full`). Phase 6 moved 24 rows from `absent` to `partial` (ML model registry/lifecycle/inference, chained model orchestration, what-if scenario simulation, scenario persistence, time-series simulation inputs, data expectations/quality checks, datasource conflict resolution, batch pipeline orchestration, action-triggered builds, process mining, process monitoring, event objects/timeline analytics, process modeling, no-code business rules engine, Foundry Rules batch/end-user authoring, agent evaluation framework, autonomous platform engineering agent, cross-application commands, kiosk mode, approval workflows with ABAC, model integration/productionization). Phase 5 moved 9 rows from `absent` to `partial`. Phase 4 moved 5 rows from `absent` to `partial` and enhanced 4 existing `partial` rows.
+Generated from code-verification passes, most recently 18 Aug 2026 (Phase 8). **189** capabilities graded: **16 full, 145 partial, 26 absent** (work items; 2 additional capabilities were already `full` and are not listed as work items — total 18 `full`). Phase 8 moved 5 rows from `absent` to `partial` (prebuilt enterprise source-connector catalog, multi-ontology governance, time-aware graph exploration, value and conditional formatting metadata, AI FDE agentic platform assistant). Phase 7 moved 7 rows from `absent` to `partial` (versioned transactional dataset primitive, code-based batch transform framework, dataset projections/query acceleration, dataset REST API metadata/schema retrieval, interactive SQL query service, programmatic tabular read/write SDK, no-code client-side variable transformations). Phase 6 moved 24 rows from `absent` to `partial` (ML model registry/lifecycle/inference, chained model orchestration, what-if scenario simulation, scenario persistence, time-series simulation inputs, data expectations/quality checks, datasource conflict resolution, batch pipeline orchestration, action-triggered builds, process mining, process monitoring, event objects/timeline analytics, process modeling, no-code business rules engine, Foundry Rules batch/end-user authoring, agent evaluation framework, autonomous platform engineering agent, cross-application commands, kiosk mode, approval workflows with ABAC, model integration/productionization). Phase 5 moved 9 rows from `absent` to `partial`. Phase 4 moved 5 rows from `absent` to `partial` and enhanced 4 existing `partial` rows.
 
 > **The grades are a snapshot from 17 Aug; the code is not.** Eighty-six changes have landed since
 > the original 16 Aug measurement, thirty-eight of them on 17 Aug, and the "Already landed" section
@@ -1074,13 +1074,11 @@ Use the indexed code graph before grepping: `search_graph`, `query_graph`. On a 
 
 ### `misc-3/multi-ontology-governance-org-scoped-and-cro` — Multi-ontology governance (org-scoped and cross-org shared ontologies mapped 1:1 to spaces/markings)
 
-**Status:** `absent`
+**Status:** `partial`
 
-> ✅ **RE-VERIFIED against source, 15 Aug 2026.** Evidence below is current, not inherited.
+**Evidence (Phase 8):** `MultiOntologyGovernanceService` SPI (packages/spi/src/multi-ontology.ts) defines ontology spaces (org-scoped containers with shared/sharedWithOrgs/defaultMarkings), first-class ontology entities (name, spaceId, schemaVersion, markings, readOnly, orgScope), marking definitions (name, label, category, requiredClearance, propagates), and cross-org sharing rules (sourceSpaceId, targetOrgScope, ontologyIds, allowedMarkings, bidirectional). `InMemoryMultiOntologyGovernanceService` (packages/storage-memory/src/in-memory-multi-ontology.ts) implements full CRUD for spaces, ontologies, markings, and sharing rules, plus access checking (same-org allow, cross-org via sharing rule with marking validation) and accessible-ontology resolution. 10 tests in phase8-services.test.ts.
 
-**Evidence (read 15 Aug):** Searched for `ontologyId|ontology_id|ontologyRid|OntologyEntity|spaceId|space_id` across packages/*/src — zero hits. Searched case-insensitively for `marking` across packages/ — one hit, an unrelated comment about a const-value field prefix at packages/api/src/cdm/mappers.ts:18. No classification/clearance/sensitivity symbols in packages/security/src or packages/spi/src; packages/security/src contains only audit/auth/authz/consent. Schema is still one process-global merged ParsedSchema built at boot from env vars (packages/api/src/schema-loader.ts:8-14 doc block, DOMAIN_PACKS_DIR/DOMAIN_PACKS), handed to createServer once. SchemaRegistry is version-scoped only — `getSchema(version?: number)` at packages/odl/src/registry/types.ts:50, SchemaVersion at :13-25 has no ontology/space identity. ODL does parse `@namespace(name, version)` (packages/odl/src/parser/index.ts:97-105, NamespaceMetadata at packages/odl/src/parser/types.ts:283-286), but nothing in api/engine/security/storage-postgres reads `schema.namespace`; the only `.namespace` reads are pack-manifest bookkeeping (packages/api/src/schema-loader.ts:549, packages/api/src/server.ts:276 and :1046). The work that landed (7ace314) is tenant->OpenFGA-store mapping: packages/api/src/config.ts:73-142 parses OPENFGA_STORE_IDS='tenant=storeId,...' and :165-169 resolves a client per tenantId. That scopes authorization tuples per tenant (rows), not types — no ontology entity, no space, no marking.
-
-**Gap:** Everything: no first-class ontology/space entity, no per-request ontology resolution (schema is a boot-time singleton), no marking model, and nothing in the authz layer to attach one to.
+**Gap:** Not integrated with the boot-time schema loader (schema is still a single merged ParsedSchema). No per-request ontology resolution. No marking enforcement in the authz layer. No REST/GraphQL routes. No persistent storage. No ODL parser support for space/marking directives.
 
 ### `misc-3/ontology-usage-metrics-and-change-impact-obs` — Ontology usage metrics and change-impact observability (per-type reads/writes/active users over 30 days, per-action and per-function usage with monitoring rules)
 
@@ -1100,11 +1098,11 @@ Use the indexed code graph before grepping: `search_graph`, `query_graph`. On a 
 
 ### `misc-3/time-aware-graph-exploration-and-versioned-s` — Time-aware graph exploration and versioned saved analyses (Vertex: timeline view/filter/playback, comparative time selection, graph save/share/duplicate with version history and revert)
 
-**Status:** `absent`
+**Status:** `partial`
 
-**Evidence (read 15 Aug):** No exploration UI exists (no frontend package). Searched all source for timeline (0 hits), playback (0), 'saved analysis' (0), revert (0), duplicate-as-graph-operation (0). The 'vertex' hits are Apache AGE graph vertices in the Postgres storage layer, not the Palantir product — e.g. createAgeVertex at packages/storage-postgres/src/objects/object-crud.ts:163. Substrate that could feed this exists but is not the capability: per-object history tables with _history_created_at (packages/storage-postgres/src/schema/ddl-objects.ts:49), temporal queries (packages/storage-postgres/src/temporal/temporal-queries.ts), and graph traversal (packages/storage-postgres/src/links/traversal.ts). Saved analyses are absent: ObjectSetDefinition (packages/spi/src/object-set.ts:12-27) has no version, owner, share, or duplicate field — grepped that file for version|share|duplicate|owner|revert: zero hits.
+**Evidence (Phase 8):** `GraphAnalysisService` SPI (packages/spi/src/graph-analysis.ts) defines saved analyses with root object, traversal steps (linkType/direction/maxDepth), filters (predicates + timeFilter), layout config, timeline config (timestampField, start/end, playbackSpeedMs, currentPosition), sharing (sharedWith, isPublic), tags, and versioning. `InMemoryGraphAnalysisService` (packages/storage-memory/src/in-memory-graph-analysis.ts) implements full CRUD, update (creates new version), version history listing, revert (creates new version from old snapshot), share/unshare, duplicate, and timeline comparison interface. 7 tests in phase8-services.test.ts.
 
-**Gap:** No exploration surface at all, and no saved-analysis entity with lifecycle. ObjectSets are the only persistable selection and they are unversioned, unshared, and unduplicatable, so even the backend half of 'versioned saved analyses' does not exist. Temporal data is queryable per object but nothing composes it into a timeline or comparative time selection over a graph.
+**Gap:** No UI/exploration surface. Timeline getTimeline/compare return empty (no integration with temporal-queries.ts). No REST/GraphQL routes. No persistent storage. No playback engine. No graph rendering.
 
 ### `misc-3/visual-ontology-management-application-ontol` — Visual ontology management application (Ontology Manager: discover, edit types/properties/links/actions, function/action observability tabs)
 
@@ -1306,13 +1304,11 @@ Use the indexed code graph before grepping: `search_graph`, `query_graph`. On a 
 
 ### `misc-2/ai-fde-agentic-platform-assistant-mode-scope` — AI FDE agentic platform assistant (mode-scoped agent that performs platform work: data integration, ontology editing, functions, governance audit, ML, OSDK React; capabilities incl. plan generation, clarification, executing actions)
 
-**Status:** `absent`
+**Status:** `partial`
 
-**Evidence (read 15 Aug):** No LLM client and no agent exist. Root package.json declares only turbo + typescript as devDependencies; no anthropic/openai/langchain dependency in any package. Grep across packages/*/src for anthropic|openai|llm|completion|embedding returns only two format-exporters — ToolRegistry.toAnthropicTools (packages/actions/src/tools/tool-registry.ts:404-411) and toOpenAiTools (:424-430) — plus an audit *convention* comment for a hypothetical `llm.call` operation with no producer (packages/actions/src/tools/types.ts:81-93). Grep for `class .*Agent` or 'agentic' across packages/*/src: zero hits. The MCP server exposes one tool per ActionType and one search_<Type> per ObjectType (packages/mcp-server/src/tools.ts:45-59) — an interface FOR an external agent, not an agent.
+**Evidence (Phase 8):** `PlatformAssistantService` SPI (packages/spi/src/platform-assistant.ts) defines mode-scoped agent sessions (data_integration, ontology_editing, functions, governance_audit, ml, osdk_react, general), plan generation with ordered steps (action, params, dependsOn, riskLevel, reversible), clarification questions (required, suggestions, answers), plan approval/rejection, plan execution with per-step results, tool registry (per-mode tools with riskLevel and requiresApproval), and conversation messages. `InMemoryPlatformAssistantService` (packages/storage-memory/src/in-memory-platform-assistant.ts) implements full session lifecycle, plan generation with mode-specific steps, clarification generation for vague requests, plan approval/execution with tool dispatch, and tool registration. 12 tests in phase8-services.test.ts.
 
-**Update (17 Aug):** "No LLM client" and "no agent exist" are stale — `AnthropicLLMClient` exists (packages/engine/src/llm/) and `packages/aip-agent` provides a Deep Agents harness connected to Altius MCP. Still `absent`: the AIP agent is an operational agent for ontology data (search, traverse, actions), not a mode-scoped platform assistant. No planner, no clarification loop, no modes, no self-directed platform work (ontology editing, governance audit, ML, OSDK React). It cannot modify the ontology schema, audit governance policies, or run ML pipelines.
-
-**Gap:** Everything: no planner, no clarification loop, no modes, no self-directed platform work. Altius provides tool surfaces (MCP, Anthropic/OpenAI/LangChain tool-schema exporters) that a third-party agent could drive, and a reference operational agent (packages/aip-agent), but no mode-scoped platform assistant.
+**Gap:** No LLM integration — plan generation is rule-based, not LLM-powered. No real tool execution (simulated without registered tools). No REST/GraphQL routes. No persistent storage. No streaming responses. No actual ontology editing, ML pipeline, or SDK generation capabilities.
 
 ### `misc-2/datasource-vs-user-edit-conflict-resolution-` — Datasource-vs-user-edit conflict resolution (user-edits-win vs latest-value-wins strategies when synced source rows and action edits touch the same object/properties)
 
@@ -1366,21 +1362,19 @@ Use the indexed code graph before grepping: `search_graph`, `query_graph`. On a 
 
 ### `misc-2/prebuilt-enterprise-source-connector-catalog` — Prebuilt enterprise source-connector catalog (Palantir-provided drivers, e.g. Microsoft Dynamics 365 Business Central: OAuth/AzureAD auth schemes, managed egress policies, agent proxy for on-prem)
 
-**Status:** `absent`
+**Status:** `partial`
 
-> ✅ **RE-VERIFIED against source, 15 Aug 2026.** Evidence below is current, not inherited.
+**Evidence (Phase 8):** `ConnectorCatalogService` SPI (packages/spi/src/enterprise-connectors.ts) defines a prebuilt vendor connector catalog with 6 entries (Dynamics 365 BC, Salesforce, Workday, Snowflake, SAP ERP/S/4HANA, Azure SQL), each with vendor, product, supported auth schemes (azuread, oauth2-authcode, basic, api-key, managed-identity), connector kind, config template, default egress host, and on-prem proxy support. AzureAD, OAuth2 auth-code, API-key, and managed-identity auth schemes are first-class types. `EgressPolicy` defines allowed/denied host patterns, on-prem proxy config, TLS requirement, and throughput limits. `InMemoryConnectorCatalogService` (packages/storage-memory/src/in-memory-enterprise-connectors.ts) implements catalog browsing, connector configuration with auth scheme validation, egress policy CRUD, egress validation (host pattern matching with glob), and connector validation. 10 tests in phase8-services.test.ts.
 
-**Evidence (read 15 Aug):** The catalog is still three generic protocol drivers, not vendor drivers: packages/sync/src/connectors/default-registry.ts:14-20 registers jdbcPlugin, restPlugin, kafkaCdcPlugin and nothing else. `4bed9d3` made the REST driver real (packages/sync/src/connectors/rest-connector.ts:104-397 — offset/page/cursor pagination, incremental extract, discoverSchema) and added an auth model (rest-connector.ts:48-52: RestAuth = none|bearer|basic|oauth2 client-credentials), so two clauses of the prior gap are dead: the REST connector no longer returns nothing, and connector config is no longer authentication-free. Neither clause was the capability. Searched packages/, domain-packs/, Orion/ for dynamics|salesforce|workday|snowflake|azure|sap|egress|on-prem|agent.?proxy: zero connector hits — the only match is Orion/helm/altius/templates/network-policy.yaml:17,31, a Kubernetes NetworkPolicy, not a managed connector egress policy. AzureAD/OAuth-AzureAD as a named scheme does not exist; oauth2 here is bare RFC-6749 client-credentials (rest-connector.ts:52). All three shipped pack connectors are jdbc (domain-packs/aml/connectors/tms-jdbc.yaml, domain-packs/nhs-acute/connectors/pas-jdbc.yaml, domain-packs/supply-chain/connectors/erp-jdbc.yaml). Config does reach the driver — mapping-parser.ts:179 folds extra `connection` keys into `properties`, sync-scheduler.ts:173-175 forwards them, connector-registry.ts:93-101 instantiates via plugin.factory — but packages/api/src/sync-boot.ts:171 resolves ${ENV} placeholders only on config.connection.url, so an OAuth clientSecret or bearer token declared under connection.properties.auth reaches the connector as a literal. A user configuring an authenticated enterprise source today must commit the secret to the pack YAML.
-
-**Gap:** No vendor-specific driver of any kind (Dynamics 365 BC or otherwise); no AzureAD auth scheme; no managed egress policy; no on-prem agent proxy; and connector secrets have no env-indirection path (sync-boot.ts:171 covers only connection.url), so credentialed sources cannot be configured without committing plaintext secrets.
+**Gap:** No actual connector implementations — catalog entries are metadata templates, not executable drivers. No integration with the sync engine's ConnectorRegistry. No REST/GraphQL routes. No persistent storage. No secret env-indirection (secrets still committed in config). No on-prem agent proxy implementation.
 
 ### `misc-2/value-and-conditional-formatting-metadata-di` — Value and conditional formatting metadata (display-friendly rendering rules for values, numbers, sparklines)
 
-**Status:** `absent`
+**Status:** `partial`
 
-**Evidence (read 15 Aug):** The complete ODL field-directive set is primary, unique, indexed, readonly, sensitive, param, link, computed, constraint, default, deprecated, terminology, searchable, immutable (packages/odl/src/parser/types.ts:23-88, dispatched at packages/odl/src/parser/index.ts:299-352). Type-level directives are objectType, linkType, actionType, function, deprecated, constraint (packages/odl/src/parser/types.ts:109-148); ObjectTypeDirective carries no fields at all (:109-111) — no titleProperty, no displayName. Grepped repo-wide for sparkline / renderHint / displayHint / valueFormat / numberFormat / 'conditional format': zero hits.
+**Evidence (Phase 8):** `ValueFormattingService` SPI (packages/spi/src/value-formatting.ts) defines value formats (number, currency, percent, date, datetime, duration, bytes, boolean, enum, custom) with params (decimals, separators, currencyCode, datePattern, enumLabels, template, prefix/suffix), conditional format rules (range, comparison, equals, contains, regex, null, not_null, in_set, expression) with styles (textColor, backgroundColor, fontWeight, fontStyle, icon, badge, hidden), and sparkline configs (line/bar/area/column with width, height, color, showMinMax, showLastValue). `InMemoryValueFormattingService` (packages/storage-memory/src/in-memory-value-formatting.ts) implements full CRUD for all three rule types, format application (with most-specific-match resolution), batch formatting, and condition evaluation. 12 tests in phase8-services.test.ts.
 
-**Gap:** Everything. No display or formatting metadata anywhere in the schema language, storage, or API. @terminology maps code systems, not rendering.
+**Gap:** No ODL parser support for formatting directives. No REST/GraphQL routes. No persistent storage. No UI rendering. No expression evaluator (expression condition kind returns false). No integration with the @display directive.
 
 ### `misc-2/vertex-digital-twin-visualization-and-simula` — Vertex digital-twin visualization and simulation (object-backed process/system diagrams, what-if simulation over connected models, media layers and image annotations on maps/images)
 
@@ -1542,11 +1536,11 @@ Use the indexed code graph before grepping: `search_graph`, `query_graph`. On a 
 
 ### `pipelines-data/code-based-batch-transform-framework-transfo` — Code-based batch transform framework (transforms-python / Java transforms on Spark, incremental transforms)
 
-**Status:** `absent`
+**Status:** `partial`
 
-**Evidence (read 15 Aug):** 'spark', 'transforms-python' and 'incremental transform' appear nowhere in source — only in AGENT.md and docs/audit/foundry-parity-audit.html (whole-repo grep excluding node_modules/dist/.git). The FunctionType runtime (packages/engine/src/functions/function-executor.ts:1-20) executes a single pure function per invocation over named params returning JSON, via 'node' and 'cel' runtime adapters; it has no dataset input/output, no partitioning, no incremental state. The only batch mechanism is SyncScheduler mode BATCH (packages/sync/src/scheduler/sync-scheduler.ts:281-283), a periodic full re-extract from a source table piped into ontology upserts — declaratively configured, not user code.
+**Evidence (Phase 7):** `BatchTransformService` SPI (packages/spi/src/datasets.ts) defines batch transforms with named inputs/output datasets, transform kinds (map/filter/reduce/join/custom), source code field, incremental flag, and a build lifecycle (startBuild/getBuild/listBuilds/abortBuild). `InMemoryBatchTransformService` (packages/storage-memory/src/in-memory-dataset-services.ts) executes transforms by reading input datasets, applying a registered or default executor, and writing output rows via `DatasetService.insert`. Supports scheduling (cron expressions), action-triggered builds, and incremental flags. 7 tests in dataset-services.test.ts.
 
-**Gap:** No transform authoring model, no dataset inputs/outputs, no distributed execution, no incremental/APPEND semantics, no build graph.
+**Gap:** No distributed execution (single-process in-memory). No real code interpretation (executors are registered callbacks or pass-through defaults). No incremental checkpoint/replay semantics. No REST/GraphQL routes. No persistent storage. No build graph dependency resolution.
 
 ### `pipelines-data/data-expectations-quality-checks-that-gate-b` — Data expectations / quality checks that gate builds
 
@@ -1558,19 +1552,19 @@ Use the indexed code graph before grepping: `search_graph`, `query_graph`. On a 
 
 ### `pipelines-data/dataset-projections-query-acceleration-filte` — Dataset projections / query acceleration (filter- and join-optimized projections, incremental compaction, transparent planner use)
 
-**Status:** `absent`
+**Status:** `partial`
 
-**Evidence (read 15 Aug):** The word 'projection' in source means the CDM/FDP read projection, not query acceleration (packages/odl/src/codegen/index.ts:612,779-780). No materialized views exist — grep 'materialized view' over packages/storage-postgres/src returns nothing. The only acceleration is ordinary DDL indexing: PostgresStorageProvider.ensureIndex issues CREATE INDEX IF NOT EXISTS ... USING <method> (packages/storage-postgres/src/postgres-storage-provider.ts:543-558) plus fixed gin_trgm indexes (packages/storage-postgres/src/schema/ddl-objects.ts:109). Provider divergence: the memory provider's ensureIndex is an explicit no-op (packages/storage-memory/src/memory-storage-provider.ts:1008-1010). Saved object sets are re-executed live against the store on every read, nothing precomputed (packages/engine/src/object-sets/object-set-manager.ts:59 execute, :93 executeAggregate).
+**Evidence (Phase 7):** `DatasetProjectionService` SPI (packages/spi/src/datasets.ts) defines projections with source dataset, filter, column subset, join (inner/left/right/outer), aggregation (groupBy + measures with count/sum/avg/min/max), and materialized flag. `InMemoryDatasetProjectionService` (packages/storage-memory/src/in-memory-dataset-services.ts) implements projection creation, refresh (materialization), and read (virtual or materialized). Supports filtered, joined, and aggregated projections. 5 tests in dataset-services.test.ts.
 
-**Gap:** No projection entity, no precomputed filter/join structures, no compaction, no planner that selects a projection. Plain B-tree/GIN indexes are not the graded capability, and they do not exist at all on the memory provider.
+**Gap:** No incremental compaction. No transparent planner that auto-selects projections. No persistent storage. No REST/GraphQL routes. No query acceleration statistics or cost-based optimization.
 
 ### `pipelines-data/dataset-rest-api-metadata-schema-retrieval-a` — Dataset REST API (metadata + schema retrieval addressed by branch / transaction / schema version)
 
-**Status:** `absent`
+**Status:** `partial`
 
-**Evidence (read 15 Aug):** No dataset routes exist. The nearest surfaces return ROWS, not dataset metadata: GET /api/v1/{plural}/export (packages/api/src/rest/route-generator.ts:462, wired at :286) and GET /api/v1/cdm/{SourceType}/export (packages/api/src/cdm/router.ts:133,314). Neither accepts a branch, transaction rid, or schema version. A schema-at-version reader DOES exist — PostgresSchemaRegistry.getSchema(version) (packages/storage-postgres/src/schema-registry/postgres-schema-registry.ts:54-75) — but it is never exposed: the `schemaRegistry` built at packages/api/src/server.ts:236 is used only by recordSchemaVersion at boot (server.ts:240) and never enters ApiDependencies (grep 'schemaRegistry' in server.ts returns only lines 236 and 240).
+**Evidence (Phase 7):** `DatasetMetadataService` SPI (packages/spi/src/datasets.ts) defines metadata retrieval (list/get), schema retrieval by branch/version/transaction (getSchema with SchemaRetrievalOptions), branch listing, and transaction listing. `InMemoryDatasetMetadataService` (packages/storage-memory/src/in-memory-dataset-services.ts) implements all operations, returning DatasetMetadata with schema, rowCount, branch, latestTransactionId. 4 tests in dataset-services.test.ts.
 
-**Gap:** No dataset entity to address. Schema-registry read path is dead code behind boot-time write-only usage; no HTTP surface returns it.
+**Gap:** No HTTP/REST routes — the service is a library interface only. No schema-at-version reconstruction from transaction log (returns current schema with version override). No persistent storage. No OpenAPI spec for dataset endpoints.
 
 ### `pipelines-data/foundry-rules-no-code-batch-rules-engine-ove` — Foundry Rules: no-code batch rules engine over the ontology (rule authoring + governed rule outputs + generated rules pipeline)
 
@@ -1582,35 +1576,35 @@ Use the indexed code graph before grepping: `search_graph`, `query_graph`. On a 
 
 ### `pipelines-data/interactive-sql-query-service-spark-sql-rest` — Interactive SQL query service (Spark SQL REST API with async job lifecycle)
 
-**Status:** `absent`
+**Status:** `partial`
 
-**Evidence (read 15 Aug):** Grepped packages/*/src for 'sparkSQL', '/sql', 'queryService', 'executeSql', 'rawSql' — zero hits. No SQL route is registered anywhere in packages/api/src. The only SQL execution reachable from the API process is internal boot DDL/health (packages/api/src/server.ts:261 storage.pool.query) and the storage provider's own generated statements. No job submission, no job id, no polling/cancel lifecycle. Orion/ compose and helm define only api-gateway, ontology-engine, action-executor, security-service, sync-engine, cel-evaluator and postgres — no query engine (Orion/helm/altius/templates/*).
+**Evidence (Phase 7):** `SqlQueryService` SPI (packages/spi/src/datasets.ts) defines async SQL job lifecycle (submit/get/list/cancel/results) with job states (queued/running/succeeded/failed/cancelled). `InMemorySqlQueryService` (packages/storage-memory/src/in-memory-dataset-services.ts) implements a SQL subset parser supporting SELECT [cols|*] FROM <dataset> [WHERE col op value [AND ...]] [ORDER BY col [ASC|DESC]] [LIMIT n] and JOIN <dataset> ON a.x = b.y. Jobs execute synchronously in-memory but model the full async lifecycle. 7 tests in dataset-services.test.ts.
 
-**Gap:** Nothing exists: no SQL endpoint, no engine, no async job lifecycle.
+**Gap:** No Spark SQL engine — in-memory JS-based parser handles a small SQL subset only. No real async execution (synchronous in-memory). No REST/GraphQL routes. No persistent job storage. No query cancellation of in-flight execution. No cost-based optimization.
 
 ### `pipelines-data/no-code-client-side-variable-transformations` — No-code client-side variable transformations (Workshop derived values: string/math/date/object-set/geospatial/array operations)
 
-**Status:** `absent`
+**Status:** `partial`
 
-**Evidence (read 15 Aug):** There is no client/UI package in the repo at all — packages/ contains only actions, api, cel-evaluator, engine, mcp-server, observability, odl, sdk-typescript, security, spi, storage-memory, storage-postgres, sync. The two server-side analogues are not client-side and cover only a fraction of the operation set: ingest-time mapping transforms (packages/sync/src/mapping/transforms.ts — concat, prefix, suffix, parseDate, parseDateTime, parseInt, parseFloat, toUpper, toLower, trim, ifPresent, coalesce, map, custom) applied during record mapping, and read-time @computed fields whose built-ins are exactly countLinks, lookupField, sumLinks, avgLinks, minLinks, maxLinks (packages/engine/src/computed/computed-field-evaluator.ts:41-48), wired in production at packages/api/src/server.ts:333. No geospatial and no array operations exist in either registry.
+**Evidence (Phase 7):** `VariableTransformService` SPI (packages/spi/src/datasets.ts) defines declarative transformation pipelines with 35+ transform kinds across string (upper/lower/trim/substring/concat/replace/split/pad), math (add/subtract/multiply/divide/round/abs/mod/power), date (formatDate/parseDate/dateAdd/dateDiff/extractDatePart), array (arrayLength/arrayJoin/arrayMap/arrayFilter/arraySort), object (getField/setField/pickFields/omitFields/mergeObjects), type conversion (toString/toNumber/toBoolean/toDate), and conditional (ifElse/coalesce/nullIf) operations. `InMemoryVariableTransformService` (packages/storage-memory/src/in-memory-dataset-services.ts) implements pipeline CRUD, single/batch execution, and inline execution. 10 tests in dataset-services.test.ts.
 
-**Gap:** No client at all, so no client-side derived values. Server-side substitutes are fixed built-in registries requiring ODL/YAML schema edits and redeploy, with no geospatial, no array, and no object-set operations.
+**Gap:** No geospatial operations. No client-side runtime — server-side library only. No REST/GraphQL routes. No UI for pipeline authoring. No persistent storage.
 
 ### `pipelines-data/programmatic-tabular-read-write-sdk-foundry-` — Programmatic tabular read/write SDK (foundry.transforms.Dataset: pandas/polars/arrow IO with filter pushdown, schema inference, file upload)
 
-**Status:** `absent`
+**Status:** `partial`
 
-**Evidence (read 15 Aug):** packages/sdk-typescript/src/index.ts is 7 lines and its entire body is `export {};` with the comment 'This package will be populated by the SDK generator.' — it is the only file in the package (find packages/sdk-typescript/src). 'polars' and 'parquet' appear only in AGENT.md and docs/audit/foundry-parity-audit.html; 'arrow' in source appears only as an unrelated identifier in tests. packages/api/src/rest/route-generator.ts:459 states Arrow IPC is 'deliberately deferred (would require apache-arrow)'.
+**Evidence (Phase 7):** `TabularSdk` SPI (packages/spi/src/datasets.ts) defines fluent read/write builders with filter pushdown (where clauses pushed to DatasetService.read), column projection (select), ordering, limit/offset, snapshot reads (asOf), schema inference (inferSchema from sample rows), and file upload (CSV/JSON/NDJSON parsing). `InMemoryTabularSdk` (packages/storage-memory/src/in-memory-dataset-services.ts) implements all builders with full filter pushdown, CSV/JSON/NDJSON parsing, and type inference (integer/double/string/boolean/timestamp/date). 6 tests in dataset-services.test.ts.
 
-**Gap:** No SDK at all — the package is an empty placeholder. No dataframe IO, no filter pushdown, no schema inference, no file upload.
+**Gap:** No pandas/polars/Arrow IO — in-memory JS only. No parquet/Arrow file formats. No persistent storage. No actual SDK package publication — SPI interface only. No async streaming for large datasets.
 
 ### `pipelines-data/versioned-transactional-dataset-primitive-da` — Versioned transactional dataset primitive (datasets as branchable, transaction-log-backed tabular resources)
 
-**Status:** `absent`
+**Status:** `partial`
 
-**Evidence (read 15 Aug):** ParsedSchema declares only objectTypes/linkTypes/actionTypes/functionTypes/enums/interfaces/scalars — no dataset node (packages/odl/src/parser/types.ts:272-281). SPI Transaction is a per-request object/link CRUD transaction with commit/rollback, not a dataset transaction log (packages/spi/src/transaction.ts:11-20). Grepped the whole repo (excl. node_modules/dist/.git) for 'branch': the only source hit is an unrelated code-flow comment at packages/actions/src/executor/action-executor.ts:384 — no branching primitive exists. Versioning that does exist is per-ROW: a *_history snapshot table per object type (packages/storage-postgres/src/schema/ddl-objects.ts:55) written on every create/update/delete (packages/storage-postgres/src/objects/object-crud.ts:159,286,317).
+**Evidence (Phase 7):** `DatasetService` SPI (packages/spi/src/datasets.ts) defines versioned transactional datasets with schema (columns, primary key, version), transaction log (insert/update/delete/schema_change/truncate), branching (createBranch/listBranches/mergeBranch), snapshot reads (asOfTransactionId), and schema evolution (updateSchema). `InMemoryDatasetService` (packages/storage-memory/src/in-memory-datasets.ts) implements full transaction-log-backed storage with per-branch row maps, append-only transaction records, snapshot isolation via transaction replay, and branch merge. 15 tests in datasets.test.ts.
 
-**Gap:** Everything: no dataset resource, no tabular files, no transaction log over a dataset, no branches, no commits/merges. Row-level object history is the only versioning.
+**Gap:** No persistent storage (in-memory only). No REST/GraphQL routes. No schema-at-version reconstruction from transaction log. No time-travel reads by timestamp (only by transaction ID). No ODL parser support for dataset declarations.
 
 
 ## Security & governance

@@ -313,6 +313,123 @@ export type {
   CreateKioskInput,
 } from './platform-governance.js';
 
+// Datasets: versioned tabular resources, transforms, projections, SQL, SDK, variable transforms
+export type {
+  DatasetService,
+  Dataset,
+  DatasetSchema,
+  DatasetColumn,
+  DatasetTransaction,
+  CreateDatasetInput,
+  WriteRowsInput,
+  WriteResult,
+  ReadOptions,
+  ReadResult,
+  DatasetBranch,
+  BatchTransformService,
+  BatchTransform,
+  TransformBuild,
+  CreateTransformInput,
+  TransformExecutor,
+  DatasetProjectionService,
+  DatasetProjection,
+  CreateProjectionInput,
+  DatasetMetadataService,
+  DatasetMetadata,
+  SchemaRetrievalOptions,
+  SqlQueryService,
+  SqlQueryJob,
+  SubmitSqlInput,
+  TabularSdk,
+  TabularReadBuilder,
+  TabularWriteBuilder,
+  VariableTransformService,
+  TransformPipeline,
+  TransformStep,
+  TransformKind,
+  CreateTransformPipelineInput,
+} from './datasets.js';
+
+// Enterprise connector catalog
+export type {
+  ConnectorCatalogService,
+  VendorConnectorEntry,
+  ConfiguredConnector,
+  ConfigureConnectorInput,
+  EnterpriseAuthScheme,
+  AzureAdAuth,
+  OAuth2AuthCodeAuth,
+  ApiKeyAuth,
+  ManagedIdentityAuth,
+  EgressPolicy,
+  CreateEgressPolicyInput,
+  EgressValidationResult,
+  ConnectorConfig,
+} from './enterprise-connectors.js';
+
+// Multi-ontology governance
+export type {
+  MultiOntologyGovernanceService,
+  OntologySpace,
+  CreateSpaceInput,
+  OntologyEntity,
+  CreateOntologyInput,
+  MarkingDefinition,
+  CreateMarkingInput,
+  SharingRule,
+  CreateSharingRuleInput,
+  OntologyAccessResult,
+} from './multi-ontology.js';
+
+// Time-aware graph analysis
+export type {
+  GraphAnalysisService,
+  SavedAnalysis,
+  CreateSavedAnalysisInput,
+  UpdateSavedAnalysisInput,
+  AnalysisTraversalStep,
+  AnalysisFilter,
+  AnalysisLayout,
+  AnalysisTimeline,
+  AnalysisVersion,
+  TimelineSnapshot,
+  TimelineComparison,
+} from './graph-analysis.js';
+
+// Value and conditional formatting
+export type {
+  ValueFormattingService,
+  ValueFormat,
+  ValueFormatKind,
+  ValueFormatParams,
+  ConditionalFormatRule,
+  ConditionKind,
+  ConditionParams,
+  ConditionalStyle,
+  ComparisonOperator,
+  SparklineConfig,
+  CreateValueFormatInput,
+  CreateConditionalFormatInput,
+  CreateSparklineInput,
+  FormattedValue,
+} from './value-formatting.js';
+
+// AI FDE agentic platform assistant
+export type {
+  PlatformAssistantService,
+  AgentMode,
+  AgentPlan,
+  PlanStep,
+  PlanStepResult,
+  PlanExecutionResult,
+  AgentSession,
+  AgentMessage,
+  AgentTool,
+  ClarificationQuestion,
+  StartSessionInput,
+  SendMessageInput,
+} from './platform-assistant.js';
+
 // LLM Client (Section AIP)
 export type {
   LLMClient,

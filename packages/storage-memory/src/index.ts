@@ -36,3 +36,17 @@ export {
   InMemoryCommandService,
   InMemoryKioskService,
 } from './in-memory-platform-governance.js';
+export { InMemoryDatasetService } from './in-memory-datasets.js';
+export {
+  InMemoryBatchTransformService,
+  InMemoryDatasetProjectionService,
+  InMemoryDatasetMetadataService,
+  InMemorySqlQueryService,
+  InMemoryTabularSdk,
+  InMemoryVariableTransformService,
+} from './in-memory-dataset-services.js';
+export { InMemoryConnectorCatalogService } from './in-memory-enterprise-connectors.js';
+export { InMemoryMultiOntologyGovernanceService } from './in-memory-multi-ontology.js';
+export { InMemoryGraphAnalysisService } from './in-memory-graph-analysis.js';
+export { InMemoryValueFormattingService } from './in-memory-value-formatting.js';
+export { InMemoryPlatformAssistantService } from './in-memory-platform-assistant.js';

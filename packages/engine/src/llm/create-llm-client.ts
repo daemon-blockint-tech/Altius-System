@@ -128,7 +128,7 @@ function buildClient(
         ...(env[`${p}BASE_URL`]?.trim() ?? env['LLM_BASE_URL']?.trim()
           ? { baseUrl: (env[`${p}BASE_URL`]?.trim() ?? env['LLM_BASE_URL']!.trim())! }
           : {}),
-        ...(env[`${p}MODEL`]?.trim() ?? env['LLM_MODEL`']?.trim()
+        ...(env[`${p}MODEL`]?.trim() ?? env['LLM_MODEL']?.trim()
           ? { defaultModel: (env[`${p}MODEL`]?.trim() ?? env['LLM_MODEL']!.trim())! }
           : {}),
         ...(timeoutMs !== undefined ? { timeoutMs } : {}),

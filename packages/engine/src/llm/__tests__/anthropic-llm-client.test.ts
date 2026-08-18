@@ -346,6 +346,32 @@ describe('createLLMClient', () => {
     expect(built.isConfigured()).toBe(true);
   });
 
+  it('honors LLM_MODEL for the anthropic provider (regression: env key had a trailing backtick)', async () => {
+    // The condition that read LLM_MODEL had a backtick inside the key
+    // ('LLM_MODEL`'), so the var was never found and defaultModel silently
+    // fell back to the client's hardcoded default. Verify the env var
+    // reaches the request body.
+    const fetchMock = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) =>
+      jsonResponse({
+        content: [{ type: 'text', text: 'ok' }],
+        model: 'claude-test-123',
+        stop_reason: 'end_turn',
+        usage: { input_tokens: 1, output_tokens: 1 },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const built = createLLMClient({
+      LLM_PROVIDER: 'anthropic',
+      ANTHROPIC_API_KEY: 'k',
+      LLM_MODEL: 'claude-test-123',
+    });
+    await built.complete(ctx, 'hi');
+
+    const body = JSON.parse(String(fetchMock.mock.calls[0]![1]!.body));
+    expect(body.model).toBe('claude-test-123');
+  });
+
   it('throws when a provider is named but its credential is missing', () => {
     // Falling back to the no-op here would look healthy and 503 every call,
     // indistinguishable from "not configured yet".
