@@ -1,6 +1,6 @@
 # Altius capability backlog
 
-Generated from code-verification passes, most recently 18 Aug 2026 (Phase 8). **189** capabilities graded: **16 full, 145 partial, 26 absent** (work items; 2 additional capabilities were already `full` and are not listed as work items — total 18 `full`). Phase 8 moved 5 rows from `absent` to `partial` (prebuilt enterprise source-connector catalog, multi-ontology governance, time-aware graph exploration, value and conditional formatting metadata, AI FDE agentic platform assistant). Phase 7 moved 7 rows from `absent` to `partial` (versioned transactional dataset primitive, code-based batch transform framework, dataset projections/query acceleration, dataset REST API metadata/schema retrieval, interactive SQL query service, programmatic tabular read/write SDK, no-code client-side variable transformations). Phase 6 moved 24 rows from `absent` to `partial` (ML model registry/lifecycle/inference, chained model orchestration, what-if scenario simulation, scenario persistence, time-series simulation inputs, data expectations/quality checks, datasource conflict resolution, batch pipeline orchestration, action-triggered builds, process mining, process monitoring, event objects/timeline analytics, process modeling, no-code business rules engine, Foundry Rules batch/end-user authoring, agent evaluation framework, autonomous platform engineering agent, cross-application commands, kiosk mode, approval workflows with ABAC, model integration/productionization). Phase 5 moved 9 rows from `absent` to `partial`. Phase 4 moved 5 rows from `absent` to `partial` and enhanced 4 existing `partial` rows.
+Generated from code-verification passes, most recently 18 Aug 2026 (Phase 9). **189** capabilities graded: **16 full, 151 partial, 20 absent** (work items; 2 additional capabilities were already `full` and are not listed as work items — total 18 `full`). Phase 9 moved 6 rows from `absent` to `partial` (data freshness service, geospatial map workspace, interactive geospatial map application, interactive geospatial mapping, ad-hoc SQL analytics over ontology, embedded AI copilots). Phase 8 moved 5 rows from `absent` to `partial` (prebuilt enterprise source-connector catalog, multi-ontology governance, time-aware graph exploration, value and conditional formatting metadata, AI FDE agentic platform assistant). Phase 7 moved 7 rows from `absent` to `partial` (versioned transactional dataset primitive, code-based batch transform framework, dataset projections/query acceleration, dataset REST API metadata/schema retrieval, interactive SQL query service, programmatic tabular read/write SDK, no-code client-side variable transformations). Phase 6 moved 24 rows from `absent` to `partial` (ML model registry/lifecycle/inference, chained model orchestration, what-if scenario simulation, scenario persistence, time-series simulation inputs, data expectations/quality checks, datasource conflict resolution, batch pipeline orchestration, action-triggered builds, process mining, process monitoring, event objects/timeline analytics, process modeling, no-code business rules engine, Foundry Rules batch/end-user authoring, agent evaluation framework, autonomous platform engineering agent, cross-application commands, kiosk mode, approval workflows with ABAC, model integration/productionization). Phase 5 moved 9 rows from `absent` to `partial`. Phase 4 moved 5 rows from `absent` to `partial` and enhanced 4 existing `partial` rows.
 
 > **The grades are a snapshot from 17 Aug; the code is not.** Eighty-six changes have landed since
 > the original 16 Aug measurement, thirty-eight of them on 17 Aug, and the "Already landed" section
@@ -917,11 +917,11 @@ Use the indexed code graph before grepping: `search_graph`, `query_graph`. On a 
 
 ### `widgets/data-freshness-widget-last-indexed-timestamp` — Data Freshness widget (last-indexed timestamps per object type/datasource)
 
-**Status:** `absent`
+**Status:** `partial`
 
-**Evidence (read 15 Aug):** No freshness API exists. Repo-wide grep for freshness / lastIndexed / last_indexed / lastSync / watermark across packages returns nothing. The only last-processed signal is a Prometheus gauge: packages/api/src/metrics.ts:197-217 startSyncMetricsGauge polls scheduler.stats() every 15s and sets syncLastProcessedTimestamp{datasource}. It is unusable as widget data on four counts: (a) it is Prometheus text at GET /metrics, gated by podDirectOnly (packages/api/src/server.ts:914; the guard at packages/api/src/metrics.ts:145-153 returns 404 for any request bearing x-forwarded-for, i.e. anything through an ingress); (b) it only exists when SYNC_SCHEDULER_ENABLED === 'true' (server.ts:732-741) — otherwise syncBoot.scheduler is null and startSyncMetricsGauge is never called (server.ts:742); (c) stats are in-process per pod and reset on restart; (d) it is per-datasource with no per-object-type breakdown. The obvious fallback is also closed: objectToRest (packages/api/src/rest/route-generator.ts:70-87) drops _updatedAt from every REST response and generateObjectType (packages/odl/src/codegen/index.ts:120-136) omits it from GraphQL types, so no client can read a record's last-modified time; a max(_updatedAt) aggregate is reachable only when no field-redaction policy is configured, since the aggregate route rejects any field absent from getVisibleFields (route-generator.ts:1050-1068).
+**Evidence (Phase 9):** `DataFreshnessService` SPI (packages/spi/src/data-freshness.ts) defines per-type and per-datasource freshness records with lastSyncedAt, lastAttemptedAt, lastRecordCount, lastSyncSucceeded, lastError, and intervalMs. `InMemoryDataFreshnessService` (packages/storage-memory/src/in-memory-data-freshness.ts) implements recordSync, getFreshnessForType/Datasource, queryFreshness (with maxAge/minAge filtering), getSummary (fresh/stale/error counts), and deleteFreshness. 7 tests in phase9-services.test.ts.
 
-**Gap:** No queryable per-type or per-datasource freshness. The only timestamp is an ingress-blocked, opt-in, per-pod, in-memory Prometheus gauge, and record-level _updatedAt is stripped from both API surfaces.
+**Gap:** No integration with the sync scheduler for automatic recording. No REST/GraphQL routes. No persistent storage. No per-property freshness. No widget UI.
 
 ### `widgets/embedding-and-cross-app-widgets-iframe-embed` — Embedding and cross-app widgets (Iframe, Embed Foundry apps: Quiver/Notepad/Vertex/embedded Workshop modules, App Pairing, Commands)
 
@@ -1058,11 +1058,11 @@ Use the indexed code graph before grepping: `search_graph`, `query_graph`. On a 
 
 ### `misc-3/geospatial-map-workspace-object-selection-sh` — Geospatial map workspace (object selection, shape drawing/buffer/modify, spatial intersect search, geospatial actions, layer management)
 
-**Status:** `absent`
+**Status:** `partial`
 
-**Evidence (read 15 Aug):** No map UI and no spatial query engine. No mapping dependency exists in any package.json (searched mapbox-gl, leaflet, deck.gl across all packages/*/package.json: zero). Searched all source for spatial (0 hits), geoshape/GeoShape (0), intersect (1 unrelated hit), PostGIS (0). The only geo primitive is the GeoPoint scalar, stored as opaque JSONB (packages/storage-postgres/src/schema/type-mapping.ts:22-25) and validated only as 'typeof value === object && v !== null' (packages/engine/src/objects/validation.ts:81). The SPI/GraphQL filter operator set is non-spatial by construction: eq, ne, in, contains, startsWith for strings and eq, ne, in, gt, gte, lt, lte for numerics (packages/odl/src/codegen/index.ts:43-46), and GeoPoint is excluded from ORDERABLE_TYPES (codegen/index.ts:49).
+**Evidence (Phase 9):** `GeospatialMapService` SPI (packages/spi/src/geospatial-maps.ts) defines map layers (point/heatmap/cluster/line/polygon/tile with style, filter, opacity, zIndex), saved maps (layerIds, viewport, annotations, sharing), annotations (marker/shape/measurement/note with GeoShape), spatial search (spatialIntersect with point/bbox/circle/polygon, searchAround with Haversine radius, searchInBBox), geocoding (forward/reverse), and geometry helpers (buffer, area, distance, contains). `InMemoryGeospatialMapService` (packages/storage-memory/src/in-memory-geospatial-maps.ts) implements all operations with Haversine distance, ray-casting point-in-polygon, and injectable object reader for spatial queries. 13 tests in phase9-services.test.ts.
 
-**Gap:** No geometry type beyond a point, no spatial index (the DDL index methods are btree/hash/gin/gist chosen by IndexType name only, packages/storage-postgres/src/schema/type-mapping.ts:69-84, with no geometry column to attach GiST to), no spatial predicates in the filter grammar, and no drawing/buffer/layer surface. A spatial intersect search is not expressible even via the raw API.
+**Gap:** No map UI. No real geocoder (in-memory stub returns empty). No PostGIS integration. No persistent storage. No REST/GraphQL routes. No heatmap/cluster rendering. No tile server.
 
 ### `misc-3/governed-llm-gateway-openai-compatible-chat-` — Governed LLM gateway (OpenAI-compatible chat-completions proxy with model catalog RIDs, usage attribution, rate limiting, ZDR/geo governance)
 
@@ -1322,11 +1322,11 @@ Use the indexed code graph before grepping: `search_graph`, `query_graph`. On a 
 
 ### `misc-2/interactive-geospatial-map-application-layer` — Interactive geospatial Map application (layers/base layers, find/geocode, histogram property faceting+filtering, selection, time selection, draw/measure/annotate shapes, search-around, capture, saved maps)
 
-**Status:** `absent`
+**Status:** `partial`
 
-**Evidence (read 15 Aug):** No frontend package exists — packages/ contains only actions, api, cel-evaluator, engine, mcp-server, observability, odl, sdk-typescript, security, spi, storage-memory, storage-postgres, sync. Grepped repo-wide for geocode/basemap/mapbox/leaflet/geohash/histogram-facet/searchAround: zero hits outside docs/audit/foundry-parity-audit.html. Geo support at the data layer is nominal only: GeoPoint is a declared custom scalar (packages/odl/src/validator/index.ts:23, packages/odl/src/codegen/index.ts:29,37) with NO GraphQL scalar resolver anywhere in packages/api/src/graphql (grep for GraphQLScalarType returns nothing), stored as opaque JSONB (packages/storage-postgres/src/schema/type-mapping.ts:25). FilterExpression operators are exactly eq/neq/gt/gte/lt/lte/in/contains/startsWith/exists (packages/spi/src/ontology.ts:45-59) — no geo predicate. No PostGIS in any DDL file (packages/storage-postgres/src/schema/) or in Orion/docker-compose*.yaml.
+**Evidence (Phase 9):** Shares the `GeospatialMapService` SPI (packages/spi/src/geospatial-maps.ts) with the map workspace row. The service provides layers (with base URL for tile layers), saved maps (with viewport, sharing, tags), annotations (marker/shape/measurement/note), geocode/reverseGeocode, searchAround (radius search with distance sorting), and geometry helpers. `InMemoryGeospatialMapService` implements all operations. See the `misc-3/geospatial-map-workspace` row for full evidence.
 
-**Gap:** Everything. No map UI, no geo query operators, no spatial index, no geocoding, no shape/annotation storage, no saved maps. GeoPoint is an unvalidated pass-through blob.
+**Gap:** No map UI. No histogram property faceting. No time selection. No capture. No real geocoder. No persistent storage. No REST/GraphQL routes.
 
 ### `misc-2/kiosk-mode-long-lived-read-only-permission-s` — Kiosk mode (long-lived, read-only, permission-scoped display sessions with admin allowlisting and session launch history)
 
@@ -1423,11 +1423,11 @@ Use the indexed code graph before grepping: `search_graph`, `query_graph`. On a 
 
 ### `misc-1/ad-hoc-sql-analytics-over-the-ontology-sql-s` — Ad-hoc SQL analytics over the ontology (SQL Studio / Ontology SQL)
 
-**Status:** `absent`
+**Status:** `partial`
 
-**Evidence (read 15 Aug):** No SQL surface is exposed to users. The REST route inventory in packages/api/src/server.ts (:914-1253) plus the generated routes in packages/api/src/rest/route-generator.ts contain no /sql or query-execution endpoint; grep for sqlQuery/executeSql/rawSql/'sql studio'/'ontology sql'/'query editor' across packages/ and docs/ returns zero hits. SQL exists only as internal, structured generation — packages/storage-postgres/src/objects/filter-to-sql.ts translating FilterExpression, and DDL builders under packages/storage-postgres/src/schema/. The nearest analytics surface is the typed aggregate query: fooAggregate in GraphQL (packages/api/src/graphql/resolver-generator.ts:1001) and POST /api/v1/{plural}/aggregate (packages/api/src/rest/route-generator.ts:1018-1095).
+**Evidence (Phase 9):** `OntologySqlService` SPI (packages/spi/src/ontology-sql.ts) defines SQL query execution over object types (SELECT, WHERE, JOIN, GROUP BY with COUNT/SUM/AVG/MIN/MAX, ORDER BY, LIMIT), query explanation (parsed AST, estimated rows, fullScan warning), query validation, saved query CRUD with sharing, and virtual table schema discovery. `InMemoryOntologySqlService` (packages/storage-memory/src/in-memory-ontology-sql.ts) implements a SQL parser, nested-loop JOINs, aggregate functions, and injectable object reader. 11 tests in phase9-services.test.ts.
 
-**Gap:** No SQL dialect over the ontology, no interactive query surface or saved queries, and no joins across object types — aggregate is single-object-type with groupBy only, and is capped by a consent scan limit that hard-errors past CONSENT_SCAN_LIMIT (packages/api/src/rest/route-generator.ts:204-210).
+**Gap:** No real SQL engine — in-memory JS parser handles a small SQL subset. No REST/GraphQL routes. No persistent storage. No schema introspection (virtual table listing returns empty). No consent/FGA integration. No query timeout enforcement.
 
 ### `misc-1/autonomous-platform-engineering-agent-and-ev` — Autonomous platform engineering agent and evaluation harness (AI FDE, AIP Evals, Model Evaluations)
 
@@ -1457,11 +1457,11 @@ Use the indexed code graph before grepping: `search_graph`, `query_graph`. On a 
 
 ### `misc-1/interactive-geospatial-mapping-map-app-layer` — Interactive geospatial mapping (Map app: layers/overlays, geo search, search-around, annotations)
 
-**Status:** `absent`
+**Status:** `partial`
 
-**Evidence (read 15 Aug):** Only a GeoPoint scalar name exists, with no geo semantics anywhere. Declared as an allowed scalar in packages/odl/src/validator/index.ts:23 and packages/odl/src/codegen/index.ts:29,37; persisted as opaque JSONB in packages/storage-postgres/src/schema/type-mapping.ts:25; runtime validation is `GeoPoint: (v) => typeof v === 'object' && v !== null` (packages/engine/src/objects/validation.ts:81) — no lat/lon check. The only query predicate set, FieldPredicate.operator in packages/spi/src/ontology.ts:45-58, is eq/neq/gt/gte/lt/lte/in/contains/startsWith/exists — no within/radius/intersects/bbox. packages/mcp-server/src/tools.ts:36 even maps GeoPoint to 'string' for tool schemas, contradicting the JSONB object shape. Repo-wide grep over packages/, domain-packs/, Orion/ for geohash, PostGIS, bbox, leaflet, mapbox, tile, search-around, annotation returns zero code hits (only docs/audit/*.html prose). No package.json in packages/* declares any map or frontend dependency.
+**Evidence (Phase 9):** Shares the `GeospatialMapService` SPI (packages/spi/src/geospatial-maps.ts) with the map workspace and map application rows. The service provides layers (with overlays via multiple layers per map), geo search (spatialIntersect with point/bbox/circle/polygon shapes), search-around (radius search with Haversine distance), and annotations (marker/shape/measurement/note). `InMemoryGeospatialMapService` implements all operations. See the `misc-3/geospatial-map-workspace` row for full evidence.
 
-**Gap:** Everything: no map surface, no layer/overlay model, no geo indexing or geo predicates, no geo search, no search-around, no annotations. GeoPoint is a name on an unvalidated JSONB blob.
+**Gap:** No map UI. No overlay rendering. No persistent storage. No REST/GraphQL routes. No real geocoder.
 
 ### `misc-1/llm-application-platform-aip-multi-model-cat` — LLM application platform (AIP: multi-model catalog, prompt engineering, AIP Logic block orchestration, token/rate governance)
 
@@ -2119,11 +2119,11 @@ All package suites green: 377 ODL + 367 engine + 138 memory + 800 API + 99 web.
 
 ### `aip-agents/embedded-ai-copilots-across-platform-applica` — Embedded AI copilots across platform applications
 
-**Status:** `absent`
+**Status:** `partial`
 
-**Evidence (read 15 Aug):** There are no platform applications to embed a copilot in. `find . -name "*.tsx" -not -path "*/node_modules/*"` returns nothing, and the repo root contains only AGENT.md, LICENSE, Orion, README.md, docs, domain-packs, factory, package.json, packages, pnpm-*, tests, tools, tsconfig*, turbo.json — no web/app/ui directory and no index.html. Every workspace package (odl, engine, spi, storage-postgres, storage-memory, api, actions, cel-evaluator, security, sync, mcp-server, observability, sdk-typescript) is a headless library or server. Altius is backend-only: the AI-facing surface it does ship is the outbound MCP endpoint (packages/api/src/server.ts:1192-1231) that lets an *external* client such as Claude Code act as the copilot. Combined with the absence of any model client (capability 1), there is neither a host UI nor an inference path.
+**Evidence (Phase 9):** `EmbeddedCopilotService` SPI (packages/spi/src/embedded-copilots.ts) defines copilot instances (per app context: object_table, object_detail, action_form, ontology_manager, pipeline_builder, map_view, graph_explorer, dashboard, general), conversations with view context (objectType, objectId, filter, selectedObjectIds, actionName), messages with action suggestions, and suggested prompts/actions. `InMemoryEmbeddedCopilotService` (packages/storage-memory/src/in-memory-embedded-copilots.ts) implements full copilot CRUD, conversation lifecycle, message generation with context-aware responses, and action suggestions. 10 tests in phase9-services.test.ts.
 
-**Gap:** No user-facing application layer exists at all, so 'embedded copilot' has no host. Would require a frontend, an in-app assistant surface, context passing from the current view, and model access — none present.
+**Gap:** No LLM integration — responses are rule-based, not LLM-powered. No UI/embedding surface. No REST/GraphQL routes. No persistent storage. No streaming. No actual action execution.
 
 ### `aip-agents/embedding-vector-services-and-semantic-retri` — Embedding / vector services and semantic retrieval
 

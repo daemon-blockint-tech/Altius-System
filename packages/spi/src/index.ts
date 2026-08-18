@@ -430,6 +430,61 @@ export type {
   SendMessageInput,
 } from './platform-assistant.js';
 
+// Data freshness
+export type {
+  DataFreshnessService,
+  FreshnessRecord,
+  FreshnessQuery,
+  FreshnessSummary,
+} from './data-freshness.js';
+
+// Geospatial maps
+export type {
+  GeospatialMapService,
+  MapLayer,
+  CreateMapLayerInput,
+  MapLayerStyle,
+  SavedMap,
+  CreateSavedMapInput,
+  MapViewport,
+  MapAnnotation,
+  CreateAnnotationInput,
+  GeoShape,
+  GeoPointValue,
+  GeoBBox,
+  GeoPolygonValue,
+  GeoCircleValue,
+  GeocodeResult,
+  ReverseGeocodeResult,
+  SpatialSearchResult,
+  SearchAroundResult,
+} from './geospatial-maps.js';
+
+// Ontology SQL
+export type {
+  OntologySqlService,
+  SavedSqlQuery,
+  CreateSavedSqlQueryInput,
+  SqlQueryParameter,
+  OntologySqlResult,
+  SqlExecutionOptions,
+  SqlQueryExplanation,
+} from './ontology-sql.js';
+
+// Embedded copilots
+export type {
+  EmbeddedCopilotService,
+  CopilotInstance,
+  CreateCopilotInput,
+  CopilotConversation,
+  CopilotViewContext,
+  CopilotMessage,
+  CopilotActionSuggestion,
+  CopilotAppContext,
+  StartCopilotConversationInput,
+  SendCopilotMessageInput,
+} from './embedded-copilots.js';
+
 // LLM Client (Section AIP)
 export type {
   LLMClient,

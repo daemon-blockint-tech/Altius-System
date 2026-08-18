@@ -50,3 +50,9 @@ export { InMemoryMultiOntologyGovernanceService } from './in-memory-multi-ontolo
 export { InMemoryGraphAnalysisService } from './in-memory-graph-analysis.js';
 export { InMemoryValueFormattingService } from './in-memory-value-formatting.js';
 export { InMemoryPlatformAssistantService } from './in-memory-platform-assistant.js';
+export { InMemoryDataFreshnessService } from './in-memory-data-freshness.js';
+export { InMemoryGeospatialMapService } from './in-memory-geospatial-maps.js';
+export type { ObjectReader } from './in-memory-geospatial-maps.js';
+export { InMemoryOntologySqlService } from './in-memory-ontology-sql.js';
+export type { OntologyObjectReader } from './in-memory-ontology-sql.js';
+export { InMemoryEmbeddedCopilotService } from './in-memory-embedded-copilots.js';
