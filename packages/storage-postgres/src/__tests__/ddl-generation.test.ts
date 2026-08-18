@@ -448,10 +448,16 @@ describe('generateDDL', () => {
     expect(result.audit.length).toBeGreaterThan(0);
     expect(result.consent.length).toBeGreaterThan(0);
     expect(result.lineage.length).toBeGreaterThan(0);
+    expect(result.llm.length).toBeGreaterThan(0);
+    expect(result.embeddings.length).toBeGreaterThan(0);
+    expect(result.platform.length).toBeGreaterThan(0);
     expect(result.all.length).toBe(
       result.audit.length +
       result.consent.length +
       result.lineage.length +
+      result.llm.length +
+      result.embeddings.length +
+      result.platform.length +
       result.objectTables.length +
       result.linkTables.length
     );
@@ -480,11 +486,17 @@ describe('generateDDL', () => {
       includeAudit: false,
       includeConsent: false,
       includeLineage: false,
+      includeLLM: false,
+      includeEmbeddings: false,
+      includePlatform: false,
     });
 
     expect(result.audit).toHaveLength(0);
     expect(result.consent).toHaveLength(0);
     expect(result.lineage).toHaveLength(0);
+    expect(result.llm).toHaveLength(0);
+    expect(result.embeddings).toHaveLength(0);
+    expect(result.platform).toHaveLength(0);
     expect(result.all.length).toBe(
       result.objectTables.length + result.linkTables.length
     );

@@ -15,12 +15,18 @@ import { generateLinkTableDDL } from './ddl-links.js';
 import { generateAuditDDL } from './ddl-audit.js';
 import { generateConsentDDL } from './ddl-consent.js';
 import { generateLineageDDL } from './ddl-lineage.js';
+import { generateLLMDDL } from './ddl-llm.js';
+import { generateEmbeddingsDDL } from './ddl-embeddings.js';
+import { generatePlatformDDL } from './ddl-platform.js';
 
 export { generateObjectTableDDL } from './ddl-objects.js';
 export { generateLinkTableDDL } from './ddl-links.js';
 export { generateAuditDDL } from './ddl-audit.js';
 export { generateConsentDDL } from './ddl-consent.js';
 export { generateLineageDDL } from './ddl-lineage.js';
+export { generateLLMDDL } from './ddl-llm.js';
+export { generateEmbeddingsDDL } from './ddl-embeddings.js';
+export { generatePlatformDDL } from './ddl-platform.js';
 export { pgType, pgIdent, snakeCase, pgIndexMethod } from './type-mapping.js';
 
 /**
@@ -35,6 +41,12 @@ export interface DDLGenerationOptions {
   includeLineage?: boolean;
   /** Whether to include consent DDL. Default: true. */
   includeConsent?: boolean;
+  /** Whether to include LLM governance DDL (usage, rate limits). Default: true. */
+  includeLLM?: boolean;
+  /** Whether to include embeddings DDL (pgvector). Default: true. */
+  includeEmbeddings?: boolean;
+  /** Whether to include platform store DDL (blob, timeseries, branch, comment, notification). Default: true. */
+  includePlatform?: boolean;
 }
 
 /**
@@ -51,6 +63,12 @@ export interface GeneratedDDL {
   consent: string[];
   /** DDL for lineage schema and tables. */
   lineage: string[];
+  /** DDL for LLM governance schema (usage records, rate limits). */
+  llm: string[];
+  /** DDL for embeddings schema (pgvector). */
+  embeddings: string[];
+  /** DDL for platform stores (blob, timeseries, branch, comment, notification). */
+  platform: string[];
   /** All statements in execution order. */
   all: string[];
 }
@@ -67,6 +85,9 @@ export function generateDDL(
     includeAudit = true,
     includeLineage = true,
     includeConsent = true,
+    includeLLM = true,
+    includeEmbeddings = true,
+    includePlatform = true,
   } = options;
 
   const result: GeneratedDDL = {
@@ -75,6 +96,9 @@ export function generateDDL(
     audit: [],
     consent: [],
     lineage: [],
+    llm: [],
+    embeddings: [],
+    platform: [],
     all: [],
   };
 
@@ -115,14 +139,33 @@ export function generateDDL(
     result.lineage.push(...generateLineageDDL());
   }
 
+  // LLM governance (usage tracking + rate limiting)
+  if (includeLLM) {
+    result.llm.push(...generateLLMDDL());
+  }
+
+  // Embeddings (pgvector)
+  if (includeEmbeddings) {
+    result.embeddings.push(...generateEmbeddingsDDL());
+  }
+
+  // Platform stores (blob, timeseries, branch, comment, notification)
+  if (includePlatform) {
+    result.platform.push(...generatePlatformDDL());
+  }
+
   // Combine all in execution order:
-  // 1. Audit + consent + lineage schemas first (schema creation)
+  // 1. Platform schemas first (schema + extension creation)
+  //    - audit, consent, lineage, llm, embeddings, platform
   // 2. Object tables
   // 3. Link tables
   result.all = [
     ...result.audit,
     ...result.consent,
     ...result.lineage,
+    ...result.llm,
+    ...result.embeddings,
+    ...result.platform,
     ...result.objectTables,
     ...result.linkTables,
   ];

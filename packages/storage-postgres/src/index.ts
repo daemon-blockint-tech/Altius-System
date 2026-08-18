@@ -80,3 +80,20 @@ export { withRetry } from './retry.js';
 export type { RetryOptions } from './retry.js';
 
 export { PostgresLineageStore } from './lineage/postgres-lineage-store.js';
+
+// ─── LLM governance (usage tracking + rate limiting) ───
+export { PostgresLLMUsageTracker } from './llm/postgres-llm-usage-tracker.js';
+export { PostgresLLMRateLimiter } from './llm/postgres-llm-rate-limiter.js';
+export { generateLLMDDL } from './schema/ddl-llm.js';
+
+// ─── Embeddings (pgvector) ───
+export { PostgresEmbeddingStore } from './embeddings/postgres-embedding-store.js';
+export { generateEmbeddingsDDL } from './schema/ddl-embeddings.js';
+
+// ─── Platform stores (blob, time-series, branch, comment, notification) ───
+export { PostgresBlobStore } from './blob/postgres-blob-store.js';
+export { PostgresTimeSeriesStore } from './timeseries/postgres-time-series-store.js';
+export { PostgresBranchStore } from './branch/postgres-branch-store.js';
+export { PostgresCommentStore } from './comment/postgres-comment-store.js';
+export { PostgresNotificationStore } from './notification/postgres-notification-store.js';
+export { generatePlatformDDL } from './schema/ddl-platform.js';
