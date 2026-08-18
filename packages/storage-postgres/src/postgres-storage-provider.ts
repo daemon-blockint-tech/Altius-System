@@ -241,14 +241,25 @@ export class PostgresStorageProvider implements StorageProvider {
     `);
 
     // Compute DDL checksum from ontology-specific DDL only.
-    // Platform DDL (consent) is excluded because it's applied idempotently
-    // and wasn't part of earlier schema versions' checksums.
+    // Platform DDL (consent, llm, embeddings, platform stores) is excluded
+    // because it's applied idempotently and wasn't part of earlier schema
+    // versions' checksums.
     const checksumParts = [
       ...ddl.audit, ...ddl.lineage,
       ...ddl.objectTables, ...ddl.linkTables,
     ];
     const ddlText = checksumParts.join('\n');
     const checksum = createHash('sha256').update(ddlText).digest('hex').slice(0, 16);
+
+    // Platform DDL: idempotent statements for platform-level tables that are
+    // not tied to a specific ontology schema version. Applied on every boot
+    // to ensure new tables/columns from upgrades are created.
+    const platformDDL = [
+      ...ddl.consent,
+      ...ddl.llm,
+      ...ddl.embeddings,
+      ...ddl.platform,
+    ];
 
     // Check if this version is already applied (cheap check before acquiring lock)
     const existing = await this._pool.query(
@@ -264,7 +275,7 @@ export class PostgresStorageProvider implements StorageProvider {
         // Schema version already applied — still run platform DDL (consent)
         // for upgrades that add new platform tables/columns. These statements
         // are idempotent (IF NOT EXISTS, ADD COLUMN IF NOT EXISTS).
-        for (const stmt of ddl.consent) {
+        for (const stmt of platformDDL) {
           await this._pool.query(stmt);
         }
         this._currentSchemaVersion = schema.version;
@@ -301,7 +312,7 @@ export class PostgresStorageProvider implements StorageProvider {
               `These require an approved migration; the additive parts were not applied either.`,
             );
           }
-          for (const stmt of ddl.consent) {
+          for (const stmt of platformDDL) {
             await client.query(stmt);
           }
           // Creates any newly-declared tables/indexes; existing tables are untouched.
@@ -322,7 +333,7 @@ export class PostgresStorageProvider implements StorageProvider {
           return { success: true, fromVersion, toVersion: schema.version, appliedAt: reconciledAt };
         }
         // Platform DDL under advisory lock for concurrent startup safety
-        for (const stmt of ddl.consent) {
+        for (const stmt of platformDDL) {
           await client.query(stmt);
         }
         await client.query('COMMIT');
@@ -332,9 +343,10 @@ export class PostgresStorageProvider implements StorageProvider {
         return { success: true, fromVersion, toVersion: schema.version, appliedAt: now };
       }
 
-      // Apply platform DDL (consent) under the advisory lock before ontology DDL.
-      // Serializes concurrent startup so only one pod creates the schema/tables.
-      for (const stmt of ddl.consent) {
+      // Apply platform DDL (consent, llm, embeddings, platform stores) under
+      // the advisory lock before ontology DDL. Serializes concurrent startup
+      // so only one pod creates the schema/tables.
+      for (const stmt of platformDDL) {
         await client.query(stmt);
       }
 
