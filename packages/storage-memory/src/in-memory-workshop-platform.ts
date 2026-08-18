@@ -95,14 +95,15 @@ const DEFAULT_WIDGETS: Array<Omit<WidgetCatalogEntry, 'id'>> = [
 ];
 
 export class InMemoryWorkshopPlatformService implements WorkshopPlatformService {
-  private readonly dragTypes = new Map<string, DragMediaType>();
+  private readonly dragTypes = new Map<string, Map<string, DragMediaType>>();
   private readonly dragEvents = new Map<string, Map<string, DragEvent>>();
   private readonly apps = new Map<string, Map<string, WorkshopAppDefinition>>();
-  private readonly templates = new Map<string, AppTemplate>();
+  private readonly templates = new Map<string, Map<string, AppTemplate>>();
   private readonly mobileConfigs = new Map<string, Map<string, MobileAppConfig>>();
   private readonly mobileSessions = new Map<string, Map<string, MobileLaunchSession>>();
   private readonly modules = new Map<string, Map<string, AppModule>>();
   private readonly variables = new Map<string, Map<string, ReactiveVariable>>();
+  private readonly widgets = new Map<string, Map<string, WidgetCatalogEntry>>();
   private readonly widgets = new Map<string, WidgetCatalogEntry>();
   private readonly objectViews = new Map<string, Map<string, ObjectView>>();
 
@@ -114,13 +115,13 @@ export class InMemoryWorkshopPlatformService implements WorkshopPlatformService 
 
   // ── Cross-app interactivity ──
 
-  async registerDragMediaType(_ctx: RequestContext, mediaType: Omit<DragMediaType, 'id'>): Promise<DragMediaType> {
+  async registerDragMediaType(ctx: RequestContext, mediaType: Omit<DragMediaType, 'id'>): Promise<DragMediaType> {
     const entry: DragMediaType = { id: randomUUID(), ...mediaType };
-    this.dragTypes.set(entry.id, entry);
+    this.getDragTypeMap(ctx.tenantId).set(entry.id, entry);
     return entry;
   }
-  async listDragMediaTypes(_ctx: RequestContext): Promise<DragMediaType[]> {
-    return Array.from(this.dragTypes.values());
+  async listDragMediaTypes(ctx: RequestContext): Promise<DragMediaType[]> {
+    return Array.from(this.getDragTypeMap(ctx.tenantId).values());
   }
   async recordDragEvent(ctx: RequestContext, sourceAppId: string, mediaType: string, payload: Record<string, unknown>, targetAppId?: string): Promise<DragEvent> {
     const event: DragEvent = { id: randomUUID(), tenantId: ctx.tenantId, sourceAppId, targetAppId, mediaType, payload, completed: !!targetAppId, timestamp: new Date().toISOString() };
@@ -226,18 +227,18 @@ export class InMemoryWorkshopPlatformService implements WorkshopPlatformService 
 
   // ── Templates ──
 
-  async createTemplate(_ctx: RequestContext, template: Omit<AppTemplate, 'id'>): Promise<AppTemplate> {
+  async createTemplate(ctx: RequestContext, template: Omit<AppTemplate, 'id'>): Promise<AppTemplate> {
     const t: AppTemplate = { id: randomUUID(), ...template };
-    this.templates.set(t.id, t);
+    this.getTemplateMap(ctx.tenantId).set(t.id, t);
     return t;
   }
-  async listTemplates(_ctx: RequestContext, category?: string): Promise<AppTemplate[]> {
-    let list = Array.from(this.templates.values());
+  async listTemplates(ctx: RequestContext, category?: string): Promise<AppTemplate[]> {
+    let list = Array.from(this.getTemplateMap(ctx.tenantId).values());
     if (category) list = list.filter(t => t.category === category);
     return list;
   }
   async createAppFromTemplate(ctx: RequestContext, templateId: string, name: string): Promise<WorkshopAppDefinition> {
-    const template = this.templates.get(templateId);
+    const template = this.templates.get(ctx.tenantId)?.get(templateId);
     if (!template) throw new Error(`Template not found: ${templateId}`);
     const app = await this.createApp(ctx, { name, description: template.description, header: template.template.header, theme: template.template.theme });
     const updated = { ...app, templateId, pages: template.template.pages ?? [] };
@@ -375,17 +376,17 @@ export class InMemoryWorkshopPlatformService implements WorkshopPlatformService 
 
   // ── Widget catalog ──
 
-  async listWidgetCatalog(_ctx: RequestContext, category?: WidgetCatalogEntry['category']): Promise<WidgetCatalogEntry[]> {
-    let list = Array.from(this.widgets.values());
+  async listWidgetCatalog(ctx: RequestContext, category?: WidgetCatalogEntry['category']): Promise<WidgetCatalogEntry[]> {
+    let list = Array.from(this.getWidgetMap(ctx.tenantId).values());
     if (category) list = list.filter(w => w.category === category);
     return list.sort((a, b) => a.name.localeCompare(b.name));
   }
-  async getWidgetCatalogEntry(_ctx: RequestContext, type: string): Promise<WidgetCatalogEntry | null> {
-    return this.widgets.get(type) ?? null;
+  async getWidgetCatalogEntry(ctx: RequestContext, type: string): Promise<WidgetCatalogEntry | null> {
+    return this.getWidgetMap(ctx.tenantId).get(type) ?? null;
   }
-  async registerWidgetCatalogEntry(_ctx: RequestContext, entry: Omit<WidgetCatalogEntry, 'id'>): Promise<WidgetCatalogEntry> {
+  async registerWidgetCatalogEntry(ctx: RequestContext, entry: Omit<WidgetCatalogEntry, 'id'>): Promise<WidgetCatalogEntry> {
     const e: WidgetCatalogEntry = { id: randomUUID(), ...entry };
-    this.widgets.set(entry.type, e);
+    this.getWidgetMap(ctx.tenantId).set(entry.type, e);
     return e;
   }
 
@@ -464,6 +465,16 @@ export class InMemoryWorkshopPlatformService implements WorkshopPlatformService 
     return updated;
   }
 
+  private getDragTypeMap(t: string) { let m = this.dragTypes.get(t); if (!m) { m = new Map(); this.dragTypes.set(t, m); } return m; }
+  private getTemplateMap(t: string) { let m = this.templates.get(t); if (!m) { m = new Map(); this.templates.set(t, m); } return m; }
+  private getWidgetMap(t: string) {
+    let m = this.widgets.get(t);
+    if (!m) {
+      m = new Map(DEFAULT_WIDGETS.map(w => [w.type, { id: randomUUID(), ...w }]));
+      this.widgets.set(t, m);
+    }
+    return m;
+  }
   private getDragEventMap(t: string) { let m = this.dragEvents.get(t); if (!m) { m = new Map(); this.dragEvents.set(t, m); } return m; }
   private getAppMap(t: string) { let m = this.apps.get(t); if (!m) { m = new Map(); this.apps.set(t, m); } return m; }
   private getMobileConfigMap(t: string) { let m = this.mobileConfigs.get(t); if (!m) { m = new Map(); this.mobileConfigs.set(t, m); } return m; }

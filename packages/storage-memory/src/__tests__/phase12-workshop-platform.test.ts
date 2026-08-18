@@ -7,6 +7,7 @@ import { InMemoryWorkshopPlatformService } from '../in-memory-workshop-platform.
 import type { RequestContext } from '@altius/spi';
 
 const CTX: RequestContext = { tenantId: 't1', actorId: 'u1' };
+const OTHER: RequestContext = { tenantId: 't2', actorId: 'u2' };
 
 describe('InMemoryWorkshopPlatformService', () => {
   let service: InMemoryWorkshopPlatformService;
@@ -262,6 +263,42 @@ describe('InMemoryWorkshopPlatformService', () => {
     expect(map?.mobileOptimized).toBe(false);
   });
 
+  // ── Tenant isolation ──
+
+  it('does not leak drag media types across tenants', async () => {
+    await service.registerDragMediaType(CTX, {
+      type: 'application/x-altius-object', label: 'Altius Object',
+      description: 'Drag an ontology object', payloadSchema: { type: 'object' },
+      draggable: true, droppable: true, producerApps: ['app1'], consumerApps: ['app2'],
+    });
+    expect(await service.listDragMediaTypes(CTX)).toHaveLength(1);
+    expect(await service.listDragMediaTypes(OTHER)).toHaveLength(0);
+  });
+
+  it('does not leak templates across tenants', async () => {
+    const t = await service.createTemplate(CTX, {
+      name: 'Clinical', description: 'Clinical dashboard', category: 'health',
+      template: {}, tags: ['health'],
+    });
+    expect(await service.listTemplates(CTX)).toHaveLength(1);
+    expect(await service.listTemplates(OTHER)).toHaveLength(0);
+    await expect(service.createAppFromTemplate(OTHER, t.id, 'Stolen')).rejects.toThrow(/not found/);
+  });
+
+  it('does not leak registered widgets across tenants, but keeps the built-in catalog', async () => {
+    const builtins = (await service.listWidgetCatalog(OTHER)).length;
+    expect(builtins).toBeGreaterThan(0);
+    await service.registerWidgetCatalogEntry(CTX, {
+      type: 'tenant_widget', name: 'Tenant Widget', description: 'Private', category: 'data',
+      configSchema: {}, defaultConfig: {}, supportedDataSources: ['objectSet'],
+      supportsLiveUpdates: false, minWidth: 1, available: true, version: '1.0.0',
+      displayOptimization: { supportsVirtualization: false, supportsColumnResize: false, supportsFrozenColumns: false, supportsDensityModes: false },
+      mobileOptimized: true,
+    });
+    expect(await service.getWidgetCatalogEntry(CTX, 'tenant_widget')).not.toBeNull();
+    expect(await service.getWidgetCatalogEntry(OTHER, 'tenant_widget')).toBeNull();
+    expect(await service.listWidgetCatalog(OTHER)).toHaveLength(builtins);
+    expect(await service.getWidgetCatalogEntry(OTHER, 'object_table')).not.toBeNull();
   // ── Object Views ──
 
   it('creates and retrieves an object view', async () => {
