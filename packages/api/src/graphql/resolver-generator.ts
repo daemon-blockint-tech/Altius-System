@@ -809,6 +809,58 @@ export function generateResolvers(
     };
   }
 
+  // Notification resolvers — notifications, notificationPreferences.
+  if (deps.notificationStore) {
+    resolvers['Query']!['notifications'] = async (
+      _parent: unknown,
+      args: { unreadOnly?: boolean; type?: string; limit?: number; offset?: number },
+      ctx: ResolverContext,
+    ) => {
+      return deps.notificationStore!.list(ctx.user.tenantId, ctx.user.id, {
+        unreadOnly: args.unreadOnly,
+        type: args.type as import('@altius/spi').NotificationType | undefined,
+        limit: args.limit,
+        offset: args.offset,
+      });
+    };
+
+    resolvers['Query']!['notificationPreferences'] = async (
+      _parent: unknown,
+      _args: unknown,
+      ctx: ResolverContext,
+    ) => {
+      return deps.notificationStore!.getPreferences(ctx.user.tenantId, ctx.user.id);
+    };
+
+    resolvers['Mutation']!['markNotificationRead'] = async (
+      _parent: unknown,
+      args: { notificationId: string },
+      ctx: ResolverContext,
+    ) => {
+      await deps.notificationStore!.markRead(ctx.user.tenantId, args.notificationId);
+      return true;
+    };
+
+    resolvers['Mutation']!['markAllNotificationsRead'] = async (
+      _parent: unknown,
+      _args: unknown,
+      ctx: ResolverContext,
+    ) => {
+      await deps.notificationStore!.markAllRead(ctx.user.tenantId, ctx.user.id);
+      return true;
+    };
+
+    resolvers['Mutation']!['updateNotificationPreferences'] = async (
+      _parent: unknown,
+      args: { input: import('@altius/spi').NotificationPreferences },
+      ctx: ResolverContext,
+    ) => {
+      const prefs = { ...args.input, tenantId: ctx.user.tenantId, userId: ctx.user.id };
+      await deps.notificationStore!.setPreferences(prefs);
+      return prefs;
+    };
+  }
+
   return { resolvers, pubsub };
 }
 

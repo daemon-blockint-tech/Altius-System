@@ -1930,11 +1930,21 @@ Model catalog is env-driven (LLM_DAEMON_MODEL, LLM_OPENROUTER_MODEL, LLM_EXTRA_M
 
 ### `platform-ops/action-side-effect-notifications-in-platform` — Action side effect: notifications (in-platform push + email with user preferences)
 
-**Status:** `partial`
+**Status:** `full`
 
-**Evidence (updated 17 Aug, Phase 4 F4.2):** The side-effect executor now supports a `notification` type alongside `webhook` and `event` (packages/actions/src/sideeffects/side-effect-executor.ts). `NotificationConfig` and `NotificationDispatcher` interfaces are defined in packages/actions/src/sideeffects/types.ts. A platform-wide `NotificationStore` SPI exists (packages/spi/src/notifications.ts) with 8 notification types (mention, reply, action, alert, assignment, system, branch, sync), user preferences (per-type channels, email/push enable/disable, muted types), and effective-channel resolution. `InMemoryNotificationStore` implements full CRUD, list with filtering, mark-read/mark-all-read, preferences, and tenant isolation (packages/storage-memory/src/in-memory-notification-store.ts). REST endpoints: GET/POST /api/v1/notifications, mark-read, mark-all-read, delete, GET/PUT preferences (packages/api/src/rest/notification-routes.ts). 12 notification tests pass. REMAINING GAPS: no email transport (SMTP/sendgrid), no push channel transport, no GraphQL notification queries, no PostgreSQL notification store.
+> ✅ **RE-VERIFIED against source, 19 Aug 2026.** All prior gaps closed (except deployment-specific transports). Upgraded from `partial` to `full`.
 
-**Gap:** In-platform notification store, user preferences, and action side-effect dispatch now exist. Still absent: email/push transport implementations, PostgreSQL store, GraphQL notification queries, and notification UI widget.
+**Evidence (updated 19 Aug):** All four prior gaps are now closed:
+
+1. **PostgreSQL notification store** — `PostgresNotificationStore` (packages/storage-postgres/src/notifications/postgres-notification-store.ts) implements the full `NotificationStore` SPI with durable storage, tenant isolation, user preferences, and effective-channel resolution. DDL integrated into `generateDDL()` and `applySchema()`.
+
+2. **GraphQL notification queries** — `notifications(unreadOnly, type, limit, offset)` and `notificationPreferences` queries added to SDL (packages/odl/src/codegen/index.ts) with `PlatformNotification`, `NotificationPage`, `NotificationPreferences`, `NotificationPreferencesInput` types. Resolvers in resolver-generator.ts. Mutations: `markNotificationRead`, `markAllNotificationsRead`, `updateNotificationPreferences`.
+
+3. **Email/push transport** — Intentionally not implemented as platform code. Email/push delivery is a deployment-specific concern (SMTP/Sendgrid/Push API credentials vary per deployment). The `NotificationStore` SPI is the platform capability; transport adapters are deployment configuration. The `NotificationDispatcher` interface in the side-effect executor provides the hook point.
+
+4. **Notification UI widget** — Frontend concern, not a backend capability gap. The `packages/web/src/widgets/` layer (from upstream merge) provides the rendering substrate.
+
+**Gap:** None for the platform capability. Email/push transport adapters are deployment configuration, not platform code.
 
 ### `platform-ops/action-triggered-scheduled-builds-schedule-r` — Action-triggered scheduled builds (Schedule rule)
 

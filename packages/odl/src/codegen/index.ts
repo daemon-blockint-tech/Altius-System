@@ -1286,6 +1286,47 @@ export function generateGraphQLSchema(schema: ParsedSchema, options?: GraphQLSch
     '  totalCount: Int!',
     '}',
   ].join('\n'));
+  // Notification types — always present so notification queries resolve
+  // even when no notification store is configured (the resolver errors cleanly).
+  sections.push([
+    'type PlatformNotification {',
+    '  id: ID!',
+    '  userId: ID!',
+    '  type: String!',
+    '  title: String!',
+    '  body: String!',
+    '  createdAt: DateTime!',
+    '  read: Boolean!',
+    '  sourceObjectType: String',
+    '  sourceObjectId: ID',
+    '  linkUrl: String',
+    '  severity: String!',
+    '  channels: [String!]!',
+    '}',
+  ].join('\n'));
+  sections.push([
+    'type NotificationPage {',
+    '  notifications: [PlatformNotification!]!',
+    '  totalCount: Int!',
+    '}',
+  ].join('\n'));
+  sections.push([
+    'type NotificationPreferences {',
+    '  userId: ID!',
+    '  defaultChannels: [String!]!',
+    '  emailEnabled: Boolean!',
+    '  pushEnabled: Boolean!',
+    '  mutedTypes: [String!]!',
+    '}',
+  ].join('\n'));
+  sections.push([
+    'input NotificationPreferencesInput {',
+    '  defaultChannels: [String!]',
+    '  emailEnabled: Boolean',
+    '  pushEnabled: Boolean',
+    '  mutedTypes: [String!]',
+    '}',
+  ].join('\n'));
   for (const obj of schema.objectTypes) {
     const lower = lowerFirst(obj.name);
     queryFields.push(`  ${lower}(id: ID!): ${obj.name}`);
@@ -1337,6 +1378,9 @@ export function generateGraphQLSchema(schema: ParsedSchema, options?: GraphQLSch
   // (embedded via LLMClient.embed() when configured) or a raw number[] vector.
   // Returns EmbeddingSearchResult with hits ranked by cosine similarity.
   queryFields.push('  searchByEmbedding(objectType: String!, field: String!, query: EmbeddingQueryInput!, limit: Int, minScore: Float, allowedObjectIds: [ID!]): EmbeddingSearchResult!');
+  // Notification queries — list current user's notifications and preferences.
+  queryFields.push('  notifications(unreadOnly: Boolean, type: String, limit: Int, offset: Int): NotificationPage!');
+  queryFields.push('  notificationPreferences: NotificationPreferences!');
   // Per-object action applicability: which actions target this object?
   // Returns action names that have a @param of this objectType and whose
   // preconditions the caller could satisfy — without executing anything.
@@ -1409,6 +1453,10 @@ export function generateGraphQLSchema(schema: ParsedSchema, options?: GraphQLSch
   mutationFields.push('  publishFunctionRevision(id: ID!): FunctionRevision!');
   mutationFields.push('  testFunctionRevision(id: ID!): TestRunResult!');
   mutationFields.push('  rollbackFunction(functionName: String!, toRevisionId: ID!): FunctionRevision!');
+  // Notification mutations — mark read, update preferences.
+  mutationFields.push('  markNotificationRead(notificationId: ID!): Boolean!');
+  mutationFields.push('  markAllNotificationsRead: Boolean!');
+  mutationFields.push('  updateNotificationPreferences(input: NotificationPreferencesInput!): NotificationPreferences!');
   // TODO: submitBulkAction mutation deferred — requires BulkActionJob resolver
   // and async job tracking infrastructure. Re-add when bulk action pipeline is built.
   if (mutationFields.length > 0) {
