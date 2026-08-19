@@ -144,15 +144,22 @@ describeWithPg('searchObjects with FULLTEXT trigram index (integration)', () => 
     );
     expect(idxResult.rows).toHaveLength(1);
     expect(idxResult.rows[0].indexdef).toContain('USING gin');
-    expect(idxResult.rows[0].indexdef).toContain('"_fts_title"');
+    // pg_indexes renders the identifier as Postgres normalised it, without the
+    // quotes the DDL wrote, so assert on the column name itself.
+    expect(idxResult.rows[0].indexdef).toContain('_fts_title');
   });
 
-  it('stemming: query "summary" matches "summarize" via tsvector (ILIKE cannot)', async () => {
-    // 'summarize' stems to the same lexeme as 'summary' in English.
-    // ILIKE '%summary%' does NOT match 'Summarize Report' (no 'summary'
-    // substring), so this only passes via the tsvector @@ path.
+  it('stemming: query "summary" matches "Summaries" via tsvector (ILIKE cannot)', async () => {
+    // Inflections of one word share a lexeme: 'Summaries' and 'summary' both
+    // stem to 'summari'. ILIKE '%summary%' does NOT match 'Summaries Report'
+    // (no 'summary' substring), so this only passes via the tsvector @@ path.
+    //
+    // The pair used to be summary/summarize, which the English Snowball
+    // stemmer does not relate at all — 'summarize' stems to 'summar' and
+    // 'summary' to 'summari'. That assertion had never executed, because the
+    // whole suite failed in setup on the FULLTEXT history-column bug.
     await provider.createObject(ctx, 'SearchDoc', {
-      title: 'Summarize Report',
+      title: 'Summaries Report',
       contactEmail: 's@hospital.org',
     });
     const r = await provider.searchObjects(ctx, 'SearchDoc', {
@@ -160,7 +167,7 @@ describeWithPg('searchObjects with FULLTEXT trigram index (integration)', () => 
       fields: ['title'],
     });
     const titles = r.hits.map((h) => h.object.title as string);
-    expect(titles).toContain('Summarize Report');
+    expect(titles).toContain('Summaries Report');
   });
 
   it('field-scoped: stemming only applies to FULLTEXT-indexed fields', async () => {
@@ -196,22 +203,30 @@ describeWithPg('searchObjects with FULLTEXT trigram index (integration)', () => 
     expect(titles).toContain('Daily Run Log');
   });
 
-  it('ts_rank scoring: higher term density scores higher', async () => {
-    // A doc with the term repeated should outscore one with a single mention.
+  it('ts_rank scoring: higher term density scores higher within the same match tier', async () => {
+    // Density is a tie-breaker, not the whole score: per-field ILIKE tiers
+    // (exact 3 / prefix 2 / substring 1) dominate, and the ts_rank_cd bonus is
+    // added on top. So both documents must sit in the SAME tier for density to
+    // be what is under test — hence a trailing word on each, which keeps both
+    // at "prefix" rather than letting the shorter one win outright on an exact
+    // whole-field match. The earlier version compared 'guidelines guidelines
+    // guidelines' against a bare 'guidelines' and so asserted that density
+    // beats an exact match, which contradicts the documented tiering; it had
+    // never executed because the suite failed in setup.
     await provider.createObject(ctx, 'SearchDoc', {
-      title: 'guidelines guidelines guidelines',
+      title: 'guidelines guidelines guidelines review',
       contactEmail: 'g@hospital.org',
     });
     await provider.createObject(ctx, 'SearchDoc', {
-      title: 'guidelines',
+      title: 'guidelines review',
       contactEmail: 'g2@hospital.org',
     });
     const r = await provider.searchObjects(ctx, 'SearchDoc', {
       query: 'guidelines',
       fields: ['title'],
     });
-    const dense = r.hits.find((h) => h.object.title === 'guidelines guidelines guidelines');
-    const sparse = r.hits.find((h) => h.object.title === 'guidelines');
+    const dense = r.hits.find((h) => h.object.title === 'guidelines guidelines guidelines review');
+    const sparse = r.hits.find((h) => h.object.title === 'guidelines review');
     expect(dense).toBeDefined();
     expect(sparse).toBeDefined();
     expect(dense!.score).toBeGreaterThan(sparse!.score);

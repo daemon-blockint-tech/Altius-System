@@ -205,15 +205,27 @@ export async function searchObjects(
    *  Each per-field contribution is multiplied by the field's @searchable(weight:). */
   const buildTermScore = (term: SearchTerm): string => {
     const escaped = term.value.replace(/[%_\\]/g, '\\$&');
-    // substring pattern (already used by buildTermMatch, but score needs its own param slots)
+    // Push only the patterns this term's branch goes on to reference. A phrase
+    // scores on contiguity alone and never uses the exact/prefix slots, so
+    // pushing them left params supplied that no placeholder referenced —
+    // which Postgres rejects outright ("bind message supplies 5 parameters,
+    // but prepared statement requires 3"), failing every quoted-phrase search.
+    // The memory provider builds no SQL and so never saw it.
+    // substring pattern (already used by buildTermMatch, but score needs its own param slot)
     params.push(`%${escaped}%`);
     const subIdx = params.length;
-    // exact pattern (no wildcards)
-    params.push(escaped);
-    const exactIdx = params.length;
-    // prefix pattern
-    params.push(`${escaped}%`);
-    const prefixIdx = params.length;
+
+    let exactIdx = 0;
+    let prefixIdx = 0;
+    if (term.kind !== 'phrase') {
+      // exact pattern (no wildcards)
+      params.push(escaped);
+      exactIdx = params.length;
+      // prefix pattern
+      params.push(`${escaped}%`);
+      prefixIdx = params.length;
+    }
+
     const parts = fieldCols.map((col, i) => {
       const fieldName = searchFields[i]!;
       const weight = resolveFieldWeight?.(fieldName) ?? 1;

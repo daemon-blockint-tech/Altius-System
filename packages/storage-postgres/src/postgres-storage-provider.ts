@@ -181,6 +181,14 @@ export class PostgresStorageProvider implements StorageProvider {
   private _currentSchemaVersion = 0;
   private _idempotencyCache = new Map<string, { result: BulkMutationResult; expiresAt: number }>();
   private _idempotencyCacheTimer: ReturnType<typeof setInterval> | null = null;
+
+  /**
+   * Set when applySchema skipped the embeddings DDL because the server has no
+   * pgvector. The embed schema and its tables do not exist, so anything reading
+   * them will fail — callers should surface that rather than let a write look
+   * like it succeeded.
+   */
+  private _skippedEmbeddingsDDL = false;
   /** Idempotency cache TTL in milliseconds. Entries older than this are evicted. */
   private static readonly IDEMPOTENCY_TTL_MS = 5 * 60_000; // 5 minutes
 
@@ -218,6 +226,15 @@ export class PostgresStorageProvider implements StorageProvider {
     return this._pool;
   }
 
+  /**
+   * True when applySchema ran against a server without pgvector and therefore
+   * did not create the embed schema. Lets the gateway log the degraded state at
+   * boot instead of leaving it to be discovered by a failing query.
+   */
+  get embeddingsUnavailable(): boolean {
+    return this._skippedEmbeddingsDDL;
+  }
+
   /** Gracefully shut down the connection pool. */
   async close(): Promise<void> {
     if (this._idempotencyCacheTimer) clearInterval(this._idempotencyCacheTimer);
@@ -229,7 +246,28 @@ export class PostgresStorageProvider implements StorageProvider {
   async applySchema(_ctx: RequestContext, schema: OntologySchema): Promise<MigrationResult> {
     const fromVersion = this._currentSchemaVersion;
     registerListProperties(this._pool, schema);
-    const ddl = generateDDL(schema, { dataSchema: this._dataSchema });
+
+    // The embeddings DDL needs pgvector, and `CREATE EXTENSION IF NOT EXISTS
+    // vector` does NOT degrade when the extension is missing: IF NOT EXISTS
+    // skips only when it is already created in this database, and still raises
+    // `extension "vector" is not available` when the server has no
+    // vector.control. Every DDL statement runs in one loop, so that single
+    // statement aborted schema apply against any stock Postgres — the official
+    // postgres:17 image included — taking every unrelated platform table with
+    // it. Probe first and generate without the embeddings statements when
+    // pgvector is absent, which is what this DDL always claimed to do. Vector
+    // search stays off either way: capabilities() reports supportsVectorSearch
+    // false.
+    const hasPgVector = await this._pool
+      .query(`SELECT 1 FROM pg_available_extensions WHERE name = 'vector'`)
+      .then((r) => (r.rowCount ?? 0) > 0)
+      .catch(() => false);
+    this._skippedEmbeddingsDDL = !hasPgVector;
+
+    const ddl = generateDDL(schema, {
+      dataSchema: this._dataSchema,
+      includeEmbeddings: hasPgVector,
+    });
 
     // Ensure migration tracking table exists
     await this._pool.query(`
@@ -253,7 +291,8 @@ export class PostgresStorageProvider implements StorageProvider {
 
     // Platform DDL: idempotent statements for platform-level tables that are
     // not tied to a specific ontology schema version. Applied on every boot
-    // to ensure new tables/columns from upgrades are created.
+    // to ensure new tables/columns from upgrades are created. `ddl.embeddings`
+    // is empty when pgvector is unavailable (see the probe above).
     const platformDDL = [
       ...ddl.consent,
       ...ddl.llm,
