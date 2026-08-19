@@ -22,9 +22,13 @@ variable "IMAGE_PREFIX" {
   default = "orion"
 }
 
+variable "SEP" {
+  default = "-"
+}
+
 function "tag" {
   params = [service]
-  result = ["${REGISTRY}${IMAGE_PREFIX}-${service}:${GIT_REVISION}", "${REGISTRY}${IMAGE_PREFIX}-${service}:latest"]
+  result = ["${REGISTRY}${IMAGE_PREFIX}${SEP}${service}:${GIT_REVISION}", "${REGISTRY}${IMAGE_PREFIX}${SEP}${service}:latest"]
 }
 
 group "default" {
