@@ -175,7 +175,7 @@ describe('InMemoryDatasetProjectionService', () => {
 
   it('creates an aggregation projection', async () => {
     await seed(ds);
-    const p = await service.create(CTX, {
+    await service.create(CTX, {
       name: 'ageStats', source: 'patients',
       aggregation: {
         groupBy: [],
@@ -285,8 +285,8 @@ describe('InMemorySqlQueryService', () => {
     await seed(ds);
     const job = await service.submit(CTX, { sql: 'SELECT name, age FROM patients' });
     expect(job.state).toBe('succeeded');
-    expect(job.rows[0]!.name).toBe('Alice');
-    expect(job.rows[0]!.id).toBeUndefined();
+    expect(job.rows![0]!.name).toBe('Alice');
+    expect(job.rows![0]!.id).toBeUndefined();
   });
 
   it('executes a WHERE clause', async () => {
@@ -299,8 +299,8 @@ describe('InMemorySqlQueryService', () => {
     await seed(ds);
     const job = await service.submit(CTX, { sql: 'SELECT * FROM patients ORDER BY name ASC LIMIT 2' });
     expect(job.rows).toHaveLength(2);
-    expect(job.rows[0]!.name).toBe('Alice');
-    expect(job.rows[1]!.name).toBe('Bob');
+    expect(job.rows![0]!.name).toBe('Alice');
+    expect(job.rows![1]!.name).toBe('Bob');
   });
 
   it('executes a JOIN', async () => {
@@ -319,7 +319,7 @@ describe('InMemorySqlQueryService', () => {
     const job = await service.submit(CTX, { sql: 'SELECT * FROM patients INNER JOIN visits ON patients.id = visits.patientId' });
     expect(job.state).toBe('succeeded');
     expect(job.rows).toHaveLength(1);
-    expect(job.rows[0]!.diagnosis).toBe('flu');
+    expect(job.rows![0]!.diagnosis).toBe('flu');
   });
 
   it('lists and cancels jobs', async () => {

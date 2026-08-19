@@ -161,7 +161,7 @@ export class HoldApprovePolicyGuard implements PolicyGuard {
    */
   cleanupExpired(): number {
     let count = 0;
-    for (const [id, hold] of this.holds) {
+    for (const hold of this.holds.values()) {
       if (hold.status === 'pending' && this._isExpired(hold)) {
         hold.status = 'expired';
         count++;

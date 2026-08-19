@@ -16,7 +16,7 @@
     "build": "tsc -p tsconfig.build.json",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "clean": "rm -rf dist coverage"
+    "clean": "rm -rf dist coverage *.tsbuildinfo"
   },
   "dependencies": {
     "pino": "^9.6.0",

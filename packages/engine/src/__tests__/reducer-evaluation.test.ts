@@ -65,8 +65,6 @@ type OrderedFrom @linkType(from: "PurchaseOrder", to: "Supplier", cardinality: M
 const CTX: RequestContext = {
   tenantId: 'test',
   actorId: 'test-user',
-  actorType: 'USER',
-  roles: ['admin'],
   branch: 'main',
 };
 

@@ -122,7 +122,6 @@ describe('GET /api/v1/patients?asOf', () => {
     const page: ObjectPage = {
       items: [AT_TUESDAY],
       totalCount: 1,
-      cursor: null,
       hasNextPage: false,
     };
     const queryFn = vi.fn().mockResolvedValue(page);
@@ -163,7 +162,6 @@ describe('GET /api/v1/patients?asOf', () => {
     const page: ObjectPage = {
       items: [AT_TUESDAY],
       totalCount: 1,
-      cursor: null,
       hasNextPage: false,
     };
     const queryFn = vi.fn().mockResolvedValue(page);
@@ -192,7 +190,6 @@ describe('GraphQL patients(asOf:)', () => {
     const page: ObjectPage = {
       items: [AT_TUESDAY],
       totalCount: 1,
-      cursor: null,
       hasNextPage: false,
     };
     const queryFn = vi.fn().mockResolvedValue(page);
@@ -221,7 +218,6 @@ describe('GraphQL patients(asOf:)', () => {
     const page: ObjectPage = {
       items: [AT_TUESDAY],
       totalCount: 1,
-      cursor: null,
       hasNextPage: false,
     };
     const queryFn = vi.fn().mockResolvedValue(page);

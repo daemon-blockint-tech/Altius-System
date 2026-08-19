@@ -9,7 +9,7 @@
     "build": "vite build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "clean": "rm -rf dist coverage"
+    "clean": "rm -rf dist coverage *.tsbuildinfo"
   },
   "dependencies": {
     "@altius/sdk": "workspace:*",

@@ -128,7 +128,7 @@ describe('InMemoryLayoutDeviceCaptureService', () => {
   });
 
   it('resolves deep links', async () => {
-    const app = await service.registerDeepLinkPattern(CTX, 'app1', '/app/{name}/view/{id}', 'object_detail');
+    await service.registerDeepLinkPattern(CTX, 'app1', '/app/{name}/view/{id}', 'object_detail');
     const resolved = await service.resolveDeepLink(CTX, '/app/patient/view/p1');
     expect(resolved.valid).toBe(true);
     expect(resolved.params.name).toBe('patient');

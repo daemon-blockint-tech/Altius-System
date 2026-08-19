@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import {
   WorkflowGraphBuilder,
   objectNodeId,
-  actionNodeId,
   functionNodeId,
   type WorkflowAuditReader,
 } from '../workflow-graph.js';

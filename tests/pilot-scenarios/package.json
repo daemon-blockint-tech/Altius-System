@@ -9,7 +9,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:verbose": "vitest run --reporter=verbose",
-    "clean": "rm -rf dist coverage"
+    "clean": "rm -rf dist coverage *.tsbuildinfo"
   },
   "license": "Apache-2.0",
   "dependencies": {
@@ -22,6 +22,7 @@
     "@altius/api": "workspace:*"
   },
   "devDependencies": {
+    "@types/node": "^22.0.0",
     "vitest": "^3.0.0"
   }
 }

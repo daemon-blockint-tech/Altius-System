@@ -11,7 +11,7 @@
     "test:verbose": "vitest run --reporter=verbose",
     "docker:up": "docker compose -f ../../Orion/docker-compose.yaml up -d --wait",
     "docker:down": "docker compose -f ../../Orion/docker-compose.yaml down -v",
-    "clean": "rm -rf dist coverage"
+    "clean": "rm -rf dist coverage *.tsbuildinfo"
   },
   "license": "Apache-2.0",
   "devDependencies": {

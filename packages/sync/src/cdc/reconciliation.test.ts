@@ -3,7 +3,7 @@ import { ReconciliationService } from './reconciliation.js';
 import type { MappedObject } from '../mapping/record-mapper.js';
 
 function makeMapped(id: string, props: Record<string, unknown>): MappedObject {
-  return { objectType: 'Patient', primaryKey: id, properties: props };
+  return { objectType: 'Patient', id, properties: props, operation: 'INSERT', links: [] };
 }
 
 describe('ReconciliationService', () => {
