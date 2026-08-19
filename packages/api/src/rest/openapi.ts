@@ -927,6 +927,155 @@ function platformPaths(): Record<string, unknown> {
         },
       },
     },
+    // ── Ontology SQL (SQL Studio) ──
+    '/api/v1/sql/execute': {
+      post: {
+        tags: ['SQL'],
+        summary: 'Execute a SQL query over the ontology',
+        operationId: 'executeSql',
+        requestBody: { required: true, content: jsonObject },
+        responses: {
+          '200': { description: 'Query result', content: jsonObject },
+          '400': { description: 'Validation error' },
+          '401': unauthorized,
+        },
+      },
+    },
+    '/api/v1/sql/explain': {
+      post: {
+        tags: ['SQL'],
+        summary: 'Explain how a SQL query will be executed',
+        operationId: 'explainSql',
+        requestBody: { required: true, content: jsonObject },
+        responses: {
+          '200': { description: 'Query explanation', content: jsonObject },
+          '400': { description: 'Validation error' },
+          '401': unauthorized,
+        },
+      },
+    },
+    '/api/v1/sql/validate': {
+      post: {
+        tags: ['SQL'],
+        summary: 'Validate a SQL query without executing it',
+        operationId: 'validateSql',
+        requestBody: { required: true, content: jsonObject },
+        responses: {
+          '200': { description: 'Validation result', content: jsonObject },
+          '401': unauthorized,
+        },
+      },
+    },
+    '/api/v1/sql/tables': {
+      get: {
+        tags: ['SQL'],
+        summary: 'List object types available as virtual tables',
+        operationId: 'listSqlVirtualTables',
+        responses: {
+          '200': { description: 'Virtual tables', content: jsonObject },
+          '401': unauthorized,
+        },
+      },
+    },
+    '/api/v1/sql/tables/{type}': {
+      get: {
+        tags: ['SQL'],
+        summary: 'Describe a virtual table schema',
+        operationId: 'describeSqlVirtualTable',
+        parameters: [{ name: 'type', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: {
+          '200': { description: 'Virtual table schema', content: jsonObject },
+          '401': unauthorized,
+          '404': { description: 'Not found' },
+        },
+      },
+    },
+    '/api/v1/sql/saved': {
+      get: {
+        tags: ['SQL'],
+        summary: 'List saved SQL queries',
+        operationId: 'listSavedSqlQueries',
+        parameters: [{ name: 'tags', in: 'query', schema: { type: 'string' }, description: 'Comma-separated tags' }],
+        responses: {
+          '200': { description: 'Saved queries', content: jsonObject },
+          '401': unauthorized,
+        },
+      },
+      post: {
+        tags: ['SQL'],
+        summary: 'Create a saved SQL query',
+        operationId: 'createSavedSqlQuery',
+        requestBody: { required: true, content: jsonObject },
+        responses: {
+          '201': { description: 'Saved query', content: jsonObject },
+          '400': { description: 'Validation error' },
+          '401': unauthorized,
+        },
+      },
+    },
+    '/api/v1/sql/saved/{id}': {
+      get: {
+        tags: ['SQL'],
+        summary: 'Get a saved SQL query',
+        operationId: 'getSavedSqlQuery',
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: {
+          '200': { description: 'Saved query', content: jsonObject },
+          '401': unauthorized,
+          '404': { description: 'Not found' },
+        },
+      },
+      put: {
+        tags: ['SQL'],
+        summary: 'Update a saved SQL query',
+        operationId: 'updateSavedSqlQuery',
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        requestBody: { required: true, content: jsonObject },
+        responses: {
+          '200': { description: 'Updated query', content: jsonObject },
+          '401': unauthorized,
+          '404': { description: 'Not found' },
+        },
+      },
+      delete: {
+        tags: ['SQL'],
+        summary: 'Delete a saved SQL query',
+        operationId: 'deleteSavedSqlQuery',
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: {
+          '204': { description: 'Deleted' },
+          '401': unauthorized,
+        },
+      },
+    },
+    '/api/v1/sql/saved/{id}/execute': {
+      post: {
+        tags: ['SQL'],
+        summary: 'Execute a saved SQL query by ID',
+        operationId: 'executeSavedSqlQuery',
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        requestBody: { content: jsonObject },
+        responses: {
+          '200': { description: 'Query result', content: jsonObject },
+          '401': unauthorized,
+          '404': { description: 'Saved query not found' },
+        },
+      },
+    },
+    '/api/v1/sql/saved/{id}/share': {
+      post: {
+        tags: ['SQL'],
+        summary: 'Share a saved SQL query with users',
+        operationId: 'shareSavedSqlQuery',
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        requestBody: { required: true, content: jsonObject },
+        responses: {
+          '200': { description: 'Shared query', content: jsonObject },
+          '401': unauthorized,
+          '404': { description: 'Not found' },
+        },
+      },
+    },
   };
 }
 

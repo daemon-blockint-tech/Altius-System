@@ -29,6 +29,7 @@ import { invokeFunction } from '../functions/invoke-function.js';
 import { generateLlmRoutes } from './llm-routes.js';
 import { generateDataFreshnessRoutes } from './data-freshness-routes.js';
 import { generateSecurityGovernanceRoutes } from './security-governance-routes.js';
+import { generateOntologySqlRoutes } from './ontology-sql-routes.js';
 import { isTypeVisible } from '../markings/enforce.js';
 import { writeReadAuditFor } from './audit-read.js';
 import { lowerFirst, toSnakeCase, searchableTextFields } from '../utils.js';
@@ -464,6 +465,9 @@ export function generateRestRoutes(
 
   // Security governance routes (access explanation, justifications, scoped sessions)
   routes.push(...generateSecurityGovernanceRoutes(deps));
+
+  // Ontology SQL routes (SQL Studio)
+  routes.push(...generateOntologySqlRoutes(deps));
 
   return routes;
 }

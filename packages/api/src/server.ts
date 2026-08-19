@@ -54,6 +54,7 @@ import {
   InMemoryDataFreshnessService,
   InMemoryJustificationStore,
   InMemoryScopedSessionStore,
+  InMemoryOntologySqlService,
 } from '@altius/storage-memory';
 import { PostgresStorageProvider, PostgresLineageStore, PostgresAuditStore, PostgresConsentStore, PostgresSchemaRegistry, PostgresObjectSetStore,
   PostgresLLMUsageTracker, PostgresLLMRateLimiter,
@@ -1194,6 +1195,15 @@ async function main(): Promise<void> {
     justificationStore: new InMemoryJustificationStore(),
     accessExplanationService: new DefaultAccessExplanationService({ authorizationService }),
     scopedSessionStore: new InMemoryScopedSessionStore(),
+    // Ontology SQL — in-memory only. Object reader delegates to the
+    // ObjectManager so SQL queries read live ontology data.
+    ontologySqlService: new InMemoryOntologySqlService(async (ctx, objectType) => {
+      const page = await objectManager.query(objectType, {}, { limit: 10000 }, ctx);
+      return page.items.map((obj: Record<string, unknown>) => ({
+        id: obj['_id'] as string,
+        properties: obj,
+      }));
+    }),
   };
 
   // ── Express + HTTP Server ──

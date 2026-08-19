@@ -10,7 +10,7 @@ import type {
   MarkingPolicy,
 } from '@altius/security';
 import type { ParsedSchema } from '@altius/odl';
-import type { RequestContext, StorageProvider, LLMClient, BlobStore, TimeSeriesStore, BranchStore, CommentStore, NotificationStore, EmbeddingStore, AlertingService, LLMGateway, DataFreshnessService, JustificationStore, AccessExplanationService, ScopedSessionStore } from '@altius/spi';
+import type { RequestContext, StorageProvider, LLMClient, BlobStore, TimeSeriesStore, BranchStore, CommentStore, NotificationStore, EmbeddingStore, AlertingService, LLMGateway, DataFreshnessService, JustificationStore, AccessExplanationService, ScopedSessionStore, OntologySqlService } from '@altius/spi';
 import { DataPurpose } from '@altius/spi';
 
 /**
@@ -252,6 +252,24 @@ export interface ApiDependencies {
   justificationStore?: JustificationStore;
   accessExplanationService?: AccessExplanationService;
   scopedSessionStore?: ScopedSessionStore;
+  /**
+   * Ad-hoc SQL analytics over the ontology — SQL Studio. When present,
+   * REST endpoints for SQL query execution, explanation, validation,
+   * saved query CRUD, and virtual table discovery are registered:
+   *   POST   /api/v1/sql/execute           (execute SQL)
+   *   POST   /api/v1/sql/explain            (explain SQL plan)
+   *   POST   /api/v1/sql/validate           (validate SQL)
+   *   GET    /api/v1/sql/tables             (list virtual tables)
+   *   GET    /api/v1/sql/tables/:type       (describe virtual table)
+   *   GET    /api/v1/sql/saved              (list saved queries)
+   *   POST   /api/v1/sql/saved              (create saved query)
+   *   GET    /api/v1/sql/saved/:id          (get saved query)
+   *   PUT    /api/v1/sql/saved/:id          (update saved query)
+   *   DELETE /api/v1/sql/saved/:id          (delete saved query)
+   *   POST   /api/v1/sql/saved/:id/execute  (execute saved query)
+   *   POST   /api/v1/sql/saved/:id/share    (share saved query)
+   */
+  ontologySqlService?: OntologySqlService;
 }
 
 /**

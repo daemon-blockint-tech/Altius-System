@@ -86,6 +86,20 @@ function mockDeps(schema: ReturnType<typeof parseOdl>): ApiDependencies {
       revoke: vi.fn().mockResolvedValue(undefined),
       isMarkingAllowed: vi.fn().mockResolvedValue(true),
     } as never,
+    ontologySqlService: {
+      execute: vi.fn().mockResolvedValue({ columns: [], rows: [], totalRowCount: 0, truncated: false, executionTimeMs: 0, accessedObjectTypes: [] }),
+      explain: vi.fn().mockResolvedValue({}),
+      validate: vi.fn().mockResolvedValue({ valid: true, errors: [], warnings: [] }),
+      createSavedQuery: vi.fn().mockResolvedValue({}),
+      getSavedQuery: vi.fn().mockResolvedValue(null),
+      listSavedQueries: vi.fn().mockResolvedValue([]),
+      updateSavedQuery: vi.fn().mockResolvedValue({}),
+      deleteSavedQuery: vi.fn().mockResolvedValue(undefined),
+      shareSavedQuery: vi.fn().mockResolvedValue({}),
+      executeSavedQuery: vi.fn().mockResolvedValue({ columns: [], rows: [], totalRowCount: 0, truncated: false, executionTimeMs: 0, accessedObjectTypes: [] }),
+      listVirtualTables: vi.fn().mockResolvedValue([]),
+      describeVirtualTable: vi.fn().mockResolvedValue(null),
+    } as never,
   } as ApiDependencies;
 }
 
