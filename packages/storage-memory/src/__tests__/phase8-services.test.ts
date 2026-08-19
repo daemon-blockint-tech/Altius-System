@@ -7,7 +7,6 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { InMemoryConnectorCatalogService } from '../in-memory-enterprise-connectors.js';
 import { InMemoryMultiOntologyGovernanceService } from '../in-memory-multi-ontology.js';
 import { InMemoryGraphAnalysisService } from '../in-memory-graph-analysis.js';
-import { InMemoryValueFormattingService } from '../in-memory-value-formatting.js';
 import { InMemoryPlatformAssistantService } from '../in-memory-platform-assistant.js';
 import type { RequestContext } from '@altius/spi';
 
@@ -150,15 +149,7 @@ describe('InMemoryMultiOntologyGovernanceService', () => {
     expect(fetched?.name).toBe('core');
   });
 
-  it('creates and lists markings', async () => {
-    await service.createMarking(CTX, { name: 'CONFIDENTIAL', label: 'Confidential', category: 'sensitivity', requiredClearance: 'L2' });
-    await service.createMarking(CTX, { name: 'PHI', label: 'Protected Health Information', category: 'compliance', requiredClearance: 'L3' });
-    const all = await service.listMarkings(CTX);
-    expect(all).toHaveLength(2);
-    const sens = await service.listMarkings(CTX, 'sensitivity');
-    expect(sens).toHaveLength(1);
-    expect(sens[0]!.name).toBe('CONFIDENTIAL');
-  });
+  // marking CRUD test removed in §5 — consolidated onto marking-policy.ts
 
   it('checks same-org access (allowed)', async () => {
     const space = await service.createSpace(CTX, { name: 'ops', orgScope: 'operations' });
@@ -283,111 +274,8 @@ describe('InMemoryGraphAnalysisService', () => {
 });
 
 // ===========================================================================
-// Value formatting
+// Value formatting — DELETED in §4D, folded into DisplayDirective
 // ===========================================================================
-
-describe('InMemoryValueFormattingService', () => {
-  let service: InMemoryValueFormattingService;
-
-  beforeEach(() => {
-    service = new InMemoryValueFormattingService();
-  });
-
-  it('formats numbers with decimals and separators', async () => {
-    await service.createValueFormat(CTX, {
-      name: 'money', kind: 'number', objectType: 'Order', field: 'total',
-      params: { decimals: 2, thousandsSeparator: ',', prefix: '$' },
-    });
-    const result = await service.format(CTX, 1234567.891, 'Order', 'total');
-    expect(result.formatted).toBe('$1,234,567.89');
-  });
-
-  it('formats currency', async () => {
-    await service.createValueFormat(CTX, {
-      name: 'usd', kind: 'currency', params: { currencyCode: 'USD', decimals: 2 },
-    });
-    const result = await service.format(CTX, 99.5);
-    expect(result.formatted).toBe('$99.50');
-  });
-
-  it('formats percentages', async () => {
-    await service.createValueFormat(CTX, {
-      name: 'pct', kind: 'percent', params: { decimals: 1 },
-    });
-    const result = await service.format(CTX, 0.156);
-    expect(result.formatted).toBe('15.6%');
-  });
-
-  it('formats dates', async () => {
-    await service.createValueFormat(CTX, {
-      name: 'date', kind: 'date', params: { datePattern: 'yyyy-MM-dd' },
-    });
-    const result = await service.format(CTX, '2024-06-15T12:30:00Z');
-    expect(result.formatted).toBe('2024-06-15');
-  });
-
-  it('formats booleans', async () => {
-    await service.createValueFormat(CTX, {
-      name: 'bool', kind: 'boolean', params: { trueLabel: 'Active', falseLabel: 'Inactive' },
-    });
-    expect((await service.format(CTX, true)).formatted).toBe('Active');
-    expect((await service.format(CTX, false)).formatted).toBe('Inactive');
-  });
-
-  it('formats bytes', async () => {
-    await service.createValueFormat(CTX, {
-      name: 'bytes', kind: 'bytes', params: {},
-    });
-    expect((await service.format(CTX, 1048576)).formatted).toContain('MB');
-  });
-
-  it('formats enums with labels', async () => {
-    await service.createValueFormat(CTX, {
-      name: 'status', kind: 'enum', params: { enumLabels: { active: 'Active', inactive: 'Inactive' } },
-    });
-    expect((await service.format(CTX, 'active')).formatted).toBe('Active');
-  });
-
-  it('applies conditional formatting', async () => {
-    await service.createConditionalFormat(CTX, {
-      name: 'high-value', objectType: 'Order', field: 'total',
-      conditionKind: 'comparison', condition: { operator: 'gt', threshold: 1000 },
-      style: { textColor: '#a8452c', fontWeight: 'bold' },
-    });
-    const style = await service.evaluateConditions(CTX, 1500, 'Order', 'total');
-    expect(style?.textColor).toBe('#a8452c');
-    const noStyle = await service.evaluateConditions(CTX, 500, 'Order', 'total');
-    expect(noStyle).toBeNull();
-  });
-
-  it('applies range conditional formatting', async () => {
-    await service.createConditionalFormat(CTX, {
-      name: 'normal-range', conditionKind: 'range',
-      condition: { min: 0, max: 100 },
-      style: { backgroundColor: '#2f6b4f' },
-    });
-    const inRange = await service.evaluateConditions(CTX, 50);
-    expect(inRange?.backgroundColor).toBe('#2f6b4f');
-    const outRange = await service.evaluateConditions(CTX, 150);
-    expect(outRange).toBeNull();
-  });
-
-  it('creates and lists sparklines', async () => {
-    await service.createSparkline(CTX, { name: 'ts-spark', objectType: 'Metric', field: 'value', kind: 'line' });
-    const sparklines = await service.listSparklines(CTX, 'Metric');
-    expect(sparklines).toHaveLength(1);
-    expect(sparklines[0]!.kind).toBe('line');
-  });
-
-  it('formats batch values', async () => {
-    await service.createValueFormat(CTX, { name: 'num', kind: 'number', params: { decimals: 0 } });
-    const results = await service.formatBatch(CTX, [
-      { value: 1234.5, objectType: 'X', field: 'y' },
-      { value: 6789.9 },
-    ]);
-    expect(results).toHaveLength(2);
-  });
-});
 
 // ===========================================================================
 // Platform assistant

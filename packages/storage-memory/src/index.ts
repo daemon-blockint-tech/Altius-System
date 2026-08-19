@@ -48,7 +48,7 @@ export {
 export { InMemoryConnectorCatalogService } from './in-memory-enterprise-connectors.js';
 export { InMemoryMultiOntologyGovernanceService } from './in-memory-multi-ontology.js';
 export { InMemoryGraphAnalysisService } from './in-memory-graph-analysis.js';
-export { InMemoryValueFormattingService } from './in-memory-value-formatting.js';
+// InMemoryValueFormattingService — DELETED in §4D, folded into DisplayDirective
 export { InMemoryPlatformAssistantService } from './in-memory-platform-assistant.js';
 export { InMemoryDataFreshnessService } from './in-memory-data-freshness.js';
 export { InMemoryGeospatialMapService } from './in-memory-geospatial-maps.js';
@@ -56,9 +56,9 @@ export type { ObjectReader } from './in-memory-geospatial-maps.js';
 export { InMemoryOntologySqlService } from './in-memory-ontology-sql.js';
 export type { OntologyObjectReader } from './in-memory-ontology-sql.js';
 export { InMemoryEmbeddedCopilotService } from './in-memory-embedded-copilots.js';
-export { InMemoryEmbeddingService } from './in-memory-embedding.js';
+export { InMemoryEmbeddingService } from './in-memory-app-embedding.js';
 export { InMemoryLayoutDeviceCaptureService } from './in-memory-layout-device-capture.js';
-export { InMemoryWidgetLibraryService } from './in-memory-widget-library.js';
+// InMemoryWidgetLibraryService — DELETED in §4C, consolidated onto workshop-platform
 export { InMemoryPlatformResourceService } from './in-memory-platform-resources.js';
 export { InMemoryOntologyManagerService } from './in-memory-ontology-manager.js';
 export type { SchemaReader, UsageStatsReader } from './in-memory-ontology-manager.js';

@@ -4,9 +4,8 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { InMemoryEmbeddingService } from '../in-memory-embedding.js';
+import { InMemoryEmbeddingService } from '../in-memory-app-embedding.js';
 import { InMemoryLayoutDeviceCaptureService } from '../in-memory-layout-device-capture.js';
-import { InMemoryWidgetLibraryService } from '../in-memory-widget-library.js';
 import { InMemoryPlatformResourceService } from '../in-memory-platform-resources.js';
 import type { RequestContext } from '@altius/spi';
 
@@ -143,88 +142,8 @@ describe('InMemoryLayoutDeviceCaptureService', () => {
 });
 
 // ===========================================================================
-// Widget library
+// Widget library — DELETED in §4C, consolidated onto workshop-platform
 // ===========================================================================
-
-describe('InMemoryWidgetLibraryService', () => {
-  let service: InMemoryWidgetLibraryService;
-  beforeEach(() => { service = new InMemoryWidgetLibraryService(); });
-
-  it('has pre-registered widgets', async () => {
-    const widgets = await service.listWidgets(CTX);
-    expect(widgets.length).toBeGreaterThanOrEqual(20);
-  });
-
-  it('lists widgets by category', async () => {
-    const charts = await service.listWidgets(CTX, 'chart');
-    expect(charts.length).toBeGreaterThanOrEqual(4);
-    const dataWidgets = await service.listWidgets(CTX, 'data');
-    expect(dataWidgets.length).toBeGreaterThanOrEqual(3);
-  });
-
-  it('gets a widget by type', async () => {
-    const table = await service.getWidget(CTX, 'object_table');
-    expect(table?.name).toBe('Object Table');
-  });
-
-  it('creates an app definition', async () => {
-    const app = await service.createApp(CTX, { name: 'Patient Dashboard', description: 'Clinical overview' });
-    expect(app.name).toBe('Patient Dashboard');
-    expect(app.version).toBe(1);
-  });
-
-  it('adds pages to an app', async () => {
-    const app = await service.createApp(CTX, { name: 'App1' });
-    const updated = await service.addPage(CTX, app.id, { name: 'Page 1', sections: [] });
-    expect(updated.pages).toHaveLength(1);
-  });
-
-  it('adds widgets to a section', async () => {
-    const app = await service.createApp(CTX, {
-      name: 'App1',
-      pages: [{ id: 'p1', name: 'Page 1', sections: [{ id: 's1', name: 'Section 1', layout: 'stack', widgets: [] }] }],
-    });
-    const updated = await service.addWidget(CTX, app.id, 'p1', 's1', {
-      widgetType: 'object_table', config: {}, visible: true,
-      dataBinding: { source: 'object_set', objectType: 'Patient' },
-    });
-    expect(updated.pages[0]!.sections[0]!.widgets).toHaveLength(1);
-  });
-
-  it('updates and removes widgets', async () => {
-    const app = await service.createApp(CTX, {
-      name: 'App1',
-      pages: [{ id: 'p1', name: 'Page 1', sections: [{ id: 's1', name: 'S1', layout: 'stack', widgets: [{ id: 'w1', widgetType: 'object_table', config: {}, visible: true }] }] }],
-    });
-    const updated = await service.updateWidget(CTX, app.id, 'p1', 's1', 'w1', { config: { pageSize: 50 } });
-    expect(updated.pages[0]!.sections[0]!.widgets[0]!.config).toEqual({ pageSize: 50 });
-    const removed = await service.removeWidget(CTX, app.id, 'p1', 's1', 'w1');
-    expect(removed.pages[0]!.sections[0]!.widgets).toHaveLength(0);
-  });
-
-  it('duplicates an app', async () => {
-    const app = await service.createApp(CTX, { name: 'Original', pages: [{ id: 'p1', name: 'P1', sections: [] }] });
-    const copy = await service.duplicateApp(CTX, app.id, 'Copy');
-    expect(copy.name).toBe('Copy');
-    expect(copy.pages).toHaveLength(1);
-  });
-
-  it('shares an app', async () => {
-    const app = await service.createApp(CTX, { name: 'App1' });
-    const shared = await service.shareApp(CTX, app.id, ['user2', 'user3']);
-    expect(shared.sharedWith).toContain('user2');
-  });
-
-  it('registers a custom widget', async () => {
-    const w = await service.registerWidget(CTX, {
-      type: 'custom_widget', name: 'Custom', description: 'User-defined widget',
-      category: 'data', configSchema: {}, defaultConfig: {}, supportedDataSources: ['object_set'],
-      supportsLiveUpdates: false, minWidth: 1, available: true, version: '1.0.0',
-    });
-    expect(w.type).toBe('custom_widget');
-    expect(await service.getWidget(CTX, 'custom_widget')).not.toBeNull();
-  });
-});
 
 // ===========================================================================
 // Platform resources

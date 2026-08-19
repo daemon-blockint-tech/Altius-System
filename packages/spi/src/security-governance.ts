@@ -119,57 +119,11 @@ export interface AccessExplanationService {
 
 // ---------------------------------------------------------------------------
 // 3. Marking propagation along data lineage
+//    Types moved to marking-policy.ts; re-exported for backward compatibility.
+//    MarkingPropagationService deleted in §5 (dead code — no consumers).
 // ---------------------------------------------------------------------------
 
-/** A marking propagation rule. */
-export interface MarkingPropagationRule {
-  /** Source object type. */
-  sourceType: string;
-  /** Target object type. */
-  targetType: string;
-  /** Link/relationship path from source to target. */
-  linkPath: string[];
-  /** Whether to propagate markings from source to target. */
-  propagate: boolean;
-  /** Whether to stop propagation at this hop (overrides inherited rules). */
-  stopPropagating?: boolean;
-}
-
-/** The result of computing propagated markings. */
-export interface PropagatedMarkings {
-  /** Object type. */
-  objectType: string;
-  /** Object ID. */
-  objectId: string;
-  /** Markings inherited from lineage. */
-  inheritedMarkings: string[];
-  /** Direct markings on the object. */
-  directMarkings: string[];
-  /** Effective markings (union of direct and inherited). */
-  effectiveMarkings: string[];
-  /** Lineage paths that contributed markings. */
-  lineagePaths: Array<{
-    path: string[];
-    markings: string[];
-  }>;
-}
-
-/**
- * Marking propagation service — computes effective markings along data lineage.
- */
-export interface MarkingPropagationService {
-  /** Compute effective markings for an object, considering lineage. */
-  computeEffectiveMarkings(tenantId: string, objectType: string, objectId: string): Promise<PropagatedMarkings>;
-
-  /** Get propagation rules. */
-  getRules(tenantId: string): Promise<MarkingPropagationRule[]>;
-
-  /** Set propagation rules. */
-  setRules(tenantId: string, rules: MarkingPropagationRule[]): Promise<void>;
-
-  /** Simulate marking propagation without applying. */
-  simulate(tenantId: string, objectType: string, objectId: string, hypotheticalMarkings: string[]): Promise<PropagatedMarkings>;
-}
+export type { MarkingPropagationRule, PropagatedMarkings } from './marking-policy.js';
 
 // ---------------------------------------------------------------------------
 // 4. Scoped sessions

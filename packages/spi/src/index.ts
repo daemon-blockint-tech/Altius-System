@@ -157,9 +157,6 @@ export type {
   AccessExplanationService,
   AccessExplanation,
   AccessExplanationReason,
-  MarkingPropagationService,
-  MarkingPropagationRule,
-  PropagatedMarkings,
   ScopedSessionStore,
   ScopedSession,
   CreateScopedSessionInput,
@@ -374,12 +371,22 @@ export type {
   CreateSpaceInput,
   OntologyEntity,
   CreateOntologyInput,
-  MarkingDefinition,
-  CreateMarkingInput,
   SharingRule,
   CreateSharingRuleInput,
   OntologyAccessResult,
 } from './multi-ontology.js';
+
+// Marking policy — consolidated marking types (previously in multi-ontology.ts
+// and security-governance.ts)
+export type {
+  MarkingRecord,
+  CreateMarkingInput,
+  MarkingPropagationRule,
+  PropagatedMarkings,
+} from './marking-policy.js';
+
+// Backward-compatibility alias — MarkingDefinition was the old name for MarkingRecord
+export type { MarkingRecord as MarkingDefinition } from './marking-policy.js';
 
 // Time-aware graph analysis
 export type {
@@ -396,23 +403,9 @@ export type {
   TimelineComparison,
 } from './graph-analysis.js';
 
-// Value and conditional formatting
-export type {
-  ValueFormattingService,
-  ValueFormat,
-  ValueFormatKind,
-  ValueFormatParams,
-  ConditionalFormatRule,
-  ConditionKind,
-  ConditionParams,
-  ConditionalStyle,
-  ComparisonOperator,
-  SparklineConfig,
-  CreateValueFormatInput,
-  CreateConditionalFormatInput,
-  CreateSparklineInput,
-  FormattedValue,
-} from './value-formatting.js';
+// Value and conditional formatting — DELETED in §4D, folded into DisplayDirective
+// (packages/odl/src/parser/types.ts) which now has formatKind, formatParams,
+// and conditionalFormats fields.
 
 // AI FDE agentic platform assistant
 export type {
@@ -495,7 +488,7 @@ export type {
   SendCommandInput,
   AppPairing,
   CreateAppPairingInput,
-} from './embedding.js';
+} from './app-embedding.js';
 
 // Layout and device capture
 export type {
@@ -507,17 +500,8 @@ export type {
   ResolvedDeepLink,
 } from './layout-device-capture.js';
 
-// Widget library
-export type {
-  WidgetLibraryService,
-  WidgetDefinition,
-  AppDefinition,
-  AppPage,
-  AppSection,
-  WidgetInstance,
-  AppVariable,
-  CreateAppDefinitionInput,
-} from './widget-library.js';
+// Widget library — DELETED in §4C, consolidated onto workshop-platform.ts
+// (WorkshopPlatformService already covers apps, templates, widgets, etc.)
 
 // Platform resources
 export type {

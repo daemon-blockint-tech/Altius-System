@@ -6,6 +6,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { parseSql } from './sql-parser.js';
 import type {
   OntologySqlService,
   SavedSqlQuery,
@@ -22,58 +23,7 @@ export type OntologyObjectReader = (
   objectType: string,
 ) => Promise<Array<{ id: string; properties: Record<string, unknown> }>>;
 
-// ── SQL parser (simplified) ───────────────────────────────────────────
-
-interface ParsedSql {
-  select: string[];
-  from: string;
-  joins: Array<{ type: string; table: string; on: string }>;
-  where?: Array<{ field: string; op: string; value: string }>;
-  groupBy?: string[];
-  orderBy?: Array<{ field: string; direction: 'ASC' | 'DESC' }>;
-  limit?: number;
-}
-
-function parseSql(sql: string): ParsedSql {
-  const upper = sql.trim().replace(/;$/, '');
-  const selectMatch = upper.match(/^select\s+(.+?)\s+from\s+(\w+)/i);
-  if (!selectMatch) throw new Error('SQL must start with SELECT ... FROM <table>');
-  const selectCols = selectMatch[1]!.split(',').map(s => s.trim());
-  const fromTable = selectMatch[2]!;
-  const result: ParsedSql = { select: selectCols, from: fromTable, joins: [] };
-  // Parse JOIN
-  const joinMatches = [...upper.matchAll(/(inner|left|right|outer)?\s*join\s+(\w+)\s+on\s+(\S+\s*=\s*\S+)/gi)];
-  for (const m of joinMatches) {
-    result.joins.push({ type: (m[1] ?? 'inner').toLowerCase(), table: m[2]!, on: m[3]!.trim() });
-  }
-  // Parse WHERE
-  const whereMatch = upper.match(/where\s+(.+?)(?:\s+(?:group by|order by|limit)|$)/i);
-  if (whereMatch) {
-    const clauses = whereMatch[1]!.split(/\s+and\s+/i);
-    result.where = clauses.map(c => {
-      const cm = c.match(/(\S+)\s*(=|!=|<>|>=|<=|>|<|like)\s*(.+)/i);
-      if (cm) return { field: cm[1]!, op: cm[2]!, value: cm[3]!.replace(/^['"]|['"]$/g, '') };
-      return { field: c, op: '=', value: '' };
-    });
-  }
-  // Parse GROUP BY
-  const groupMatch = upper.match(/group by\s+(.+?)(?:\s+order by|\s+limit|$)/i);
-  if (groupMatch) result.groupBy = groupMatch[1]!.split(',').map(s => s.trim());
-  // Parse ORDER BY
-  const orderMatch = upper.match(/order by\s+(.+?)(?:\s+limit|$)/i);
-  if (orderMatch) {
-    result.orderBy = orderMatch[1]!.split(',').map(s => {
-      const parts = s.trim().split(/\s+/);
-      return { field: parts[0]!, direction: (parts[1]?.toUpperCase() === 'DESC' ? 'DESC' : 'ASC') as 'ASC' | 'DESC' };
-    });
-  }
-  // Parse LIMIT
-  const limitMatch = upper.match(/limit\s+(\d+)/i);
-  if (limitMatch) result.limit = parseInt(limitMatch[1]!, 10);
-  return result;
-}
-
-function detectObjectTypes(parsed: ParsedSql): string[] {
+function detectObjectTypes(parsed: ReturnType<typeof parseSql>): string[] {
   const types = new Set<string>([parsed.from]);
   for (const j of parsed.joins) types.add(j.table);
   return Array.from(types);
@@ -141,13 +91,13 @@ export class InMemoryOntologySqlService implements OntologySqlService {
           const val = row[w.field];
           const cmp = String(val);
           switch (w.op) {
-            case '=': return cmp === w.value;
-            case '!=': case '<>': return cmp !== w.value;
-            case '>': return Number(val) > Number(w.value);
-            case '>=': return Number(val) >= Number(w.value);
-            case '<': return Number(val) < Number(w.value);
-            case '<=': return Number(val) <= Number(w.value);
-            case 'like': return new RegExp(w.value.replace(/%/g, '.*').replace(/_/g, '.')).test(cmp);
+            case '=': case 'eq': return cmp === String(w.value);
+            case '!=': case '<>': case 'neq': return cmp !== String(w.value);
+            case '>': case 'gt': return Number(val) > Number(w.value);
+            case '>=': case 'gte': return Number(val) >= Number(w.value);
+            case '<': case 'lt': return Number(val) < Number(w.value);
+            case '<=': case 'lte': return Number(val) <= Number(w.value);
+            case 'like': return new RegExp(String(w.value).replace(/%/g, '.*').replace(/_/g, '.')).test(cmp);
             default: return true;
           }
         });
@@ -170,7 +120,7 @@ export class InMemoryOntologySqlService implements OntologySqlService {
         const keyParts = key.split('|');
         groupBy.forEach((g, i) => { result[g] = keyParts[i]; });
         // Apply aggregate functions in SELECT
-        for (const col of parsed.select) {
+        for (const col of parsed.columns === '*' ? [] : parsed.columns) {
           const aggMatch = col.match(/(count|sum|avg|min|max)\s*\(\s*(\*|\S+)\s*\)/i);
           if (aggMatch) {
             const fn = aggMatch[1]!.toLowerCase();
@@ -197,7 +147,7 @@ export class InMemoryOntologySqlService implements OntologySqlService {
           const av = String(a[ob.field] ?? ''), bv = String(b[ob.field] ?? '');
           if (av === bv) return 0;
           const cmp = av < bv ? -1 : 1;
-          return ob.direction === 'DESC' ? -cmp : cmp;
+          return ob.direction === 'desc' ? -cmp : cmp;
         });
       }
     }
@@ -207,9 +157,10 @@ export class InMemoryOntologySqlService implements OntologySqlService {
     rows = rows.slice(0, limit);
 
     // Build columns from SELECT (or all columns if *)
-    const columns = parsed.select[0] === '*'
+    const colList = parsed.columns === '*' ? null : parsed.columns;
+    const columns = colList === null
       ? (rows[0] ? Object.keys(rows[0]).map(k => ({ name: k, type: 'string' })) : [])
-      : parsed.select.map(c => ({ name: c, type: 'string' }));
+      : colList.map(c => ({ name: c, type: 'string' }));
 
     return { columns, rows: rows.map(r => [r]), totalRowCount, truncated, executionTimeMs: Date.now() - start, accessedObjectTypes: objectTypes };
   }
@@ -219,12 +170,12 @@ export class InMemoryOntologySqlService implements OntologySqlService {
     const objectTypes = detectObjectTypes(parsed);
     return {
       parsed: {
-        select: parsed.select,
+        select: parsed.columns === '*' ? ['*'] : parsed.columns,
         from: [parsed.from],
         joins: parsed.joins,
         where: parsed.where?.map(w => `${w.field} ${w.op} ${w.value}`).join(' AND '),
         groupBy: parsed.groupBy,
-        orderBy: parsed.orderBy,
+        orderBy: parsed.orderBy?.map(o => ({ field: o.field, direction: (o.direction === 'desc' ? 'DESC' : 'ASC') as 'ASC' | 'DESC' })),
         limit: parsed.limit,
       },
       objectTypes,
@@ -239,7 +190,7 @@ export class InMemoryOntologySqlService implements OntologySqlService {
       const parsed = parseSql(sql);
       const errors: string[] = [];
       const warnings: string[] = [];
-      if (parsed.select.length === 0) errors.push('SELECT list is empty');
+      if (parsed.columns !== '*' && parsed.columns.length === 0) errors.push('SELECT list is empty');
       if (!parsed.from) errors.push('FROM clause is missing');
       if (!parsed.where) warnings.push('No WHERE clause — full scan');
       return { valid: errors.length === 0, errors, warnings };

@@ -85,38 +85,8 @@ export interface CreateOntologyInput {
 }
 
 // ===========================================================================
-// Markings
+// Markings — types moved to marking-policy.ts; re-exported above
 // ===========================================================================
-
-/** A marking definition — a sensitivity/classification label. */
-export interface MarkingDefinition {
-  id: string;
-  tenantId: string;
-  /** Marking name (e.g. 'CONFIDENTIAL', 'RESTRICTED', 'PHI'). */
-  name: string;
-  /** Display label. */
-  label: string;
-  /** Description. */
-  description: string;
-  /** Marking category (e.g. 'sensitivity', 'classification', 'compliance'). */
-  category: string;
-  /** Required clearance level to read objects with this marking. */
-  requiredClearance: string;
-  /** Whether this marking propagates to linked objects. */
-  propagates: boolean;
-  /** ISO 8601 creation timestamp. */
-  createdAt: string;
-}
-
-/** Input for creating a marking. */
-export interface CreateMarkingInput {
-  name: string;
-  label: string;
-  description?: string;
-  category: string;
-  requiredClearance: string;
-  propagates?: boolean;
-}
 
 // ===========================================================================
 // Cross-ontology sharing
@@ -200,11 +170,7 @@ export interface MultiOntologyGovernanceService {
   updateOntology(ctx: RequestContext, id: string, updates: Partial<CreateOntologyInput>): Promise<OntologyEntity>;
   deleteOntology(ctx: RequestContext, id: string): Promise<void>;
 
-  // ── Markings ──
-  createMarking(ctx: RequestContext, input: CreateMarkingInput): Promise<MarkingDefinition>;
-  getMarking(ctx: RequestContext, name: string): Promise<MarkingDefinition | null>;
-  listMarkings(ctx: RequestContext, category?: string): Promise<MarkingDefinition[]>;
-  deleteMarking(ctx: RequestContext, name: string): Promise<void>;
+  // ── Markings — CRUD removed in §5, consolidated onto marking-policy.ts ──
 
   // ── Sharing rules ──
   createSharingRule(ctx: RequestContext, input: CreateSharingRuleInput): Promise<SharingRule>;
