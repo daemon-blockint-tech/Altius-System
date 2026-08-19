@@ -33,7 +33,10 @@ export class PostgresCommentStore implements CommentStore {
       [
         id, comment.tenantId, comment.objectType, comment.objectId,
         comment.parentCommentId, comment.body, comment.authorId, comment.authorName ?? null,
-        now, JSON.stringify(mentions),
+        // `mentions` is TEXT[]; node-postgres maps a JS array to a Postgres
+        // array, while JSON.stringify produces `["bob"]`, which array_in
+        // rejects as a malformed array literal.
+        now, mentions,
       ],
     );
     return {
@@ -102,7 +105,7 @@ export class PostgresCommentStore implements CommentStore {
     await this.pool.query(
       `UPDATE "comment"."comments" SET "body" = $3, "edited" = TRUE, "updated_at" = NOW(), "mentions" = $4
        WHERE "id" = $1 AND "tenant_id" = $2`,
-      [commentId, tenantId, body, JSON.stringify(mentions)],
+      [commentId, tenantId, body, mentions],
     );
     const updated = await this.getComment(tenantId, commentId);
     return updated!;
