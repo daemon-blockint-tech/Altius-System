@@ -15,7 +15,7 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "clean": "rm -rf dist coverage"
+    "clean": "rm -rf dist coverage *.tsbuildinfo"
   },
   "files": ["dist"],
   "license": "Apache-2.0",

@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { parseOdl } from '../parser/index.js';
 import { validateSchema } from '../validator/index.js';
-import type { ParsedSchema } from '../parser/types.js';
 
 const STRUCT_ODL = `
 extend schema @namespace(name: "test.structs", version: "0.1.0")

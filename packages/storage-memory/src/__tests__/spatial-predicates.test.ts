@@ -14,13 +14,11 @@ const SCHEMA: OntologySchema = {
   objectTypes: [
     {
       name: 'Place',
-      primaryField: 'id',
       properties: [
         { name: 'id', type: 'ID', required: true },
         { name: 'name', type: 'String', required: true },
         { name: 'location', type: 'GeoPoint', required: false },
       ],
-      links: [],
       indexes: [],
     } satisfies ObjectTypeDefinition,
   ],

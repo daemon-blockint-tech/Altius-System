@@ -813,7 +813,7 @@ function generateQueryResolvers(
   // List query: foos(filter, orderBy, first, after, last, before): FooConnection!
   resolvers['Query']![`${lower}s`] = async (
     _parent: unknown,
-    args: { filter?: Record<string, unknown>; orderBy?: Record<string, string> } & PaginationArgs,
+    args: { filter?: Record<string, unknown>; orderBy?: Record<string, string>; asOf?: string } & PaginationArgs,
     ctx: ResolverContext,
   ) => {
     try {
@@ -916,7 +916,7 @@ function generateQueryResolvers(
           limit,
           async (windowLimit) => {
             const scan = await deps.objectManager.query(
-              typeName, combinedFilter, { limit: windowLimit, offset: 0, orderBy: convertOrderBy(args.orderBy), ...(args.asOf ? { asOfTime: args.asOf as string } : {}) }, requestContext,
+              typeName, combinedFilter, { limit: windowLimit, offset: 0, orderBy: convertOrderBy(args.orderBy), ...(args.asOf ? { asOfTime: args.asOf } : {}) }, requestContext,
             );
             return { items: scan.items, total: scan.totalCount };
           },
@@ -936,7 +936,7 @@ function generateQueryResolvers(
           : result.totalCount;
       } else {
         const page = await deps.objectManager.query(
-          typeName, combinedFilter, { limit, offset, orderBy: convertOrderBy(args.orderBy), ...(args.asOf ? { asOfTime: args.asOf as string } : {}) }, requestContext,
+          typeName, combinedFilter, { limit, offset, orderBy: convertOrderBy(args.orderBy), ...(args.asOf ? { asOfTime: args.asOf } : {}) }, requestContext,
         );
         items = mapAndRedact(page.items);
         totalCount = page.totalCount;

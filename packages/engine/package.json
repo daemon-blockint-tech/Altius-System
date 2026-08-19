@@ -18,7 +18,7 @@
     "build:all": "pnpm build && pnpm build:sandbox",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "clean": "rm -rf dist coverage"
+    "clean": "rm -rf dist coverage *.tsbuildinfo"
   },
   "files": ["dist", "scripts/build-sandbox-preload.sh", "src/functions/sandbox-preload.c"],
   "license": "Apache-2.0",

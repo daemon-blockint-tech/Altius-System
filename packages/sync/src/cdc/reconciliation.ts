@@ -94,8 +94,7 @@ export class ReconciliationService {
     // Index source records by primary key
     const sourceMap = new Map<string, MappedObject>();
     for (const record of sourceRecords) {
-      const pk = this._getPrimaryKey(record);
-      if (pk) sourceMap.set(pk, record);
+      if (record.id) sourceMap.set(record.id, record);
     }
 
     // Find missing and field-drift
@@ -158,11 +157,6 @@ export class ReconciliationService {
       reconciledAt: new Date().toISOString(),
       durationMs: Date.now() - start,
     };
-  }
-
-  private _getPrimaryKey(record: MappedObject): string | undefined {
-    // MappedObject has primaryKey field from the mapping config
-    return record.primaryKey ?? record.properties['_id'] as string | undefined;
   }
 
   private _valuesEqual(a: unknown, b: unknown): boolean {

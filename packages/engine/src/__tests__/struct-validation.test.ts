@@ -1,8 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { parseOdl } from '@altius/odl';
 import { validateSchemaFields, validationError } from '../objects/validation.js';
-import { MemoryStorageProvider } from '@altius/storage-memory';
-import type { ParsedSchema } from '@altius/odl';
 
 const SCHEMA = `
 extend schema @namespace(name: "test.structs", version: "0.1.0")

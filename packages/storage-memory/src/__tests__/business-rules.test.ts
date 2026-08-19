@@ -4,7 +4,7 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { InMemoryBusinessRulesService } from '../in-memory-business-rules.js';
-import type { RequestContext, CreateRuleInput } from '@altius/spi';
+import type { RequestContext } from '@altius/spi';
 
 const CTX: RequestContext = { tenantId: 't1', actorId: 'u1' };
 

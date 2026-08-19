@@ -262,12 +262,15 @@ export function registerSearchTests(name: string, factory: ProviderFactory): voi
 
     // ─── Multi-word query semantics ───
     //
-    // The two providers disagreed here and nothing pinned it: Postgres sent a
-    // single `%query%` ILIKE pattern while the memory provider split on
-    // whitespace and matched ANY term. search('acme corp') therefore returned
-    // rows containing "acme" OR "corp" on one and only the contiguous phrase
-    // on the other — a suite green against the test double while production
-    // behaved differently. The contract is Postgres's: one literal substring.
+    // The two providers once disagreed here: Postgres sent a single `%query%`
+    // ILIKE pattern while the memory provider split on whitespace and matched
+    // ANY term. That divergence is now closed from the other direction — both
+    // providers compile the same `parseSearchQuery` output (SPI), whose pinned
+    // contract is websearch-style: bare words are ANDed, order-independent,
+    // and only a quoted "phrase" requires contiguity. See
+    // packages/spi/src/__tests__/search-query-parser.test.ts. So a bare
+    // multi-word query requires every word somewhere in the row, not one
+    // literal substring.
 
     describe('multi-word queries match as one substring', () => {
       it('matches a contiguous phrase', async () => {
@@ -287,10 +290,20 @@ export function registerSearchTests(name: string, factory: ProviderFactory): voi
         expect(result.hits).toHaveLength(0);
       });
 
-      it('does not match when the words appear out of order', async () => {
+      it('matches regardless of word order, since bare words AND', async () => {
         await provider.createObject(tenantA, 'Patient', { name: 'Corp Acme' });
 
         const result = await provider.searchObjects(tenantA, 'Patient', { query: 'Acme Corp' });
+
+        // Both words are present, so the row matches. Requiring contiguity is
+        // what quoting is for: `"Acme Corp"` would not match this row.
+        expect(result.hits.map(h => h.object['name'])).toEqual(['Corp Acme']);
+      });
+
+      it('a quoted phrase still requires the words to be contiguous', async () => {
+        await provider.createObject(tenantA, 'Patient', { name: 'Corp Acme' });
+
+        const result = await provider.searchObjects(tenantA, 'Patient', { query: '"Acme Corp"' });
 
         expect(result.hits).toHaveLength(0);
       });

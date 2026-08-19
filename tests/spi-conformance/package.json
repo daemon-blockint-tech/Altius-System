@@ -16,7 +16,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:memory": "vitest run --reporter=verbose",
-    "clean": "rm -rf dist coverage"
+    "clean": "rm -rf dist coverage *.tsbuildinfo"
   },
   "files": [
     "dist"
@@ -28,6 +28,7 @@
   "devDependencies": {
     "@altius/storage-memory": "workspace:*",
     "@altius/storage-postgres": "workspace:*",
+    "@types/node": "^22.0.0",
     "vitest": "^3.0.0"
   }
 }

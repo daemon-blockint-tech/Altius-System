@@ -104,14 +104,7 @@ export class InMemoryWorkshopPlatformService implements WorkshopPlatformService 
   private readonly modules = new Map<string, Map<string, AppModule>>();
   private readonly variables = new Map<string, Map<string, ReactiveVariable>>();
   private readonly widgets = new Map<string, Map<string, WidgetCatalogEntry>>();
-  private readonly widgets = new Map<string, WidgetCatalogEntry>();
   private readonly objectViews = new Map<string, Map<string, ObjectView>>();
-
-  constructor() {
-    for (const w of DEFAULT_WIDGETS) {
-      this.widgets.set(w.type, { id: randomUUID(), ...w });
-    }
-  }
 
   // ── Cross-app interactivity ──
 

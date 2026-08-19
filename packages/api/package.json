@@ -15,7 +15,7 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "clean": "rm -rf dist coverage",
+    "clean": "rm -rf dist coverage *.tsbuildinfo",
     "spec:openapi": "node dist/spec/dump-openapi.js",
     "spec:graphql": "node dist/spec/dump-schema.js",
     "spec:asyncapi": "node dist/spec/dump-asyncapi.js",
