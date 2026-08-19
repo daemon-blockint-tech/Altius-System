@@ -1175,6 +1175,20 @@ export class MemoryStorageProvider implements StorageProvider {
         }
       }
     }
+    // HAVING aliases must name a requested aggregate. Postgres cannot build a
+    // predicate for an alias it has no expression for and raises; without this
+    // the memory provider would compare against an absent value and silently
+    // drop every group.
+    if (query.having && query.having.length > 0) {
+      const aliases = new Set(
+        query.fields.map(f => f.alias ?? `${f.fn}_${f.field}`),
+      );
+      for (const predicate of query.having) {
+        if (!aliases.has(predicate.alias)) {
+          throw new Error(`HAVING references unknown aggregate alias '${predicate.alias}'`);
+        }
+      }
+    }
     // Same for bucket intervals: bucketDate falls through to day-granularity
     // for anything it does not recognise, so without this an unsupported
     // interval is a silent wrong answer here while Postgres rejects it.

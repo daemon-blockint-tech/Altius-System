@@ -346,6 +346,105 @@ export function registerAggregationTests(name: string, factory: ProviderFactory)
       });
     });
 
+    // ─── Extended grammar: COUNT DISTINCT / STDDEV / MEDIAN / PERCENTILE ───
+    //
+    // These are the definitions that make the two providers agree: STDDEV_SAMP
+    // (n-1, NULL at n=1) and PERCENTILE_CONT (interpolating). A provider that
+    // implemented the population deviation or a nearest-rank percentile would
+    // still look plausible in isolation and disagree here.
+
+    describe('extended aggregate functions', () => {
+      beforeEach(seedPatients);
+
+      it('count_distinct counts distinct non-null values', async () => {
+        const result = await provider.aggregateObjects(tenantA, 'Patient', {
+          fields: [
+            { field: 'status', fn: 'count', alias: 'rows' },
+            { field: 'status', fn: 'count_distinct', alias: 'statuses' },
+          ],
+        });
+        expect(result.groups[0]!.values['rows']).toBe(5);
+        // active, inactive, pending
+        expect(result.groups[0]!.values['statuses']).toBe(3);
+      });
+
+      it('stddev is the sample deviation', async () => {
+        const result = await provider.aggregateObjects(tenantA, 'Patient', {
+          fields: [{ field: 'age', fn: 'stddev', alias: 'sd' }],
+        });
+        // ages 30,25,40,35,28 → sample sd ≈ 5.9414 (population ≈ 5.3141)
+        expect(result.groups[0]!.values['sd']).toBeCloseTo(5.9414, 3);
+      });
+
+      it('stddev of a single row is null, not zero', async () => {
+        const result = await provider.aggregateObjects(tenantA, 'Patient', {
+          fields: [{ field: 'age', fn: 'stddev', alias: 'sd' }],
+          filter: { field: 'status', operator: 'eq', value: 'pending' },
+        });
+        expect(result.groups[0]!.values['sd']).toBeNull();
+      });
+
+      it('median interpolates between neighbouring values', async () => {
+        const result = await provider.aggregateObjects(tenantA, 'Patient', {
+          fields: [{ field: 'age', fn: 'median', alias: 'med' }],
+        });
+        // sorted 25,28,30,35,40 → 30
+        expect(result.groups[0]!.values['med']).toBeCloseTo(30, 6);
+      });
+
+      it('percentile uses the requested fraction', async () => {
+        const result = await provider.aggregateObjects(tenantA, 'Patient', {
+          fields: [{ field: 'age', fn: 'percentile', percentile: 0.25, alias: 'p25' }],
+        });
+        // position 0.25 * 4 = 1 → 28
+        expect(result.groups[0]!.values['p25']).toBeCloseTo(28, 6);
+      });
+
+      it('rejects a percentile without a fraction', async () => {
+        await expect(
+          provider.aggregateObjects(tenantA, 'Patient', {
+            fields: [{ field: 'age', fn: 'percentile', alias: 'p' }],
+          }),
+        ).rejects.toThrow();
+      });
+    });
+
+    // ─── HAVING ───
+
+    describe('having', () => {
+      beforeEach(seedPatients);
+
+      it('filters groups by aggregate value and counts only survivors', async () => {
+        const result = await provider.aggregateObjects(tenantA, 'Patient', {
+          fields: [{ field: '*', fn: 'count', alias: 'n' }],
+          groupBy: ['status'],
+          having: [{ alias: 'n', operator: 'gte', value: 2 }],
+        });
+        expect(result.groups).toHaveLength(1);
+        expect(result.groups[0]!.keys['status']).toBe('active');
+        expect(result.totalGroups).toBe(1);
+      });
+
+      it('removes the single ungrouped group when it fails the predicate', async () => {
+        const result = await provider.aggregateObjects(tenantA, 'Patient', {
+          fields: [{ field: '*', fn: 'count', alias: 'n' }],
+          having: [{ alias: 'n', operator: 'gt', value: 1000 }],
+        });
+        expect(result.groups).toHaveLength(0);
+        expect(result.totalGroups).toBe(0);
+      });
+
+      it('rejects a predicate naming an aggregate that was not requested', async () => {
+        await expect(
+          provider.aggregateObjects(tenantA, 'Patient', {
+            fields: [{ field: '*', fn: 'count', alias: 'n' }],
+            groupBy: ['status'],
+            having: [{ alias: 'nope', operator: 'gt', value: 0 }],
+          }),
+        ).rejects.toThrow();
+      });
+    });
+
     // ─── Soft-deleted exclusion ───
 
     describe('soft-deleted exclusion', () => {

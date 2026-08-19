@@ -19,18 +19,9 @@
  */
 
 import type { ParsedSchema, ObjectType } from '@altius/odl';
-import type {
-  KioskService,
-  LayoutDeviceCaptureService,
-  OntologyManagerService,
-  ValueFormattingService,
-  DesignSystemService,
-  OntologyChangeHistoryService,
-  OntologyObject,
-  FilterExpression,
-} from '@altius/spi';
-import type { ApiDependencies, ResolverContext } from '../graphql/types.js';
-import type { RestRequest, RestResponse, RestRoute } from './types.js';
+import type { OntologyObject, FilterExpression } from '@altius/spi';
+import type { ApiDependencies } from '../graphql/types.js';
+import type { RestResponse, RestRoute } from './types.js';
 import { createRestErrorResponse, wrapErrorToRest } from './errors.js';
 import { invokeFunction } from '../functions/invoke-function.js';
 
@@ -55,7 +46,7 @@ export function generateObjectDataFreshnessRoutes(obj: ObjectType, deps: ApiDepe
       pattern: `/api/v1/${plural}/freshness`,
       readOperation: 'read',
       objectType: obj.name,
-      handler: async (req, ctx): Promise<RestResponse> => {
+      handler: async (_req, ctx): Promise<RestResponse> => {
         try {
           const record = await svc.getFreshnessForType(ctx.requestContext, objectType);
           if (!record) return { status: 404, body: { error: 'NOT_FOUND', message: `No freshness record for ${objectType}` } };
@@ -160,7 +151,8 @@ export function generateObjectValueFormattingRoutes(obj: ObjectType, deps: ApiDe
 
           const allowed = await deps.authorizationService.listObjects(`user:${ctx.user.id}`, 'viewer', fgaType, ctx.requestContext.tenantId);
           const all = allowed.length === 1 && allowed[0] === '*';
-          const page = await deps.objectManager.query(objectType, filter ?? (all ? undefined : { field: '_id', operator: 'in', value: allowed }), { limit: 1000, offset: 0 }, ctx.requestContext);
+          const resolvedFilter = (filter ?? (all ? undefined : { field: '_id', operator: 'in', value: allowed })) as FilterExpression;
+          const page = await deps.objectManager.query(objectType, resolvedFilter, { limit: 1000, offset: 0 }, ctx.requestContext);
           const formatted = await svc.formatCollection(ctx.requestContext, {
             objectType,
             field,
@@ -295,7 +287,7 @@ export function generateObjectFunctionBackedRoutes(obj: ObjectType, deps: ApiDep
           const functionName = req.params['functionName'] ?? '';
           const objectId = req.params['id'] ?? '';
           const body = (req.body ?? {}) as Record<string, unknown>;
-          if (!deps.functionExecutor) return createRestErrorResponse({ code: 'NOT_CONFIGURED', category: 'platform', message: 'Function executor not configured', retryable: false, traceId: ctx.requestContext.traceId });
+          if (!deps.functionExecutor) return createRestErrorResponse({ code: 'NOT_CONFIGURED', category: 'system', message: 'Function executor not configured', retryable: false, traceId: ctx.requestContext.traceId });
 
           const fn = deps.schema.functionTypes.find(f => f.name === functionName);
           if (!fn) return createRestErrorResponse({ code: 'NOT_FOUND', category: 'validation', message: `Function not found: ${functionName}`, retryable: false, traceId: ctx.requestContext.traceId });
@@ -351,7 +343,7 @@ export function generateLiveDataRoutes(deps: ApiDependencies): RestRoute[] {
       readOperation: 'read',
       handler: async (req, ctx): Promise<RestResponse> => {
         try {
-          const result = await mgr.execute(ctx.requestContext, req.params['id'] ?? '');
+          const result = await mgr.execute(req.params['id'] ?? '', ctx.requestContext);
           return { status: 200, body: { data: result, refreshedAt: new Date().toISOString() } };
         } catch (err) { return wrapErrorToRest(err, ctx.requestContext.traceId); }
       },
@@ -420,7 +412,8 @@ export function generateDeviceCaptureRoutes(deps: ApiDependencies): RestRoute[] 
       pattern: '/api/v1/deep-links/resolve',
       handler: async (req, ctx): Promise<RestResponse> => {
         try {
-          const url = typeof (req.body ?? {})['url'] === 'string' ? (req.body as Record<string, unknown>)['url'] as string : '';
+          const body = (req.body ?? {}) as Record<string, unknown>;
+          const url = typeof body['url'] === 'string' ? body['url'] as string : '';
           if (!url) return createRestErrorResponse({ code: 'MISSING_PARAMETER', category: 'validation', message: 'url is required', retryable: false, traceId: ctx.requestContext.traceId });
           const resolved = await svc.resolveDeepLink(ctx.requestContext, url);
           return { status: 200, body: { data: resolved } };
@@ -557,7 +550,7 @@ export function generateOntologyMetadataRoutes(deps: ApiDependencies): RestRoute
       method: 'GET',
       pattern: '/api/v1/ontology/metadata/catalog',
       readOperation: 'query',
-      handler: async (req, ctx): Promise<RestResponse> => {
+      handler: async (_req, ctx): Promise<RestResponse> => {
         try {
           const types = await svc.listTypes(ctx.requestContext);
           const actions = await svc.listActions(ctx.requestContext);

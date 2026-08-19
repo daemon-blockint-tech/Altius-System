@@ -10,7 +10,7 @@
 import type { ActionType, ObjectType, FunctionType, FieldDefinition } from '@altius/odl';
 import { deriveActionAuthzMapping, toSnakeCase } from '@altius/odl';
 import type { ActionActor, ActionContext, ActionResult } from '@altius/actions';
-import type { FilterExpression, OntologyObject, TraversalStep } from '@altius/spi';
+import type { FilterExpression, OntologyObject, TraversalStep, AggregateField, AggregateFunction, AggregateHaving, AggregateQuery } from '@altius/spi';
 import { resolveConsentPurpose as resolveSpiConsentPurpose } from '@altius/spi';
 import type { DataPurpose } from '@altius/spi';
 import type { McpTool, McpCallToolResult } from './protocol.js';
@@ -30,6 +30,25 @@ function resolveConsentPurpose(deps: McpServerDependencies): DataPurpose {
 
 /** Max objects a `search_<Type>` tool returns in one call. */
 const SEARCH_TOOL_LIMIT = 50;
+
+/** Max GROUPS an `aggregate_<Type>` tool returns in one call. */
+const AGGREGATE_TOOL_LIMIT = 200;
+
+/**
+ * Rows scanned to resolve consent before aggregating a consent-gated type.
+ * Beyond this the aggregate is REFUSED rather than computed over a truncated
+ * population: a count that silently omits records reads as a fact.
+ * Mirrors CONSENT_SCAN_LIMIT in the API's aggregate paths.
+ */
+const AGGREGATE_CONSENT_SCAN_LIMIT = 10_000;
+
+/** Aggregate functions the tool accepts, mirroring the SPI grammar. */
+const AGGREGATE_TOOL_FNS: readonly string[] = [
+  'count', 'sum', 'avg', 'min', 'max', 'count_distinct', 'stddev', 'median', 'percentile',
+];
+
+/** HAVING operators the tool accepts. */
+const AGGREGATE_TOOL_HAVING_OPS: readonly string[] = ['eq', 'ne', 'gt', 'gte', 'lt', 'lte'];
 
 /** ODL scalar → JSON Schema type mapping for tool input schemas. */
 const SCALAR_JSON_SCHEMA: Record<string, string> = {
@@ -71,6 +90,7 @@ export function buildToolList(deps: McpServerDependencies): McpTool[] {
   // Read tools — one search_<Type> and one traverse_<Type> per ObjectType
   for (const objType of deps.schema.objectTypes) {
     tools.push(buildSearchTool(objType));
+    tools.push(buildAggregateTool(objType));
     tools.push(buildTraverseTool(objType));
   }
 
@@ -385,6 +405,18 @@ export async function invokeTool(
     if (objType && !markingAllows(deps, caller, typeName)) return unknownTool(toolName);
     if (objType) {
       const result = await invokeSearchTool(objType, args, caller, deps);
+      await auditMcpRead(deps, caller, typeName, toolName, result.isError === true);
+      return result;
+    }
+  }
+
+  // Read tool: name matches aggregate_<Type>
+  if (toolName.startsWith('aggregate_')) {
+    const typeName = toolName.slice('aggregate_'.length);
+    const objType = deps.schema.objectTypes.find((o) => o.name === typeName);
+    if (objType && !markingAllows(deps, caller, typeName)) return unknownTool(toolName);
+    if (objType) {
+      const result = await invokeAggregateTool(objType, args, caller, deps);
       await auditMcpRead(deps, caller, typeName, toolName, result.isError === true);
       return result;
     }
