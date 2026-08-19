@@ -55,6 +55,7 @@ import {
   InMemoryJustificationStore,
   InMemoryScopedSessionStore,
   InMemoryOntologySqlService,
+  InMemoryDatasetService,
 } from '@altius/storage-memory';
 import { PostgresStorageProvider, PostgresLineageStore, PostgresAuditStore, PostgresConsentStore, PostgresSchemaRegistry, PostgresObjectSetStore,
   PostgresLLMUsageTracker, PostgresLLMRateLimiter,
@@ -1204,6 +1205,8 @@ async function main(): Promise<void> {
         properties: obj,
       }));
     }),
+    // Datasets — in-memory only (no Postgres implementation yet).
+    datasetService: new InMemoryDatasetService(),
   };
 
   // ── Express + HTTP Server ──

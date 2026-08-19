@@ -10,7 +10,7 @@ import type {
   MarkingPolicy,
 } from '@altius/security';
 import type { ParsedSchema } from '@altius/odl';
-import type { RequestContext, StorageProvider, LLMClient, BlobStore, TimeSeriesStore, BranchStore, CommentStore, NotificationStore, EmbeddingStore, AlertingService, LLMGateway, DataFreshnessService, JustificationStore, AccessExplanationService, ScopedSessionStore, OntologySqlService } from '@altius/spi';
+import type { RequestContext, StorageProvider, LLMClient, BlobStore, TimeSeriesStore, BranchStore, CommentStore, NotificationStore, EmbeddingStore, AlertingService, LLMGateway, DataFreshnessService, JustificationStore, AccessExplanationService, ScopedSessionStore, OntologySqlService, DatasetService } from '@altius/spi';
 import { DataPurpose } from '@altius/spi';
 
 /**
@@ -270,6 +270,27 @@ export interface ApiDependencies {
    *   POST   /api/v1/sql/saved/:id/share    (share saved query)
    */
   ontologySqlService?: OntologySqlService;
+  /**
+   * Versioned transactional dataset service — branchable, transaction-log-backed
+   * tabular resources. When present, REST endpoints for dataset CRUD, row
+   * reads/writes, transaction log, and branching are registered:
+   *   POST   /api/v1/datasets                    (create dataset)
+   *   GET    /api/v1/datasets                     (list datasets)
+   *   GET    /api/v1/datasets/:name               (get dataset)
+   *   DELETE /api/v1/datasets/:name               (drop dataset)
+   *   PUT    /api/v1/datasets/:name/schema         (update schema)
+   *   POST   /api/v1/datasets/:name/insert        (insert rows)
+   *   POST   /api/v1/datasets/:name/update        (update rows)
+   *   POST   /api/v1/datasets/:name/delete        (delete rows)
+   *   POST   /api/v1/datasets/:name/truncate      (truncate)
+   *   GET    /api/v1/datasets/:name/read          (read rows)
+   *   GET    /api/v1/datasets/:name/transactions  (list transactions)
+   *   GET    /api/v1/datasets/:name/transactions/:tid (get transaction)
+   *   POST   /api/v1/datasets/:name/branches      (create branch)
+   *   GET    /api/v1/datasets/:name/branches      (list branches)
+   *   POST   /api/v1/datasets/:name/merge         (merge branch)
+   */
+  datasetService?: DatasetService;
 }
 
 /**

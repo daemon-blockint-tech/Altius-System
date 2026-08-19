@@ -1076,6 +1076,154 @@ function platformPaths(): Record<string, unknown> {
         },
       },
     },
+    // ── Datasets ──
+    '/api/v1/datasets': {
+      post: {
+        tags: ['Datasets'],
+        summary: 'Create a versioned transactional dataset',
+        operationId: 'createDataset',
+        requestBody: { required: true, content: jsonObject },
+        responses: { '201': { description: 'Dataset', content: jsonObject }, '400': { description: 'Validation error' }, '401': unauthorized },
+      },
+      get: {
+        tags: ['Datasets'],
+        summary: 'List datasets',
+        operationId: 'listDatasets',
+        responses: { '200': { description: 'Datasets', content: jsonObject }, '401': unauthorized },
+      },
+    },
+    '/api/v1/datasets/{name}': {
+      get: {
+        tags: ['Datasets'],
+        summary: 'Get a dataset by name',
+        operationId: 'getDataset',
+        parameters: [{ name: 'name', in: 'path', required: true, schema: { type: 'string' } }, { name: 'branch', in: 'query', schema: { type: 'string' } }],
+        responses: { '200': { description: 'Dataset', content: jsonObject }, '401': unauthorized, '404': { description: 'Not found' } },
+      },
+      delete: {
+        tags: ['Datasets'],
+        summary: 'Drop a dataset (or just a branch)',
+        operationId: 'dropDataset',
+        parameters: [{ name: 'name', in: 'path', required: true, schema: { type: 'string' } }, { name: 'branch', in: 'query', schema: { type: 'string' } }],
+        responses: { '204': { description: 'Dropped' }, '401': unauthorized },
+      },
+    },
+    '/api/v1/datasets/{name}/schema': {
+      put: {
+        tags: ['Datasets'],
+        summary: 'Update dataset schema',
+        operationId: 'updateDatasetSchema',
+        parameters: [{ name: 'name', in: 'path', required: true, schema: { type: 'string' } }, { name: 'branch', in: 'query', schema: { type: 'string' } }],
+        requestBody: { required: true, content: jsonObject },
+        responses: { '200': { description: 'Updated dataset', content: jsonObject }, '401': unauthorized, '404': { description: 'Not found' } },
+      },
+    },
+    '/api/v1/datasets/{name}/insert': {
+      post: {
+        tags: ['Datasets'],
+        summary: 'Insert rows into a dataset',
+        operationId: 'insertDatasetRows',
+        parameters: [{ name: 'name', in: 'path', required: true, schema: { type: 'string' } }, { name: 'branch', in: 'query', schema: { type: 'string' } }],
+        requestBody: { required: true, content: jsonObject },
+        responses: { '200': { description: 'Write result', content: jsonObject }, '401': unauthorized },
+      },
+    },
+    '/api/v1/datasets/{name}/update': {
+      post: {
+        tags: ['Datasets'],
+        summary: 'Update rows in a dataset',
+        operationId: 'updateDatasetRows',
+        parameters: [{ name: 'name', in: 'path', required: true, schema: { type: 'string' } }, { name: 'branch', in: 'query', schema: { type: 'string' } }],
+        requestBody: { required: true, content: jsonObject },
+        responses: { '200': { description: 'Write result', content: jsonObject }, '401': unauthorized },
+      },
+    },
+    '/api/v1/datasets/{name}/delete': {
+      post: {
+        tags: ['Datasets'],
+        summary: 'Delete rows from a dataset',
+        operationId: 'deleteDatasetRows',
+        parameters: [{ name: 'name', in: 'path', required: true, schema: { type: 'string' } }, { name: 'branch', in: 'query', schema: { type: 'string' } }],
+        requestBody: { required: true, content: jsonObject },
+        responses: { '200': { description: 'Write result', content: jsonObject }, '401': unauthorized },
+      },
+    },
+    '/api/v1/datasets/{name}/truncate': {
+      post: {
+        tags: ['Datasets'],
+        summary: 'Truncate a dataset',
+        operationId: 'truncateDataset',
+        parameters: [{ name: 'name', in: 'path', required: true, schema: { type: 'string' } }, { name: 'branch', in: 'query', schema: { type: 'string' } }],
+        responses: { '200': { description: 'Write result', content: jsonObject }, '401': unauthorized },
+      },
+    },
+    '/api/v1/datasets/{name}/read': {
+      get: {
+        tags: ['Datasets'],
+        summary: 'Read rows from a dataset',
+        operationId: 'readDatasetRows',
+        parameters: [
+          { name: 'name', in: 'path', required: true, schema: { type: 'string' } },
+          { name: 'branch', in: 'query', schema: { type: 'string' } },
+          { name: 'limit', in: 'query', schema: { type: 'integer' } },
+          { name: 'offset', in: 'query', schema: { type: 'integer' } },
+          { name: 'asOfTransactionId', in: 'query', schema: { type: 'string' } },
+        ],
+        responses: { '200': { description: 'Read result', content: jsonObject }, '401': unauthorized },
+      },
+    },
+    '/api/v1/datasets/{name}/transactions': {
+      get: {
+        tags: ['Datasets'],
+        summary: 'List transaction log entries',
+        operationId: 'listDatasetTransactions',
+        parameters: [
+          { name: 'name', in: 'path', required: true, schema: { type: 'string' } },
+          { name: 'branch', in: 'query', schema: { type: 'string' } },
+          { name: 'limit', in: 'query', schema: { type: 'integer' } },
+        ],
+        responses: { '200': { description: 'Transactions', content: jsonObject }, '401': unauthorized },
+      },
+    },
+    '/api/v1/datasets/{name}/transactions/{tid}': {
+      get: {
+        tags: ['Datasets'],
+        summary: 'Get a transaction by ID',
+        operationId: 'getDatasetTransaction',
+        parameters: [
+          { name: 'name', in: 'path', required: true, schema: { type: 'string' } },
+          { name: 'tid', in: 'path', required: true, schema: { type: 'string' } },
+        ],
+        responses: { '200': { description: 'Transaction', content: jsonObject }, '401': unauthorized, '404': { description: 'Not found' } },
+      },
+    },
+    '/api/v1/datasets/{name}/branches': {
+      post: {
+        tags: ['Datasets'],
+        summary: 'Create a dataset branch',
+        operationId: 'createDatasetBranch',
+        parameters: [{ name: 'name', in: 'path', required: true, schema: { type: 'string' } }],
+        requestBody: { required: true, content: jsonObject },
+        responses: { '201': { description: 'Branch', content: jsonObject }, '401': unauthorized },
+      },
+      get: {
+        tags: ['Datasets'],
+        summary: 'List dataset branches',
+        operationId: 'listDatasetBranches',
+        parameters: [{ name: 'name', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: { '200': { description: 'Branches', content: jsonObject }, '401': unauthorized },
+      },
+    },
+    '/api/v1/datasets/{name}/merge': {
+      post: {
+        tags: ['Datasets'],
+        summary: 'Merge a branch into target',
+        operationId: 'mergeDatasetBranch',
+        parameters: [{ name: 'name', in: 'path', required: true, schema: { type: 'string' } }],
+        requestBody: { required: true, content: jsonObject },
+        responses: { '200': { description: 'Merge result', content: jsonObject }, '401': unauthorized },
+      },
+    },
   };
 }
 

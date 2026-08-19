@@ -30,6 +30,7 @@ import { generateLlmRoutes } from './llm-routes.js';
 import { generateDataFreshnessRoutes } from './data-freshness-routes.js';
 import { generateSecurityGovernanceRoutes } from './security-governance-routes.js';
 import { generateOntologySqlRoutes } from './ontology-sql-routes.js';
+import { generateDatasetRoutes } from './dataset-routes.js';
 import { isTypeVisible } from '../markings/enforce.js';
 import { writeReadAuditFor } from './audit-read.js';
 import { lowerFirst, toSnakeCase, searchableTextFields } from '../utils.js';
@@ -468,6 +469,9 @@ export function generateRestRoutes(
 
   // Ontology SQL routes (SQL Studio)
   routes.push(...generateOntologySqlRoutes(deps));
+
+  // Dataset routes (versioned transactional datasets)
+  routes.push(...generateDatasetRoutes(deps));
 
   return routes;
 }

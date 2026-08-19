@@ -100,6 +100,23 @@ function mockDeps(schema: ReturnType<typeof parseOdl>): ApiDependencies {
       listVirtualTables: vi.fn().mockResolvedValue([]),
       describeVirtualTable: vi.fn().mockResolvedValue(null),
     } as never,
+    datasetService: {
+      create: vi.fn().mockResolvedValue({}),
+      get: vi.fn().mockResolvedValue(null),
+      list: vi.fn().mockResolvedValue([]),
+      drop: vi.fn().mockResolvedValue(undefined),
+      updateSchema: vi.fn().mockResolvedValue({}),
+      insert: vi.fn().mockResolvedValue({}),
+      update: vi.fn().mockResolvedValue({}),
+      delete: vi.fn().mockResolvedValue({}),
+      truncate: vi.fn().mockResolvedValue({}),
+      read: vi.fn().mockResolvedValue({ rows: [] }),
+      listTransactions: vi.fn().mockResolvedValue([]),
+      getTransaction: vi.fn().mockResolvedValue(null),
+      createBranch: vi.fn().mockResolvedValue({}),
+      listBranches: vi.fn().mockResolvedValue([]),
+      mergeBranch: vi.fn().mockResolvedValue({}),
+    } as never,
   } as ApiDependencies;
 }
 
