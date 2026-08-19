@@ -533,8 +533,14 @@ async function insertHistory(
 ): Promise<void> {
   const table = historyTableName(type, schema);
 
-  // Copy all columns except _history_id (auto-generated)
-  const entries = Object.entries(row);
+  // Copy all columns except _history_id (auto-generated) and the `_fts_*`
+  // tsvector columns a FULLTEXT index adds. Those are GENERATED ALWAYS AS …
+  // STORED on the main table only, so they arrive here via RETURNING * but
+  // exist on no history table — and could not be written even if they did,
+  // because Postgres refuses an explicit value for a generated column. Copying
+  // them made createObject fail outright for every object type carrying a
+  // FULLTEXT index.
+  const entries = Object.entries(row).filter(([k]) => !k.startsWith('_fts_'));
   const cols = entries.map(([k]) => `"${k}"`);
   // Same rule as the write path: JSONB columns need a JSON string, array
   // columns need the array. Keys here are COLUMN names, which is why the
