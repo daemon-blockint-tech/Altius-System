@@ -490,7 +490,7 @@ export type {
   SendCommandInput,
   AppPairing,
   CreateAppPairingInput,
-} from './embedding.js';
+} from './app-embedding.js';
 
 // Layout and device capture
 export type {

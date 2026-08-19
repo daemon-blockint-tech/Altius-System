@@ -56,7 +56,7 @@ export type { ObjectReader } from './in-memory-geospatial-maps.js';
 export { InMemoryOntologySqlService } from './in-memory-ontology-sql.js';
 export type { OntologyObjectReader } from './in-memory-ontology-sql.js';
 export { InMemoryEmbeddedCopilotService } from './in-memory-embedded-copilots.js';
-export { InMemoryEmbeddingService } from './in-memory-embedding.js';
+export { InMemoryEmbeddingService } from './in-memory-app-embedding.js';
 export { InMemoryLayoutDeviceCaptureService } from './in-memory-layout-device-capture.js';
 // InMemoryWidgetLibraryService — DELETED in §4C, consolidated onto workshop-platform
 export { InMemoryPlatformResourceService } from './in-memory-platform-resources.js';

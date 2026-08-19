@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { InMemoryEmbeddingService } from '../in-memory-embedding.js';
+import { InMemoryEmbeddingService } from '../in-memory-app-embedding.js';
 import { InMemoryLayoutDeviceCaptureService } from '../in-memory-layout-device-capture.js';
 import { InMemoryPlatformResourceService } from '../in-memory-platform-resources.js';
 import type { RequestContext } from '@altius/spi';
