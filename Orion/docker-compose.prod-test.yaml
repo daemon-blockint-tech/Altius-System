@@ -20,3 +20,11 @@ services:
       # writeRelationship throws UNKNOWN_TENANT and the grant answers 500.
       OIDC_DEFAULT_TENANT: "${OIDC_DEFAULT_TENANT:-default}"
       FHIR_BASE_URL: "http://localhost:4000/fhir"
+      # Several platform services have no Postgres implementation and are
+      # served from process memory, so a Postgres deployment withholds them
+      # by default (their routes answer 404) rather than accepting writes it
+      # will drop. This stack runs one gateway container and holds no real
+      # data, which is the one shape where serving them is honest — opt in so
+      # those surfaces stay exercisable here. Do NOT set this on a multi-replica
+      # deployment: state is per-pod, so reads follow whichever pod is routed.
+      ALLOW_NON_DURABLE_SERVICES: "true"

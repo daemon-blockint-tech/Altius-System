@@ -86,6 +86,8 @@ spec:
               value: {{ .Values.singleInstance.automation | quote }}
             - name: SYNC_SCHEDULER_ENABLED
               value: {{ .Values.singleInstance.syncScheduler | quote }}
+            - name: ALLOW_NON_DURABLE_SERVICES
+              value: {{ .Values.singleInstance.allowNonDurableServices | quote }}
           envFrom:
             - configMapRef:
                 name: {{ include "altius.fullname" . }}-config
