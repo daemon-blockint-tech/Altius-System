@@ -147,6 +147,30 @@ export interface DisplayDirective {
   format?: string;
   /** Hide from default views (a presentation default, not an access control). */
   hidden?: boolean;
+  /**
+   * Format kind — folds the former ValueFormatKind enum. When set, takes
+   * precedence over the simple `format` string for rendering.
+   * One of: number, currency, percent, date, datetime, duration, bytes,
+   * boolean, enum, custom.
+   */
+  formatKind?: string;
+  /** Format parameters — folds the former ValueFormatParams. */
+  formatParams?: {
+    decimals?: number;
+    thousandsSeparator?: boolean;
+    currencyCode?: string;
+    dateFormat?: string;
+    trueLabel?: string;
+    falseLabel?: string;
+    enumLabels?: Record<string, string>;
+    customFormat?: string;
+  };
+  /** Conditional formatting rules — folds the former ConditionalFormatRule. */
+  conditionalFormats?: Array<{
+    name: string;
+    condition: { field: string; op: string; value: unknown };
+    style: { color?: string; background?: string; bold?: boolean; italic?: boolean; icon?: string };
+  }>;
 }
 
 export type FieldDirective =

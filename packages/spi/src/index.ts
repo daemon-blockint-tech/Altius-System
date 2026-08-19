@@ -405,23 +405,9 @@ export type {
   TimelineComparison,
 } from './graph-analysis.js';
 
-// Value and conditional formatting
-export type {
-  ValueFormattingService,
-  ValueFormat,
-  ValueFormatKind,
-  ValueFormatParams,
-  ConditionalFormatRule,
-  ConditionKind,
-  ConditionParams,
-  ConditionalStyle,
-  ComparisonOperator,
-  SparklineConfig,
-  CreateValueFormatInput,
-  CreateConditionalFormatInput,
-  CreateSparklineInput,
-  FormattedValue,
-} from './value-formatting.js';
+// Value and conditional formatting — DELETED in §4D, folded into DisplayDirective
+// (packages/odl/src/parser/types.ts) which now has formatKind, formatParams,
+// and conditionalFormats fields.
 
 // AI FDE agentic platform assistant
 export type {
