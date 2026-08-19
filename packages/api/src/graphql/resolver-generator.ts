@@ -17,7 +17,7 @@
 
 import type { ParsedSchema, ObjectType, ActionType, FunctionType, FieldDefinition, LinkType, LinkDirective } from '@altius/odl';
 import { DataPurpose, MAX_LINK_QUERY_LIMIT } from '@altius/spi';
-import type { OntologyObject, OntologyLink, FilterExpression, AggregateQuery, AggregateField, AggregateFunction, BucketInterval, SearchQuery, ErrorCategory, RequestContext, TimeSeriesQuery, TimeSeriesBucket } from '@altius/spi';
+import type { OntologyObject, OntologyLink, FilterExpression, AggregateQuery, AggregateField, AggregateFunction, AggregateHaving, BucketInterval, SearchQuery, ErrorCategory, RequestContext, TimeSeriesQuery, TimeSeriesBucket } from '@altius/spi';
 import type { FunctionRevision } from '@altius/engine';
 import { ToolRegistry } from '@altius/actions';
 import type { ActionActor, ActionContext, ActionManifest } from '@altius/actions';
@@ -1356,7 +1356,8 @@ function generateAggregateResolver(
         date?: { field: string; interval: string; alias?: string };
         numeric?: { field: string; min: number; max: number; numBuckets: number; alias?: string };
       }>;
-      fields: Array<{ field: string; fn: string; alias?: string }>;
+      fields: Array<{ field: string; fn: string; alias?: string; percentile?: number }>;
+      having?: Array<{ alias: string; operator: string; value?: number | null }>;
       orderBy?: Array<{ field: string; direction: 'asc' | 'desc' }>;
       limit?: number;
       offset?: number;
@@ -1473,7 +1474,26 @@ function generateAggregateResolver(
         field: f.field,
         fn: f.fn.toLowerCase() as AggregateFunction,
         alias: f.alias,
+        ...(typeof f.percentile === 'number' ? { percentile: f.percentile } : {}),
       }));
+
+      // HAVING aliases must name a requested aggregate. An unknown alias is
+      // refused rather than passed down, where Postgres would raise and the
+      // memory provider would compare against null and drop every group.
+      const having: AggregateHaving[] | undefined = args.having && args.having.length > 0
+        ? args.having.map((h) => {
+            if (!aliasNames.has(h.alias)) {
+              throw new Error(
+                `having alias '${h.alias}' is not one of the requested aggregates: ${[...aliasNames].join(', ')}`,
+              );
+            }
+            return {
+              alias: h.alias,
+              operator: h.operator.toLowerCase() as AggregateHaving['operator'],
+              value: h.value ?? null,
+            };
+          })
+        : undefined;
 
       const query: AggregateQuery = {
         fields,
@@ -1505,6 +1525,7 @@ function generateAggregateResolver(
           throw new Error(`Bucket for field "${b.field}" must specify either date or numeric`);
         }),
         filter: combinedFilter,
+        ...(having ? { having } : {}),
         orderBy: args.orderBy,
         limit: args.limit,
         offset: args.offset,

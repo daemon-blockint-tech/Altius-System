@@ -22,6 +22,13 @@ export interface ObjectSetDefinition {
   createdAt: DateTime;
   updatedAt: DateTime;
   isPublic: boolean;
+  /**
+   * User ids this set is shared with. Sharing grants READ (get/list/execute)
+   * only — mutation and deletion stay with the creator.
+   */
+  sharedWithUsers?: string[];
+  /** Group ids this set is shared with. Same read-only grant. */
+  sharedWithGroups?: string[];
   tenantId: string;
 }
 
@@ -31,7 +38,7 @@ export interface ObjectSetStore {
   get(ctx: RequestContext, id: string): Promise<ObjectSetDefinition | null>;
   getByName(ctx: RequestContext, name: string): Promise<ObjectSetDefinition | null>;
   list(ctx: RequestContext, objectType?: string): Promise<ObjectSetDefinition[]>;
-  update(ctx: RequestContext, id: string, updates: Partial<Pick<ObjectSetDefinition, 'name' | 'description' | 'filter' | 'orderBy' | 'limit' | 'aggregation' | 'isPublic'>>): Promise<ObjectSetDefinition>;
+  update(ctx: RequestContext, id: string, updates: Partial<Pick<ObjectSetDefinition, 'name' | 'description' | 'filter' | 'orderBy' | 'limit' | 'aggregation' | 'isPublic' | 'sharedWithUsers' | 'sharedWithGroups'>>): Promise<ObjectSetDefinition>;
   delete(ctx: RequestContext, id: string): Promise<void>;
 }
 

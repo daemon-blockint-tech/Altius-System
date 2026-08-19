@@ -167,6 +167,10 @@ export class InMemoryDatasetService implements DatasetService {
       id: randomUUID(), tenantId: ctx.tenantId, datasetId: state.dataset.id,
       type: 'schema_change', rows: [],
       schemaVersion: newVersion,
+      // Snapshot both sides so getSchema can reconstruct any version from the
+      // log — the outgoing schema is otherwise lost on the first change.
+      schemaSnapshot: { ...schema, version: newVersion },
+      previousSchemaSnapshot: { ...state.dataset.schema },
       timestamp: new Date().toISOString(),
       actorId: ctx.actorId ?? 'system',
       branch: br,

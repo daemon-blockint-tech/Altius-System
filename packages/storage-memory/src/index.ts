@@ -51,6 +51,9 @@ export { InMemoryGraphAnalysisService } from './in-memory-graph-analysis.js';
 // InMemoryValueFormattingService — DELETED in §4D, folded into DisplayDirective
 export { InMemoryPlatformAssistantService } from './in-memory-platform-assistant.js';
 export { InMemoryDataFreshnessService } from './in-memory-data-freshness.js';
+export { InMemoryOntologyChangeHistoryService } from './in-memory-ontology-change-history.js';
+export { InMemoryValueFormattingService } from './in-memory-value-formatting.js';
+export { InMemoryDesignSystemService } from './in-memory-design-system.js';
 export { InMemoryGeospatialMapService } from './in-memory-geospatial-maps.js';
 export type { ObjectReader } from './in-memory-geospatial-maps.js';
 export { InMemoryOntologySqlService } from './in-memory-ontology-sql.js';

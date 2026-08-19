@@ -117,6 +117,13 @@ function mockDeps(schema: ReturnType<typeof parseOdl>): ApiDependencies {
       listBranches: vi.fn().mockResolvedValue([]),
       mergeBranch: vi.fn().mockResolvedValue({}),
     } as never,
+    datasetMetadataService: {
+      list: vi.fn().mockResolvedValue([]),
+      get: vi.fn().mockResolvedValue(null),
+      getSchema: vi.fn().mockResolvedValue(null),
+      listBranches: vi.fn().mockResolvedValue([]),
+      listTransactions: vi.fn().mockResolvedValue([]),
+    } as never,
     usageMetricsService: {
       record: vi.fn().mockResolvedValue(undefined),
       getObjectTypeMetrics: vi.fn().mockResolvedValue([]),

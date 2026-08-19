@@ -313,11 +313,14 @@ function objectPaths(obj: ObjectType): Record<string, unknown> {
       summary: `Export ${obj.name} objects`,
       description:
         'Streams permission-scoped, redacted and consent-filtered records. ' +
-        'Results are capped server-side; check the response for a truncation marker.',
+        'Results are capped server-side; X-Export-Truncated marks a capped page and ' +
+        'X-Export-Next-Offset carries the offset to request for the next one.',
       operationId: `export${obj.name}s`,
       parameters: [
         { name: 'format', in: 'query', schema: { type: 'string', enum: ['ndjson', 'csv'], default: 'ndjson' } },
         { name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1 } },
+        { name: 'offset', in: 'query', schema: { type: 'integer', minimum: 0 } },
+        { name: 'columns', in: 'query', description: 'Comma-separated column projection', schema: { type: 'string' } },
       ],
       responses: {
         '200': {
@@ -498,6 +501,46 @@ function objectPaths(obj: ObjectType): Record<string, unknown> {
         '200': { description: 'Version history', content: { 'application/json': { schema: { type: 'object' } } } },
         '401': { $ref: '#/components/responses/Unauthorized' },
         '404': { description: 'Not found' },
+      },
+    },
+  };
+
+  // ─── Fase 21 per-object surfaces ───
+  paths[`/api/v1/${plural}/freshness`] = {
+    get: {
+      tags: [tag],
+      summary: `Get data freshness for ${obj.name}`,
+      operationId: `get${obj.name}Freshness`,
+      responses: {
+        '200': { description: 'Freshness record', content: { 'application/json': { schema: { type: 'object' } } } },
+        '401': { $ref: '#/components/responses/Unauthorized' },
+        '404': { description: 'No freshness record' },
+      },
+    },
+  };
+  paths[`/api/v1/${plural}/sync`] = {
+    post: {
+      tags: [tag],
+      summary: `Record a sync for ${obj.name}`,
+      operationId: `record${obj.name}Sync`,
+      requestBody: { required: true, content: { 'application/json': { schema: { type: 'object' } } } },
+      responses: {
+        '201': { description: 'Freshness record', content: { 'application/json': { schema: { type: 'object' } } } },
+        '400': { description: 'Validation error' },
+        '401': { $ref: '#/components/responses/Unauthorized' },
+      },
+    },
+  };
+  paths[`/api/v1/${plural}/aggregate/poll`] = {
+    post: {
+      tags: [tag],
+      summary: `Poll an aggregate for ${obj.name}`,
+      operationId: `poll${obj.name}Aggregate`,
+      requestBody: { required: true, content: { 'application/json': { schema: { type: 'object' } } } },
+      responses: {
+        '200': { description: 'Aggregate result with polledAt timestamp', content: { 'application/json': { schema: { type: 'object' } } } },
+        '400': { description: 'Validation error' },
+        '401': { $ref: '#/components/responses/Unauthorized' },
       },
     },
   };
@@ -1173,7 +1216,34 @@ function platformPaths(): Record<string, unknown> {
         responses: { '204': { description: 'Dropped' }, '401': unauthorized },
       },
     },
+    '/api/v1/datasets/{name}/metadata': {
+      get: {
+        tags: ['Datasets'],
+        summary: 'Get dataset metadata (schema, rowCount, latest transaction)',
+        operationId: 'getDatasetMetadata',
+        parameters: [
+          { name: 'name', in: 'path', required: true, schema: { type: 'string' } },
+          { name: 'branch', in: 'query', schema: { type: 'string' } },
+        ],
+        responses: { '200': { description: 'Dataset metadata', content: jsonObject }, '401': unauthorized, '404': { description: 'Not found' } },
+      },
+    },
     '/api/v1/datasets/{name}/schema': {
+      get: {
+        tags: ['Datasets'],
+        summary: 'Retrieve dataset schema by branch, schema version, or transaction',
+        description:
+          'Historical versions are reconstructed from the schema_change transaction log. ' +
+          'Returns 404 when the requested version never existed or predates snapshot recording.',
+        operationId: 'getDatasetSchema',
+        parameters: [
+          { name: 'name', in: 'path', required: true, schema: { type: 'string' } },
+          { name: 'branch', in: 'query', schema: { type: 'string' } },
+          { name: 'version', in: 'query', schema: { type: 'integer' } },
+          { name: 'asOfTransactionId', in: 'query', schema: { type: 'string' } },
+        ],
+        responses: { '200': { description: 'Dataset schema', content: jsonObject }, '400': { description: 'Validation error' }, '401': unauthorized, '404': { description: 'Not found' } },
+      },
       put: {
         tags: ['Datasets'],
         summary: 'Update dataset schema',
@@ -1226,6 +1296,9 @@ function platformPaths(): Record<string, unknown> {
       get: {
         tags: ['Datasets'],
         summary: 'Read rows from a dataset',
+        description:
+          'Addressed by branch and transaction/schema version; shaped by column projection, ' +
+          'filter, sort and page. ?format=csv returns text/csv over the projected columns.',
         operationId: 'readDatasetRows',
         parameters: [
           { name: 'name', in: 'path', required: true, schema: { type: 'string' } },
@@ -1233,8 +1306,21 @@ function platformPaths(): Record<string, unknown> {
           { name: 'limit', in: 'query', schema: { type: 'integer' } },
           { name: 'offset', in: 'query', schema: { type: 'integer' } },
           { name: 'asOfTransactionId', in: 'query', schema: { type: 'string' } },
+          { name: 'asOfSchemaVersion', in: 'query', schema: { type: 'integer' } },
+          { name: 'columns', in: 'query', description: 'Comma-separated column projection', schema: { type: 'string' } },
+          { name: 'filter', in: 'query', description: 'JSON filter object, e.g. {"age":{"gt":30}}', schema: { type: 'string' } },
+          { name: 'orderBy', in: 'query', description: 'Comma-separated field:direction list, e.g. name:asc,age:desc', schema: { type: 'string' } },
+          { name: 'format', in: 'query', schema: { type: 'string', enum: ['json', 'csv'], default: 'json' } },
         ],
-        responses: { '200': { description: 'Read result', content: jsonObject }, '401': unauthorized },
+        responses: {
+          '200': {
+            description: 'Read result',
+            content: { 'application/json': { schema: { type: 'object' } }, 'text/csv': { schema: { type: 'string' } } },
+          },
+          '400': { description: 'Validation error' },
+          '401': unauthorized,
+          '404': { description: 'Not found' },
+        },
       },
     },
     '/api/v1/datasets/{name}/transactions': {

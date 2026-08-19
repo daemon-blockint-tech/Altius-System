@@ -1091,6 +1091,10 @@ export function generateGraphQLSchema(schema: ParsedSchema, options?: GraphQLSch
     '  AVG',
     '  MIN',
     '  MAX',
+    '  COUNT_DISTINCT',
+    '  STDDEV',
+    '  MEDIAN',
+    '  PERCENTILE',
     '}',
   ].join('\n'));
 
@@ -1099,6 +1103,30 @@ export function generateGraphQLSchema(schema: ParsedSchema, options?: GraphQLSch
     '  field: String!',
     '  fn: AggregateFunction!',
     '  alias: String',
+    '  "Fraction in [0,1]. Required for PERCENTILE, ignored by every other function."',
+    '  percentile: Float',
+    '}',
+  ].join('\n'));
+
+  // HAVING — predicates over aggregate values, applied after grouping. Named
+  // by alias because that is the only handle a caller has on a computed value.
+  sections.push([
+    'enum HavingOperator {',
+    '  EQ',
+    '  NE',
+    '  GT',
+    '  GTE',
+    '  LT',
+    '  LTE',
+    '}',
+  ].join('\n'));
+
+  sections.push([
+    'input AggregateHavingInput {',
+    '  "Alias of a requested aggregate: its explicit alias, or the default fn_field."',
+    '  alias: String!',
+    '  operator: HavingOperator!',
+    '  value: Float',
     '}',
   ].join('\n'));
 
@@ -1270,7 +1298,7 @@ export function generateGraphQLSchema(schema: ParsedSchema, options?: GraphQLSch
       `  ${lower}s(filter: ${obj.name}Filter, orderBy: ${obj.name}OrderBy, first: Int, after: String, last: Int, before: String, asOf: DateTime): ${obj.name}Connection!`,
     );
     queryFields.push(
-      `  ${lower}Aggregate(filter: ${obj.name}Filter, groupBy: [String!], buckets: [BucketInput!], fields: [AggregateFieldInput!]!, orderBy: [AggregateOrderByInput!], limit: Int, offset: Int): AggregateResult!`,
+      `  ${lower}Aggregate(filter: ${obj.name}Filter, groupBy: [String!], buckets: [BucketInput!], fields: [AggregateFieldInput!]!, having: [AggregateHavingInput!], orderBy: [AggregateOrderByInput!], limit: Int, offset: Int): AggregateResult!`,
     );
     queryFields.push(
       `  search${obj.name}s(query: String!, fields: [String!], filter: ${obj.name}Filter, first: Int, after: String): SearchResult_${obj.name}!`,

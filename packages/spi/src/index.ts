@@ -46,6 +46,7 @@ export type {
   StorageCapabilities,
   AggregateFunction,
   AggregateField,
+  AggregateHaving,
   AggregateQuery,
   AggregateGroup,
   AggregateResult,
@@ -166,6 +167,7 @@ export type {
   AccessExplanationService,
   AccessExplanation,
   AccessExplanationReason,
+  AccessExplanationField,
   ScopedSessionStore,
   ScopedSession,
   CreateScopedSessionInput,
@@ -439,6 +441,36 @@ export type {
   FreshnessQuery,
   FreshnessSummary,
 } from './data-freshness.js';
+
+// Ontology change history
+export type {
+  OntologyChangeHistoryService,
+  OntologyChangeRecord,
+  OntologyChangeHistoryQuery,
+  OntologyRestoreResult,
+} from './ontology-change-history.js';
+
+// Value and conditional formatting
+export type {
+  ValueFormattingService,
+  FormatKind,
+  FormatRule,
+  ConditionalFormatRule,
+  FormatValueInput,
+  FormattedValue,
+  FormatCollectionInput,
+  FormatCollectionResult,
+} from './value-formatting.js';
+
+// Design system theming
+export type {
+  DesignSystemService,
+  ColorPalette,
+  TypographySettings,
+  DesignSystemTheme,
+  CreateThemeInput,
+  SetModulePaletteInput,
+} from './design-system.js';
 
 // Geospatial maps
 export type {

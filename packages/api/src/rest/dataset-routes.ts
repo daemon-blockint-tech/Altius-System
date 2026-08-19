@@ -10,7 +10,9 @@
  *   POST   /api/v1/datasets/:name/update        — update rows
  *   POST   /api/v1/datasets/:name/delete        — delete rows
  *   POST   /api/v1/datasets/:name/truncate      — truncate
- *   GET    /api/v1/datasets/:name/read          — read rows
+ *   GET    /api/v1/datasets/:name/read          — read rows (projection, filter, order, CSV)
+ *   GET    /api/v1/datasets/:name/metadata      — metadata incl. rowCount
+ *   GET    /api/v1/datasets/:name/schema        — schema by branch/version/transaction
  *   GET    /api/v1/datasets/:name/transactions  — list transactions
  *   GET    /api/v1/datasets/:name/transactions/:tid — get transaction
  *   POST   /api/v1/datasets/:name/branches      — create branch
@@ -152,6 +154,11 @@ export function generateDatasetRoutes(deps: ApiDependencies): RestRoute[] {
   });
 
   // GET /api/v1/datasets/:name/read
+  //
+  // Addressing: ?branch= and ?asOfTransactionId= / ?asOfSchemaVersion=.
+  // Shaping: ?columns=a,b (projection), ?filter={json}, ?orderBy=a:desc,b,
+  // ?limit=&offset=. ?format=csv returns text/csv over the projected columns
+  // instead of JSON, so a dataset can be exported page by page.
   routes.push({
     method: 'GET', pattern: '/api/v1/datasets/:name/read', readOperation: 'query',
     handler: async (req, ctx) => {
@@ -161,11 +168,117 @@ export function generateDatasetRoutes(deps: ApiDependencies): RestRoute[] {
         if (typeof req.query['limit'] === 'string') options['limit'] = parseInt(req.query['limit'], 10);
         if (typeof req.query['offset'] === 'string') options['offset'] = parseInt(req.query['offset'], 10);
         if (typeof req.query['asOfTransactionId'] === 'string') options['asOfTransactionId'] = req.query['asOfTransactionId'];
-        const result = await svc.read(ctx.requestContext, req.params['name'] ?? '', options, branch);
+        if (typeof req.query['asOfSchemaVersion'] === 'string') {
+          const v = parseInt(req.query['asOfSchemaVersion'], 10);
+          if (isNaN(v)) {
+            return createRestErrorResponse({ code: 'VALIDATION_ERROR', category: 'validation', message: 'asOfSchemaVersion must be an integer', retryable: false, traceId: ctx.requestContext.traceId });
+          }
+          options['asOfSchemaVersion'] = v;
+        }
+
+        const name = req.params['name'] ?? '';
+        const ds = await svc.get(ctx.requestContext, name, branch);
+        if (!ds) return { status: 404, body: { error: 'NOT_FOUND', message: `Dataset '${name}' not found` } };
+        const schemaColumns = new Set(ds.schema.columns.map(c => c.name));
+
+        // Column projection — validated against the schema so a typo is a 400
+        // rather than a page of null columns.
+        let columns: string[] | undefined;
+        if (typeof req.query['columns'] === 'string' && req.query['columns'].length > 0) {
+          columns = req.query['columns'].split(',').map(c => c.trim()).filter(c => c.length > 0);
+          const unknown = columns.filter(c => !schemaColumns.has(c));
+          if (unknown.length > 0) {
+            return createRestErrorResponse({ code: 'VALIDATION_ERROR', category: 'validation', message: `Unknown column(s): ${unknown.join(', ')}`, retryable: false, traceId: ctx.requestContext.traceId });
+          }
+          options['columns'] = columns;
+        }
+
+        if (typeof req.query['filter'] === 'string' && req.query['filter'].length > 0) {
+          try {
+            options['filter'] = JSON.parse(req.query['filter']) as Record<string, unknown>;
+          } catch {
+            return createRestErrorResponse({ code: 'VALIDATION_ERROR', category: 'validation', message: 'filter must be a JSON object', retryable: false, traceId: ctx.requestContext.traceId });
+          }
+        }
+
+        if (typeof req.query['orderBy'] === 'string' && req.query['orderBy'].length > 0) {
+          const parsed: { field: string; direction: 'asc' | 'desc' }[] = [];
+          for (const part of req.query['orderBy'].split(',')) {
+            const [field, dir] = part.split(':').map(t => t.trim());
+            if (!field) continue;
+            if (!schemaColumns.has(field)) {
+              return createRestErrorResponse({ code: 'VALIDATION_ERROR', category: 'validation', message: `Unknown orderBy column: ${field}`, retryable: false, traceId: ctx.requestContext.traceId });
+            }
+            if (dir && dir !== 'asc' && dir !== 'desc') {
+              return createRestErrorResponse({ code: 'VALIDATION_ERROR', category: 'validation', message: `orderBy direction must be asc or desc, got '${dir}'`, retryable: false, traceId: ctx.requestContext.traceId });
+            }
+            parsed.push({ field, direction: (dir as 'asc' | 'desc' | undefined) ?? 'asc' });
+          }
+          if (parsed.length > 0) options['orderBy'] = parsed;
+        }
+
+        const result = await svc.read(ctx.requestContext, name, options, branch);
+
+        const format = typeof req.query['format'] === 'string' ? req.query['format'].toLowerCase() : 'json';
+        if (format === 'csv') {
+          const cols = columns ?? ds.schema.columns.map(c => c.name);
+          return {
+            status: 200,
+            headers: {
+              'Content-Type': 'text/csv; charset=utf-8',
+              'Content-Disposition': `attachment; filename="${name}.csv"`,
+              'X-Dataset-Transaction-Id': result.transactionId,
+            },
+            body: rowsToCsv(cols, result.rows),
+          };
+        }
+        if (format !== 'json') {
+          return createRestErrorResponse({ code: 'VALIDATION_ERROR', category: 'validation', message: `Unsupported format '${format}'. Use json or csv.`, retryable: false, traceId: ctx.requestContext.traceId });
+        }
         return { status: 200, body: { data: result } };
       } catch (err) { return wrapErrorToRest(err, ctx.requestContext.traceId); }
     },
   });
+
+  // GET /api/v1/datasets/:name/metadata — metadata incl. rowCount
+  if (deps.datasetMetadataService) {
+    const meta = deps.datasetMetadataService;
+    routes.push({
+      method: 'GET', pattern: '/api/v1/datasets/:name/metadata', readOperation: 'read',
+      handler: async (req, ctx) => {
+        try {
+          const branch = typeof req.query['branch'] === 'string' ? req.query['branch'] : undefined;
+          const md = await meta.get(ctx.requestContext, req.params['name'] ?? '', branch);
+          if (!md) return { status: 404, body: { error: 'NOT_FOUND', message: 'Dataset not found' } };
+          return { status: 200, body: { data: md } };
+        } catch (err) { return wrapErrorToRest(err, ctx.requestContext.traceId); }
+      },
+    });
+
+    // GET /api/v1/datasets/:name/schema?branch=&version=&asOfTransactionId=
+    routes.push({
+      method: 'GET', pattern: '/api/v1/datasets/:name/schema', readOperation: 'read',
+      handler: async (req, ctx) => {
+        try {
+          const options: { branch?: string; version?: number; asOfTransactionId?: string } = {};
+          if (typeof req.query['branch'] === 'string') options.branch = req.query['branch'];
+          if (typeof req.query['asOfTransactionId'] === 'string') options.asOfTransactionId = req.query['asOfTransactionId'];
+          if (typeof req.query['version'] === 'string') {
+            const v = parseInt(req.query['version'], 10);
+            if (isNaN(v)) {
+              return createRestErrorResponse({ code: 'VALIDATION_ERROR', category: 'validation', message: 'version must be an integer', retryable: false, traceId: ctx.requestContext.traceId });
+            }
+            options.version = v;
+          }
+          const schema = await meta.getSchema(ctx.requestContext, req.params['name'] ?? '', options);
+          if (!schema) {
+            return { status: 404, body: { error: 'NOT_FOUND', message: 'No schema for that dataset at the requested version/transaction' } };
+          }
+          return { status: 200, body: { data: schema } };
+        } catch (err) { return wrapErrorToRest(err, ctx.requestContext.traceId); }
+      },
+    });
+  }
 
   // GET /api/v1/datasets/:name/transactions
   routes.push({
@@ -238,4 +351,19 @@ export function generateDatasetRoutes(deps: ApiDependencies): RestRoute[] {
   });
 
   return routes;
+}
+
+/**
+ * Serialise dataset rows to CSV. Values that are objects are JSON-encoded;
+ * quotes/newlines/commas are escaped per RFC 4180.
+ */
+function rowsToCsv(columns: string[], rows: Record<string, unknown>[]): string {
+  const escape = (value: unknown): string => {
+    if (value === undefined || value === null) return '';
+    const str = value instanceof Date
+      ? value.toISOString()
+      : typeof value === 'object' ? JSON.stringify(value) : String(value);
+    return /[",\n\r]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
+  };
+  return [columns.join(','), ...rows.map(r => columns.map(c => escape(r[c])).join(','))].join('\n');
 }

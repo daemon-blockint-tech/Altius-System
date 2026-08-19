@@ -67,6 +67,14 @@ export class PostgresObjectSetStore implements ObjectSetStore {
         "is_public" BOOLEAN NOT NULL DEFAULT FALSE
       )
     `);
+    // Sharing columns. Additive so a table created by an earlier release
+    // gains them without a migration step; TEXT[] rather than JSONB because
+    // the visibility predicate is an array-overlap test.
+    await this.pool.query(
+      `ALTER TABLE "_object_sets"
+         ADD COLUMN IF NOT EXISTS "shared_with_users" TEXT[],
+         ADD COLUMN IF NOT EXISTS "shared_with_groups" TEXT[]`,
+    );
     await this.pool.query(
       `CREATE INDEX IF NOT EXISTS "_object_sets_tenant_name_idx"
          ON "_object_sets" ("tenant_id", "name")`,
@@ -92,8 +100,8 @@ export class PostgresObjectSetStore implements ObjectSetStore {
       `INSERT INTO "_object_sets"
         ("id", "tenant_id", "name", "description", "object_type",
          "filter", "order_by", "limit", "aggregation",
-         "created_by", "is_public")
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+         "created_by", "is_public", "shared_with_users", "shared_with_groups")
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
        RETURNING *`,
       [
         id,
@@ -107,6 +115,8 @@ export class PostgresObjectSetStore implements ObjectSetStore {
         def.aggregation !== undefined ? JSON.stringify(def.aggregation) : null,
         ctx.actorId,
         def.isPublic,
+        def.sharedWithUsers ?? null,
+        def.sharedWithGroups ?? null,
       ],
     );
     return rowToDefinition(result.rows[0]);
@@ -162,7 +172,7 @@ export class PostgresObjectSetStore implements ObjectSetStore {
     updates: Partial<
       Pick<
         ObjectSetDefinition,
-        'name' | 'description' | 'filter' | 'orderBy' | 'limit' | 'aggregation' | 'isPublic'
+        'name' | 'description' | 'filter' | 'orderBy' | 'limit' | 'aggregation' | 'isPublic' | 'sharedWithUsers' | 'sharedWithGroups'
       >
     >,
   ): Promise<ObjectSetDefinition> {
@@ -185,6 +195,8 @@ export class PostgresObjectSetStore implements ObjectSetStore {
     if (updates.limit !== undefined) addSet('limit', updates.limit);
     if (updates.aggregation !== undefined) addSet('aggregation', JSON.stringify(updates.aggregation));
     if (updates.isPublic !== undefined) addSet('is_public', updates.isPublic);
+    if (updates.sharedWithUsers !== undefined) addSet('shared_with_users', updates.sharedWithUsers);
+    if (updates.sharedWithGroups !== undefined) addSet('shared_with_groups', updates.sharedWithGroups);
     // Always advance updated_at, even for an empty update payload — matches
     // InMemoryObjectSetStore so behaviour is backend-independent.
     sets.push(`"updated_at" = NOW()`);
@@ -224,17 +236,23 @@ export class PostgresObjectSetStore implements ObjectSetStore {
 }
 
 // ---------------------------------------------------------------------------
-// Visibility helpers — public sets are visible to all; private sets only to
-// their creator. When actorId is absent, only public sets are visible.
+// Visibility helpers — public sets are visible to all; private sets to their
+// creator and to the users/groups the set is shared with. When actorId is
+// absent, only public sets are visible, and an absent group list grants
+// nothing (`= ANY(NULL)` is NULL, i.e. not true, but the empty-array form is
+// used so the predicate is explicit rather than relying on that).
 // ---------------------------------------------------------------------------
 
 function visibilitySql(ctx: RequestContext, startIdx: number): string {
   if (!ctx.actorId) return `"is_public" = TRUE`;
-  return `("is_public" = TRUE OR "created_by" = $${startIdx})`;
+  return `("is_public" = TRUE
+           OR "created_by" = $${startIdx}
+           OR $${startIdx} = ANY(COALESCE("shared_with_users", '{}'))
+           OR COALESCE("shared_with_groups", '{}') && $${startIdx + 1}::text[])`;
 }
 
 function visibilityParams(ctx: RequestContext): unknown[] {
-  return ctx.actorId ? [ctx.actorId] : [];
+  return ctx.actorId ? [ctx.actorId, ctx.actorGroups ?? []] : [];
 }
 
 // ---------------------------------------------------------------------------
@@ -252,6 +270,8 @@ function rowToDefinition(row: Record<string, unknown>): ObjectSetDefinition {
     isPublic: row['is_public'] as boolean,
     tenantId: row['tenant_id'] as string,
   };
+  if (row['shared_with_users'] != null) def.sharedWithUsers = row['shared_with_users'] as string[];
+  if (row['shared_with_groups'] != null) def.sharedWithGroups = row['shared_with_groups'] as string[];
   if (row['description'] != null) def.description = row['description'] as string;
   if (row['filter'] != null) def.filter = row['filter'] as ObjectSetDefinition['filter'];
   if (row['order_by'] != null) def.orderBy = row['order_by'] as ObjectSetDefinition['orderBy'];

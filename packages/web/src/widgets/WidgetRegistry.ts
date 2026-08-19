@@ -60,6 +60,19 @@ import { ImageAnnotationWidget } from './components/ImageAnnotationWidget.js';
 import { SpreadsheetDisplayWidget } from './components/SpreadsheetDisplayWidget.js';
 import { VideoPlayerWidget } from './components/VideoPlayerWidget.js';
 import { AudioPlayerWidget } from './components/AudioPlayerWidget.js';
+import {
+  DataFreshnessWidget,
+  OntologyChangeHistoryWidget,
+  ValueFormattingWidget,
+  DesignSystemThemeWidget,
+  FunctionBackedWidget,
+  LiveDataPushWidget,
+  QrCodeReaderWidget,
+  CameraCaptureWidget,
+  VisualOntologyManagerWidget,
+  OntologyMetadataCatalogWidget,
+  KioskModeWidget,
+} from './components/Fase21Widgets.js';
 // PlaceholderWidget is no longer imported — all widget types now have real implementations.
 // ── Registry ──────────────────────────────────────────────────
 
@@ -170,3 +183,16 @@ registerWidget('edit_history', EditHistoryWidget);
 registerWidget('resource_browser', ResourceBrowserWidget);
 registerWidget('iframe', IframeWidget);
 registerWidget('app_pairing', AppPairingWidget);
+
+// Phase 21 (Fase 21) widgets:
+registerWidget('data_freshness', DataFreshnessWidget);
+registerWidget('ontology_change_history', OntologyChangeHistoryWidget);
+registerWidget('value_formatting', ValueFormattingWidget);
+registerWidget('design_system_theme', DesignSystemThemeWidget);
+registerWidget('function_backed', FunctionBackedWidget);
+registerWidget('live_data_push', LiveDataPushWidget);
+registerWidget('qr_code_reader', QrCodeReaderWidget);
+registerWidget('camera_capture', CameraCaptureWidget);
+registerWidget('visual_ontology_manager', VisualOntologyManagerWidget);
+registerWidget('ontology_metadata_catalog', OntologyMetadataCatalogWidget);
+registerWidget('kiosk_mode', KioskModeWidget);

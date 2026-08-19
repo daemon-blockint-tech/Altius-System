@@ -269,6 +269,12 @@ export async function collectRawRecords(
   user: AuthenticatedUserInfo,
   sourceType: string,
   limit: number,
+  /**
+   * Storage-level row offset for paging an export past the per-request cap.
+   * Applied before redaction and consent filtering, so a page can come back
+   * shorter than `limit` without skipping or repeating a row.
+   */
+  offset = 0,
 ): Promise<{ records: Record<string, unknown>[]; capped: boolean }> {
   const ctx = ctxFor(user);
   const fgaType = toSnakeCase(sourceType);
@@ -295,7 +301,7 @@ export async function collectRawRecords(
   const page = await deps.objectManager.query(
     sourceType,
     filter,
-    { limit: limit + 1, offset: 0 },
+    { limit: limit + 1, offset },
     ctx,
   );
 

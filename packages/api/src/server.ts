@@ -62,11 +62,19 @@ import {
   InMemoryScopedSessionStore,
   InMemoryOntologySqlService,
   InMemoryDatasetService,
+  InMemoryDatasetMetadataService,
   InMemoryOntologyUsageMetricsService,
   InMemoryEmbeddingService,
   InMemoryPlatformResourceService,
   InMemorySavedViewStore,
   InMemoryUserDirectoryService,
+  InMemoryKioskService,
+  InMemoryLayoutDeviceCaptureService,
+  InMemoryOntologyManagerService,
+  InMemoryWorkshopUxService,
+  InMemoryValueFormattingService,
+  InMemoryDesignSystemService,
+  InMemoryOntologyChangeHistoryService,
 } from '@altius/storage-memory';
 import { PostgresStorageProvider, PostgresLineageStore, PostgresAuditStore, PostgresConsentStore, PostgresSchemaRegistry, PostgresObjectSetStore,
   PostgresLLMUsageTracker, PostgresLLMRateLimiter,
@@ -1237,7 +1245,15 @@ async function main(): Promise<void> {
     // AuthorizationService; JustificationStore and ScopedSessionStore are
     // in-memory only (no Postgres implementation yet).
     justificationStore: new InMemoryJustificationStore(),
-    accessExplanationService: new DefaultAccessExplanationService({ authorizationService }),
+    // The explanation runs the live marking policy and consent service, not a
+    // default-allow placeholder — an explanation that disagrees with the read
+    // path sends the operator to debug the wrong layer.
+    accessExplanationService: new DefaultAccessExplanationService({
+      authorizationService,
+      ...(markingPolicy ? { markingPolicy } : {}),
+      ...(consentSubjectTypes ? { consentSubjectTypes } : {}),
+      ...(consentService ? { consent: consentService } : {}),
+    }),
     scopedSessionStore: new InMemoryScopedSessionStore(),
     // Ontology SQL — in-memory only. Object reader delegates to the
     // ObjectManager so SQL queries read live ontology data.
@@ -1249,11 +1265,27 @@ async function main(): Promise<void> {
       }));
     }),
     // Datasets — in-memory only (no Postgres implementation yet).
-    datasetService: new InMemoryDatasetService(),
+    // The metadata service reads through the same DatasetService instance, so
+    // metadata/schema retrieval and the row/transaction routes agree.
+    ...(() => {
+      const datasets = new InMemoryDatasetService();
+      return {
+        datasetService: datasets,
+        datasetMetadataService: new InMemoryDatasetMetadataService(datasets),
+      };
+    })(),
     // Usage metrics — in-memory only. The record() method is an
     // instrumentation hook, not a REST endpoint. Future instrumentation
     // points: REST dispatch loop, GraphQL resolvers, action executor.
     usageMetricsService: new InMemoryOntologyUsageMetricsService(),
+    // Fase 21 services — in-memory only (no Postgres implementations yet).
+    kioskService: new InMemoryKioskService(),
+    layoutDeviceCaptureService: new InMemoryLayoutDeviceCaptureService(),
+    ontologyManagerService: new InMemoryOntologyManagerService(),
+    workshopUxService: new InMemoryWorkshopUxService(),
+    valueFormattingService: new InMemoryValueFormattingService(),
+    designSystemService: new InMemoryDesignSystemService(),
+    ontologyChangeHistoryService: new InMemoryOntologyChangeHistoryService(),
   };
 
   // ── Express + HTTP Server ──

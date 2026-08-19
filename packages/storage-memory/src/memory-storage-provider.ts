@@ -88,6 +88,47 @@ function bucketNumber(raw: unknown, min: number, max: number, numBuckets: number
   return Math.floor(((n - min) / (max - min)) * numBuckets) + 1;
 }
 
+/**
+ * Continuous percentile — the same definition Postgres PERCENTILE_CONT uses,
+ * so the two providers answer a median identically. The result interpolates
+ * between the two neighbouring values and therefore need not appear in the
+ * input: the median of [1, 2] is 1.5, not 1 or 2.
+ */
+function continuousPercentile(values: number[], fraction: number): number | null {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  if (sorted.length === 1) return sorted[0]!;
+  const position = fraction * (sorted.length - 1);
+  const lower = Math.floor(position);
+  const upper = Math.ceil(position);
+  if (lower === upper) return sorted[lower]!;
+  return sorted[lower]! + (sorted[upper]! - sorted[lower]!) * (position - lower);
+}
+
+/**
+ * Evaluate one HAVING predicate. A null aggregate (an empty group, or a
+ * single-row STDDEV) satisfies nothing except an explicit `eq null` — SQL's
+ * three-valued logic drops NULL rows from a `> x` comparison, and this matches.
+ */
+function matchesHaving(
+  value: number | null,
+  predicate: { operator: 'eq' | 'ne' | 'gt' | 'gte' | 'lt' | 'lte'; value: number | null },
+): boolean {
+  if (value === null || predicate.value === null) {
+    if (predicate.operator === 'eq') return value === predicate.value;
+    if (predicate.operator === 'ne') return value !== predicate.value;
+    return false;
+  }
+  switch (predicate.operator) {
+    case 'eq': return value === predicate.value;
+    case 'ne': return value !== predicate.value;
+    case 'gt': return value > predicate.value;
+    case 'gte': return value >= predicate.value;
+    case 'lt': return value < predicate.value;
+    case 'lte': return value <= predicate.value;
+  }
+}
+
 function now(): DateTime {
   return new Date().toISOString() as DateTime;
 }
@@ -1120,10 +1161,18 @@ export class MemoryStorageProvider implements StorageProvider {
     }
     // Validate aggregate functions upfront (before grouping) so invalid
     // functions always throw, even when there are zero matching rows.
-    const ALLOWED_FNS = new Set(['count', 'sum', 'avg', 'min', 'max']);
+    const ALLOWED_FNS = new Set(['count', 'sum', 'avg', 'min', 'max', 'count_distinct', 'stddev', 'median', 'percentile']);
     for (const aggField of query.fields) {
       if (!ALLOWED_FNS.has(aggField.fn.toLowerCase())) {
         throw new Error(`Invalid aggregate function: ${aggField.fn}`);
+      }
+      // A percentile with no fraction has no answer; Postgres would raise on
+      // PERCENTILE_CONT(NULL), so refuse it here rather than defaulting to a
+      // median the caller did not ask for.
+      if (aggField.fn.toLowerCase() === 'percentile') {
+        if (typeof aggField.percentile !== 'number' || !isFinite(aggField.percentile) || aggField.percentile < 0 || aggField.percentile > 1) {
+          throw new Error(`Aggregate percentile requires a fraction between 0 and 1 for field '${aggField.field}'`);
+        }
       }
     }
     // Same for bucket intervals: bucketDate falls through to day-granularity
@@ -1220,6 +1269,17 @@ export class MemoryStorageProvider implements StorageProvider {
               (item) => item[aggField.field] !== undefined && item[aggField.field] !== null,
             ).length;
           }
+        } else if (fnLower === 'count_distinct') {
+          // Distinct over any comparable type, matching COUNT(DISTINCT col).
+          // Objects/arrays are keyed by their JSON form so two structurally
+          // equal values count once, as Postgres would compare them by value.
+          const seen = new Set<string>();
+          for (const item of groupItems) {
+            const v = item[aggField.field];
+            if (v === undefined || v === null) continue;
+            seen.add(typeof v === 'object' ? JSON.stringify(v) : `${typeof v}:${String(v)}`);
+          }
+          values[alias] = seen.size;
         } else {
           // sum, avg, min, max — only on numeric fields. A present but
           // non-numeric value is rejected rather than silently skipped:
@@ -1255,12 +1315,38 @@ export class MemoryStorageProvider implements StorageProvider {
               case 'max':
                 values[alias] = Math.max(...numericValues);
                 break;
+              case 'stddev': {
+                // Sample standard deviation. Undefined for one observation —
+                // STDDEV_SAMP returns NULL there, so this must too.
+                if (numericValues.length < 2) {
+                  values[alias] = null;
+                  break;
+                }
+                const mean = numericValues.reduce((a, b) => a + b, 0) / numericValues.length;
+                const variance = numericValues.reduce((acc, v) => acc + (v - mean) ** 2, 0) / (numericValues.length - 1);
+                values[alias] = Math.sqrt(variance);
+                break;
+              }
+              case 'median':
+                values[alias] = continuousPercentile(numericValues, 0.5);
+                break;
+              case 'percentile':
+                values[alias] = continuousPercentile(numericValues, aggField.percentile!);
+                break;
             }
           }
         }
       }
 
       groups.push({ keys, values });
+    }
+
+    // HAVING — filter groups by aggregate value before counting, ordering and
+    // paging, so totalGroups reflects what a caller can actually page through.
+    if (query.having && query.having.length > 0) {
+      for (const predicate of query.having) {
+        groups = groups.filter(g => matchesHaving(g.values[predicate.alias] ?? null, predicate));
+      }
     }
 
     const totalGroups = groups.length;

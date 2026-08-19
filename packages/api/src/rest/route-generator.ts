@@ -17,7 +17,7 @@
 
 import type { ParsedSchema, ObjectType, ActionType, FunctionType, FieldDefinition } from '@altius/odl';
 import { DataPurpose } from '@altius/spi';
-import type { OntologyObject, FilterExpression, FieldPredicate, AggregateQuery, AggregateField, AggregateFunction, BucketInterval, SearchQuery, ObjectSetDefinition, RequestContext } from '@altius/spi';
+import type { OntologyObject, FilterExpression, FieldPredicate, AggregateQuery, AggregateField, AggregateFunction, AggregateHaving, BucketInterval, SearchQuery, ObjectSetDefinition, RequestContext } from '@altius/spi';
 import type { ActionActor, ActionContext } from '@altius/actions';
 import type { RedactionResult } from '@altius/security';
 import type { FunctionRevision } from '@altius/engine';
@@ -28,6 +28,7 @@ import { createRestErrorResponse, wrapErrorToRest, mapCodeToCategory, mapErrorTo
 import { invokeFunction } from '../functions/invoke-function.js';
 import { generateLlmRoutes } from './llm-routes.js';
 import { generateDataFreshnessRoutes } from './data-freshness-routes.js';
+import { generateFase21ObjectRoutes, generateFase21PlatformRoutes } from './fase21-routes.js';
 import { generateSecurityGovernanceRoutes } from './security-governance-routes.js';
 import { generateOntologySqlRoutes } from './ontology-sql-routes.js';
 import { generateDatasetRoutes } from './dataset-routes.js';
@@ -466,6 +467,10 @@ export function generateRestRoutes(
   // Data freshness routes
   routes.push(...generateDataFreshnessRoutes(deps));
 
+  // Fase 21 object-level and platform routes
+  routes.push(...generateFase21ObjectRoutes(schema, deps));
+  routes.push(...generateFase21PlatformRoutes(deps));
+
   // Security governance routes (access explanation, justifications, scoped sessions)
   routes.push(...generateSecurityGovernanceRoutes(deps));
 
@@ -709,10 +714,16 @@ const REST_EXPORT_FORMATS = ['ndjson', 'csv'] as const;
 type RestExportFormat = (typeof REST_EXPORT_FORMATS)[number];
 
 /**
- * GET /api/v1/{plural}/export?format=ndjson|csv&limit= — general per-ObjectType
- * dataset export. Reuses the same FGA scoping, field-level redaction, and
- * consent filtering as the list route (via `collectRawRecords`), but returns
- * NDJSON or CSV instead of JSON. No CDM projection — raw object fields only.
+ * GET /api/v1/{plural}/export?format=ndjson|csv&limit=&offset=&columns= —
+ * general per-ObjectType dataset export. Reuses the same FGA scoping,
+ * field-level redaction, and consent filtering as the list route (via
+ * `collectRawRecords`), but returns NDJSON or CSV instead of JSON. No CDM
+ * projection — raw object fields only.
+ *
+ * Rows past the per-request cap are reachable by paging on ?offset=; the
+ * response carries X-Export-Next-Offset while more rows may exist. Offsets are
+ * applied at the storage layer, so a consent-filtered page can come back short
+ * but never skips or repeats a row.
  *
  * Parity with Foundry `readTable` for non-CDM consumers. Arrow IPC is
  * deliberately deferred (would require `apache-arrow`).
@@ -745,25 +756,73 @@ function generateExportRoute(
         const limitParam = typeof req.query['limit'] === 'string' ? parseInt(req.query['limit'], 10) : undefined;
         const limit = Math.max(1, Math.min(limitParam && !isNaN(limitParam) ? limitParam : REST_EXPORT_LIMIT, REST_EXPORT_LIMIT));
 
+        const offsetParam = typeof req.query['offset'] === 'string' ? parseInt(req.query['offset'], 10) : undefined;
+        if (offsetParam !== undefined && (isNaN(offsetParam) || offsetParam < 0)) {
+          return createRestErrorResponse({
+            code: 'VALIDATION_ERROR',
+            category: 'validation',
+            message: 'offset must be a non-negative integer',
+            retryable: false,
+            traceId: ctx.requestContext.traceId,
+          });
+        }
+        const offset = offsetParam ?? 0;
+
+        // Column projection. Validated against the type's scalar fields so a
+        // typo is a 400 rather than a file of empty columns, and so a redacted
+        // field cannot be named to probe whether it exists.
+        const scalarFields = obj.fields.filter(f => !f.directives.some(d => d.kind === 'link') && !f.directives.some(d => d.kind === 'computed') && !f.directives.some(d => d.kind === 'reducer'));
+        const exportable = new Set<string>([
+          ...scalarFields.map(f => f.name),
+          '_id', '_version', '_createdAt', '_updatedAt',
+        ]);
+        let projection: string[] | undefined;
+        if (typeof req.query['columns'] === 'string' && req.query['columns'].length > 0) {
+          projection = req.query['columns'].split(',').map(c => c.trim()).filter(c => c.length > 0);
+          const unknown = projection.filter(c => !exportable.has(c));
+          if (unknown.length > 0) {
+            return createRestErrorResponse({
+              code: 'VALIDATION_ERROR',
+              category: 'validation',
+              message: `Unknown column(s): ${unknown.join(', ')}`,
+              retryable: false,
+              traceId: ctx.requestContext.traceId,
+            });
+          }
+        }
+
         // Reuse the CDM router's raw collection pipeline (FGA scoping +
         // redaction + consent filtering) with no CDM projection.
-        const { records, capped } = await collectRawRecords(
+        const { records: rawRecords, capped } = await collectRawRecords(
           deps,
           user,
           typeName,
           limit,
+          offset,
         );
+
+        // Projection is applied after redaction, so a redacted field named in
+        // ?columns= still comes back masked rather than restored.
+        const records = projection
+          ? rawRecords.map(r => {
+              const out: Record<string, unknown> = {};
+              for (const c of projection!) out[c] = r[c];
+              return out;
+            })
+          : rawRecords;
 
         const filenameBase = `${plural}-export`;
         const truncationHeaders: Record<string, string> = {
           'X-Export-Truncated': String(capped),
           'X-Export-Limit': String(limit),
+          'X-Export-Offset': String(offset),
         };
+        // Page cursor: present only while more rows may exist, so a client can
+        // walk a type larger than the per-request cap instead of losing the tail.
+        if (capped) truncationHeaders['X-Export-Next-Offset'] = String(offset + limit);
 
         if (format === 'csv') {
-          // Derive columns from the object type's scalar fields + system fields.
-          const scalarFields = obj.fields.filter(f => !f.directives.some(d => d.kind === 'link') && !f.directives.some(d => d.kind === 'computed') && !f.directives.some(d => d.kind === 'reducer'));
-          const columns = [
+          const columns = projection ?? [
             ...scalarFields.map(f => f.name),
             '_id', '_version', '_createdAt', '_updatedAt',
           ];
@@ -1387,7 +1446,7 @@ function generateAggregateRoute(
         const body = (req.body ?? {}) as Record<string, unknown>;
 
         // Build AggregateQuery from body
-        const rawFields = (body['fields'] ?? []) as Array<{ field: string; fn: string; alias?: string }>;
+        const rawFields = (body['fields'] ?? []) as Array<{ field: string; fn: string; alias?: string; percentile?: number }>;
         const groupBy = body['groupBy'] as string[] | undefined;
         const rawBuckets = body['buckets'] as Array<{ field: string; interval?: string; min?: number; max?: number; numBuckets?: number; alias?: string }> | undefined;
 
@@ -1469,7 +1528,62 @@ function generateAggregateRoute(
           field: f.field,
           fn: f.fn.toLowerCase() as AggregateFunction,
           alias: f.alias,
+          ...(typeof f.percentile === 'number' ? { percentile: f.percentile } : {}),
         }));
+
+        // HAVING — predicates over aggregate aliases. An alias the request did
+        // not define is refused here: Postgres would raise on the re-emitted
+        // expression while the memory provider would treat the missing value as
+        // null and silently drop every group, so the two would disagree.
+        const rawHaving = body['having'];
+        let having: AggregateHaving[] | undefined;
+        if (rawHaving !== undefined) {
+          if (!Array.isArray(rawHaving)) {
+            return createRestErrorResponse({
+              code: 'VALIDATION_ERROR',
+              category: 'validation',
+              message: 'having must be an array of {alias, operator, value}',
+              retryable: false,
+              traceId: requestContext.traceId,
+            });
+          }
+          const ops = new Set(['eq', 'ne', 'gt', 'gte', 'lt', 'lte']);
+          const parsed: AggregateHaving[] = [];
+          for (const raw of rawHaving as Array<Record<string, unknown>>) {
+            const alias = typeof raw['alias'] === 'string' ? raw['alias'] : undefined;
+            const operator = typeof raw['operator'] === 'string' ? raw['operator'].toLowerCase() : undefined;
+            const value = raw['value'];
+            if (!alias || !aliasNames.has(alias)) {
+              return createRestErrorResponse({
+                code: 'VALIDATION_ERROR',
+                category: 'validation',
+                message: `having alias '${String(alias)}' is not one of the requested aggregates: ${[...aliasNames].join(', ')}`,
+                retryable: false,
+                traceId: requestContext.traceId,
+              });
+            }
+            if (!operator || !ops.has(operator)) {
+              return createRestErrorResponse({
+                code: 'VALIDATION_ERROR',
+                category: 'validation',
+                message: `having operator must be one of: ${[...ops].join(', ')}`,
+                retryable: false,
+                traceId: requestContext.traceId,
+              });
+            }
+            if (value !== null && typeof value !== 'number') {
+              return createRestErrorResponse({
+                code: 'VALIDATION_ERROR',
+                category: 'validation',
+                message: 'having value must be a number or null',
+                retryable: false,
+                traceId: requestContext.traceId,
+              });
+            }
+            parsed.push({ alias, operator: operator as AggregateHaving['operator'], value });
+          }
+          if (parsed.length > 0) having = parsed;
+        }
 
         // Consent gate: for consent-subject types, constrain the aggregate to
         // consented records only (parity with the GraphQL aggregate resolver).
@@ -1514,6 +1628,7 @@ function generateAggregateRoute(
             };
           }),
           filter: combinedFilter,
+          ...(having ? { having } : {}),
           orderBy,
           limit: body['limit'] as number | undefined,
           offset: body['offset'] as number | undefined,
@@ -1896,10 +2011,106 @@ function objectSetToRest(def: ObjectSetDefinition): Record<string, unknown> {
     limit: def.limit ?? null,
     aggregation: def.aggregation ?? null,
     isPublic: def.isPublic,
+    sharedWithUsers: def.sharedWithUsers ?? null,
+    sharedWithGroups: def.sharedWithGroups ?? null,
     createdBy: def.createdBy,
     createdAt: def.createdAt,
     updatedAt: def.updatedAt,
   };
+}
+
+/**
+ * Validate an object-set definition body against the schema.
+ *
+ * Create previously took the body on trust: a set could name a type that does
+ * not exist, filter or sort on a field that does not exist, or carry a
+ * negative limit — none of which fails until execute time, on a different
+ * request, with an error that points at the reader rather than the author.
+ * Returns an error message, or null when the body is acceptable.
+ */
+function validateObjectSetBody(
+  schema: ParsedSchema,
+  body: Record<string, unknown>,
+): string | null {
+  const name = body['name'];
+  if (typeof name !== 'string' || name.trim() === '') return 'name is required and must be a non-empty string';
+
+  const objectType = body['objectType'];
+  if (typeof objectType !== 'string' || objectType.trim() === '') return 'objectType is required and must be a non-empty string';
+  const obj = schema.objectTypes.find(o => o.name === objectType);
+  if (!obj) return `objectType "${objectType}" is not in the schema`;
+
+  if (body['description'] !== undefined && typeof body['description'] !== 'string') {
+    return 'description must be a string';
+  }
+  if (body['isPublic'] !== undefined && typeof body['isPublic'] !== 'boolean') {
+    return 'isPublic must be a boolean';
+  }
+  if (body['limit'] !== undefined) {
+    const limit = body['limit'];
+    if (typeof limit !== 'number' || !Number.isInteger(limit) || limit <= 0) {
+      return 'limit must be a positive integer';
+    }
+  }
+  for (const key of ['sharedWithUsers', 'sharedWithGroups'] as const) {
+    const value = body[key];
+    if (value === undefined) continue;
+    if (!Array.isArray(value) || value.some(v => typeof v !== 'string' || v.trim() === '')) {
+      return `${key} must be an array of non-empty strings`;
+    }
+  }
+
+  // Field references must name real, stored fields — the same rule the
+  // aggregate routes apply, for the same provider-disagreement reason.
+  const queryable = new Set(
+    obj.fields
+      .filter(f => !f.directives.some(d => d.kind === 'link' || d.kind === 'computed' || d.kind === 'reducer'))
+      .map(f => f.name),
+  );
+  const known = (field: string): boolean => field.startsWith('_') || queryable.has(field);
+
+  const orderBy = body['orderBy'];
+  if (orderBy !== undefined) {
+    if (!Array.isArray(orderBy)) return 'orderBy must be an array of {field, direction}';
+    for (const entry of orderBy as Array<Record<string, unknown>>) {
+      const field = entry?.['field'];
+      if (typeof field !== 'string' || !known(field)) {
+        return `orderBy field "${String(field)}" is not a stored field of ${objectType}`;
+      }
+      const direction = entry['direction'];
+      if (direction !== undefined && direction !== 'asc' && direction !== 'desc') {
+        return 'orderBy direction must be asc or desc';
+      }
+    }
+  }
+
+  const filter = body['filter'];
+  if (filter !== undefined) {
+    if (typeof filter !== 'object' || filter === null) return 'filter must be an object';
+    const unknownFilterFields = collectFilterFields(filter as FilterExpression).filter(f => !known(f));
+    if (unknownFilterFields.length > 0) {
+      return `filter references unknown field(s) of ${objectType}: ${unknownFilterFields.join(', ')}`;
+    }
+  }
+
+  const aggregation = body['aggregation'] as AggregateQuery | undefined;
+  if (aggregation !== undefined) {
+    if (typeof aggregation !== 'object' || aggregation === null) return 'aggregation must be an object';
+    if (!Array.isArray(aggregation.fields) || aggregation.fields.length === 0) {
+      return 'aggregation.fields must be a non-empty array';
+    }
+    const aggFieldNames = [
+      ...aggregation.fields.filter(f => f.field !== '*').map(f => f.field),
+      ...(aggregation.groupBy ?? []),
+      ...(aggregation.buckets ?? []).map(b => b.field),
+    ];
+    const unknownAgg = aggFieldNames.filter(f => typeof f !== 'string' || !known(f));
+    if (unknownAgg.length > 0) {
+      return `aggregation references unknown field(s) of ${objectType}: ${unknownAgg.join(', ')}`;
+    }
+  }
+
+  return null;
 }
 
 function generateObjectSetRoutes(schema: ParsedSchema, deps: ApiDependencies): RestRoute[] {
@@ -1969,6 +2180,16 @@ function generateObjectSetRoutes(schema: ParsedSchema, deps: ApiDependencies): R
             });
           }
           const body = (req.body ?? {}) as Record<string, unknown>;
+          const invalid = validateObjectSetBody(schema, body);
+          if (invalid) {
+            return createRestErrorResponse({
+              code: 'VALIDATION_ERROR',
+              category: 'validation',
+              message: invalid,
+              retryable: false,
+              traceId: ctx.requestContext.traceId,
+            });
+          }
           const def = await deps.objectSetManager.create(
             {
               name: body['name'] as string,
@@ -1979,6 +2200,8 @@ function generateObjectSetRoutes(schema: ParsedSchema, deps: ApiDependencies): R
               limit: body['limit'] as number | undefined,
               aggregation: body['aggregation'] as AggregateQuery | undefined,
               isPublic: (body['isPublic'] as boolean) ?? false,
+              sharedWithUsers: body['sharedWithUsers'] as string[] | undefined,
+              sharedWithGroups: body['sharedWithGroups'] as string[] | undefined,
               createdBy: ctx.user.id,
               tenantId: ctx.requestContext.tenantId,
             },
@@ -2007,11 +2230,30 @@ function generateObjectSetRoutes(schema: ParsedSchema, deps: ApiDependencies): R
           }
           const id = req.params['id']!;
           const body = (req.body ?? {}) as Record<string, unknown>;
-          const ALLOWED_UPDATE_FIELDS = new Set(['name', 'description', 'filter', 'orderBy', 'limit', 'aggregation', 'isPublic']);
+          const ALLOWED_UPDATE_FIELDS = new Set([
+            'name', 'description', 'filter', 'orderBy', 'limit', 'aggregation', 'isPublic',
+            // Sharing is an update, not a separate route: the creator is the
+            // only principal the store lets mutate a set, which is exactly the
+            // authorization sharing needs.
+            'sharedWithUsers', 'sharedWithGroups',
+          ]);
           const updates: Record<string, unknown> = {};
           for (const [key, value] of Object.entries(body)) {
             if (value !== undefined && ALLOWED_UPDATE_FIELDS.has(key)) {
               updates[key] = value;
+            }
+          }
+          for (const key of ['sharedWithUsers', 'sharedWithGroups'] as const) {
+            const value = updates[key];
+            if (value === undefined) continue;
+            if (!Array.isArray(value) || value.some(v => typeof v !== 'string' || v.trim() === '')) {
+              return createRestErrorResponse({
+                code: 'VALIDATION_ERROR',
+                category: 'validation',
+                message: `${key} must be an array of non-empty strings`,
+                retryable: false,
+                traceId: ctx.requestContext.traceId,
+              });
             }
           }
           const def = await deps.objectSetManager.update(id, updates, ctx.requestContext);
@@ -2309,7 +2551,8 @@ function generateObjectSetRoutes(schema: ParsedSchema, deps: ApiDependencies): R
           }
 
           // Validate schema type before querying storage
-          if (!schema.objectTypes.find((o) => o.name === def.objectType)) {
+          const aggObj = schema.objectTypes.find((o) => o.name === def.objectType);
+          if (!aggObj) {
             return createRestErrorResponse({
               code: 'SCHEMA_TYPE_NOT_FOUND',
               category: 'system',
@@ -2317,6 +2560,36 @@ function generateObjectSetRoutes(schema: ParsedSchema, deps: ApiDependencies): R
               retryable: false,
               traceId: ctx.requestContext.traceId,
             });
+          }
+
+          // Aggregatable-field check, the same one the per-type aggregate route
+          // applies. A saved set can name a field the schema lost since it was
+          // written (or never had), and the providers disagree on the result:
+          // Postgres raises on the missing column while the memory provider
+          // returns a null group — a silent wrong answer that looks like data.
+          {
+            const aggregatable = new Set(
+              aggObj.fields
+                .filter(f => !f.directives.some(d => d.kind === 'link' || d.kind === 'computed' || d.kind === 'reducer'))
+                .map(f => f.name),
+            );
+            const referenced = [
+              ...def.aggregation.fields.filter(f => f.field !== '*').map(f => f.field),
+              ...(def.aggregation.groupBy ?? []),
+              ...(def.aggregation.buckets ?? []).map(b => b.field),
+              ...collectFilterFields(def.filter),
+              ...collectFilterFields(def.aggregation.filter),
+            ];
+            const unknownAggFields = referenced.filter(f => !f.startsWith('_') && !aggregatable.has(f));
+            if (unknownAggFields.length > 0) {
+              return createRestErrorResponse({
+                code: 'VALIDATION_ERROR',
+                category: 'validation',
+                message: `Object set ${id} aggregates on ${unknownAggFields.join(', ')}: not an aggregatable field of ${def.objectType}. Computed and link fields have no stored value to aggregate.`,
+                retryable: false,
+                traceId: ctx.requestContext.traceId,
+              });
+            }
           }
 
           // Authorization: restrict aggregation to authorized objects

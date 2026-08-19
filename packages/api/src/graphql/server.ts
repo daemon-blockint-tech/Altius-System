@@ -105,6 +105,10 @@ export function buildResolverContext(
     requestContext: {
       tenantId: user.tenantId,
       actorId: user.id,
+      // Carried so stores can evaluate group-scoped ACLs (object-set sharing)
+      // without a second identity lookup. Read-only identity, never a grant on
+      // its own — an absent list grants nothing.
+      actorGroups: user.groups,
       traceId: crypto.randomUUID(),
     },
     user,

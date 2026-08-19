@@ -10,7 +10,7 @@ import type {
   MarkingPolicy,
 } from '@altius/security';
 import type { ParsedSchema } from '@altius/odl';
-import type { RequestContext, StorageProvider, LLMClient, BlobStore, TimeSeriesStore, BranchStore, CommentStore, NotificationStore, EmbeddingStore, AlertingService, LLMGateway, DataFreshnessService, JustificationStore, AccessExplanationService, ScopedSessionStore, OntologySqlService, DatasetService, OntologyUsageMetricsService, GeospatialMapService, ScenarioService, ModelInferenceService, ModelChainService, WorkshopPlatformService, EmbeddingService, PlatformResourceService, SavedViewStore, UserDirectoryService } from '@altius/spi';
+import type { RequestContext, StorageProvider, LLMClient, BlobStore, TimeSeriesStore, BranchStore, CommentStore, NotificationStore, EmbeddingStore, AlertingService, LLMGateway, DataFreshnessService, JustificationStore, AccessExplanationService, ScopedSessionStore, OntologySqlService, DatasetService, DatasetMetadataService, OntologyUsageMetricsService, GeospatialMapService, ScenarioService, ModelInferenceService, ModelChainService, WorkshopPlatformService, EmbeddingService, PlatformResourceService, SavedViewStore, UserDirectoryService, KioskService, LayoutDeviceCaptureService, OntologyManagerService, WorkshopUxService, ValueFormattingService, DesignSystemService, OntologyChangeHistoryService } from '@altius/spi';
 import { DataPurpose } from '@altius/spi';
 
 /**
@@ -82,6 +82,12 @@ export interface ApiDependencies {
    * everyone. See rest/audit-routes.ts.
    */
   auditReaderRoles?: readonly string[];
+  /**
+   * Roles allowed to explain another principal's access via
+   * POST /api/v1/security/explain with `subjectUserId`. Defaults to ['admin'].
+   * An explicitly empty array disables simulation entirely.
+   */
+  accessExplanationSimulationRoles?: readonly string[];
   /**
    * Allowed consent-purpose vocabulary for this deployment (env CONSENT_PURPOSES).
    * `DataPurpose` is an open string type; this is the set accepted when recording
@@ -377,6 +383,13 @@ export interface ApiDependencies {
    */
   datasetService?: DatasetService;
   /**
+   * Dataset metadata/schema retrieval service. When present two read routes
+   * are registered alongside the dataset routes above:
+   *   GET    /api/v1/datasets/:name/metadata   (metadata incl. rowCount)
+   *   GET    /api/v1/datasets/:name/schema     (schema by branch/version/transaction)
+   */
+  datasetMetadataService?: DatasetMetadataService;
+  /**
    * Ontology usage metrics service. When present, REST endpoints for
    * metrics aggregation, event querying, and monitoring rules are
    * registered. The record() method is NOT exposed as a REST endpoint —
@@ -450,6 +463,27 @@ export interface ApiDependencies {
    *   GET    /api/v1/users/:id                  (get user)
    */
   userDirectoryService?: UserDirectoryService;
+
+  /** Kiosk mode service — long-lived read-only display sessions. */
+  kioskService?: KioskService;
+
+  /** Layout and device capture service — QR/camera/deep-link state. */
+  layoutDeviceCaptureService?: LayoutDeviceCaptureService;
+
+  /** Ontology manager service — type/action/function discovery and change proposals. */
+  ontologyManagerService?: OntologyManagerService;
+
+  /** Workshop UX service — state saving, redact, profiler, i18n. */
+  workshopUxService?: WorkshopUxService;
+
+  /** Value and conditional formatting service. */
+  valueFormattingService?: ValueFormattingService;
+
+  /** Design system theming service — saved module colour palettes. */
+  designSystemService?: DesignSystemService;
+
+  /** Ontology change history service — read and restore schema versions. */
+  ontologyChangeHistoryService?: OntologyChangeHistoryService;
 }
 
 /**
