@@ -4,7 +4,7 @@
  */
 
 import type { RequestContext } from './ontology.js';
-import type { FilterExpression } from './ontology.js';
+import type { FilterExpression, FieldPredicate } from './ontology.js';
 
 // ── Filter state ────────────────────────────────────────────────────────
 
@@ -12,7 +12,16 @@ import type { FilterExpression } from './ontology.js';
 export interface FilterChip {
   id: string;
   field: string;
-  operator: string;
+  /**
+   * Comparison operator, restricted to the ones a FieldPredicate accepts.
+   *
+   * Typed as a plain `string` originally, which made a chip un-assignable to a
+   * FilterExpression and — worse — let an operator no provider implements reach
+   * storage: the memory provider ignores an unknown operator (matching
+   * everything) while Postgres builds no clause for it. Two backends, two
+   * different answers, neither an error.
+   */
+  operator: FieldPredicate['operator'];
   value: unknown;
   /** Optional variable name this chip writes to. */
   variableName?: string;

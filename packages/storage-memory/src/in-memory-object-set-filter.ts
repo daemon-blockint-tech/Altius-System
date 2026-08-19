@@ -13,6 +13,29 @@ import type {
   FilterExpression,
 } from '@altius/spi';
 
+/** Operators a FieldPredicate accepts. Kept as a value so chips from an
+ * untrusted request body can be checked at runtime, not just at compile time. */
+const CHIP_OPERATORS = new Set<string>([
+  'eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'in', 'contains', 'startsWith', 'exists',
+  'within', 'near', 'withinPolygon',
+]);
+
+/**
+ * Convert one chip to a FieldPredicate, refusing an operator no provider
+ * implements. Silently passing one through is the dangerous case: the memory
+ * provider ignores an unknown operator and matches everything, while Postgres
+ * builds no clause — the same saved filter returns different rows per backend.
+ */
+function chipToPredicate(chip: FilterChip): FilterExpression {
+  if (!CHIP_OPERATORS.has(chip.operator)) {
+    throw new Error(
+      `Filter chip operator "${chip.operator}" is not supported. Use one of: ` +
+      `${[...CHIP_OPERATORS].join(', ')}.`,
+    );
+  }
+  return { field: chip.field, operator: chip.operator, value: chip.value };
+}
+
 export class InMemoryObjectSetFilterStore implements ObjectSetFilterStore {
   private readonly states = new Map<string, Map<string, FilterState>>();
 
@@ -67,15 +90,21 @@ export class InMemoryObjectSetFilterStore implements ObjectSetFilterStore {
     chips: FilterChip[],
   ): Promise<{ filter: FilterExpression; variables: Record<string, unknown> }> {
     const variables = this.extractFromChips(chips);
-    const predicates: FilterExpression[] = chips.map(chip => ({
-      field: chip.field,
-      operator: chip.operator,
-      value: chip.value,
-    }));
+    const predicates = chips.map(chip => chipToPredicate(chip));
     const filter: FilterExpression = predicates.length > 0 ? { and: predicates } : { and: [] };
     return { filter, variables };
   }
 
+  /**
+   * Combine two saved filter states.
+   *
+   * A FilterState is a FLAT list of chips and applyFilter AND-combines them, so
+   * INTERSECT is exactly chip concatenation — and UNION and DIFFERENCE have no
+   * representation at all. They used to build the right FilterExpression, throw
+   * it away, and save the concatenated chips regardless, which meant all three
+   * operations produced an identical state: a wrong answer that looks like a
+   * saved view. They are refused until FilterState can carry an expression.
+   */
   async combine(
     ctx: RequestContext,
     objectSetId: string,
@@ -84,24 +113,46 @@ export class InMemoryObjectSetFilterStore implements ObjectSetFilterStore {
     op: FilterSetOp,
     name: string,
   ): Promise<FilterState> {
-    const m = this.states.get(ctx.tenantId);
-    const left = m?.get(leftFilterStateId);
-    const right = m?.get(rightFilterStateId);
+    // Look up by filter-state id, not by object-set id. The tenant map is
+    // keyed by objectSetId (one current state per set), so `m.get(stateId)`
+    // could only ever hit by coincidence — combine() never found either side
+    // and always threw 'Filter state not found'.
+    const left = this.findById(ctx, leftFilterStateId);
+    const right = this.findById(ctx, rightFilterStateId);
     if (!left || !right) throw new Error('Filter state not found');
-    const leftPredicates: FilterExpression[] = left.chips.map(c => ({ field: c.field, operator: c.operator, value: c.value }));
-    const rightPredicates: FilterExpression[] = right.chips.map(c => ({ field: c.field, operator: c.operator, value: c.value }));
-    const leftFilter: FilterExpression = leftPredicates.length > 0 ? { and: leftPredicates } : { and: [] };
-    const rightFilter: FilterExpression = rightPredicates.length > 0 ? { and: rightPredicates } : { and: [] };
-    let combined: FilterExpression;
-    switch (op) {
-      case 'UNION': combined = { or: [leftFilter, rightFilter] }; break;
-      case 'INTERSECT': combined = { and: [leftFilter, rightFilter] }; break;
-      case 'DIFFERENCE': combined = { and: [leftFilter, { not: rightFilter }] }; break;
-      default: throw new Error(`Unknown op: ${op}`);
+
+    if (op !== 'INTERSECT') {
+      throw new Error(
+        `Filter-state ${op} is not representable: a saved filter state is a flat, ` +
+        `AND-combined chip list, which can express INTERSECT only. Combine the ` +
+        `underlying object sets instead (POST /api/v1/object-sets/combine).`,
+      );
     }
-    // Convert combined filter back into flat chips (best-effort)
+
+    // INTERSECT: both chip lists apply, which is what an AND-combined flat list
+    // means. Chips are validated on the way in so a state saved here cannot
+    // carry an operator no provider implements.
     const chips: FilterChip[] = [...left.chips, ...right.chips];
+    for (const chip of chips) chipToPredicate(chip);
     return this.saveFilterState(ctx, objectSetId, { name, chips });
+  }
+
+  /**
+   * Find a saved state by its own id within the caller's tenant.
+   *
+   * A linear scan: the tenant map holds one state per object set, so this is
+   * small, and a second id-keyed index would have to be kept consistent with
+   * the objectSetId-keyed one on every save.
+   * ponytail: linear scan, add an id index if a tenant ever holds thousands of
+   * saved filter states.
+   */
+  private findById(ctx: RequestContext, id: string): FilterState | undefined {
+    const m = this.states.get(ctx.tenantId);
+    if (!m) return undefined;
+    for (const state of m.values()) {
+      if (state.id === id) return state;
+    }
+    return undefined;
   }
 
   private extractFromChips(chips: FilterChip[]): Record<string, unknown> {
