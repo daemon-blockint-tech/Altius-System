@@ -148,6 +148,7 @@ export type {
   ChatMessage,
   ChatCompletionOptions,
   ChatCompletionResponse,
+  ChatCompletionChunk,
   LLMUsageRecord,
   UsageQuery,
   UsageSummary,

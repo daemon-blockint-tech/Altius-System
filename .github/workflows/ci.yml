@@ -139,12 +139,14 @@ jobs:
       - name: Create Orion/.env for compose
         run: |
           printf 'POSTGRES_PASSWORD=postgres\nKEYCLOAK_ADMIN_PASSWORD=admin\n' > Orion/.env
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
       - name: Build stack images
-        run: >-
-          docker compose
-          -f Orion/docker-compose.yaml
-          -f Orion/docker-compose.test.yaml
-          build
+        # bake resolves the named build contexts (deps-full/deps-app) that
+        # plain `docker compose build` cannot — see docker-bake.hcl. --load
+        # puts the orion-<service>:latest images in the local daemon so the
+        # `docker compose up` step below finds them without rebuilding.
+        run: docker buildx bake --load
       # Bring the stack up here (not inside the test harness): the harness's
       # dockerComposeUp wraps `up --wait` in a 300s execSync wall-timeout, which
       # a cold 14-service stack can exceed on CI runners. Starting it in a
@@ -241,8 +243,13 @@ jobs:
       # must be built first for vite to resolve them.
       - name: Build workspace
         run: pnpm run build
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
       - name: Build stack images
-        run: docker compose -f Orion/docker-compose.yaml build
+        # bake resolves deps-full/deps-app named contexts that plain
+        # `docker compose build` cannot. --load tags orion-<service>:latest
+        # into the local daemon so the specs' `docker compose up` finds them.
+        run: docker buildx bake --load
       # Each spec self-manages the Docker lifecycle (down -v -> up -> assert ->
       # down -v). Run sequentially; the filename filter + env flag keep exactly
       # one destructive spec active at a time.
@@ -317,25 +324,19 @@ jobs:
   image-scan:
     name: Trivy image scan (HIGH/CRITICAL)
     runs-on: ubuntu-latest
-    # `docker compose build` interpolates the whole compose file, which has two
-    # required vars (POSTGRES_PASSWORD, KEYCLOAK_ADMIN_PASSWORD). Throwaway
-    # values — only the built image layers are scanned, nothing runs.
-    env:
-      POSTGRES_PASSWORD: postgres
-      KEYCLOAK_ADMIN_PASSWORD: admin
+    # bake does not interpolate the compose file, so the two required vars
+    # (POSTGRES_PASSWORD, KEYCLOAK_ADMIN_PASSWORD) are not needed here —
+    # only the built image layers are scanned, nothing runs.
     steps:
       - uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
       - name: Build all images
-        # Every profile, explicitly. The compose file puts the optional
-        # services behind profiles so a laptop can run the core stack, and a
-        # bare `build` therefore skips them — which silently narrowed this
-        # scan to the images that happen to be on by default. A scan must
-        # cover what is shipped, not what is convenient to run.
-        run: >
-          docker compose -f Orion/docker-compose.yaml
-          --profile cdc --profile microservices
-          --profile observability --profile cache
-          build
+        # bake builds every target in the default group (all 7 services),
+        # which is wider than the compose profiles below — a scan must cover
+        # what is shipped, not what is convenient to run. --load tags
+        # orion-<service>:latest into the local daemon for the Trivy loop.
+        run: docker buildx bake --load
       - name: Install trivy
         run: |
           curl -fsSL "https://github.com/aquasecurity/trivy/releases/download/v0.71.0/trivy_0.71.0_Linux-64bit.tar.gz" \

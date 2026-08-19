@@ -199,6 +199,19 @@ export interface LLMRateLimiter {
 // LLM Gateway
 // ---------------------------------------------------------------------------
 
+/** A streamed chat completion chunk (OpenAI-compatible SSE format). */
+export interface ChatCompletionChunk {
+  id: string;
+  object: 'chat.completion.chunk';
+  created: number;
+  model: string;
+  choices: Array<{
+    index: number;
+    delta: Partial<ChatMessage>;
+    finishReason: string | null;
+  }>;
+}
+
 /**
  * Governed LLM gateway — wraps LLMClient with model catalog, usage tracking,
  * rate limiting, and governance flags.
@@ -212,6 +225,19 @@ export interface LLMGateway {
 
   /** Create a chat completion (OpenAI-compatible). */
   chatCompletion(ctx: RequestContext, options: ChatCompletionOptions): Promise<ChatCompletionResponse>;
+
+  /**
+   * Stream a chat completion token-by-token (OpenAI-compatible SSE).
+   *
+   * Yields ChatCompletionChunk objects. The first chunk contains the role
+   * delta; subsequent chunks contain content deltas; the final chunk has
+   * finishReason set and an empty delta.
+   *
+   * Rate limiting is checked before the first token. Usage is recorded
+   * after the stream completes (estimated tokens if the provider doesn't
+   * report them).
+   */
+  streamChatCompletion(ctx: RequestContext, options: ChatCompletionOptions): AsyncIterable<ChatCompletionChunk>;
 
   /** Get the usage tracker. */
   usageTracker: LLMUsageTracker;

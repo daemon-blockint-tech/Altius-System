@@ -5,9 +5,10 @@
 # so `pnpm install` for the six Node services resolves ONCE per unique
 # dependency set (deps-full / deps-app) instead of once per service image —
 # see Dockerfile.deps for why. Also the single source of truth for GHA cache
-# scoping: `docker compose build` picks this file up automatically when
-# COMPOSE_BAKE=true (see Orion/docker-compose.yaml `x-bake` blocks), and CI
-# invokes it directly with `docker buildx bake`.
+# scoping. CI invokes this directly with `docker buildx bake --load`, which
+# produces images tagged `orion-<service>:latest` — matching the names
+# `docker compose up` expects (compose project name = "orion" from Orion/)
+# and the names the Trivy scan loop iterates.
 
 variable "GIT_REVISION" {
   default = "unknown"
@@ -18,12 +19,12 @@ variable "REGISTRY" {
 }
 
 variable "IMAGE_PREFIX" {
-  default = "altius"
+  default = "orion"
 }
 
 function "tag" {
   params = [service]
-  result = ["${REGISTRY}${IMAGE_PREFIX}/${service}:${GIT_REVISION}", "${REGISTRY}${IMAGE_PREFIX}/${service}:latest"]
+  result = ["${REGISTRY}${IMAGE_PREFIX}-${service}:${GIT_REVISION}", "${REGISTRY}${IMAGE_PREFIX}-${service}:latest"]
 }
 
 group "default" {
