@@ -516,17 +516,8 @@ export type {
   ResolvedDeepLink,
 } from './layout-device-capture.js';
 
-// Widget library
-export type {
-  WidgetLibraryService,
-  WidgetDefinition,
-  AppDefinition,
-  AppPage,
-  AppSection,
-  WidgetInstance,
-  AppVariable,
-  CreateAppDefinitionInput,
-} from './widget-library.js';
+// Widget library — DELETED in §4C, consolidated onto workshop-platform.ts
+// (WorkshopPlatformService already covers apps, templates, widgets, etc.)
 
 // Platform resources
 export type {
