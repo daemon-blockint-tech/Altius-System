@@ -68,6 +68,31 @@ export interface StorageProvider {
    * the history route used to make.
    */
   getObjectHistory(ctx: RequestContext, type: string, id: string): Promise<OntologyObject[]>;
+  /**
+   * Links attached to `objectId` as they existed at `timestamp`.
+   *
+   * Objects had three temporal reads (at-version, at-time, full history) and
+   * links had none, so "which wards was this patient linked to last Tuesday"
+   * was unanswerable on every surface — the graph could only be read as it is
+   * now, which silently backdates every current link when a historical
+   * question is asked.
+   *
+   * Membership is resolved from the link's own lifecycle: a link counts when it
+   * was created at or before `timestamp` and had not been deleted by then.
+   * PROPERTIES are the link's CURRENT values, not its values at `timestamp` —
+   * neither provider stores per-link version history, so a property-level time
+   * travel would have to be invented rather than read. That is the honest
+   * boundary of this method and the reason it is separate from
+   * getObjectAtTime.
+   */
+  getLinksAtTime(
+    ctx: RequestContext,
+    objectId: string,
+    linkType: string,
+    direction: 'inbound' | 'outbound',
+    timestamp: DateTime,
+    options?: QueryOptions,
+  ): Promise<LinkPage>;
 
   // ─── Indices ───
   ensureIndex(ctx: RequestContext, type: string, index: IndexDefinition): Promise<void>;

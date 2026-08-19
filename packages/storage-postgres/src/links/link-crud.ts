@@ -386,6 +386,82 @@ export async function deleteLink(
  * Get links by objectId, linkType, and direction.
  * Excludes soft-deleted links by default.
  */
+/**
+ * Links attached to `objectId` as they existed at `timestamp`.
+ *
+ * Membership is the link's own lifecycle: created at or before the instant and
+ * not deleted by it. `includeDeleted` is deliberately ignored — the question is
+ * what the graph looked like then, and a link deleted before that instant did
+ * not exist then whatever the flag says.
+ *
+ * Properties are the link's CURRENT values. Link rows are updated in place with
+ * no version history table, so property-level time travel would have to be
+ * invented rather than read; the SPI method documents that boundary.
+ */
+export async function getLinksAtTime(
+  pool: Pool,
+  ctx: RequestContext,
+  objectId: string,
+  linkType: string,
+  direction: 'inbound' | 'outbound',
+  timestamp: DateTime,
+  options?: QueryOptions,
+  schema = 'public',
+  tx?: PgTransaction,
+): Promise<LinkPage> {
+  const at = Date.parse(timestamp);
+  if (isNaN(at)) {
+    throw new Error(`getLinksAtTime: timestamp "${timestamp}" is not a valid ISO 8601 instant`);
+  }
+
+  const q = resolveQueryable(pool, tx);
+  const table = linkTableName(linkType, schema);
+
+  const params: unknown[] = [ctx.tenantId, objectId, new Date(at).toISOString()];
+  const whereClauses = [
+    `"_tenant_id" = $1`,
+    direction === 'outbound' ? `"_from_id" = $2` : `"_to_id" = $2`,
+    `"_created_at" <= $3`,
+    `("_deleted_at" IS NULL OR "_deleted_at" > $3)`,
+  ];
+  const whereClause = whereClauses.join(' AND ');
+
+  const countSql = `SELECT COUNT(*) AS cnt FROM ${table} WHERE ${whereClause}`;
+  const countResult = await q.query(countSql, params);
+  const totalCount = parseInt(String((countResult.rows[0] as Record<string, unknown>)['cnt']), 10);
+
+  if (options?.limit !== undefined) {
+    if (!Number.isInteger(options.limit) || options.limit < 0) {
+      throw new Error(
+        `Requested link page limit ${options.limit} is not a non-negative integer.`,
+      );
+    }
+    if (options.limit > MAX_LINK_QUERY_LIMIT) {
+      throw new Error(
+        `Requested link page limit ${options.limit} exceeds the maximum of ${MAX_LINK_QUERY_LIMIT}. ` +
+        `Request ${MAX_LINK_QUERY_LIMIT} or fewer and page with offset.`,
+      );
+    }
+  }
+  const limit = options?.limit ?? DEFAULT_LINK_QUERY_LIMIT;
+  let offset = options?.offset ?? 0;
+  if (options?.after) {
+    offset = decodePageCursor(options.after);
+  }
+
+  const paginationParams = [...params, limit, offset];
+  const dataSql =
+    `SELECT * FROM ${table} WHERE ${whereClause} ` +
+    `ORDER BY "_created_at" ASC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+  const dataResult = await q.query(dataSql, paginationParams);
+
+  const items = (dataResult.rows as Record<string, unknown>[]).map((row) => rowToLink(row));
+  const hasNextPage = offset + limit < totalCount;
+  const cursor = hasNextPage ? encodePageCursor(offset + limit) : undefined;
+
+  return { items, totalCount, hasNextPage, cursor };
+}
+
 export async function getLinks(
   pool: Pool,
   ctx: RequestContext,

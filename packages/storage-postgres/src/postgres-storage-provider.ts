@@ -59,6 +59,7 @@ import {
   updateLink as pgUpdateLink,
   deleteLink as pgDeleteLink,
   getLinks as pgGetLinks,
+  getLinksAtTime as pgGetLinksAtTime,
 } from './links/index.js';
 import { traverse as pgTraverse } from './links/index.js';
 import {
@@ -543,6 +544,17 @@ export class PostgresStorageProvider implements StorageProvider {
     options?: QueryOptions,
   ): Promise<LinkPage> {
     return withRetry(() => pgGetLinks(this._pool, ctx, objectId, linkType, direction, options, this._dataSchema));
+  }
+
+  async getLinksAtTime(
+    ctx: RequestContext,
+    objectId: string,
+    linkType: string,
+    direction: 'inbound' | 'outbound',
+    timestamp: DateTime,
+    options?: QueryOptions,
+  ): Promise<LinkPage> {
+    return withRetry(() => pgGetLinksAtTime(this._pool, ctx, objectId, linkType, direction, timestamp, options, this._dataSchema));
   }
 
   async traverse(

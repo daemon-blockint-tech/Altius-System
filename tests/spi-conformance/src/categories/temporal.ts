@@ -534,5 +534,115 @@ export function registerTemporalTests(name: string, factory: ProviderFactory): v
         ).rejects.toThrow(/asOfVersion/);
       });
     });
+
+    // =========================================================================
+    // 4. Link membership at a point in time
+    //
+    // Objects had three temporal reads and links had none, so "which care teams
+    // was this patient linked to last Tuesday" could only be answered with the
+    // CURRENT graph — silently backdating every present link.
+    // =========================================================================
+
+    describe('getLinksAtTime', () => {
+      it('excludes a link created after the instant', async () => {
+        const patient = await provider.createObject(ctx, 'Patient', { name: 'Alice', age: 30 });
+        const team = await provider.createObject(ctx, 'CareTeam', { name: 'Cardiology' });
+        await tick();
+        const before = new Date().toISOString();
+        await tick();
+        await provider.createLink(ctx, 'AssignedTo', patient._id, team._id, { role: 'lead' });
+
+        const atBefore = await provider.getLinksAtTime(ctx, patient._id, 'AssignedTo', 'outbound', before);
+        expect(atBefore.items).toHaveLength(0);
+        expect(atBefore.totalCount).toBe(0);
+
+        const now = await provider.getLinksAtTime(ctx, patient._id, 'AssignedTo', 'outbound', new Date().toISOString());
+        expect(now.items).toHaveLength(1);
+      });
+
+      it('includes a link that existed at the instant and was deleted afterwards', async () => {
+        const patient = await provider.createObject(ctx, 'Patient', { name: 'Alice', age: 30 });
+        const team = await provider.createObject(ctx, 'CareTeam', { name: 'Cardiology' });
+        const link = await provider.createLink(ctx, 'AssignedTo', patient._id, team._id, { role: 'lead' });
+        await tick();
+        const whileLinked = new Date().toISOString();
+        await tick();
+        await provider.deleteLink(ctx, 'AssignedTo', link._id);
+
+        const historical = await provider.getLinksAtTime(ctx, patient._id, 'AssignedTo', 'outbound', whileLinked);
+        expect(historical.items.map(l => l._id)).toEqual([link._id]);
+
+        // The live read must still exclude it — the point of the new method is
+        // that the two answers differ.
+        const live = await provider.getLinks(ctx, patient._id, 'AssignedTo', 'outbound');
+        expect(live.items).toHaveLength(0);
+      });
+
+      it('excludes a link deleted before the instant, even with includeDeleted', async () => {
+        const patient = await provider.createObject(ctx, 'Patient', { name: 'Alice', age: 30 });
+        const team = await provider.createObject(ctx, 'CareTeam', { name: 'Cardiology' });
+        const link = await provider.createLink(ctx, 'AssignedTo', patient._id, team._id, {});
+        await tick();
+        await provider.deleteLink(ctx, 'AssignedTo', link._id);
+        await tick();
+        const after = new Date().toISOString();
+
+        const asOf = await provider.getLinksAtTime(
+          ctx, patient._id, 'AssignedTo', 'outbound', after, { includeDeleted: true },
+        );
+        expect(asOf.items).toHaveLength(0);
+      });
+
+      it('resolves the inbound direction', async () => {
+        const patient = await provider.createObject(ctx, 'Patient', { name: 'Alice', age: 30 });
+        const team = await provider.createObject(ctx, 'CareTeam', { name: 'Cardiology' });
+        await provider.createLink(ctx, 'AssignedTo', patient._id, team._id, {});
+        const at = new Date().toISOString();
+
+        const inbound = await provider.getLinksAtTime(ctx, team._id, 'AssignedTo', 'inbound', at);
+        expect(inbound.items.map(l => l._fromId)).toEqual([patient._id]);
+
+        const outboundFromTeam = await provider.getLinksAtTime(ctx, team._id, 'AssignedTo', 'outbound', at);
+        expect(outboundFromTeam.items).toHaveLength(0);
+      });
+
+      it('pages the historical result set', async () => {
+        const patient = await provider.createObject(ctx, 'Patient', { name: 'Alice', age: 30 });
+        for (let i = 0; i < 3; i++) {
+          const team = await provider.createObject(ctx, 'CareTeam', { name: `Team ${i}` });
+          await provider.createLink(ctx, 'AssignedTo', patient._id, team._id, {});
+        }
+        const at = new Date().toISOString();
+
+        const firstPage = await provider.getLinksAtTime(ctx, patient._id, 'AssignedTo', 'outbound', at, { limit: 2 });
+        expect(firstPage.items).toHaveLength(2);
+        expect(firstPage.totalCount).toBe(3);
+        expect(firstPage.hasNextPage).toBe(true);
+
+        const secondPage = await provider.getLinksAtTime(
+          ctx, patient._id, 'AssignedTo', 'outbound', at, { limit: 2, offset: 2 },
+        );
+        expect(secondPage.items).toHaveLength(1);
+        expect(secondPage.hasNextPage).toBe(false);
+      });
+
+      it('rejects a malformed timestamp rather than answering with the live graph', async () => {
+        const patient = await provider.createObject(ctx, 'Patient', { name: 'Alice', age: 30 });
+        await expect(
+          provider.getLinksAtTime(ctx, patient._id, 'AssignedTo', 'outbound', 'last tuesday' as never),
+        ).rejects.toThrow(/timestamp/);
+      });
+
+      it('does not cross the tenant boundary', async () => {
+        const patient = await provider.createObject(ctx, 'Patient', { name: 'Alice', age: 30 });
+        const team = await provider.createObject(ctx, 'CareTeam', { name: 'Cardiology' });
+        await provider.createLink(ctx, 'AssignedTo', patient._id, team._id, {});
+        const at = new Date().toISOString();
+
+        const otherTenant: RequestContext = { ...ctx, tenantId: 'tenant-other' };
+        const leaked = await provider.getLinksAtTime(otherTenant, patient._id, 'AssignedTo', 'outbound', at);
+        expect(leaked.items).toHaveLength(0);
+      });
+    });
   });
 }

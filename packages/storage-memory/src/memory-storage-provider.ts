@@ -1656,6 +1656,80 @@ export class MemoryStorageProvider implements StorageProvider {
     };
   }
 
+  /**
+   * Links attached to `objectId` as they existed at `timestamp`.
+   *
+   * Membership comes from the link's own lifecycle — created at or before the
+   * instant, and not deleted by it. `includeDeleted` is deliberately IGNORED:
+   * the question is what the graph looked like then, and a link deleted before
+   * that instant did not exist then whatever the flag says.
+   *
+   * Properties are the link's CURRENT values; no per-link version history is
+   * stored, so property-level time travel is not available (documented on the
+   * SPI method).
+   */
+  async getLinksAtTime(
+    ctx: RequestContext,
+    objectId: string,
+    linkType: string,
+    direction: 'inbound' | 'outbound',
+    timestamp: DateTime,
+    options?: QueryOptions,
+  ): Promise<LinkPage> {
+    const at = Date.parse(timestamp);
+    if (isNaN(at)) {
+      throw new Error(`getLinksAtTime: timestamp "${timestamp}" is not a valid ISO 8601 instant`);
+    }
+
+    const maps = this._getEffectiveMaps(ctx);
+    let items = Array.from(maps.links.values()).filter((link) => {
+      if (link._tenantId !== ctx.tenantId) return false;
+      if (link._type !== linkType) return false;
+      if (direction === 'outbound') {
+        if (link._fromId !== objectId) return false;
+      } else if (link._toId !== objectId) {
+        return false;
+      }
+      if (Date.parse(link._createdAt) > at) return false;
+      if (link._deletedAt && Date.parse(link._deletedAt) <= at) return false;
+      return true;
+    });
+
+    const totalCount = items.length;
+
+    let offset = options?.offset ?? 0;
+    if (options?.after) {
+      offset = decodePageCursor(options.after);
+    }
+    if (options?.limit !== undefined) {
+      if (!Number.isInteger(options.limit) || options.limit < 0) {
+        throw new Error(
+          `Requested link page limit ${options.limit} is not a non-negative integer.`,
+        );
+      }
+      if (options.limit > MAX_LINK_QUERY_LIMIT) {
+        throw new Error(
+          `Requested link page limit ${options.limit} exceeds the maximum of ${MAX_LINK_QUERY_LIMIT}. ` +
+          `Request ${MAX_LINK_QUERY_LIMIT} or fewer and page with offset.`,
+        );
+      }
+    }
+    const limit = options?.limit ?? DEFAULT_LINK_QUERY_LIMIT;
+    // Stable order for paging, matching getLinks.
+    items.sort((a, b) => (a._createdAt < b._createdAt ? -1 : a._createdAt > b._createdAt ? 1 : 0));
+    items = items.slice(offset, offset + limit);
+
+    const hasNextPage = offset + limit < totalCount;
+    const cursor = hasNextPage ? encodePageCursor(offset + limit) : undefined;
+
+    return {
+      items: items.map((i) => clone(i)),
+      totalCount,
+      hasNextPage,
+      cursor,
+    };
+  }
+
   async traverse(
     ctx: RequestContext,
     startId: string,
