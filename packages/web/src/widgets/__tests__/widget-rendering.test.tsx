@@ -28,9 +28,9 @@ function makeCtx(overrides?: Partial<WidgetContext>): WidgetContext {
 // ── WidgetRegistry ────────────────────────────────────────────
 
 describe('WidgetRegistry', () => {
-  it('registers 64 widget types', () => {
+  it('registers 69 widget types', () => {
     const types = listRegisteredWidgets();
-    expect(types.length).toBe(64);
+    expect(types.length).toBe(69);
   });
 
   it('marks implemented widgets as implemented', () => {
@@ -39,10 +39,10 @@ describe('WidgetRegistry', () => {
     expect(isWidgetImplemented('action_form')).toBe(true);
   });
 
-  it('marks unimplemented widgets as not implemented', () => {
-    expect(isWidgetImplemented('chart_bar')).toBe(false);
-    expect(isWidgetImplemented('heatmap')).toBe(false);
-    expect(isWidgetImplemented('aip_chat')).toBe(false);
+  it('marks formerly-stubbed widgets as implemented after Phase 20', () => {
+    expect(isWidgetImplemented('chart_bar')).toBe(true);
+    expect(isWidgetImplemented('heatmap')).toBe(true);
+    expect(isWidgetImplemented('aip_chat')).toBe(true);
   });
 
   it('returns undefined for unknown widget types', () => {
@@ -54,18 +54,6 @@ describe('WidgetRegistry', () => {
 // ── WidgetRenderer ────────────────────────────────────────────
 
 describe('WidgetRenderer', () => {
-  it('renders a placeholder for unimplemented widgets', () => {
-    const instance: WorkshopWidgetInstance = {
-      id: 'w1',
-      widgetType: 'heatmap',
-      config: {},
-      visible: true,
-    };
-    render(<WidgetRenderer instance={instance} ctx={makeCtx()} />);
-    expect(screen.getByText('heatmap')).toBeTruthy();
-    expect(screen.getByText('Not yet implemented')).toBeTruthy();
-  });
-
   it('renders nothing for invisible widgets', () => {
     const instance: WorkshopWidgetInstance = {
       id: 'w1',

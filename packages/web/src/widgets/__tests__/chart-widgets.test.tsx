@@ -34,8 +34,9 @@ function makeWidget(type: string, config: Record<string, unknown>, boundVariable
 // ── Registry counts ───────────────────────────────────────────
 
 describe('Phase 2 widget registry', () => {
-  it('registers 64 widget types total', () => {
-    expect(listRegisteredWidgets().length).toBe(64);
+  // Phase 20 added 6 more widgets (5 extra + 28 stubs replaced) bringing total to 69.
+  it('registers 69 widget types total', () => {
+    expect(listRegisteredWidgets().length).toBe(69);
   });
 
   it('marks chart widgets as implemented', () => {
@@ -53,10 +54,13 @@ describe('Phase 2 widget registry', () => {
     expect(isWidgetImplemented('map')).toBe(true);
   });
 
-  it('still has stubs for unimplemented chart types', () => {
-    expect(isWidgetImplemented('chart_bar')).toBe(false);
-    expect(isWidgetImplemented('chart_vega')).toBe(false);
-    expect(isWidgetImplemented('heatmap')).toBe(false);
+  it('marks Phase 20 chart types as implemented (no longer stubs)', () => {
+    expect(isWidgetImplemented('chart_bar')).toBe(true);
+    expect(isWidgetImplemented('chart_vega')).toBe(true);
+    expect(isWidgetImplemented('heatmap')).toBe(true);
+    expect(isWidgetImplemented('scatter_plot')).toBe(true);
+    expect(isWidgetImplemented('waterfall')).toBe(true);
+    expect(isWidgetImplemented('observability_chart')).toBe(true);
   });
 });
 

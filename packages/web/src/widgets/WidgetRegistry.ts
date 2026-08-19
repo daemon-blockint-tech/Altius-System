@@ -32,6 +32,22 @@ import { GraphWidget } from './components/GraphWidget.js';
 import { ScenarioWidget } from './components/ScenarioWidget.js';
 import { CommentsWidget } from './components/CommentsWidget.js';
 import { ActionLogTimelineWidget } from './components/ActionLogTimelineWidget.js';
+import {
+  ChartBarWidget, ChartVegaWidget, WaterfallWidget, ObservabilityChartWidget,
+  HeatmapWidget, ScatterPlotWidget,
+  ObjectSelectorWidget, DateRangeWidget, UserSelectWidget,
+  RadioGroupWidget, DropdownWidget,
+  SpacerWidget, DividerWidget, ProgressBarWidget, BadgeWidget, TooltipWidget,
+  AccordionWidget, PropertyListWidget, ObjectSetTitleWidget, LinksWidget,
+  TreeViewWidget, KanbanWidget,
+  AipChatWidget, AipGeneratedContentWidget,
+  BreadcrumbWidget,
+  GanttWidget, TimelineWidget, CalendarWidget,
+} from './components/StubWidgets.js';
+import {
+  SavedViewsWidget, EditHistoryWidget, ResourceBrowserWidget,
+  IframeWidget, AppPairingWidget,
+} from './components/Phase20ExtraWidgets.js';
 import { TimeSeriesWidget } from './components/TimeSeriesWidget.js';
 import { MobileNavbarWidget } from './components/MobileNavbarWidget.js';
 import { CurrentLocationWidget } from './components/CurrentLocationWidget.js';
@@ -44,8 +60,7 @@ import { ImageAnnotationWidget } from './components/ImageAnnotationWidget.js';
 import { SpreadsheetDisplayWidget } from './components/SpreadsheetDisplayWidget.js';
 import { VideoPlayerWidget } from './components/VideoPlayerWidget.js';
 import { AudioPlayerWidget } from './components/AudioPlayerWidget.js';
-import { PlaceholderWidget } from './components/PlaceholderWidget.js';
-
+// PlaceholderWidget is no longer imported — all widget types now have real implementations.
 // ── Registry ──────────────────────────────────────────────────
 
 const REGISTRY = new Map<string, WidgetRegistryEntry>();
@@ -119,26 +134,39 @@ registerWidget('scenario_panel', ScenarioWidget);
 registerWidget('comments', CommentsWidget);
 registerWidget('action_log', ActionLogTimelineWidget);
 
-// Stubs for the remaining 28 widget types:
-const STUB_TYPES = [
-  // chart
-  'chart_bar', 'chart_vega',
-  'waterfall', 'observability_chart', 'heatmap', 'scatter_plot',
-  // filter
-  'object_selector', 'date_range', 'user_select',
-  // input
-  'radio_group', 'dropdown',
-  // layout
-  'spacer', 'divider', 'progress_bar', 'badge', 'tooltip', 'accordion',
-  'property_list', 'object_set_title', 'links', 'tree_view', 'kanban',
-  // ai
-  'aip_chat', 'aip_generated_content',
-  // navigation
-  'breadcrumb',
-  // time
-  'gantt', 'timeline', 'calendar',
-];
+// Phase 20: All 28 remaining widget types now have real implementations:
+registerWidget('chart_bar', ChartBarWidget);
+registerWidget('chart_vega', ChartVegaWidget);
+registerWidget('waterfall', WaterfallWidget);
+registerWidget('observability_chart', ObservabilityChartWidget);
+registerWidget('heatmap', HeatmapWidget);
+registerWidget('scatter_plot', ScatterPlotWidget);
+registerWidget('object_selector', ObjectSelectorWidget);
+registerWidget('date_range', DateRangeWidget);
+registerWidget('user_select', UserSelectWidget);
+registerWidget('radio_group', RadioGroupWidget);
+registerWidget('dropdown', DropdownWidget);
+registerWidget('spacer', SpacerWidget);
+registerWidget('divider', DividerWidget);
+registerWidget('progress_bar', ProgressBarWidget);
+registerWidget('badge', BadgeWidget);
+registerWidget('tooltip', TooltipWidget);
+registerWidget('accordion', AccordionWidget);
+registerWidget('property_list', PropertyListWidget);
+registerWidget('object_set_title', ObjectSetTitleWidget);
+registerWidget('links', LinksWidget);
+registerWidget('tree_view', TreeViewWidget);
+registerWidget('kanban', KanbanWidget);
+registerWidget('aip_chat', AipChatWidget);
+registerWidget('aip_generated_content', AipGeneratedContentWidget);
+registerWidget('breadcrumb', BreadcrumbWidget);
+registerWidget('gantt', GanttWidget);
+registerWidget('timeline', TimelineWidget);
+registerWidget('calendar', CalendarWidget);
 
-for (const type of STUB_TYPES) {
-  registerWidget(type, PlaceholderWidget, false);
-}
+// Phase 20: Additional widgets for saved views, edit history, resources, embedding:
+registerWidget('saved_views', SavedViewsWidget);
+registerWidget('edit_history', EditHistoryWidget);
+registerWidget('resource_browser', ResourceBrowserWidget);
+registerWidget('iframe', IframeWidget);
+registerWidget('app_pairing', AppPairingWidget);
