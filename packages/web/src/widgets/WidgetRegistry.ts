@@ -33,6 +33,13 @@ import { MobileNavbarWidget } from './components/MobileNavbarWidget.js';
 import { CurrentLocationWidget } from './components/CurrentLocationWidget.js';
 import { DigitalTwinCanvasWidget } from './components/DigitalTwinCanvasWidget.js';
 import { TimeSeriesAnalysisWidget } from './components/TimeSeriesAnalysisWidget.js';
+import { MediaPreviewWidget } from './components/MediaPreviewWidget.js';
+import { MediaUploaderWidget } from './components/MediaUploaderWidget.js';
+import { PdfViewerWidget } from './components/PdfViewerWidget.js';
+import { ImageAnnotationWidget } from './components/ImageAnnotationWidget.js';
+import { SpreadsheetDisplayWidget } from './components/SpreadsheetDisplayWidget.js';
+import { VideoPlayerWidget } from './components/VideoPlayerWidget.js';
+import { AudioPlayerWidget } from './components/AudioPlayerWidget.js';
 import { PlaceholderWidget } from './components/PlaceholderWidget.js';
 
 // ── Registry ──────────────────────────────────────────────────
@@ -91,7 +98,16 @@ registerWidget('current_location', CurrentLocationWidget);
 registerWidget('digital_twin', DigitalTwinCanvasWidget);
 registerWidget('time_series_analysis', TimeSeriesAnalysisWidget);
 
-// Stubs for the remaining 35 widget types:
+// Phase 4: Media widgets (7 real implementations):
+registerWidget('media_preview', MediaPreviewWidget);
+registerWidget('media_uploader', MediaUploaderWidget);
+registerWidget('pdf_viewer', PdfViewerWidget);
+registerWidget('image_annotation', ImageAnnotationWidget);
+registerWidget('spreadsheet_display', SpreadsheetDisplayWidget);
+registerWidget('video_player', VideoPlayerWidget);
+registerWidget('audio_player', AudioPlayerWidget);
+
+// Stubs for the remaining 28 widget types:
 const STUB_TYPES = [
   // chart
   'chart_bar', 'chart_vega',
@@ -103,10 +119,6 @@ const STUB_TYPES = [
   // layout
   'spacer', 'divider', 'progress_bar', 'badge', 'tooltip', 'accordion',
   'property_list', 'object_set_title', 'links', 'tree_view', 'kanban',
-  // action
-  // media
-  'media_preview', 'media_uploader', 'pdf_viewer', 'image_annotation',
-  'spreadsheet_display', 'video_player', 'audio_player',
   // collaboration
   'comments', 'action_log',
   // ai

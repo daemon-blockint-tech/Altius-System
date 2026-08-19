@@ -49,6 +49,17 @@ export interface BlobContent {
   data: Buffer;
 }
 
+/** Blob metadata without the content bytes. */
+export interface BlobMetadata {
+  blobId: string;
+  filename: string;
+  contentType: string;
+  size: number;
+  sha256?: string;
+  uploadedBy?: string;
+  uploadedAt: string;
+}
+
 /**
  * Content-addressed blob store.
  *
@@ -69,6 +80,9 @@ export interface BlobStore {
 
   /** Retrieve blob content by ID. Returns null if not found. */
   get(tenantId: string, blobId: string): Promise<BlobContent | null>;
+
+  /** Retrieve blob metadata (no content bytes). Returns null if not found. */
+  getMetadata(tenantId: string, blobId: string): Promise<BlobMetadata | null>;
 
   /** Delete a blob. No-op if not found. */
   delete(tenantId: string, blobId: string): Promise<void>;

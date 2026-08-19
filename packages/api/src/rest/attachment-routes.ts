@@ -1,9 +1,11 @@
 /**
- * REST routes for attachment upload, download, and deletion.
+ * REST routes for attachment upload, download, metadata, and deletion.
  *
- *   POST   /api/v1/attachments          — upload a file, returns AttachmentRef
- *   GET    /api/v1/attachments/:blobId   — download file content
- *   DELETE /api/v1/attachments/:blobId   — delete a blob
+ *   POST   /api/v1/attachments              — upload a file, returns AttachmentRef
+ *   GET    /api/v1/attachments/:blobId       — download file content (Content-Disposition: attachment)
+ *   GET    /api/v1/attachments/:blobId?inline=1 — download with Content-Disposition: inline (for embedding)
+ *   GET    /api/v1/attachments/:blobId/metadata — get AttachmentRef metadata without the bytes
+ *   DELETE /api/v1/attachments/:blobId       — delete a blob
  *
  * Upload uses raw body (Content-Type: the file's MIME type).
  * The response is an AttachmentRef JSON object that the client stores
@@ -71,6 +73,25 @@ export function registerAttachmentRoutes(
     }
   });
 
+  // ── GET /api/v1/attachments/:blobId/metadata — metadata only ──
+  app.get('/api/v1/attachments/:blobId/metadata', async (req, res) => {
+    try {
+      const user = await extractUser(req, authenticator, isDev);
+      const blobId = req.params['blobId']!;
+      const meta = await deps.blobStore!.getMetadata(user.tenantId, blobId);
+      if (!meta) {
+        res.status(404).json({ error: 'NOT_FOUND', message: 'Attachment not found' });
+        return;
+      }
+      res.json(meta);
+    } catch (err) {
+      res.status(500).json({
+        error: 'INTERNAL',
+        message: err instanceof Error ? err.message : 'Metadata fetch failed',
+      });
+    }
+  });
+
   // ── GET /api/v1/attachments/:blobId — download ──
   app.get('/api/v1/attachments/:blobId', async (req, res) => {
     try {
@@ -83,9 +104,23 @@ export function registerAttachmentRoutes(
         return;
       }
 
+      // Fetch metadata for filename
+      const meta = await deps.blobStore!.getMetadata(user.tenantId, blobId);
+      const filename = meta?.filename ?? blobId;
+
+      const inline = req.query['inline'] === '1' || req.query['inline'] === 'true';
       res.setHeader('Content-Type', blob.contentType);
       res.setHeader('Content-Length', String(blob.size));
-      res.setHeader('Content-Disposition', `attachment; filename="${blobId}"`);
+      res.setHeader(
+        'Content-Disposition',
+        `${inline ? 'inline' : 'attachment'}; filename="${filename}"`,
+      );
+
+      // Cache headers for static media content
+      if (inline) {
+        res.setHeader('Cache-Control', 'private, max-age=3600');
+      }
+
       res.send(blob.data);
     } catch (err) {
       res.status(500).json({

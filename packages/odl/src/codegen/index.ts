@@ -1195,6 +1195,21 @@ export function generateGraphQLSchema(schema: ParsedSchema, options?: GraphQLSch
 
   // 10. Query type
   const queryFields: string[] = [];
+
+  // Attachment metadata type — always present so the attachment query
+  // resolves even when no ObjectType uses the Attachment scalar.
+  sections.push([
+    'type AttachmentRef {',
+    '  blobId: ID!',
+    '  filename: String!',
+    '  contentType: String!',
+    '  size: Int!',
+    '  sha256: String',
+    '  thumbnailBlobId: String',
+    '  uploadedAt: DateTime!',
+    '  uploadedBy: String',
+    '}',
+  ].join('\n'));
   for (const obj of schema.objectTypes) {
     const lower = lowerFirst(obj.name);
     queryFields.push(`  ${lower}(id: ID!): ${obj.name}`);
@@ -1236,6 +1251,9 @@ export function generateGraphQLSchema(schema: ParsedSchema, options?: GraphQLSch
   // Always in the SDL; the resolver errors when deps.auditStore is absent.
   queryFields.push('  auditRecords(filter: AuditFilter, limit: Int, offset: Int): AuditPage!');
   queryFields.push('  availableTools(filter: ToolFilter): [ToolDescriptor!]!');
+  // Attachment metadata query — returns AttachmentRef without the blob bytes.
+  // The blob content is fetched via REST GET /api/v1/attachments/:blobId.
+  queryFields.push('  attachment(blobId: ID!): AttachmentRef');
   // Per-object action applicability: which actions target this object?
   // Returns action names that have a @param of this objectType and whose
   // preconditions the caller could satisfy — without executing anything.

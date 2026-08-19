@@ -68,7 +68,7 @@ export type { Transaction } from './transaction.js';
 export type { StorageProvider } from './storage-provider.js';
 
 // Blob Store (media/attachment properties)
-export type { BlobStore, AttachmentRef, BlobPutResult, BlobContent } from './blob-store.js';
+export type { BlobStore, AttachmentRef, BlobPutResult, BlobContent, BlobMetadata } from './blob-store.js';
 
 // Time Series Store (time-series properties)
 export type {

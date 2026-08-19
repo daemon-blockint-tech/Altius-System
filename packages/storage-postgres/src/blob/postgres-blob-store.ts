@@ -5,7 +5,7 @@
 import type { Pool } from 'pg';
 import { randomUUID } from 'node:crypto';
 import { createHash } from 'node:crypto';
-import type { BlobStore, BlobPutResult, BlobContent } from '@altius/spi';
+import type { BlobStore, BlobPutResult, BlobContent, BlobMetadata } from '@altius/spi';
 
 export class PostgresBlobStore implements BlobStore {
   private readonly pool: Pool;
@@ -43,6 +43,24 @@ export class PostgresBlobStore implements BlobStore {
       contentType: r['content_type'],
       size: Number(r['size']),
       data: Buffer.from(r['data']),
+    };
+  }
+
+  async getMetadata(tenantId: string, blobId: string): Promise<BlobMetadata | null> {
+    const result = await this.pool.query(
+      `SELECT "filename", "content_type", "size", "sha256", "uploaded_by", "created_at" FROM "blob"."blobs" WHERE "id" = $1 AND "tenant_id" = $2`,
+      [blobId, tenantId],
+    );
+    if (result.rows.length === 0) return null;
+    const r = result.rows[0]!;
+    return {
+      blobId,
+      filename: r['filename'],
+      contentType: r['content_type'],
+      size: Number(r['size']),
+      sha256: r['sha256'] ?? undefined,
+      uploadedBy: r['uploaded_by'] ?? undefined,
+      uploadedAt: r['created_at'],
     };
   }
 

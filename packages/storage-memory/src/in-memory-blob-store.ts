@@ -8,7 +8,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { createHash } from 'node:crypto';
-import type { BlobStore, BlobPutResult, BlobContent } from '@altius/spi';
+import type { BlobStore, BlobPutResult, BlobContent, BlobMetadata } from '@altius/spi';
 
 interface StoredBlob {
   blobId: string;
@@ -18,6 +18,7 @@ interface StoredBlob {
   sha256: string;
   filename: string;
   uploadedBy?: string;
+  uploadedAt: string;
 }
 
 export class InMemoryBlobStore implements BlobStore {
@@ -50,6 +51,7 @@ export class InMemoryBlobStore implements BlobStore {
       sha256,
       filename: ctx.filename,
       uploadedBy: ctx.uploadedBy,
+      uploadedAt: new Date().toISOString(),
     });
     tenantHashes.set(sha256, blobId);
 
@@ -66,6 +68,22 @@ export class InMemoryBlobStore implements BlobStore {
       contentType: blob.contentType,
       size: blob.size,
       data: blob.data,
+    };
+  }
+
+  async getMetadata(tenantId: string, blobId: string): Promise<BlobMetadata | null> {
+    const tenantBlobs = this.blobs.get(tenantId);
+    if (!tenantBlobs) return null;
+    const blob = tenantBlobs.get(blobId);
+    if (!blob) return null;
+    return {
+      blobId: blob.blobId,
+      filename: blob.filename,
+      contentType: blob.contentType,
+      size: blob.size,
+      sha256: blob.sha256,
+      uploadedBy: blob.uploadedBy,
+      uploadedAt: blob.uploadedAt,
     };
   }
 

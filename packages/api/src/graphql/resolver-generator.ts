@@ -704,6 +704,19 @@ export function generateResolvers(
   // Audit trail read resolver (Section 7.2.1) — mirrors REST /api/v1/audit.
   generateAuditResolvers(resolvers, deps);
 
+  // Attachment metadata resolver — returns AttachmentRef without blob bytes.
+  if (deps.blobStore) {
+    resolvers['Query']!['attachment'] = async (
+      _parent: unknown,
+      args: { blobId: string },
+      ctx: ResolverContext,
+    ) => {
+      const meta = await deps.blobStore!.getMetadata(ctx.tenantId, args.blobId);
+      if (!meta) return null;
+      return meta;
+    };
+  }
+
   return { resolvers, pubsub };
 }
 
