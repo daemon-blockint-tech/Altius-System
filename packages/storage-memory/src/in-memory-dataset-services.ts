@@ -381,15 +381,28 @@ export class InMemoryDatasetMetadataService implements DatasetMetadataService {
   async getSchema(ctx: RequestContext, name: string, options?: SchemaRetrievalOptions): Promise<DatasetSchema | null> {
     const d = await this.datasets.get(ctx, name, options?.branch);
     if (!d) return null;
-    // For historical schema version, look up via transactions
-    if (options?.version !== undefined && options.version !== d.schema.version) {
+    // For a historical schema version, reconstruct it from the transaction log.
+    // schema_change entries carry both the schema they installed
+    // (schemaSnapshot) and the one they replaced (previousSchemaSnapshot), so
+    // every version that ever existed — including the one before the first
+    // change — is recoverable without a separate schema history table.
+    let wanted = options?.version;
+    if (wanted === undefined && options?.asOfTransactionId) {
       const txs = await this.datasets.listTransactions(ctx, name, options.branch);
-      // Find the schema_change transaction with the requested version
-      const schemaTx = txs.find(t => t.type === 'schema_change' && t.schemaVersion === options.version);
-      if (schemaTx) {
-        // We don't store historical schemas in the in-memory impl; return current with version override
-        return { ...d.schema, version: options.version };
-      }
+      const at = txs.find(t => t.id === options.asOfTransactionId);
+      if (!at) return null;
+      wanted = at.schemaVersion;
+    }
+    if (wanted !== undefined && wanted !== d.schema.version) {
+      const txs = await this.datasets.listTransactions(ctx, name, options?.branch);
+      const schemaTxs = txs.filter(t => t.type === 'schema_change');
+      const installed = schemaTxs.find(t => t.schemaSnapshot?.version === wanted);
+      if (installed?.schemaSnapshot) return installed.schemaSnapshot;
+      const replaced = schemaTxs.find(t => t.previousSchemaSnapshot?.version === wanted);
+      if (replaced?.previousSchemaSnapshot) return replaced.previousSchemaSnapshot;
+      // Pre-snapshot transaction (written before snapshots were recorded):
+      // the version existed but its columns are unrecoverable, so say so
+      // rather than passing the current schema off as historical.
       return null;
     }
     return d.schema;

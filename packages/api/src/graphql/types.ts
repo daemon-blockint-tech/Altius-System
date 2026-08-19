@@ -10,7 +10,7 @@ import type {
   MarkingPolicy,
 } from '@altius/security';
 import type { ParsedSchema } from '@altius/odl';
-import type { RequestContext, StorageProvider, LLMClient, BlobStore, TimeSeriesStore, BranchStore, CommentStore, NotificationStore, EmbeddingStore, AlertingService, LLMGateway, DataFreshnessService, JustificationStore, AccessExplanationService, ScopedSessionStore, OntologySqlService, DatasetService, OntologyUsageMetricsService, GeospatialMapService } from '@altius/spi';
+import type { RequestContext, StorageProvider, LLMClient, BlobStore, TimeSeriesStore, BranchStore, CommentStore, NotificationStore, EmbeddingStore, AlertingService, LLMGateway, DataFreshnessService, JustificationStore, AccessExplanationService, ScopedSessionStore, OntologySqlService, DatasetService, DatasetMetadataService, OntologyUsageMetricsService, GeospatialMapService, ScenarioService, ModelInferenceService, ModelChainService, WorkshopPlatformService, EmbeddingService, PlatformResourceService, SavedViewStore, UserDirectoryService, KioskService, LayoutDeviceCaptureService, OntologyManagerService, WorkshopUxService, ValueFormattingService, DesignSystemService, OntologyChangeHistoryService, CommandExchangeService, ObjectSetFilterStore, GraphService } from '@altius/spi';
 import { DataPurpose } from '@altius/spi';
 
 /**
@@ -82,6 +82,12 @@ export interface ApiDependencies {
    * everyone. See rest/audit-routes.ts.
    */
   auditReaderRoles?: readonly string[];
+  /**
+   * Roles allowed to explain another principal's access via
+   * POST /api/v1/security/explain with `subjectUserId`. Defaults to ['admin'].
+   * An explicitly empty array disables simulation entirely.
+   */
+  accessExplanationSimulationRoles?: readonly string[];
   /**
    * Allowed consent-purpose vocabulary for this deployment (env CONSENT_PURPOSES).
    * `DataPurpose` is an open string type; this is the set accepted when recording
@@ -253,6 +259,62 @@ export interface ApiDependencies {
    */
   geospatialMapService?: GeospatialMapService;
   /**
+   * Model inference service — executes ML model inference. Required by
+   * the scenario service for running what-if scenarios against models.
+   */
+  modelInferenceService?: ModelInferenceService;
+  /**
+   * Model chain service — executes chained model orchestration. Required
+   * by the scenario service for running what-if scenarios against chains.
+   */
+  modelChainService?: ModelChainService;
+  /**
+   * Scenario simulation service — manages what-if scenarios, execution,
+   * comparison, and persistence. When present, REST endpoints for
+   * scenario management are registered:
+   *   POST   /api/v1/scenarios              (create scenario)
+   *   GET    /api/v1/scenarios              (list scenarios)
+   *   GET    /api/v1/scenarios/:id          (get scenario)
+   *   PATCH  /api/v1/scenarios/:id          (update scenario)
+   *   DELETE /api/v1/scenarios/:id          (delete scenario)
+   *   POST   /api/v1/scenarios/:id/run      (run scenario)
+   *   POST   /api/v1/scenarios/:id/duplicate (duplicate scenario)
+   *   GET    /api/v1/scenarios/:id/results  (get scenario results)
+   *   POST   /api/v1/scenarios/compare      (compare two scenarios)
+   *   POST   /api/v1/scenarios/:id/stage    (stage actions for apply)
+   *   POST   /api/v1/scenarios/:id/apply    (apply staged actions)
+   */
+  scenarioService?: ScenarioService;
+  /**
+   * Workshop platform service — manages app definitions, pages, widgets,
+   * variables, modules, templates, and mobile config. When present, REST
+   * endpoints for workshop app management are registered:
+   *   POST   /api/v1/workshop/apps              (create app)
+   *   GET    /api/v1/workshop/apps              (list apps)
+   *   GET    /api/v1/workshop/apps/:id          (get app)
+   *   PATCH  /api/v1/workshop/apps/:id          (update app)
+   *   DELETE /api/v1/workshop/apps/:id          (delete app)
+   *   POST   /api/v1/workshop/apps/:id/share    (share app)
+   *   POST   /api/v1/workshop/apps/:id/duplicate (duplicate app)
+   *   POST   /api/v1/workshop/apps/:id/pages    (add page)
+   *   PATCH  /api/v1/workshop/apps/:id/pages/:pid (update page)
+   *   DELETE /api/v1/workshop/apps/:id/pages/:pid (remove page)
+   *   POST   /api/v1/workshop/apps/:id/widgets  (add widget)
+   *   PATCH  /api/v1/workshop/apps/:id/widgets/:wid (update widget)
+   *   DELETE /api/v1/workshop/apps/:id/widgets/:wid (remove widget)
+   *   GET    /api/v1/workshop/apps/:id/variables (list variables)
+   *   POST   /api/v1/workshop/apps/:id/variables (create variable)
+   *   GET    /api/v1/workshop/apps/:id/lineage  (get variable lineage)
+   *   POST   /api/v1/workshop/variables/:vid/evaluate (evaluate variable)
+   *   GET    /api/v1/workshop/modules            (list modules)
+   *   POST   /api/v1/workshop/modules            (create module)
+   *   GET    /api/v1/workshop/templates           (list templates)
+   *   POST   /api/v1/workshop/templates/:tid/instantiate (create from template)
+   *   POST   /api/v1/workshop/state/encode        (encode state to URL)
+   *   POST   /api/v1/workshop/state/decode        (decode state from URL)
+   */
+  workshopPlatformService?: WorkshopPlatformService;
+  /**
    * Data freshness service — per-type and per-datasource last-synced
    * timestamps. When present, REST endpoints for freshness queries are
    * registered:
@@ -321,6 +383,13 @@ export interface ApiDependencies {
    */
   datasetService?: DatasetService;
   /**
+   * Dataset metadata/schema retrieval service. When present two read routes
+   * are registered alongside the dataset routes above:
+   *   GET    /api/v1/datasets/:name/metadata   (metadata incl. rowCount)
+   *   GET    /api/v1/datasets/:name/schema     (schema by branch/version/transaction)
+   */
+  datasetMetadataService?: DatasetMetadataService;
+  /**
    * Ontology usage metrics service. When present, REST endpoints for
    * metrics aggregation, event querying, and monitoring rules are
    * registered. The record() method is NOT exposed as a REST endpoint —
@@ -336,6 +405,92 @@ export interface ApiDependencies {
    *   POST   /api/v1/usage/rules/evaluate      (evaluate monitoring rules)
    */
   usageMetricsService?: OntologyUsageMetricsService;
+  /**
+   * App embedding & cross-app service — app registry, embedding manifests,
+   * cross-app commands, and app pairing. When present, REST endpoints
+   * under /api/v1/embedding/* are registered:
+   *   POST   /api/v1/embedding/apps             (register app)
+   *   GET    /api/v1/embedding/apps             (list apps)
+   *   GET    /api/v1/embedding/apps/:id         (get app)
+   *   GET    /api/v1/embedding/apps/by-name/:name (get app by name)
+   *   PATCH  /api/v1/embedding/apps/:id         (update app)
+   *   DELETE /api/v1/embedding/apps/:id         (delete app)
+   *   GET    /api/v1/embedding/apps/:id/manifest (get embedding manifest)
+   *   POST   /api/v1/embedding/commands         (send cross-app command)
+   *   GET    /api/v1/embedding/commands         (list commands)
+   *   GET    /api/v1/embedding/commands/:id     (get command)
+   *   PATCH  /api/v1/embedding/commands/:id     (update command status)
+   *   POST   /api/v1/embedding/pairings         (create app pairing)
+   *   GET    /api/v1/embedding/pairings         (list pairings)
+   *   GET    /api/v1/embedding/pairings/:id     (get pairing)
+   *   DELETE /api/v1/embedding/pairings/:id     (delete pairing)
+   *   POST   /api/v1/embedding/pairings/:id/sync (sync shared state)
+   */
+  embeddingService?: EmbeddingService;
+  /**
+   * Platform resource service — resource catalog, resource-to-object links,
+   * browse, search, and upload-and-link. When present, REST endpoints
+   * under /api/v1/resources/* are registered:
+   *   POST   /api/v1/resources                  (create resource)
+   *   GET    /api/v1/resources                  (list resources)
+   *   GET    /api/v1/resources/browse           (browse by path)
+   *   GET    /api/v1/resources/search           (search by name/tag)
+   *   GET    /api/v1/resources/:id              (get resource)
+   *   PATCH  /api/v1/resources/:id              (update resource)
+   *   DELETE /api/v1/resources/:id              (delete resource)
+   *   POST   /api/v1/resources/:id/links        (link resource to object)
+   *   GET    /api/v1/resources/:id/links        (get links for resource)
+   *   GET    /api/v1/resources/links            (get links for object)
+   *   DELETE /api/v1/resources/links/:linkId    (unlink)
+   *   POST   /api/v1/resources/upload-and-link  (upload and link)
+   */
+  platformResourceService?: PlatformResourceService;
+  /**
+   * Saved view store — per-user and shared widget view configurations
+   * (column config, filters, sort order, density). When present, REST
+   * endpoints under /api/v1/saved-views/* are registered:
+   *   POST   /api/v1/saved-views               (create saved view)
+   *   GET    /api/v1/saved-views               (list saved views)
+   *   GET    /api/v1/saved-views/:id           (get saved view)
+   *   PATCH  /api/v1/saved-views/:id           (update saved view)
+   *   DELETE /api/v1/saved-views/:id           (delete saved view)
+   */
+  savedViewStore?: SavedViewStore;
+  /**
+   * User directory service — lists platform users for User Select widgets.
+   * When present, REST endpoint is registered:
+   *   GET    /api/v1/users                      (list users, optional ?q=)
+   *   GET    /api/v1/users/:id                  (get user)
+   */
+  userDirectoryService?: UserDirectoryService;
+
+  /** Kiosk mode service — long-lived read-only display sessions. */
+  kioskService?: KioskService;
+
+  /** Layout and device capture service — QR/camera/deep-link state. */
+  layoutDeviceCaptureService?: LayoutDeviceCaptureService;
+
+  /** Ontology manager service — type/action/function discovery and change proposals. */
+  ontologyManagerService?: OntologyManagerService;
+
+  /** Workshop UX service — state saving, redact, profiler, i18n. */
+  workshopUxService?: WorkshopUxService;
+
+  /** Value and conditional formatting service. */
+  valueFormattingService?: ValueFormattingService;
+
+  /** Design system theming service — saved module colour palettes. */
+  designSystemService?: DesignSystemService;
+
+  /** Ontology change history service — read and restore schema versions. */
+  ontologyChangeHistoryService?: OntologyChangeHistoryService;
+
+  /** Fase 22 — Cross-application command exchange. */
+  commandExchangeService?: CommandExchangeService;
+  /** Fase 22 — Object-set filter state store. */
+  objectSetFilterStore?: ObjectSetFilterStore;
+  /** Fase 22 — Interactive graph visualization service. */
+  graphService?: GraphService;
 }
 
 /**

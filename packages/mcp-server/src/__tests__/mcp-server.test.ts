@@ -182,7 +182,7 @@ describe('MCP server', () => {
   });
 
   describe('tools/list', () => {
-    it('returns one tool per ActionType, plus search_ and traverse_ per ObjectType', async () => {
+    it('returns one tool per ActionType, plus search_, aggregate_ and traverse_ per ObjectType', async () => {
       const { deps } = createMockDeps();
       const handler = createMcpServer({ deps, isDev: false });
 
@@ -202,7 +202,11 @@ describe('MCP server', () => {
       // existed all along and no surface reached it.
       expect(names).toContain('traverse_Patient');
       expect(names).toContain('traverse_Ward');
-      expect(names).toHaveLength(5);
+      // Grouped aggregation, likewise: an agent asking "how many" could only
+      // fetch rows and count them, which stops at the search limit.
+      expect(names).toContain('aggregate_Patient');
+      expect(names).toContain('aggregate_Ward');
+      expect(names).toHaveLength(7);
     });
 
     it('action tool has inputSchema with required params', async () => {

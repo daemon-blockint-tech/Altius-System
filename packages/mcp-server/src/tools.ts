@@ -10,7 +10,7 @@
 import type { ActionType, ObjectType, FunctionType, FieldDefinition } from '@altius/odl';
 import { deriveActionAuthzMapping, toSnakeCase } from '@altius/odl';
 import type { ActionActor, ActionContext, ActionResult } from '@altius/actions';
-import type { FilterExpression, OntologyObject, TraversalStep } from '@altius/spi';
+import type { FilterExpression, OntologyObject, TraversalStep, AggregateField, AggregateFunction, AggregateHaving, AggregateQuery } from '@altius/spi';
 import { resolveConsentPurpose as resolveSpiConsentPurpose } from '@altius/spi';
 import type { DataPurpose } from '@altius/spi';
 import type { McpTool, McpCallToolResult } from './protocol.js';
@@ -30,6 +30,25 @@ function resolveConsentPurpose(deps: McpServerDependencies): DataPurpose {
 
 /** Max objects a `search_<Type>` tool returns in one call. */
 const SEARCH_TOOL_LIMIT = 50;
+
+/** Max GROUPS an `aggregate_<Type>` tool returns in one call. */
+const AGGREGATE_TOOL_LIMIT = 200;
+
+/**
+ * Rows scanned to resolve consent before aggregating a consent-gated type.
+ * Beyond this the aggregate is REFUSED rather than computed over a truncated
+ * population: a count that silently omits records reads as a fact.
+ * Mirrors CONSENT_SCAN_LIMIT in the API's aggregate paths.
+ */
+const AGGREGATE_CONSENT_SCAN_LIMIT = 10_000;
+
+/** Aggregate functions the tool accepts, mirroring the SPI grammar. */
+const AGGREGATE_TOOL_FNS: readonly string[] = [
+  'count', 'sum', 'avg', 'min', 'max', 'count_distinct', 'stddev', 'median', 'percentile',
+];
+
+/** HAVING operators the tool accepts. */
+const AGGREGATE_TOOL_HAVING_OPS: readonly string[] = ['eq', 'ne', 'gt', 'gte', 'lt', 'lte'];
 
 /** ODL scalar → JSON Schema type mapping for tool input schemas. */
 const SCALAR_JSON_SCHEMA: Record<string, string> = {
@@ -71,6 +90,7 @@ export function buildToolList(deps: McpServerDependencies): McpTool[] {
   // Read tools — one search_<Type> and one traverse_<Type> per ObjectType
   for (const objType of deps.schema.objectTypes) {
     tools.push(buildSearchTool(objType));
+    tools.push(buildAggregateTool(objType));
     tools.push(buildTraverseTool(objType));
   }
 
@@ -325,6 +345,301 @@ function buildSearchTool(objType: ObjectType): McpTool {
 }
 
 /**
+ * Build an `aggregate_<Type>` tool: grouped aggregation over an ObjectType.
+ *
+ * The provider-side aggregate has always existed and every human surface
+ * (REST, GraphQL) exposes it, but an agent could only fetch rows and count
+ * them itself — which caps at the search limit and therefore answers "how many
+ * X" wrongly on any real dataset. The same governance the search tool applies
+ * (markings, field visibility, FGA scope, consent) applies here.
+ */
+function buildAggregateTool(objType: ObjectType): McpTool {
+  return {
+    name: `aggregate_${objType.name}`,
+    description:
+      `Aggregate ${objType.name} objects: counts, sums, averages, min/max, distinct counts, ` +
+      `standard deviation, median and percentiles, optionally grouped by fields and filtered ` +
+      `by group value (having). Returns up to ${AGGREGATE_TOOL_LIMIT} groups. ` +
+      `Use this instead of search_${objType.name} when the question is "how many" or "what is the total".`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        fields: {
+          type: 'array',
+          description: 'Aggregates to compute. Use field "*" with fn "count" to count rows.',
+          items: {
+            type: 'object',
+            properties: {
+              field: { type: 'string', description: 'Field name, or "*" for count' },
+              fn: { type: 'string', enum: [...AGGREGATE_TOOL_FNS] },
+              alias: { type: 'string', description: 'Result key (defaults to fn_field)' },
+              percentile: { type: 'number', description: 'Fraction 0..1, required for fn "percentile"', minimum: 0, maximum: 1 },
+            },
+            required: ['field', 'fn'],
+          },
+        },
+        groupBy: {
+          type: 'array',
+          description: 'Field names to group by',
+          items: { type: 'string' },
+        },
+        filter: {
+          type: 'array',
+          description: 'AND-combined field predicates applied before grouping',
+          items: {
+            type: 'object',
+            properties: {
+              field: { type: 'string' },
+              operator: { type: 'string', enum: ['eq', 'ne', 'in', 'contains', 'startsWith', 'gt', 'lt', 'gte', 'lte'] },
+              value: {},
+            },
+            required: ['field', 'operator', 'value'],
+          },
+        },
+        having: {
+          type: 'array',
+          description: 'Predicates over aggregate values, applied after grouping',
+          items: {
+            type: 'object',
+            properties: {
+              alias: { type: 'string', description: 'Alias of one of the requested aggregates' },
+              operator: { type: 'string', enum: [...AGGREGATE_TOOL_HAVING_OPS] },
+              value: { type: 'number' },
+            },
+            required: ['alias', 'operator'],
+          },
+        },
+        limit: {
+          type: 'integer',
+          description: `Max groups (default ${AGGREGATE_TOOL_LIMIT}, max ${AGGREGATE_TOOL_LIMIT})`,
+          minimum: 1,
+          maximum: AGGREGATE_TOOL_LIMIT,
+        },
+      },
+      required: ['fields'],
+    },
+  };
+}
+
+/** An `aggregate_<Type>` error, shaped like the other tools' errors. */
+function aggregateError(message: string): McpCallToolResult {
+  return {
+    content: [{ type: 'text', text: JSON.stringify({ error: message }) }],
+    isError: true,
+  };
+}
+
+/**
+ * Invoke an `aggregate_<Type>` tool under the caller's identity.
+ *
+ * Order matters and mirrors the REST route: validate the request against the
+ * schema (so the two storage providers cannot disagree about an unknown
+ * field), then refuse fields the caller cannot read (a GROUP BY over a
+ * redacted field leaks its values as group keys), then scope to the objects
+ * FGA authorises, then apply consent, and only then aggregate.
+ */
+async function invokeAggregateTool(
+  objType: ObjectType,
+  args: unknown,
+  caller: McpCaller,
+  deps: McpServerDependencies,
+): Promise<McpCallToolResult> {
+  const { user, requestContext } = caller;
+  const typeName = objType.name;
+  const fgaType = toSnakeCase(typeName);
+
+  const obj = args && typeof args === 'object' ? (args as Record<string, unknown>) : {};
+
+  // ── Parse and validate aggregates ──
+  const rawFields = obj['fields'];
+  if (!Array.isArray(rawFields) || rawFields.length === 0) {
+    return aggregateError('fields is required and must be a non-empty array of { field, fn }');
+  }
+
+  const aggregatable = new Set(
+    objType.fields
+      .filter(f => !f.directives.some(d => d.kind === 'link' || d.kind === 'computed' || d.kind === 'reducer'))
+      .map(f => f.name),
+  );
+  const known = (field: string): boolean => field.startsWith('_') || aggregatable.has(field);
+
+  const fields: AggregateField[] = [];
+  const aliases = new Set<string>();
+  for (const raw of rawFields as Array<Record<string, unknown>>) {
+    const field = typeof raw['field'] === 'string' ? raw['field'] : undefined;
+    const fn = typeof raw['fn'] === 'string' ? raw['fn'].toLowerCase() : undefined;
+    if (!field || !fn) return aggregateError('each field entry needs a field name and an fn');
+    if (!AGGREGATE_TOOL_FNS.includes(fn)) {
+      return aggregateError(`unsupported aggregate function '${fn}'. Use one of: ${AGGREGATE_TOOL_FNS.join(', ')}`);
+    }
+    if (field !== '*' && !known(field)) {
+      return aggregateError(`cannot aggregate on '${field}': not a stored field of ${typeName}`);
+    }
+    if (fn === 'percentile') {
+      const p = raw['percentile'];
+      if (typeof p !== 'number' || !isFinite(p) || p < 0 || p > 1) {
+        return aggregateError(`fn 'percentile' needs a percentile fraction between 0 and 1 for field '${field}'`);
+      }
+    }
+    const alias = typeof raw['alias'] === 'string' && raw['alias'] !== '' ? raw['alias'] : `${fn}_${field}`;
+    aliases.add(alias);
+    fields.push({
+      field,
+      fn: fn as AggregateFunction,
+      alias,
+      ...(fn === 'percentile' ? { percentile: raw['percentile'] as number } : {}),
+    });
+  }
+
+  // ── groupBy ──
+  const rawGroupBy = obj['groupBy'];
+  let groupBy: string[] | undefined;
+  if (rawGroupBy !== undefined) {
+    if (!Array.isArray(rawGroupBy) || rawGroupBy.some(g => typeof g !== 'string')) {
+      return aggregateError('groupBy must be an array of field names');
+    }
+    groupBy = rawGroupBy as string[];
+    const unknownGroup = groupBy.filter(g => !known(g));
+    if (unknownGroup.length > 0) {
+      return aggregateError(`cannot group by ${unknownGroup.join(', ')}: not stored field(s) of ${typeName}`);
+    }
+  }
+
+  // ── filter (same shape as the search tool) ──
+  const parsedFilter = parseSearchArgs({ filter: obj['filter'] });
+  const unknownFilterFields = parsedFilter.filterFields.filter(f => !known(f));
+  if (unknownFilterFields.length > 0) {
+    return aggregateError(`cannot filter on ${unknownFilterFields.join(', ')}: not stored field(s) of ${typeName}`);
+  }
+
+  // ── having ──
+  const rawHaving = obj['having'];
+  let having: AggregateHaving[] | undefined;
+  if (rawHaving !== undefined) {
+    if (!Array.isArray(rawHaving)) return aggregateError('having must be an array of { alias, operator, value }');
+    const parsed: AggregateHaving[] = [];
+    for (const raw of rawHaving as Array<Record<string, unknown>>) {
+      const alias = typeof raw['alias'] === 'string' ? raw['alias'] : undefined;
+      const operator = typeof raw['operator'] === 'string' ? raw['operator'].toLowerCase() : undefined;
+      const value = raw['value'];
+      if (!alias || !aliases.has(alias)) {
+        return aggregateError(`having alias '${String(alias)}' is not one of the requested aggregates: ${[...aliases].join(', ')}`);
+      }
+      if (!operator || !AGGREGATE_TOOL_HAVING_OPS.includes(operator)) {
+        return aggregateError(`having operator must be one of: ${AGGREGATE_TOOL_HAVING_OPS.join(', ')}`);
+      }
+      if (value !== null && value !== undefined && typeof value !== 'number') {
+        return aggregateError('having value must be a number or null');
+      }
+      parsed.push({ alias, operator: operator as AggregateHaving['operator'], value: (value as number | null | undefined) ?? null });
+    }
+    if (parsed.length > 0) having = parsed;
+  }
+
+  const limit = Math.min(
+    typeof obj['limit'] === 'number' && obj['limit'] > 0 ? Math.floor(obj['limit']) : AGGREGATE_TOOL_LIMIT,
+    AGGREGATE_TOOL_LIMIT,
+  );
+
+  // ── Field visibility: a redacted field must not be aggregated or grouped ──
+  const visibleFields = deps.authorizationService.getVisibleFields(user.id, user.roles, typeName);
+  if (visibleFields) {
+    const referenced = [
+      ...fields.filter(f => f.field !== '*').map(f => f.field),
+      ...(groupBy ?? []),
+      ...parsedFilter.filterFields,
+    ];
+    const violations = referenced.filter(f => !f.startsWith('_') && !visibleFields.has(f));
+    if (violations.length > 0) {
+      return aggregateError(`Access denied: cannot aggregate over redacted fields: ${violations.join(', ')}`);
+    }
+  }
+
+  // ── FGA scope ──
+  const allowedObjects = await deps.authorizationService.listObjects(
+    `user:${user.id}`,
+    'viewer',
+    fgaType,
+    user.tenantId,
+  );
+  const allAuthorized = allowedObjects.length === 1 && allowedObjects[0] === '*';
+  const allowedIds = allAuthorized
+    ? []
+    : allowedObjects
+        .map((o: string) => {
+          const parts = o.split(':');
+          return parts[parts.length - 1];
+        })
+        .filter((id): id is string => id !== undefined && id !== '');
+  if (!allAuthorized && allowedIds.length === 0) {
+    return {
+      content: [{ type: 'text', text: JSON.stringify({ groups: [], totalGroups: 0 }) }],
+      isError: false,
+    };
+  }
+
+  const userFilter = parsedFilter.filter;
+  let scopeFilter: FilterExpression;
+  if (!allAuthorized) {
+    const idFilter: FilterExpression = { field: '_id', operator: 'in', value: allowedIds };
+    scopeFilter = userFilter ? { and: [idFilter, userFilter] } : idFilter;
+  } else {
+    const passThrough: FilterExpression = { field: '_deleted_at', operator: 'exists', value: false };
+    scopeFilter = userFilter ? { and: [passThrough, userFilter] } : passThrough;
+  }
+
+  // ── Consent ──
+  // An aggregate has no per-row output to filter, so consent has to narrow the
+  // INPUT set. Resolve the consented ids first; refuse rather than answer over
+  // a truncated population.
+  const gated = deps.consentSubjectTypes ?? DEFAULT_CONSENT_SUBJECT_TYPES;
+  if (gated.includes(typeName) && deps.consentService) {
+    const scan = deps.objectManager
+      ? await deps.objectManager.query(typeName, scopeFilter, { limit: AGGREGATE_CONSENT_SCAN_LIMIT + 1, offset: 0 }, requestContext)
+      : await deps.storage.queryObjects(requestContext, typeName, scopeFilter, { limit: AGGREGATE_CONSENT_SCAN_LIMIT + 1, offset: 0 });
+    if (scan.items.length > AGGREGATE_CONSENT_SCAN_LIMIT) {
+      return aggregateError(
+        `Cannot aggregate ${typeName}: more than ${AGGREGATE_CONSENT_SCAN_LIMIT} records match and consent must be ` +
+        `checked per record. Narrow the filter and try again.`,
+      );
+    }
+    const consentedIds: string[] = [];
+    for (const node of scan.items as OntologyObject[]) {
+      const data = node as unknown as Record<string, unknown>;
+      if (await consentAllows(node, data, caller, deps)) consentedIds.push(node._id);
+    }
+    if (consentedIds.length === 0) {
+      return {
+        content: [{ type: 'text', text: JSON.stringify({ groups: [], totalGroups: 0 }) }],
+        isError: false,
+      };
+    }
+    const consentFilter: FilterExpression = { field: '_id', operator: 'in', value: consentedIds };
+    scopeFilter = userFilter ? { and: [consentFilter, userFilter] } : consentFilter;
+  }
+
+  const query: AggregateQuery = {
+    fields,
+    ...(groupBy && groupBy.length > 0 ? { groupBy } : {}),
+    filter: scopeFilter,
+    ...(having ? { having } : {}),
+    limit,
+  };
+
+  try {
+    const result = deps.objectManager
+      ? await deps.objectManager.aggregate(typeName, query, requestContext)
+      : await deps.storage.aggregateObjects(requestContext, typeName, query);
+    return {
+      content: [{ type: 'text', text: JSON.stringify({ groups: result.groups, totalGroups: result.totalGroups, limit }) }],
+      isError: false,
+    };
+  } catch (err) {
+    return aggregateError(err instanceof Error ? err.message : 'Aggregate failed');
+  }
+}
+
+/**
  * Convert an ODL field definition to a JSON Schema fragment.
  */
 function fieldToJsonSchema(field: FieldDefinition): unknown {
@@ -385,6 +700,18 @@ export async function invokeTool(
     if (objType && !markingAllows(deps, caller, typeName)) return unknownTool(toolName);
     if (objType) {
       const result = await invokeSearchTool(objType, args, caller, deps);
+      await auditMcpRead(deps, caller, typeName, toolName, result.isError === true);
+      return result;
+    }
+  }
+
+  // Read tool: name matches aggregate_<Type>
+  if (toolName.startsWith('aggregate_')) {
+    const typeName = toolName.slice('aggregate_'.length);
+    const objType = deps.schema.objectTypes.find((o) => o.name === typeName);
+    if (objType && !markingAllows(deps, caller, typeName)) return unknownTool(toolName);
+    if (objType) {
+      const result = await invokeAggregateTool(objType, args, caller, deps);
       await auditMcpRead(deps, caller, typeName, toolName, result.isError === true);
       return result;
     }

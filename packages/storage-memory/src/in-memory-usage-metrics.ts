@@ -21,12 +21,56 @@ function percentile(sorted: number[], p: number): number {
   return sorted[idx]!;
 }
 
+/** Days of usage events kept. Matches the 30-day window the API reports over. */
+const DEFAULT_RETENTION_DAYS = 30;
+
+/**
+ * Hard ceiling on retained events, independent of age.
+ *
+ * Every served request writes one event here, so a busy single process would
+ * otherwise grow this array until the heap runs out — and it is instrumentation,
+ * the one subsystem that must not be able to take the API down. When the cap is
+ * hit the OLDEST events are dropped: recent data is what a monitoring rule
+ * evaluates, and losing the tail of a 30-day window is recoverable where an
+ * OOM is not.
+ */
+const DEFAULT_MAX_EVENTS = 500_000;
+
+export interface InMemoryUsageMetricsOptions {
+  retentionDays?: number;
+  maxEvents?: number;
+}
+
 export class InMemoryOntologyUsageMetricsService implements OntologyUsageMetricsService {
-  private readonly events: OntologyUsageEvent[] = [];
+  private events: OntologyUsageEvent[] = [];
   private readonly rules = new Map<string, Map<string, UsageMonitoringRule>>();
+  private readonly retentionMs: number;
+  private readonly maxEvents: number;
+  /** Events recorded since the last prune, so pruning is amortised. */
+  private sincePrune = 0;
+
+  constructor(options: InMemoryUsageMetricsOptions = {}) {
+    this.retentionMs = (options.retentionDays ?? DEFAULT_RETENTION_DAYS) * 86_400_000;
+    this.maxEvents = options.maxEvents ?? DEFAULT_MAX_EVENTS;
+  }
 
   async record(event: OntologyUsageEvent): Promise<void> {
     this.events.push(event);
+    // Amortise: scanning the array on every request would make the metrics
+    // layer O(n) per served request, which is worse than the leak it fixes.
+    if (++this.sincePrune >= 1000 || this.events.length > this.maxEvents) {
+      this.prune();
+    }
+  }
+
+  /** Drop events past the retention window, then past the count ceiling. */
+  private prune(): void {
+    this.sincePrune = 0;
+    const cutoff = Date.now() - this.retentionMs;
+    this.events = this.events.filter(e => Date.parse(e.timestamp) >= cutoff);
+    if (this.events.length > this.maxEvents) {
+      this.events = this.events.slice(this.events.length - this.maxEvents);
+    }
   }
 
   async getObjectTypeMetrics(tenantId: string, startTime?: string, endTime?: string): Promise<ObjectTypeMetrics[]> {

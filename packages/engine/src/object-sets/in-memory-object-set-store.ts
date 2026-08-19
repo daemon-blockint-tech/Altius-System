@@ -64,7 +64,7 @@ export class InMemoryObjectSetStore implements ObjectSetStore {
   async update(
     ctx: RequestContext,
     id: string,
-    updates: Partial<Pick<ObjectSetDefinition, 'name' | 'description' | 'filter' | 'orderBy' | 'limit' | 'aggregation' | 'isPublic'>>,
+    updates: Partial<Pick<ObjectSetDefinition, 'name' | 'description' | 'filter' | 'orderBy' | 'limit' | 'aggregation' | 'isPublic' | 'sharedWithUsers' | 'sharedWithGroups'>>,
   ): Promise<ObjectSetDefinition> {
     const existing = this.store.get(id);
     if (!existing || existing.tenantId !== ctx.tenantId) {
@@ -124,13 +124,18 @@ export class InMemoryObjectSetStore implements ObjectSetStore {
 
   /**
    * Visibility check: public sets are visible to all; private sets are
-   * visible only to the creator. When actorId is absent (unauthenticated),
-   * private sets are hidden.
+   * visible to the creator and to the users/groups the set is shared with.
+   * When actorId is absent (unauthenticated), private sets are hidden — and an
+   * absent group list grants nothing, so an unauthenticated caller cannot
+   * inherit a group share.
    */
   private isVisible(def: ObjectSetDefinition, ctx: RequestContext): boolean {
     if (def.isPublic) return true;
     if (!ctx.actorId) return false;
-    return def.createdBy === ctx.actorId;
+    if (def.createdBy === ctx.actorId) return true;
+    if (def.sharedWithUsers?.includes(ctx.actorId)) return true;
+    const groups = ctx.actorGroups ?? [];
+    return (def.sharedWithGroups ?? []).some(g => groups.includes(g));
   }
 
   /** Clear all records (test utility). */

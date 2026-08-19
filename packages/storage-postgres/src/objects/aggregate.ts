@@ -1,8 +1,9 @@
 /**
  * Aggregation query builder for PostgreSQL.
  *
- * Builds and executes aggregate SQL queries (COUNT, SUM, AVG, MIN, MAX)
- * with optional GROUP BY, filtering, ordering, and pagination.
+ * Builds and executes aggregate SQL queries (COUNT, COUNT DISTINCT, SUM, AVG,
+ * MIN, MAX, STDDEV_SAMP, MEDIAN/PERCENTILE_CONT) with optional GROUP BY,
+ * HAVING, filtering, ordering, and pagination.
  */
 
 import type { Pool } from 'pg';
@@ -115,7 +116,15 @@ export async function aggregateObjects(
   }
 
   // Aggregate functions — allowlist to prevent SQL injection
-  const ALLOWED_FNS = new Set(['count', 'sum', 'avg', 'min', 'max']);
+  const ALLOWED_FNS = new Set([
+    'count', 'sum', 'avg', 'min', 'max',
+    'count_distinct', 'stddev', 'median', 'percentile',
+  ]);
+
+  // alias → the SQL aggregate expression, so HAVING can re-emit it. Postgres
+  // does not accept an output-column alias in HAVING (unlike ORDER BY), so
+  // referencing the alias there is a syntax error, not a shortcut.
+  const aggExprByAlias = new Map<string, string>();
 
   for (const aggField of query.fields) {
     const fnLower = aggField.fn.toLowerCase();
@@ -126,17 +135,32 @@ export async function aggregateObjects(
     const alias = aggField.alias ?? `${aggField.fn}_${aggField.field}`;
     const aliasIdent = pgIdent(snakeCase(alias));
 
+    let expr: string;
     if (fnLower === 'count') {
-      if (aggField.field === '*') {
-        selectParts.push(`COUNT(*) AS ${aliasIdent}`);
-      } else {
-        selectParts.push(`COUNT(${fieldCol(aggField.field)}) AS ${aliasIdent}`);
+      expr = aggField.field === '*' ? 'COUNT(*)' : `COUNT(${fieldCol(aggField.field)})`;
+    } else if (fnLower === 'count_distinct') {
+      expr = aggField.field === '*'
+        ? 'COUNT(*)'
+        : `COUNT(DISTINCT ${fieldCol(aggField.field)})`;
+    } else if (fnLower === 'stddev') {
+      // SAMPLE standard deviation: NULL for a single row, which is what the
+      // memory provider returns. STDDEV() is an alias for STDDEV_SAMP in
+      // Postgres, spelled out here so the choice is not implicit.
+      expr = `STDDEV_SAMP(${fieldCol(aggField.field)})`;
+    } else if (fnLower === 'median' || fnLower === 'percentile') {
+      const fraction = fnLower === 'median' ? 0.5 : aggField.percentile;
+      if (typeof fraction !== 'number' || !isFinite(fraction) || fraction < 0 || fraction > 1) {
+        throw new Error(`Aggregate percentile requires a fraction between 0 and 1 for field '${aggField.field}'`);
       }
+      // The fraction is a bind parameter, not interpolated text.
+      const fracIdx = baseParams.length + 1;
+      baseParams.push(fraction);
+      expr = `PERCENTILE_CONT($${fracIdx}) WITHIN GROUP (ORDER BY ${fieldCol(aggField.field)}::double precision)`;
     } else {
-      const col = fieldCol(aggField.field);
-      const fnUpper = fnLower.toUpperCase();
-      selectParts.push(`${fnUpper}(${col}) AS ${aliasIdent}`);
+      expr = `${fnLower.toUpperCase()}(${fieldCol(aggField.field)})`;
     }
+    aggExprByAlias.set(alias, expr);
+    selectParts.push(`${expr} AS ${aliasIdent}`);
   }
 
   // --- WHERE clause ---
@@ -152,6 +176,33 @@ export async function aggregateObjects(
   }
 
   const whereClause = whereClauses.join(' AND ');
+
+  // --- HAVING clause ---
+  // Predicates filter GROUPS, so they must be in the group-count subquery too;
+  // otherwise totalGroups counts rows the caller can never page to.
+  const HAVING_OPS: Record<string, string> = { eq: '=', ne: '<>', gt: '>', gte: '>=', lt: '<', lte: '<=' };
+  let havingClause = '';
+  if (query.having && query.having.length > 0) {
+    const parts: string[] = [];
+    for (const predicate of query.having) {
+      const expr = aggExprByAlias.get(predicate.alias);
+      if (!expr) {
+        throw new Error(`HAVING references unknown aggregate alias '${predicate.alias}'`);
+      }
+      const op = HAVING_OPS[predicate.operator];
+      if (!op) {
+        throw new Error(`Invalid HAVING operator: ${predicate.operator}`);
+      }
+      if (predicate.value === null) {
+        parts.push(predicate.operator === 'eq' ? `${expr} IS NULL` : `${expr} IS NOT NULL`);
+        continue;
+      }
+      const idx = baseParams.length + 1;
+      baseParams.push(predicate.value);
+      parts.push(`${expr} ${op} $${idx}`);
+    }
+    if (parts.length > 0) havingClause = ` HAVING ${parts.join(' AND ')}`;
+  }
 
   // --- GROUP BY clause ---
   let groupByClause = '';
@@ -180,9 +231,13 @@ export async function aggregateObjects(
   const hasGrouping = (query.groupBy && query.groupBy.length > 0) || bucketAliases.length > 0;
   let totalGroups: number;
   if (hasGrouping) {
-    const countSql = `SELECT COUNT(*) AS cnt FROM (SELECT 1 FROM ${table} WHERE ${whereClause}${groupByClause}) AS _sub`;
+    const countSql = `SELECT COUNT(*) AS cnt FROM (SELECT 1 FROM ${table} WHERE ${whereClause}${groupByClause}${havingClause}) AS _sub`;
     const countResult = await q.query(countSql, baseParams);
     totalGroups = parseInt(String((countResult.rows[0] as Record<string, unknown>)['cnt']), 10);
+  } else if (havingClause) {
+    // One aggregate group, but HAVING may have removed it. Resolved from the
+    // returned rows below rather than asserted as 1.
+    totalGroups = -1;
   } else {
     totalGroups = 1;
   }
@@ -200,7 +255,7 @@ export async function aggregateObjects(
   }
 
   // --- Execute ---
-  const sql = `SELECT ${selectParts.join(', ')} FROM ${table} WHERE ${whereClause}${groupByClause}${orderClause}${paginationClause}`;
+  const sql = `SELECT ${selectParts.join(', ')} FROM ${table} WHERE ${whereClause}${groupByClause}${havingClause}${orderClause}${paginationClause}`;
   const result = await q.query(sql, allParams);
 
   // --- Map rows to AggregateGroup[] ---
@@ -251,5 +306,5 @@ export async function aggregateObjects(
     return { keys, values };
   });
 
-  return { groups, totalGroups };
+  return { groups, totalGroups: totalGroups === -1 ? groups.length : totalGroups };
 }

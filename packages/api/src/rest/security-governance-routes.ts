@@ -17,6 +17,13 @@ import type { ApiDependencies, ResolverContext } from '../graphql/types.js';
 import type { RestRequest, RestResponse, RestRoute } from './types.js';
 import { createRestErrorResponse, wrapErrorToRest } from './errors.js';
 
+/**
+ * Roles allowed to explain a principal other than themselves. Mirrors the
+ * audit-reader default: the answer is information about someone else's
+ * permissions, so it is an administrative read.
+ */
+export const DEFAULT_SIMULATION_ROLES = ['admin'] as const;
+
 export function generateSecurityGovernanceRoutes(deps: ApiDependencies): RestRoute[] {
   const routes: RestRoute[] = [];
 
@@ -39,12 +46,51 @@ export function generateSecurityGovernanceRoutes(deps: ApiDependencies): RestRou
               traceId: ctx.requestContext.traceId,
             });
           }
+          const callerId = ctx.requestContext.actorId ?? req.user.id;
+
+          // Simulation: explain another principal's access. That answer is
+          // information about THEIR permissions, so it is admin-gated — the
+          // same gate the audit trail uses. Without the gate, any user could
+          // enumerate a colleague's access.
+          const subject = typeof body['subjectUserId'] === 'string' ? body['subjectUserId'] : undefined;
+          const simulated = subject !== undefined && subject !== callerId;
+          if (simulated) {
+            const explainRoles = deps.accessExplanationSimulationRoles ?? DEFAULT_SIMULATION_ROLES;
+            if (!explainRoles.some(role => ctx.user.roles.includes(role))) {
+              return createRestErrorResponse({
+                code: 'FORBIDDEN',
+                category: 'authorization',
+                message: explainRoles.length === 0
+                  ? 'Explaining another principal\'s access is disabled: no simulation role is configured.'
+                  : `Explaining another principal's access requires one of: ${explainRoles.join(', ')}`,
+                retryable: false,
+                traceId: ctx.requestContext.traceId,
+              });
+            }
+          }
+
+          const fieldsInput = body['fields'];
+          const fields = Array.isArray(fieldsInput)
+            ? fieldsInput.filter((f): f is string => typeof f === 'string')
+            : undefined;
+
           const result = await svc.explain({
             tenantId: ctx.requestContext.tenantId,
-            userId: ctx.requestContext.actorId ?? req.user.id,
+            userId: simulated ? subject! : callerId,
             objectType,
             objectId: typeof body['objectId'] === 'string' ? body['objectId'] : undefined,
             action: typeof body['action'] === 'string' ? body['action'] : undefined,
+            // For a simulation the caller states the principal's roles and
+            // markings; for a self-explanation they come from the live token,
+            // so a caller cannot inflate their own answer.
+            roles: simulated
+              ? (Array.isArray(body['roles']) ? (body['roles'] as unknown[]).filter((r): r is string => typeof r === 'string') : [])
+              : ctx.user.roles,
+            markings: simulated
+              ? (Array.isArray(body['markings']) ? (body['markings'] as unknown[]).filter((m): m is string => typeof m === 'string') : [])
+              : (ctx.user.markings ?? []),
+            ...(fields && fields.length > 0 ? { fields } : {}),
+            ...(simulated ? { simulated: true } : {}),
           });
           return { status: 200, body: { data: result } };
         } catch (err) {

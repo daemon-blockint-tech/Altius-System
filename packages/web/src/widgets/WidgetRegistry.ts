@@ -29,6 +29,25 @@ import { ChartPieWidget } from './components/ChartPieWidget.js';
 import { PivotTableWidget } from './components/PivotTableWidget.js';
 import { MapWidget } from './components/MapWidget.js';
 import { GraphWidget } from './components/GraphWidget.js';
+import { ScenarioWidget } from './components/ScenarioWidget.js';
+import { CommentsWidget } from './components/CommentsWidget.js';
+import { ActionLogTimelineWidget } from './components/ActionLogTimelineWidget.js';
+import {
+  ChartBarWidget, ChartVegaWidget, WaterfallWidget, ObservabilityChartWidget,
+  HeatmapWidget, ScatterPlotWidget,
+  ObjectSelectorWidget, DateRangeWidget, UserSelectWidget,
+  RadioGroupWidget, DropdownWidget,
+  SpacerWidget, DividerWidget, ProgressBarWidget, BadgeWidget, TooltipWidget,
+  AccordionWidget, PropertyListWidget, ObjectSetTitleWidget, LinksWidget,
+  TreeViewWidget, KanbanWidget,
+  AipChatWidget, AipGeneratedContentWidget,
+  BreadcrumbWidget,
+  GanttWidget, TimelineWidget, CalendarWidget,
+} from './components/StubWidgets.js';
+import {
+  SavedViewsWidget, EditHistoryWidget, ResourceBrowserWidget,
+  IframeWidget, AppPairingWidget,
+} from './components/Phase20ExtraWidgets.js';
 import { TimeSeriesWidget } from './components/TimeSeriesWidget.js';
 import { MobileNavbarWidget } from './components/MobileNavbarWidget.js';
 import { CurrentLocationWidget } from './components/CurrentLocationWidget.js';
@@ -41,8 +60,29 @@ import { ImageAnnotationWidget } from './components/ImageAnnotationWidget.js';
 import { SpreadsheetDisplayWidget } from './components/SpreadsheetDisplayWidget.js';
 import { VideoPlayerWidget } from './components/VideoPlayerWidget.js';
 import { AudioPlayerWidget } from './components/AudioPlayerWidget.js';
-import { PlaceholderWidget } from './components/PlaceholderWidget.js';
-
+import {
+  DataFreshnessWidget,
+  OntologyChangeHistoryWidget,
+  ValueFormattingWidget,
+  DesignSystemThemeWidget,
+  FunctionBackedWidget,
+  LiveDataPushWidget,
+  QrCodeReaderWidget,
+  CameraCaptureWidget,
+  VisualOntologyManagerWidget,
+  OntologyMetadataCatalogWidget,
+  KioskModeWidget,
+} from './components/Fase21Widgets.js';
+import {
+  MobileAppLauncherWidget,
+  ViewportSwitcherWidget,
+  QRDeepLinkLaunchWidget,
+  GeolocationPromptWidget,
+  GraphVisualizationWidget,
+  ObjectSetFilterStateWidget,
+  CommandLauncherWidget,
+} from './components/Fase22Widgets.js';
+// PlaceholderWidget is no longer imported — all widget types now have real implementations.
 // ── Registry ──────────────────────────────────────────────────
 
 const REGISTRY = new Map<string, WidgetRegistryEntry>();
@@ -109,28 +149,68 @@ registerWidget('spreadsheet_display', SpreadsheetDisplayWidget);
 registerWidget('video_player', VideoPlayerWidget);
 registerWidget('audio_player', AudioPlayerWidget);
 
-// Stubs for the remaining 28 widget types:
-const STUB_TYPES = [
-  // chart
-  'chart_bar', 'chart_vega',
-  'waterfall', 'observability_chart', 'heatmap', 'scatter_plot',
-  // filter
-  'object_selector', 'date_range', 'user_select',
-  // input
-  'radio_group', 'dropdown',
-  // layout
-  'spacer', 'divider', 'progress_bar', 'badge', 'tooltip', 'accordion',
-  'property_list', 'object_set_title', 'links', 'tree_view', 'kanban',
-  // collaboration
-  'comments', 'action_log',
-  // ai
-  'aip_chat', 'aip_generated_content',
-  // navigation
-  'breadcrumb',
-  // time
-  'gantt', 'timeline', 'calendar',
-];
+// Phase 17: Scenario widget (1 real implementation):
+registerWidget('scenario_panel', ScenarioWidget);
 
-for (const type of STUB_TYPES) {
-  registerWidget(type, PlaceholderWidget, false);
-}
+// Phase 18: Comments and action log widgets (2 real implementations):
+registerWidget('comments', CommentsWidget);
+registerWidget('action_log', ActionLogTimelineWidget);
+
+// Phase 20: All 28 remaining widget types now have real implementations:
+registerWidget('chart_bar', ChartBarWidget);
+registerWidget('chart_vega', ChartVegaWidget);
+registerWidget('waterfall', WaterfallWidget);
+registerWidget('observability_chart', ObservabilityChartWidget);
+registerWidget('heatmap', HeatmapWidget);
+registerWidget('scatter_plot', ScatterPlotWidget);
+registerWidget('object_selector', ObjectSelectorWidget);
+registerWidget('date_range', DateRangeWidget);
+registerWidget('user_select', UserSelectWidget);
+registerWidget('radio_group', RadioGroupWidget);
+registerWidget('dropdown', DropdownWidget);
+registerWidget('spacer', SpacerWidget);
+registerWidget('divider', DividerWidget);
+registerWidget('progress_bar', ProgressBarWidget);
+registerWidget('badge', BadgeWidget);
+registerWidget('tooltip', TooltipWidget);
+registerWidget('accordion', AccordionWidget);
+registerWidget('property_list', PropertyListWidget);
+registerWidget('object_set_title', ObjectSetTitleWidget);
+registerWidget('links', LinksWidget);
+registerWidget('tree_view', TreeViewWidget);
+registerWidget('kanban', KanbanWidget);
+registerWidget('aip_chat', AipChatWidget);
+registerWidget('aip_generated_content', AipGeneratedContentWidget);
+registerWidget('breadcrumb', BreadcrumbWidget);
+registerWidget('gantt', GanttWidget);
+registerWidget('timeline', TimelineWidget);
+registerWidget('calendar', CalendarWidget);
+
+// Phase 20: Additional widgets for saved views, edit history, resources, embedding:
+registerWidget('saved_views', SavedViewsWidget);
+registerWidget('edit_history', EditHistoryWidget);
+registerWidget('resource_browser', ResourceBrowserWidget);
+registerWidget('iframe', IframeWidget);
+registerWidget('app_pairing', AppPairingWidget);
+
+// Phase 21 (Fase 21) widgets:
+registerWidget('data_freshness', DataFreshnessWidget);
+registerWidget('ontology_change_history', OntologyChangeHistoryWidget);
+registerWidget('value_formatting', ValueFormattingWidget);
+registerWidget('design_system_theme', DesignSystemThemeWidget);
+registerWidget('function_backed', FunctionBackedWidget);
+registerWidget('live_data_push', LiveDataPushWidget);
+registerWidget('qr_code_reader', QrCodeReaderWidget);
+registerWidget('camera_capture', CameraCaptureWidget);
+registerWidget('visual_ontology_manager', VisualOntologyManagerWidget);
+registerWidget('ontology_metadata_catalog', OntologyMetadataCatalogWidget);
+registerWidget('kiosk_mode', KioskModeWidget);
+
+// Fase 22 widgets:
+registerWidget('mobile_app_launcher', MobileAppLauncherWidget);
+registerWidget('viewport_switcher', ViewportSwitcherWidget);
+registerWidget('qr_deep_link_launch', QRDeepLinkLaunchWidget);
+registerWidget('geolocation_prompt', GeolocationPromptWidget);
+registerWidget('graph_visualization', GraphVisualizationWidget);
+registerWidget('filter_state', ObjectSetFilterStateWidget);
+registerWidget('command_launcher', CommandLauncherWidget);

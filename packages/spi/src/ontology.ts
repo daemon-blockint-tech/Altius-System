@@ -191,6 +191,13 @@ export interface RequestContext {
    * This enables what-if scenario analysis without affecting production data.
    */
   branch?: string;
+  /**
+   * Groups the actor belongs to. Present so a store can evaluate a
+   * group-scoped ACL (e.g. an object set shared with a team) without a second
+   * identity lookup. Absent means "no group memberships known", which every
+   * ACL must read as "grants nothing" rather than "grants everything".
+   */
+  actorGroups?: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -461,7 +468,25 @@ export interface StorageCapabilities {
 // Aggregation
 // ---------------------------------------------------------------------------
 
-export type AggregateFunction = 'count' | 'sum' | 'avg' | 'min' | 'max';
+/**
+ * Aggregate functions both providers implement identically.
+ *
+ * `count_distinct` counts distinct non-null values and, like `count`, works on
+ * any comparable type. `stddev` is the SAMPLE standard deviation (Postgres
+ * STDDEV_SAMP), which is null for a single row. `median` and `percentile` are
+ * continuous — they interpolate between neighbouring values, matching
+ * PERCENTILE_CONT — so the result need not be a value present in the data.
+ */
+export type AggregateFunction =
+  | 'count'
+  | 'sum'
+  | 'avg'
+  | 'min'
+  | 'max'
+  | 'count_distinct'
+  | 'stddev'
+  | 'median'
+  | 'percentile';
 
 export type BucketInterval = 'day' | 'week' | 'month' | 'year';
 
@@ -498,6 +523,23 @@ export interface AggregateField {
   field: string;          // Property name ('*' for count)
   fn: AggregateFunction;
   alias?: string;         // Optional result key alias
+  /**
+   * Fraction in [0, 1] for `fn: 'percentile'`. Required for that function and
+   * ignored by every other one. `median` is the same as percentile 0.5.
+   */
+  percentile?: number;
+}
+
+/**
+ * A HAVING predicate — filters GROUPS by an aggregate value, after grouping.
+ * `alias` names an entry in `fields` (its explicit `alias`, or the default
+ * `${fn}_${field}`). Predicates combine with AND, and they apply before
+ * ordering and paging, so `totalGroups` counts surviving groups only.
+ */
+export interface AggregateHaving {
+  alias: string;
+  operator: 'eq' | 'ne' | 'gt' | 'gte' | 'lt' | 'lte';
+  value: number | null;
 }
 
 export interface AggregateQuery {
@@ -506,6 +548,8 @@ export interface AggregateQuery {
   /** Optional bucketing dimensions (date or numeric). Each bucket becomes a group key. */
   buckets?: (DateBucket | NumericBucket)[];
   filter?: FilterExpression;
+  /** Post-grouping predicates over aggregate values (SQL HAVING). */
+  having?: AggregateHaving[];
   orderBy?: { field: string; direction: 'asc' | 'desc' }[];
   limit?: number;
   offset?: number;

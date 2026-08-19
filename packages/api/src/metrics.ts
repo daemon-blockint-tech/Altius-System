@@ -74,6 +74,20 @@ export const syncConsecutiveFailures = new Gauge({
   labelNames: ['datasource'] as const,
 });
 
+/**
+ * Whether this process runs the sync scheduler (1) or not (0).
+ *
+ * Every gauge above is per-datasource and only exists once a scheduler has
+ * registered one, so a deployment with ingestion switched off produces NO sync
+ * series at all — and an alert on a series that is never produced never fires.
+ * This one is always exported, which is what makes "ingestion is not running"
+ * an alertable condition rather than a silence.
+ */
+export const syncSchedulerEnabled = new Gauge({
+  name: 'altius_sync_scheduler_enabled',
+  help: 'Whether the sync scheduler is running in this process (1) or not (0)',
+});
+
 // ─── Middleware ───
 
 /**

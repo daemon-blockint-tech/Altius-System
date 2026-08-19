@@ -75,6 +75,17 @@ export interface DatasetTransaction {
   rows: Record<string, unknown>[];
   /** Schema at the time of this transaction. */
   schemaVersion: number;
+  /**
+   * Full schema as of this transaction, recorded on `schema_change` entries so
+   * a historical schema version can be reconstructed from the log alone.
+   */
+  schemaSnapshot?: DatasetSchema;
+  /**
+   * Schema this `schema_change` entry replaced. Without it the version that
+   * preceded the first schema change is unreconstructable (no transaction
+   * carries it).
+   */
+  previousSchemaSnapshot?: DatasetSchema;
   /** ISO 8601 timestamp. */
   timestamp: string;
   /** Actor who performed the transaction. */

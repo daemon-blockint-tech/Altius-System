@@ -89,12 +89,32 @@ export interface AccessExplanation {
   reasons: AccessExplanationReason[];
   /** Summary message. */
   summary: string;
+  /**
+   * Set when the explanation was run for a principal other than the caller —
+   * the id of the simulated principal. Absent for a self-explanation, so a
+   * consumer can tell a real decision from a what-if one.
+   */
+  simulatedFor?: string;
+  /**
+   * Per-field visibility, present only when the caller asked about specific
+   * fields. This is what makes a redacted read explainable: a read returns
+   * `_redactedFields` with no reason, and this says why each one was withheld.
+   */
+  fields?: AccessExplanationField[];
+}
+
+/** Why one field is visible or withheld for the explained principal. */
+export interface AccessExplanationField {
+  field: string;
+  visible: boolean;
+  /** Human-readable reason, e.g. which policy withheld it. */
+  detail: string;
 }
 
 /** A single reason in an access explanation. */
 export interface AccessExplanationReason {
   /** The check that was performed. */
-  check: 'role' | 'rebac_relation' | 'marking' | 'consent' | 'tenant' | 'ownership';
+  check: 'role' | 'rebac_relation' | 'marking' | 'consent' | 'tenant' | 'ownership' | 'field_policy';
   /** Whether this check passed. */
   passed: boolean;
   /** Human-readable detail. */
@@ -110,10 +130,26 @@ export interface AccessExplanationService {
   /** Explain why a user can or cannot access a resource. */
   explain(params: {
     tenantId: string;
+    /** Principal the decision is explained FOR (may differ from the caller). */
     userId: string;
     objectType: string;
     objectId?: string;
     action?: string;
+    /**
+     * Roles held by the explained principal. Needed for field-level policy
+     * evaluation, which is role-driven rather than relation-driven.
+     */
+    roles?: string[];
+    /**
+     * Mandatory markings held by the explained principal. Markings restrict
+     * rather than expand access, so an explanation that ignores them can say
+     * GRANTED where the read path says withheld.
+     */
+    markings?: string[];
+    /** Fields to explain visibility for. Omit for a resource-level answer. */
+    fields?: string[];
+    /** True when explaining another principal's access, not the caller's. */
+    simulated?: boolean;
   }): Promise<AccessExplanation>;
 }
 

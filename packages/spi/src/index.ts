@@ -46,6 +46,7 @@ export type {
   StorageCapabilities,
   AggregateFunction,
   AggregateField,
+  AggregateHaving,
   AggregateQuery,
   AggregateGroup,
   AggregateResult,
@@ -167,6 +168,7 @@ export type {
   AccessExplanationService,
   AccessExplanation,
   AccessExplanationReason,
+  AccessExplanationField,
   ScopedSessionStore,
   ScopedSession,
   CreateScopedSessionInput,
@@ -441,6 +443,36 @@ export type {
   FreshnessSummary,
 } from './data-freshness.js';
 
+// Ontology change history
+export type {
+  OntologyChangeHistoryService,
+  OntologyChangeRecord,
+  OntologyChangeHistoryQuery,
+  OntologyRestoreResult,
+} from './ontology-change-history.js';
+
+// Value and conditional formatting
+export type {
+  ValueFormattingService,
+  FormatKind,
+  FormatRule,
+  ConditionalFormatRule,
+  FormatValueInput,
+  FormattedValue,
+  FormatCollectionInput,
+  FormatCollectionResult,
+} from './value-formatting.js';
+
+// Design system theming
+export type {
+  DesignSystemService,
+  ColorPalette,
+  TypographySettings,
+  DesignSystemTheme,
+  CreateThemeInput,
+  SetModulePaletteInput,
+} from './design-system.js';
+
 // Geospatial maps
 export type {
   GeospatialMapService,
@@ -523,6 +555,21 @@ export type {
   UploadAndLinkResult,
   UploadAndLinkInput,
 } from './platform-resources.js';
+
+// Saved views
+export type {
+  SavedView,
+  CreateSavedViewInput,
+  SavedViewStore,
+} from './saved-views.js';
+
+// User directory
+export type {
+  DirectoryUser,
+  ListUsersOptions,
+  ListUsersResult,
+  UserDirectoryService,
+} from './user-directory.js';
 
 // Ontology manager
 export type {
@@ -637,3 +684,31 @@ export type {
 } from './agent-threads.js';
 export { parseSearchQuery } from './search-query-parser.js';
 export type { ParsedSearchQuery, SearchTerm } from './search-query-parser.js';
+
+// Fase 22 — Workshop UI hardening
+export type {
+  DeclaredCommand,
+  DeclareCommandInput,
+  CommandExecution,
+  DragDropEvent,
+  RecordDragDropInput,
+  PairSyncEvent,
+  RecordPairInput,
+  CommandExchangeService,
+} from './command-exchange.js';
+export type {
+  FilterChip,
+  FilterState,
+  SaveFilterStateInput,
+  FilterSetOp,
+  ObjectSetFilterStore,
+} from './object-set-filter.js';
+export type {
+  GraphNode,
+  GraphEdge,
+  GraphLayout,
+  GraphResult,
+  SavedGraphView,
+  BuildGraphInput,
+  GraphService,
+} from './graph-service.js';

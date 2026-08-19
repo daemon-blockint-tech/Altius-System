@@ -56,6 +56,22 @@ spec:
           annotations:
             summary: "Storage backend unhealthy"
             description: "PostgreSQL storage health check failing for 2 minutes."
+        # The per-datasource gauges below only exist once a scheduler has
+        # registered a datasource, so on a deployment with ingestion switched
+        # off there are NO sync series and every alert here stays silent — which
+        # looks exactly like healthy ingestion. altius_sync_scheduler_enabled is
+        # always exported, so this is the one alert that can fire on "nothing is
+        # running". Off by default is a valid configuration, hence `info`: it is
+        # a statement of state for the deployment owner, not a page.
+        - alert: SyncSchedulerNotRunning
+          expr: |
+            altius_sync_scheduler_enabled == 0
+          for: 15m
+          labels:
+            severity: info
+          annotations:
+            summary: "Sync scheduler is not running"
+            description: "No API gateway replica is running the sync scheduler (SYNC_SCHEDULER_ENABLED unset, or no pack declares a connector). No datasource is being polled; the per-datasource sync alerts cannot fire. GET /api/v1/sync/status for detail."
         - alert: SyncRecordsFailing
           expr: |
             altius_sync_consecutive_failures >= 3

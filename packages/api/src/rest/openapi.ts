@@ -241,6 +241,71 @@ function objectPaths(obj: ObjectType): Record<string, unknown> {
     },
   };
 
+  // POST /api/v1/{plural}/histogram
+  paths[`/api/v1/${plural}/histogram`] = {
+    post: {
+      tags: [tag],
+      summary: `Histogram of ${obj.name} objects over a date or numeric field`,
+      operationId: `histogram${obj.name}s`,
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              required: ['field'],
+              properties: {
+                field: { type: 'string', description: 'Date or numeric field to bucket.' },
+                interval: { type: 'string', enum: ['day', 'week', 'month', 'year'], description: 'Date bucket granularity (date fields only).' },
+                min: { type: 'number', description: 'Numeric histogram lower bound (numeric fields only).' },
+                max: { type: 'number', description: 'Numeric histogram upper bound (numeric fields only).' },
+                numBuckets: { type: 'integer', description: 'Number of numeric buckets (default 10).', default: 10 },
+                filter: { type: 'object', description: 'Filter expression applied before bucketing.' },
+                limit: { type: 'integer' },
+                offset: { type: 'integer' },
+              },
+            },
+          },
+        },
+      },
+      responses: {
+        '200': { description: 'Histogram result', content: { 'application/json': { schema: { type: 'object' } } } },
+        '400': { description: 'Invalid field or bucket parameters' },
+        '401': { $ref: '#/components/responses/Unauthorized' },
+      },
+    },
+  };
+
+  // POST /api/v1/{plural}/facets
+  paths[`/api/v1/${plural}/facets`] = {
+    post: {
+      tags: [tag],
+      summary: `Facet counts for ${obj.name} objects (categorical field value counts)`,
+      operationId: `facets${obj.name}s`,
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              required: ['fields'],
+              properties: {
+                fields: { type: 'array', items: { type: 'string' }, description: 'Categorical fields to facet on.' },
+                filter: { type: 'object', description: 'Filter expression applied before faceting.' },
+                limit: { type: 'integer', description: 'Max values per facet (default 20).', default: 20 },
+              },
+            },
+          },
+        },
+      },
+      responses: {
+        '200': { description: 'Facet result', content: { 'application/json': { schema: { type: 'object' } } } },
+        '400': { description: 'Invalid field' },
+        '401': { $ref: '#/components/responses/Unauthorized' },
+      },
+    },
+  };
+
   // GET /api/v1/{plural}/export
   paths[`/api/v1/${plural}/export`] = {
     get: {
@@ -248,11 +313,14 @@ function objectPaths(obj: ObjectType): Record<string, unknown> {
       summary: `Export ${obj.name} objects`,
       description:
         'Streams permission-scoped, redacted and consent-filtered records. ' +
-        'Results are capped server-side; check the response for a truncation marker.',
+        'Results are capped server-side; X-Export-Truncated marks a capped page and ' +
+        'X-Export-Next-Offset carries the offset to request for the next one.',
       operationId: `export${obj.name}s`,
       parameters: [
         { name: 'format', in: 'query', schema: { type: 'string', enum: ['ndjson', 'csv'], default: 'ndjson' } },
         { name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1 } },
+        { name: 'offset', in: 'query', schema: { type: 'integer', minimum: 0 } },
+        { name: 'columns', in: 'query', description: 'Comma-separated column projection', schema: { type: 'string' } },
       ],
       responses: {
         '200': {
@@ -400,6 +468,34 @@ function objectPaths(obj: ObjectType): Record<string, unknown> {
     },
   };
 
+  // POST /api/v1/{plural}/{id}/graph
+  paths[`/api/v1/${plural}/{id}/graph`] = {
+    post: {
+      tags: [tag],
+      summary: `Build an interactive graph from a ${obj.name}`,
+      operationId: `graph${obj.name}`,
+      parameters: [
+        { name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
+      ],
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              description: 'Graph layout and traversal options.',
+            },
+          },
+        },
+      },
+      responses: {
+        '200': { description: 'Graph result', content: { 'application/json': { schema: { type: 'object' } } } },
+        '401': { $ref: '#/components/responses/Unauthorized' },
+        '404': { description: 'Not found' },
+      },
+    },
+  };
+
   // GET /api/v1/{plural}/{id}/links/{linkType}
   paths[`/api/v1/${plural}/{id}/links/{linkType}`] = {
     get: {
@@ -411,6 +507,16 @@ function objectPaths(obj: ObjectType): Record<string, unknown> {
         { name: 'linkType', in: 'path', required: true, schema: { type: 'string' } },
         { name: 'limit', in: 'query', schema: { type: 'integer', default: 25 } },
         { name: 'offset', in: 'query', schema: { type: 'integer', default: 0 } },
+        { name: 'direction', in: 'query', schema: { type: 'string', enum: ['outbound', 'inbound'], default: 'outbound' } },
+        {
+          name: 'asOf',
+          in: 'query',
+          schema: { type: 'string', format: 'date-time' },
+          description:
+            'Return the links that existed at this instant: created at or before it and not ' +
+            'deleted by it. Link PROPERTIES are current values — no per-link version history ' +
+            'is stored — so this answers membership, not property history.',
+        },
       ],
       responses: {
         '200': { description: 'Linked objects', content: { 'application/json': { schema: { type: 'object' } } } },
@@ -433,6 +539,46 @@ function objectPaths(obj: ObjectType): Record<string, unknown> {
         '200': { description: 'Version history', content: { 'application/json': { schema: { type: 'object' } } } },
         '401': { $ref: '#/components/responses/Unauthorized' },
         '404': { description: 'Not found' },
+      },
+    },
+  };
+
+  // ─── Fase 21 per-object surfaces ───
+  paths[`/api/v1/${plural}/freshness`] = {
+    get: {
+      tags: [tag],
+      summary: `Get data freshness for ${obj.name}`,
+      operationId: `get${obj.name}Freshness`,
+      responses: {
+        '200': { description: 'Freshness record', content: { 'application/json': { schema: { type: 'object' } } } },
+        '401': { $ref: '#/components/responses/Unauthorized' },
+        '404': { description: 'No freshness record' },
+      },
+    },
+  };
+  paths[`/api/v1/${plural}/sync`] = {
+    post: {
+      tags: [tag],
+      summary: `Record a sync for ${obj.name}`,
+      operationId: `record${obj.name}Sync`,
+      requestBody: { required: true, content: { 'application/json': { schema: { type: 'object' } } } },
+      responses: {
+        '201': { description: 'Freshness record', content: { 'application/json': { schema: { type: 'object' } } } },
+        '400': { description: 'Validation error' },
+        '401': { $ref: '#/components/responses/Unauthorized' },
+      },
+    },
+  };
+  paths[`/api/v1/${plural}/aggregate/poll`] = {
+    post: {
+      tags: [tag],
+      summary: `Poll an aggregate for ${obj.name}`,
+      operationId: `poll${obj.name}Aggregate`,
+      requestBody: { required: true, content: { 'application/json': { schema: { type: 'object' } } } },
+      responses: {
+        '200': { description: 'Aggregate result with polledAt timestamp', content: { 'application/json': { schema: { type: 'object' } } } },
+        '400': { description: 'Validation error' },
+        '401': { $ref: '#/components/responses/Unauthorized' },
       },
     },
   };
@@ -1108,7 +1254,34 @@ function platformPaths(): Record<string, unknown> {
         responses: { '204': { description: 'Dropped' }, '401': unauthorized },
       },
     },
+    '/api/v1/datasets/{name}/metadata': {
+      get: {
+        tags: ['Datasets'],
+        summary: 'Get dataset metadata (schema, rowCount, latest transaction)',
+        operationId: 'getDatasetMetadata',
+        parameters: [
+          { name: 'name', in: 'path', required: true, schema: { type: 'string' } },
+          { name: 'branch', in: 'query', schema: { type: 'string' } },
+        ],
+        responses: { '200': { description: 'Dataset metadata', content: jsonObject }, '401': unauthorized, '404': { description: 'Not found' } },
+      },
+    },
     '/api/v1/datasets/{name}/schema': {
+      get: {
+        tags: ['Datasets'],
+        summary: 'Retrieve dataset schema by branch, schema version, or transaction',
+        description:
+          'Historical versions are reconstructed from the schema_change transaction log. ' +
+          'Returns 404 when the requested version never existed or predates snapshot recording.',
+        operationId: 'getDatasetSchema',
+        parameters: [
+          { name: 'name', in: 'path', required: true, schema: { type: 'string' } },
+          { name: 'branch', in: 'query', schema: { type: 'string' } },
+          { name: 'version', in: 'query', schema: { type: 'integer' } },
+          { name: 'asOfTransactionId', in: 'query', schema: { type: 'string' } },
+        ],
+        responses: { '200': { description: 'Dataset schema', content: jsonObject }, '400': { description: 'Validation error' }, '401': unauthorized, '404': { description: 'Not found' } },
+      },
       put: {
         tags: ['Datasets'],
         summary: 'Update dataset schema',
@@ -1161,6 +1334,9 @@ function platformPaths(): Record<string, unknown> {
       get: {
         tags: ['Datasets'],
         summary: 'Read rows from a dataset',
+        description:
+          'Addressed by branch and transaction/schema version; shaped by column projection, ' +
+          'filter, sort and page. ?format=csv returns text/csv over the projected columns.',
         operationId: 'readDatasetRows',
         parameters: [
           { name: 'name', in: 'path', required: true, schema: { type: 'string' } },
@@ -1168,8 +1344,21 @@ function platformPaths(): Record<string, unknown> {
           { name: 'limit', in: 'query', schema: { type: 'integer' } },
           { name: 'offset', in: 'query', schema: { type: 'integer' } },
           { name: 'asOfTransactionId', in: 'query', schema: { type: 'string' } },
+          { name: 'asOfSchemaVersion', in: 'query', schema: { type: 'integer' } },
+          { name: 'columns', in: 'query', description: 'Comma-separated column projection', schema: { type: 'string' } },
+          { name: 'filter', in: 'query', description: 'JSON filter object, e.g. {"age":{"gt":30}}', schema: { type: 'string' } },
+          { name: 'orderBy', in: 'query', description: 'Comma-separated field:direction list, e.g. name:asc,age:desc', schema: { type: 'string' } },
+          { name: 'format', in: 'query', schema: { type: 'string', enum: ['json', 'csv'], default: 'json' } },
         ],
-        responses: { '200': { description: 'Read result', content: jsonObject }, '401': unauthorized },
+        responses: {
+          '200': {
+            description: 'Read result',
+            content: { 'application/json': { schema: { type: 'object' } }, 'text/csv': { schema: { type: 'string' } } },
+          },
+          '400': { description: 'Validation error' },
+          '401': unauthorized,
+          '404': { description: 'Not found' },
+        },
       },
     },
     '/api/v1/datasets/{name}/transactions': {
@@ -1225,6 +1414,18 @@ function platformPaths(): Record<string, unknown> {
       },
     },
     // ── Usage Metrics ──
+    '/api/v1/sync/status': {
+      get: {
+        tags: ['Sync'],
+        summary: 'Sync scheduler status (admin)',
+        description:
+          'Whether this process runs the sync scheduler, and the per-datasource state ' +
+          'it reports: mode, interval, ticks, consecutive failures, last error and last tick. ' +
+          '`enabled: false` means no datasource is being polled at all.',
+        operationId: 'getSyncStatus',
+        responses: { '200': { description: 'Scheduler status', content: jsonObject }, '401': unauthorized, '403': { description: 'Requires an admin role' } },
+      },
+    },
     '/api/v1/usage/object-types': {
       get: {
         tags: ['Usage'],
@@ -1233,6 +1434,7 @@ function platformPaths(): Record<string, unknown> {
         parameters: [
           { name: 'startTime', in: 'query', schema: { type: 'string', format: 'date-time' } },
           { name: 'endTime', in: 'query', schema: { type: 'string', format: 'date-time' } },
+          { name: 'days', in: 'query', description: 'Trailing window in days (default 30, max 365). Mutually exclusive with startTime/endTime.', schema: { type: 'integer', minimum: 1, maximum: 365, default: 30 } },
         ],
         responses: { '200': { description: 'Per-type metrics', content: jsonObject }, '401': unauthorized },
       },
@@ -1245,6 +1447,7 @@ function platformPaths(): Record<string, unknown> {
         parameters: [
           { name: 'startTime', in: 'query', schema: { type: 'string', format: 'date-time' } },
           { name: 'endTime', in: 'query', schema: { type: 'string', format: 'date-time' } },
+          { name: 'days', in: 'query', description: 'Trailing window in days (default 30, max 365). Mutually exclusive with startTime/endTime.', schema: { type: 'integer', minimum: 1, maximum: 365, default: 30 } },
         ],
         responses: { '200': { description: 'Per-action metrics', content: jsonObject }, '401': unauthorized },
       },
@@ -1257,6 +1460,7 @@ function platformPaths(): Record<string, unknown> {
         parameters: [
           { name: 'startTime', in: 'query', schema: { type: 'string', format: 'date-time' } },
           { name: 'endTime', in: 'query', schema: { type: 'string', format: 'date-time' } },
+          { name: 'days', in: 'query', description: 'Trailing window in days (default 30, max 365). Mutually exclusive with startTime/endTime.', schema: { type: 'integer', minimum: 1, maximum: 365, default: 30 } },
         ],
         responses: { '200': { description: 'Usage summary', content: jsonObject }, '401': unauthorized },
       },
@@ -1284,6 +1488,7 @@ function platformPaths(): Record<string, unknown> {
         parameters: [
           { name: 'startTime', in: 'query', schema: { type: 'string', format: 'date-time' } },
           { name: 'endTime', in: 'query', schema: { type: 'string', format: 'date-time' } },
+          { name: 'days', in: 'query', description: 'Trailing window in days (default 30, max 365). Mutually exclusive with startTime/endTime.', schema: { type: 'integer', minimum: 1, maximum: 365, default: 30 } },
         ],
         responses: { '200': { description: 'Active user count', content: jsonObject }, '401': unauthorized },
       },
@@ -1405,6 +1610,149 @@ function governancePaths(): Record<string, unknown> {
   };
 }
 
+// ─── Fase 22 platform paths ──────────────────────────────────────────────
+
+function fase22Paths(): Record<string, unknown> {
+  const jsonObject = { 'application/json': { schema: { type: 'object' } } };
+  const unauthorized = { $ref: '#/components/responses/Unauthorized' };
+  return {
+    '/api/v1/workshop/mobile/preview': {
+      get: {
+        tags: ['Workshop'],
+        summary: 'Get mobile app preview config',
+        operationId: 'getMobilePreview',
+        parameters: [{ name: 'appId', in: 'query', required: true, schema: { type: 'string' } }],
+        responses: { '200': { description: 'Mobile config', content: jsonObject }, '401': unauthorized },
+      },
+    },
+    '/api/v1/workshop/mobile/launch': {
+      post: {
+        tags: ['Workshop'],
+        summary: 'Launch a mobile app session',
+        operationId: 'launchMobileSession',
+        requestBody: { required: true, content: jsonObject },
+        responses: { '201': { description: 'Mobile session', content: jsonObject }, '400': { description: 'Validation error' }, '401': unauthorized },
+      },
+    },
+    '/api/v1/commands': {
+      get: {
+        tags: ['Commands'],
+        summary: 'List declared cross-app commands',
+        operationId: 'listDeclaredCommands',
+        parameters: [{ name: 'sourceAppId', in: 'query', schema: { type: 'string' } }],
+        responses: { '200': { description: 'Declared commands', content: jsonObject }, '401': unauthorized },
+      },
+      post: {
+        tags: ['Commands'],
+        summary: 'Declare a cross-app command',
+        operationId: 'declareCommand',
+        requestBody: { required: true, content: jsonObject },
+        responses: { '201': { description: 'Declared command', content: jsonObject }, '400': { description: 'Validation error' }, '401': unauthorized },
+      },
+    },
+    '/api/v1/commands/{id}/execute': {
+      post: {
+        tags: ['Commands'],
+        summary: 'Execute a declared command',
+        operationId: 'executeCommand',
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        requestBody: { required: true, content: jsonObject },
+        responses: { '200': { description: 'Command execution', content: jsonObject }, '400': { description: 'Validation error' }, '401': unauthorized },
+      },
+    },
+    '/api/v1/commands/drag-drop': {
+      post: {
+        tags: ['Commands'],
+        summary: 'Record a drag-drop payload exchange',
+        operationId: 'recordDragDrop',
+        requestBody: { required: true, content: jsonObject },
+        responses: { '201': { description: 'Drag-drop event', content: jsonObject }, '400': { description: 'Validation error' }, '401': unauthorized },
+      },
+    },
+    '/api/v1/commands/pair': {
+      post: {
+        tags: ['Commands'],
+        summary: 'Record an app-pairing sync',
+        operationId: 'recordPair',
+        requestBody: { required: true, content: jsonObject },
+        responses: { '201': { description: 'Pair sync event', content: jsonObject }, '400': { description: 'Validation error' }, '401': unauthorized },
+      },
+    },
+    '/api/v1/object-sets/{id}/filter-state': {
+      get: {
+        tags: ['ObjectSet'],
+        summary: 'Get an object set filter state',
+        operationId: 'getFilterState',
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: { '200': { description: 'Filter state', content: jsonObject }, '401': unauthorized },
+      },
+      post: {
+        tags: ['ObjectSet'],
+        summary: 'Save an object set filter state',
+        operationId: 'saveFilterState',
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        requestBody: { required: true, content: jsonObject },
+        responses: { '201': { description: 'Saved filter state', content: jsonObject }, '400': { description: 'Validation error' }, '401': unauthorized },
+      },
+    },
+    '/api/v1/object-sets/{id}/apply-filter': {
+      post: {
+        tags: ['ObjectSet'],
+        summary: 'Apply filter chips to an object set',
+        operationId: 'applyFilter',
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        requestBody: { required: true, content: jsonObject },
+        responses: { '200': { description: 'Filter expression and variables', content: jsonObject }, '400': { description: 'Validation error' }, '401': unauthorized },
+      },
+    },
+    '/api/v1/object-sets/{id}/extract-variables': {
+      post: {
+        tags: ['ObjectSet'],
+        summary: 'Extract filter values as variables',
+        operationId: 'extractVariables',
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        requestBody: { required: true, content: jsonObject },
+        responses: { '200': { description: 'Extracted variables', content: jsonObject }, '400': { description: 'Validation error' }, '401': unauthorized },
+      },
+    },
+    '/api/v1/object-sets/{id}/combine': {
+      post: {
+        tags: ['ObjectSet'],
+        summary: 'Combine two filter states with set algebra',
+        operationId: 'combineFilterStates',
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        requestBody: { required: true, content: jsonObject },
+        responses: { '201': { description: 'Combined filter state', content: jsonObject }, '400': { description: 'Validation error' }, '401': unauthorized },
+      },
+    },
+    '/api/v1/ontology/graph': {
+      post: {
+        tags: ['Ontology'],
+        summary: 'Build an ontology graph from a root object',
+        operationId: 'buildOntologyGraph',
+        requestBody: { required: true, content: jsonObject },
+        responses: { '200': { description: 'Graph nodes and edges', content: jsonObject }, '400': { description: 'Validation error' }, '401': unauthorized },
+      },
+    },
+    '/api/v1/ontology/graph/views': {
+      get: {
+        tags: ['Ontology'],
+        summary: 'List saved graph views',
+        operationId: 'listGraphViews',
+        parameters: [{ name: 'rootObjectType', in: 'query', schema: { type: 'string' } }],
+        responses: { '200': { description: 'Graph views', content: jsonObject }, '401': unauthorized },
+      },
+      post: {
+        tags: ['Ontology'],
+        summary: 'Save a graph view',
+        operationId: 'saveGraphView',
+        requestBody: { required: true, content: jsonObject },
+        responses: { '201': { description: 'Saved graph view', content: jsonObject }, '401': unauthorized },
+      },
+    },
+  };
+}
+
 // ─── Public API ───
 
 /**
@@ -1426,6 +1774,8 @@ export function generateOpenApiSpec(schema: ParsedSchema, version = '1.0.0'): Re
   paths = { ...paths, ...governancePaths() };
   // Object sets, action catalogue, LLM — per-deployment, also not ODL-derived.
   paths = { ...paths, ...platformPaths() };
+  // Fase 22 — mobile, cross-app commands, graph, filter state.
+  paths = { ...paths, ...fase22Paths() };
 
   // Component schemas
   const schemas: Record<string, unknown> = {};

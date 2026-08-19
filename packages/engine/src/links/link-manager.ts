@@ -257,6 +257,32 @@ export class LinkManager {
   }
 
   /**
+   * Links attached to `objectId` as they existed at `timestamp`.
+   *
+   * Separate from getLinks rather than an option on it: membership at an
+   * instant is resolved from the link's own lifecycle, and `includeDeleted` has
+   * no meaning there (a link deleted before the instant did not exist then).
+   * Properties are the link's current values — see the SPI method.
+   */
+  async getLinksAtTime(
+    objectId: string,
+    linkType: string,
+    direction: 'inbound' | 'outbound',
+    timestamp: string,
+    options: QueryOptions | undefined,
+    ctx: RequestContext,
+  ): Promise<LinkPage> {
+    return withSpan(tracer, 'getLinksAtTime', {
+      [SpanAttributes.OBJECT_ID]: objectId,
+      [SpanAttributes.OBJECT_TYPE]: linkType,
+      [SpanAttributes.TENANT_ID]: ctx.tenantId,
+      [SpanAttributes.OPERATION]: 'getLinksAtTime',
+    }, async () => {
+      return this.storage.getLinksAtTime(ctx, objectId, linkType, direction, timestamp as never, options);
+    });
+  }
+
+  /**
    * Traverse a graph path starting from an object.
    * Pass-through to SPI — no validation needed for reads.
    */

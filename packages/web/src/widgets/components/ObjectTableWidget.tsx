@@ -29,6 +29,11 @@ interface ObjectTableConfig {
   pageSize?: number;
   filter?: Record<string, unknown>;
   sortBy?: Record<string, 'ASC' | 'DESC'>;
+  // Display optimization
+  density?: 'compact' | 'comfortable' | 'spacious';
+  frozenColumns?: number;
+  enableVirtualization?: boolean;
+  maxHeight?: number;
 }
 
 export function ObjectTableWidget({ instance, ctx }: WidgetProps): React.ReactNode {
@@ -72,23 +77,40 @@ export function ObjectTableWidget({ instance, ctx }: WidgetProps): React.ReactNo
     sortable: c.sortable,
   }));
 
+  // Display optimization: density modes affect row padding
+  const densityPadding = config.density === 'compact' ? '2px 4px' : config.density === 'spacious' ? '8px 12px' : '4px 8px';
+  const tableStyle: React.CSSProperties = {
+    '--ed-density-padding': densityPadding,
+    maxHeight: config.maxHeight ?? 400,
+    overflow: 'auto',
+  } as React.CSSProperties;
+
+  // Frozen columns: apply sticky positioning to first N columns
+  const frozenCount = config.frozenColumns ?? 0;
+  const styledCols = cols.map((c, i) => ({
+    ...c,
+    frozen: i < frozenCount,
+  }));
+
   return (
-    <ObjectTable<Record<string, unknown>>
-      caption={`${objectType} list`}
-      columns={cols}
-      load={({ first, after, orderBy }) =>
-        accessor.list(
-          config.filter,
-          after === undefined ? { first } : { first, after },
-          undefined,
-          orderBy ? { [orderBy.key]: orderBy.direction } : config.sortBy,
-        )
-      }
-      subscribe={(onChange, onLost, onResumed) => {
-        const unsub = accessor.onAnyChange(onChange, config.filter, onLost, onResumed);
-        return { unsubscribe: () => unsub() };
-      }}
-      pageSize={pageSize}
-    />
+    <div style={tableStyle} data-density={config.density ?? 'comfortable'} data-virtualization={config.enableVirtualization ? 'on' : 'off'}>
+      <ObjectTable<Record<string, unknown>>
+        caption={`${objectType} list`}
+        columns={styledCols}
+        load={({ first, after, orderBy }) =>
+          accessor.list(
+            config.filter,
+            after === undefined ? { first } : { first, after },
+            undefined,
+            orderBy ? { [orderBy.key]: orderBy.direction } : config.sortBy,
+          )
+        }
+        subscribe={(onChange, onLost, onResumed) => {
+          const unsub = accessor.onAnyChange(onChange, config.filter, onLost, onResumed);
+          return { unsubscribe: () => unsub() };
+        }}
+        pageSize={config.enableVirtualization ? Math.max(pageSize, 50) : pageSize}
+      />
+    </div>
   );
 }

@@ -52,12 +52,32 @@ import {
   InMemoryLLMUsageTracker,
   InMemoryLLMRateLimiter,
   InMemoryGeospatialMapService,
+  InMemoryModelRegistryService,
+  InMemoryModelInferenceService,
+  InMemoryModelChainService,
+  InMemoryScenarioService,
+  InMemoryWorkshopPlatformService,
   InMemoryDataFreshnessService,
   InMemoryJustificationStore,
   InMemoryScopedSessionStore,
   InMemoryOntologySqlService,
   InMemoryDatasetService,
+  InMemoryDatasetMetadataService,
   InMemoryOntologyUsageMetricsService,
+  InMemoryEmbeddingService,
+  InMemoryPlatformResourceService,
+  InMemorySavedViewStore,
+  InMemoryUserDirectoryService,
+  InMemoryKioskService,
+  InMemoryLayoutDeviceCaptureService,
+  InMemoryOntologyManagerService,
+  InMemoryWorkshopUxService,
+  InMemoryValueFormattingService,
+  InMemoryDesignSystemService,
+  InMemoryOntologyChangeHistoryService,
+  InMemoryCommandExchangeService,
+  InMemoryObjectSetFilterStore,
+  InMemoryGraphService,
 } from '@altius/storage-memory';
 import { PostgresStorageProvider, PostgresLineageStore, PostgresAuditStore, PostgresConsentStore, PostgresSchemaRegistry, PostgresObjectSetStore,
   PostgresLLMUsageTracker, PostgresLLMRateLimiter,
@@ -101,6 +121,8 @@ import { invokeFunction } from './functions/invoke-function.js';
 import { generateAuditRoutes } from './rest/audit-routes.js';
 import { generateLlmRoutes, generateWorkflowRoutes } from './rest/index.js';
 import { generateTraverseRoutes } from './rest/traverse-route.js';
+import { recordRestUsage } from './rest/usage-recording.js';
+import { generateSyncStatusRoutes } from './rest/sync-status-routes.js';
 import { registerAttachmentRoutes } from './rest/attachment-routes.js';
 import { registerTimeSeriesRoutes } from './rest/timeseries-routes.js';
 import { registerBranchRoutes } from './rest/branch-routes.js';
@@ -109,7 +131,13 @@ import { registerNotificationRoutes } from './rest/notification-routes.js';
 import { registerEmbeddingRoutes } from './rest/embedding-routes.js';
 import { registerAlertingRoutes } from './rest/alerting-routes.js';
 import { registerGeospatialRoutes } from './rest/geospatial-routes.js';
+import { registerScenarioRoutes } from './rest/scenario-routes.js';
+import { registerWorkshopRoutes } from './rest/workshop-routes.js';
 import { registerLLMGatewayRoutes } from './rest/llm-gateway-routes.js';
+import { registerAppEmbeddingRoutes } from './rest/app-embedding-routes.js';
+import { registerPlatformResourceRoutes } from './rest/platform-resource-routes.js';
+import { registerSavedViewRoutes } from './rest/saved-view-routes.js';
+import { registerUserDirectoryRoutes } from './rest/user-directory-routes.js';
 import { readPlatformVersion } from './version.js';
 import { createFhirRouter } from './fhir/index.js';
 import { createCdmRouter } from './cdm/index.js';
@@ -141,7 +169,7 @@ import { recordSchemaVersion, BreakingSchemaChangeError } from './schema-registr
 import { SlidingWindowRateLimiter, RedisRateLimiter } from './governance/index.js';
 import type { RateLimiter, RateLimitIdentity } from './governance/index.js';
 import { toSnakeCase } from './utils.js';
-import { metricsMiddleware, metricsEndpoint, startStorageHealthGauge, startSyncMetricsGauge, packLoaded, podDirectOnly } from './metrics.js';
+import { metricsMiddleware, metricsEndpoint, startStorageHealthGauge, startSyncMetricsGauge, syncSchedulerEnabled, packLoaded, podDirectOnly } from './metrics.js';
 import { buildHealthReport } from './health.js';
 import type { HealthProbe } from './health.js';
 import { logger } from './logger.js';
@@ -1106,6 +1134,11 @@ async function main(): Promise<void> {
       tenantId: process.env.SYNC_TENANT || process.env.SEED_TENANT || 'system',
     });
   }
+  // Always exported, 0 or 1. The per-datasource sync gauges only exist once a
+  // scheduler has registered a datasource, so without this a deployment with
+  // ingestion off emits no sync series at all and every sync alert stays silent
+  // rather than firing.
+  syncSchedulerEnabled.set(syncBoot.scheduler ? 1 : 0);
   const stopSyncMetricsGauge = syncBoot.scheduler ? startSyncMetricsGauge(syncBoot.scheduler) : (() => {});
 
   // ── API Dependencies ──
@@ -1193,13 +1226,44 @@ async function main(): Promise<void> {
     alertingService: new InMemoryAlertingService(),
     // Geospatial map service — in-memory only (no Postgres implementation yet).
     geospatialMapService: new InMemoryGeospatialMapService(),
+    // Model inference and chain services — in-memory only.
+    // Scenario service — in-memory, wired to the model services.
+    ...(() => {
+      const registry = new InMemoryModelRegistryService();
+      const inference = new InMemoryModelInferenceService(registry);
+      const chain = new InMemoryModelChainService(inference);
+      const scenarios = new InMemoryScenarioService({ inferenceService: inference, chainService: chain });
+      return {
+        modelInferenceService: inference,
+        modelChainService: chain,
+        scenarioService: scenarios,
+      };
+    })(),
+    // Workshop platform service — in-memory app definition persistence.
+    workshopPlatformService: new InMemoryWorkshopPlatformService(),
     // Data freshness — in-memory only (no Postgres implementation yet).
     dataFreshnessService: new InMemoryDataFreshnessService(),
+    // App embedding & cross-app widgets — in-memory app registry, commands, pairing.
+    embeddingService: new InMemoryEmbeddingService(),
+    // Platform resources — in-memory resource catalog and object linking.
+    platformResourceService: new InMemoryPlatformResourceService(),
+    // Saved views — in-memory per-user widget view persistence.
+    savedViewStore: new InMemorySavedViewStore(),
+    // User directory — in-memory, seeded from authenticated users.
+    userDirectoryService: new InMemoryUserDirectoryService(),
     // Security governance — real AccessExplanationService wired to the live
     // AuthorizationService; JustificationStore and ScopedSessionStore are
     // in-memory only (no Postgres implementation yet).
     justificationStore: new InMemoryJustificationStore(),
-    accessExplanationService: new DefaultAccessExplanationService({ authorizationService }),
+    // The explanation runs the live marking policy and consent service, not a
+    // default-allow placeholder — an explanation that disagrees with the read
+    // path sends the operator to debug the wrong layer.
+    accessExplanationService: new DefaultAccessExplanationService({
+      authorizationService,
+      ...(markingPolicy ? { markingPolicy } : {}),
+      ...(consentSubjectTypes ? { consentSubjectTypes } : {}),
+      ...(consentService ? { consent: consentService } : {}),
+    }),
     scopedSessionStore: new InMemoryScopedSessionStore(),
     // Ontology SQL — in-memory only. Object reader delegates to the
     // ObjectManager so SQL queries read live ontology data.
@@ -1211,11 +1275,31 @@ async function main(): Promise<void> {
       }));
     }),
     // Datasets — in-memory only (no Postgres implementation yet).
-    datasetService: new InMemoryDatasetService(),
+    // The metadata service reads through the same DatasetService instance, so
+    // metadata/schema retrieval and the row/transaction routes agree.
+    ...(() => {
+      const datasets = new InMemoryDatasetService();
+      return {
+        datasetService: datasets,
+        datasetMetadataService: new InMemoryDatasetMetadataService(datasets),
+      };
+    })(),
     // Usage metrics — in-memory only. The record() method is an
     // instrumentation hook, not a REST endpoint. Future instrumentation
     // points: REST dispatch loop, GraphQL resolvers, action executor.
     usageMetricsService: new InMemoryOntologyUsageMetricsService(),
+    // Fase 21 services — in-memory only (no Postgres implementations yet).
+    kioskService: new InMemoryKioskService(),
+    layoutDeviceCaptureService: new InMemoryLayoutDeviceCaptureService(),
+    ontologyManagerService: new InMemoryOntologyManagerService(),
+    workshopUxService: new InMemoryWorkshopUxService(),
+    valueFormattingService: new InMemoryValueFormattingService(),
+    designSystemService: new InMemoryDesignSystemService(),
+    ontologyChangeHistoryService: new InMemoryOntologyChangeHistoryService(),
+    // Fase 22 services.
+    commandExchangeService: new InMemoryCommandExchangeService(),
+    objectSetFilterStore: new InMemoryObjectSetFilterStore(),
+    graphService: new InMemoryGraphService(),
   };
 
   // ── Express + HTTP Server ──
@@ -1518,6 +1602,13 @@ async function main(): Promise<void> {
     ...generateConsentRoutes(deps),
     ...generateLlmRoutes(deps),
     ...generateWorkflowRoutes(deps),
+    // Sync scheduler status. Registered unconditionally so the endpoint can
+    // report "not running" — the state an operator most needs to see, and the
+    // one an absent route cannot express.
+    ...generateSyncStatusRoutes({
+      enabled: syncBoot.scheduler !== null,
+      datasources: () => syncBoot.scheduler?.stats() ?? [],
+    }, deps.auditReaderRoles),
   ];
   for (const route of restRoutes) {
     const method = route.method.toLowerCase() as 'get' | 'post' | 'put' | 'delete';
@@ -1576,8 +1667,13 @@ async function main(): Promise<void> {
           return;
         }
 
+        const startedAt = Date.now();
         const result = await route.handler(restReq, ctx);
         await auditRead(deps.auditWriter, route, restReq, ctx, result.status);
+        // Usage metrics for the observability surface. Recorded here for the
+        // same reason read auditing is: this is where every REST route
+        // converges, so a route added later is instrumented the day it lands.
+        await recordRestUsage(deps, route, restReq, result.status, Date.now() - startedAt, logger);
         // Apply optional response headers (e.g. Content-Type for export endpoints)
         if (result.headers) {
           for (const [key, value] of Object.entries(result.headers)) res.setHeader(key, value);
@@ -1630,6 +1726,12 @@ async function main(): Promise<void> {
   // ── Alerting routes ──
   registerAlertingRoutes(app, deps, authenticator, isDev);
   registerGeospatialRoutes(app, deps, authenticator, isDev);
+  registerScenarioRoutes(app, deps, authenticator, isDev);
+  registerWorkshopRoutes(app, deps, authenticator, isDev);
+  registerAppEmbeddingRoutes(app, deps, authenticator, isDev);
+  registerPlatformResourceRoutes(app, deps, authenticator, isDev);
+  registerSavedViewRoutes(app, deps, authenticator, isDev);
+  registerUserDirectoryRoutes(app, deps, authenticator, isDev);
 
   // ── LLM gateway routes ──
   registerLLMGatewayRoutes(app, deps, authenticator, isDev);
