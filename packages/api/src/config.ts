@@ -366,6 +366,52 @@ export function parseSchemaBreakingPolicy(
 }
 
 // ---------------------------------------------------------------------------
+// Non-durable platform services
+// ---------------------------------------------------------------------------
+
+/**
+ * ALLOW_NON_DURABLE_SERVICES opts a Postgres deployment into the platform
+ * services that still have no Postgres implementation. The set changes as
+ * capabilities land, so it is not enumerated here — `nonDurableServices` in
+ * server.ts is the list, and the gateway names its members at boot.
+ *
+ * Those services keep their state in process memory, which means it is lost on
+ * restart and is NOT shared across replicas — behind a Deployment with more
+ * than one pod, a write served by one pod is invisible to every other pod, so
+ * reads are decided by whichever pod the load balancer picks. They are
+ * therefore withheld by default whenever a Postgres pool is configured: each
+ * route module already checks for its dep and does not register, so callers
+ * get a clean 404 rather than a 200 that silently drops their data.
+ *
+ * Set this to 'true' to register them anyway — appropriate for exercising
+ * those surfaces on a SINGLE-replica prod-test stack, never for real data.
+ * Blank counts as unset (compose/Helm pass unset knobs through as '').
+ */
+export function parseAllowNonDurableServices(
+  raw: string | undefined = process.env['ALLOW_NON_DURABLE_SERVICES'],
+): boolean {
+  const v = raw?.trim().toLowerCase();
+  if (!v || v === 'false') return false;
+  if (v === 'true') return true;
+  throw new Error(`ALLOW_NON_DURABLE_SERVICES: expected 'true' or 'false', got '${raw}'`);
+}
+
+/**
+ * Whether to wire the non-durable services described above.
+ *
+ * Without a Postgres pool memory is the only option and the deployment claims
+ * nothing more, so they are always registered. With one, the deployment does
+ * claim durability and they are registered only on an explicit opt-in.
+ */
+export function shouldRegisterNonDurableServices(
+  hasPgPool: boolean,
+  raw?: string | undefined,
+): boolean {
+  if (!hasPgPool) return true;
+  return parseAllowNonDurableServices(raw);
+}
+
+// ---------------------------------------------------------------------------
 // Required env vars for production
 // ---------------------------------------------------------------------------
 

@@ -11,6 +11,10 @@
  *   DOMAIN_PACKS         — Comma-separated or JSON array of pack names to load
  *   SEED_TENANT          — Tenant for domain-pack boot seeds (default: 'system', isolated from request tenants)
  *   SCHEMA_BREAKING_POLICY — 'warn' (default) records BREAKING schema changes and continues; 'block' fails boot without recording
+ *   ALLOW_NON_DURABLE_SERVICES — 'true' serves the services that have no Postgres implementation (see
+ *                          nonDurableServices below; the gateway names them at boot) from process memory on a
+ *                          Postgres deployment. Lost on restart and not shared across replicas: single-replica
+ *                          prod-testing only. Default off — those routes answer 404 instead
  *   SYNC_SCHEDULER_ENABLED — 'true' starts the sync poll loop for POLLING/CDC/BATCH pack connectors (default: off)
  *   AUTOMATION_ENABLED   — 'true' starts pack-declared automations (event + schedule); run on a SINGLE instance only (default: off)
  *   SYNC_TENANT          — Tenant for sync-ingested objects (default: SEED_TENANT, then 'system')
@@ -158,6 +162,7 @@ import {
   assertActionAuthzCoverage,
   extractUser,
   parseSchemaBreakingPolicy,
+  shouldRegisterNonDurableServices,
   REQUIRED_PROD_VARS,
 } from './config.js';
 import type { ActionAuthzMapping } from './config.js';
@@ -1160,6 +1165,12 @@ async function main(): Promise<void> {
   const isPostgres = storage instanceof PostgresStorageProvider;
   const pgPool = isPostgres ? (storage as PostgresStorageProvider).pool : null;
 
+  // Services with no Postgres implementation keep their state in process memory.
+  // Without a Postgres pool that is the only option and matches the deployment
+  // (single process, nothing durable claimed). With one, the deployment does
+  // claim durability, so they are withheld unless the operator opts in.
+  const nonDurableServicesEnabled = shouldRegisterNonDurableServices(pgPool !== null);
+
   let llmGateway: ApiDependencies['llmGateway'];
   if (llmClient.isConfigured()) {
     const llmModels = buildLlmModelCatalog(process.env);
@@ -1175,6 +1186,109 @@ async function main(): Promise<void> {
       usageTracker,
       rateLimiter,
     });
+  }
+
+  // ── Non-durable platform services ──
+  // These have no Postgres implementation: each keeps per-tenant state in a
+  // process-local Map, so it is lost on restart and NOT shared across replicas.
+  // Under Postgres they are withheld unless explicitly allowed — registering
+  // them there would answer 200 while dropping the write, and the shipped Helm
+  // values run the gateway at minReplicas 2, so a write served by one pod would
+  // already be invisible to the next read. Withholding leaves each route
+  // module's own dep check to skip registration, which is a clean 404. See
+  // shouldRegisterNonDurableServices in config.ts.
+  //
+  // Every entry here is non-durable by definition: give a service a Postgres
+  // implementation and it moves out of this object, up to the `pgPool ? … : …`
+  // stores below — which is exactly what a Postgres-backing PR should do to it.
+  // The boot log names whatever is in here, so it stays accurate as the set
+  // changes.
+  const nonDurableServices = nonDurableServicesEnabled
+    ? {
+      alertingService: new InMemoryAlertingService(),
+      // Geospatial map service — in-memory only (no Postgres implementation yet).
+      geospatialMapService: new InMemoryGeospatialMapService(),
+      // Model inference and chain services — in-memory only.
+      // Scenario service — in-memory, wired to the model services.
+      ...(() => {
+        const registry = new InMemoryModelRegistryService();
+        const inference = new InMemoryModelInferenceService(registry);
+        const chain = new InMemoryModelChainService(inference);
+        const scenarios = new InMemoryScenarioService({ inferenceService: inference, chainService: chain });
+        return {
+          modelInferenceService: inference,
+          modelChainService: chain,
+          scenarioService: scenarios,
+        };
+      })(),
+      // Workshop platform service — in-memory app definition persistence.
+      workshopPlatformService: new InMemoryWorkshopPlatformService(),
+      // Data freshness — in-memory only (no Postgres implementation yet).
+      dataFreshnessService: new InMemoryDataFreshnessService(),
+      // App embedding & cross-app widgets — in-memory app registry, commands, pairing.
+      embeddingService: new InMemoryEmbeddingService(),
+      // Platform resources — in-memory resource catalog and object linking.
+      platformResourceService: new InMemoryPlatformResourceService(),
+      // Saved views — in-memory per-user widget view persistence.
+      savedViewStore: new InMemorySavedViewStore(),
+      // User directory — in-memory, seeded from authenticated users.
+      userDirectoryService: new InMemoryUserDirectoryService(),
+      // Security governance — real AccessExplanationService wired to the live
+      // AuthorizationService; JustificationStore and ScopedSessionStore are
+      // in-memory only (no Postgres implementation yet).
+      justificationStore: new InMemoryJustificationStore(),
+      scopedSessionStore: new InMemoryScopedSessionStore(),
+      // Ontology SQL — in-memory only. Object reader delegates to the
+      // ObjectManager so SQL queries read live ontology data.
+      ontologySqlService: new InMemoryOntologySqlService(async (ctx, objectType) => {
+        const page = await objectManager.query(objectType, {}, { limit: 10000 }, ctx);
+        return page.items.map((obj: Record<string, unknown>) => ({
+          id: obj['_id'] as string,
+          properties: obj,
+        }));
+      }),
+      // Datasets — in-memory only (no Postgres implementation yet).
+      // The metadata service reads through the same DatasetService instance, so
+      // metadata/schema retrieval and the row/transaction routes agree.
+      ...(() => {
+        const datasets = new InMemoryDatasetService();
+        return {
+          datasetService: datasets,
+          datasetMetadataService: new InMemoryDatasetMetadataService(datasets),
+        };
+      })(),
+      // Usage metrics — in-memory only. The record() method is an
+      // instrumentation hook, not a REST endpoint. Future instrumentation
+      // points: REST dispatch loop, GraphQL resolvers, action executor.
+      usageMetricsService: new InMemoryOntologyUsageMetricsService(),
+      // Fase 21 services — in-memory only (no Postgres implementations yet).
+      kioskService: new InMemoryKioskService(),
+      layoutDeviceCaptureService: new InMemoryLayoutDeviceCaptureService(),
+      ontologyManagerService: new InMemoryOntologyManagerService(),
+      workshopUxService: new InMemoryWorkshopUxService(),
+      valueFormattingService: new InMemoryValueFormattingService(),
+      designSystemService: new InMemoryDesignSystemService(),
+      ontologyChangeHistoryService: new InMemoryOntologyChangeHistoryService(),
+      // Fase 22 services.
+      commandExchangeService: new InMemoryCommandExchangeService(),
+      objectSetFilterStore: new InMemoryObjectSetFilterStore(),
+      graphService: new InMemoryGraphService(),
+      }
+    : {};
+
+  if (pgPool) {
+    const names = Object.keys(nonDurableServices).sort().join(', ');
+    if (nonDurableServicesEnabled) {
+      logger.warn(
+        `ALLOW_NON_DURABLE_SERVICES=true — these are served from process memory on a Postgres deployment: ${names}. ` +
+          'Their state is lost on restart and is not shared across replicas, so run a single gateway replica and do not keep real data in them.',
+      );
+    } else {
+      logger.info(
+        'Non-durable services withheld: they have no Postgres implementation, so their routes are not registered and answer 404. ' +
+          'Set ALLOW_NON_DURABLE_SERVICES=true to serve them from process memory on a single-replica prod-test stack.',
+      );
+    }
   }
 
   const deps: ApiDependencies = {
@@ -1223,38 +1337,6 @@ async function main(): Promise<void> {
     commentStore: pgPool ? new PostgresCommentStore(pgPool) : new InMemoryCommentStore(),
     notificationStore: pgPool ? new PostgresNotificationStore(pgPool) : new InMemoryNotificationStore(),
     embeddingStore: pgPool ? new PostgresEmbeddingStore(pgPool) : new InMemoryEmbeddingStore(),
-    alertingService: new InMemoryAlertingService(),
-    // Geospatial map service — in-memory only (no Postgres implementation yet).
-    geospatialMapService: new InMemoryGeospatialMapService(),
-    // Model inference and chain services — in-memory only.
-    // Scenario service — in-memory, wired to the model services.
-    ...(() => {
-      const registry = new InMemoryModelRegistryService();
-      const inference = new InMemoryModelInferenceService(registry);
-      const chain = new InMemoryModelChainService(inference);
-      const scenarios = new InMemoryScenarioService({ inferenceService: inference, chainService: chain });
-      return {
-        modelInferenceService: inference,
-        modelChainService: chain,
-        scenarioService: scenarios,
-      };
-    })(),
-    // Workshop platform service — in-memory app definition persistence.
-    workshopPlatformService: new InMemoryWorkshopPlatformService(),
-    // Data freshness — in-memory only (no Postgres implementation yet).
-    dataFreshnessService: new InMemoryDataFreshnessService(),
-    // App embedding & cross-app widgets — in-memory app registry, commands, pairing.
-    embeddingService: new InMemoryEmbeddingService(),
-    // Platform resources — in-memory resource catalog and object linking.
-    platformResourceService: new InMemoryPlatformResourceService(),
-    // Saved views — in-memory per-user widget view persistence.
-    savedViewStore: new InMemorySavedViewStore(),
-    // User directory — in-memory, seeded from authenticated users.
-    userDirectoryService: new InMemoryUserDirectoryService(),
-    // Security governance — real AccessExplanationService wired to the live
-    // AuthorizationService; JustificationStore and ScopedSessionStore are
-    // in-memory only (no Postgres implementation yet).
-    justificationStore: new InMemoryJustificationStore(),
     // The explanation runs the live marking policy and consent service, not a
     // default-allow placeholder — an explanation that disagrees with the read
     // path sends the operator to debug the wrong layer.
@@ -1264,42 +1346,10 @@ async function main(): Promise<void> {
       ...(consentSubjectTypes ? { consentSubjectTypes } : {}),
       ...(consentService ? { consent: consentService } : {}),
     }),
-    scopedSessionStore: new InMemoryScopedSessionStore(),
-    // Ontology SQL — in-memory only. Object reader delegates to the
-    // ObjectManager so SQL queries read live ontology data.
-    ontologySqlService: new InMemoryOntologySqlService(async (ctx, objectType) => {
-      const page = await objectManager.query(objectType, {}, { limit: 10000 }, ctx);
-      return page.items.map((obj: Record<string, unknown>) => ({
-        id: obj['_id'] as string,
-        properties: obj,
-      }));
-    }),
-    // Datasets — in-memory only (no Postgres implementation yet).
-    // The metadata service reads through the same DatasetService instance, so
-    // metadata/schema retrieval and the row/transaction routes agree.
-    ...(() => {
-      const datasets = new InMemoryDatasetService();
-      return {
-        datasetService: datasets,
-        datasetMetadataService: new InMemoryDatasetMetadataService(datasets),
-      };
-    })(),
-    // Usage metrics — in-memory only. The record() method is an
-    // instrumentation hook, not a REST endpoint. Future instrumentation
-    // points: REST dispatch loop, GraphQL resolvers, action executor.
-    usageMetricsService: new InMemoryOntologyUsageMetricsService(),
-    // Fase 21 services — in-memory only (no Postgres implementations yet).
-    kioskService: new InMemoryKioskService(),
-    layoutDeviceCaptureService: new InMemoryLayoutDeviceCaptureService(),
-    ontologyManagerService: new InMemoryOntologyManagerService(),
-    workshopUxService: new InMemoryWorkshopUxService(),
-    valueFormattingService: new InMemoryValueFormattingService(),
-    designSystemService: new InMemoryDesignSystemService(),
-    ontologyChangeHistoryService: new InMemoryOntologyChangeHistoryService(),
-    // Fase 22 services.
-    commandExchangeService: new InMemoryCommandExchangeService(),
-    objectSetFilterStore: new InMemoryObjectSetFilterStore(),
-    graphService: new InMemoryGraphService(),
+
+    // Non-durable platform services — withheld under Postgres unless opted in.
+    // Built and explained above.
+    ...nonDurableServices,
   };
 
   // ── Express + HTTP Server ──

@@ -108,6 +108,9 @@ which is the same trade the chart already makes for ingress TLS.
   {{- if or .Values.singleInstance.automation .Values.singleInstance.syncScheduler -}}
     {{- fail (printf "apiGateway runs %d replicas but singleInstance.automation/syncScheduler is enabled. A Deployment cannot elect a leader, so every pod would fire every trigger. Pin a single pod (apiGateway.replicaCount=1, apiGateway.autoscaling.enabled=false) or run these on their own single-replica release." $replicas) -}}
   {{- end -}}
+  {{- if .Values.singleInstance.allowNonDurableServices -}}
+    {{- fail (printf "apiGateway runs %d replicas but singleInstance.allowNonDurableServices is enabled. Several platform services have no Postgres implementation and keep state in each pod's memory, so a write served by one pod is invisible to the other %d and reads follow whichever pod is routed. Pin a single pod (apiGateway.replicaCount=1, apiGateway.autoscaling.enabled=false), or leave this off and let those routes answer 404." $replicas (sub $replicas 1)) -}}
+  {{- end -}}
 {{- end -}}
 {{- end }}
 
