@@ -4,6 +4,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { parseSql } from './sql-parser.js';
 import type {
   BatchTransformService,
   BatchTransform,
@@ -418,82 +419,6 @@ export class InMemoryDatasetMetadataService implements DatasetMetadataService {
 // SQL query service
 // ===========================================================================
 
-interface SqlAst {
-  columns: string[] | '*';
-  from: string;
-  alias?: string;
-  where?: Array<{ field: string; op: string; value: unknown }>;
-  orderBy?: Array<{ field: string; direction: 'asc' | 'desc' }>;
-  limit?: number;
-  join?: { table: string; leftKey: string; rightKey: string; kind: 'inner' | 'left' | 'right' | 'outer' };
-}
-
-function parseSql(sql: string): SqlAst {
-  const s = sql.trim().replace(/;$/, '');
-  const upper = s.toUpperCase();
-  if (!upper.startsWith('SELECT')) throw new Error('Only SELECT statements supported');
-  const fromIdx = upper.indexOf(' FROM ');
-  if (fromIdx < 0) throw new Error('Missing FROM clause');
-  const colsPart = s.slice(6, fromIdx).trim();
-  const columns = colsPart === '*' ? '*' : colsPart.split(',').map(c => c.trim());
-  // FROM ... [JOIN ... ON ...] [WHERE ...] [ORDER BY ...] [LIMIT n]
-  const rest = s.slice(fromIdx + 6);
-  // Extract LIMIT
-  let limit: number | undefined;
-  const limitMatch = rest.match(/\s+LIMIT\s+(\d+)\s*$/i);
-  let restNoLimit = rest;
-  if (limitMatch) {
-    limit = parseInt(limitMatch[1]!, 10);
-    restNoLimit = rest.slice(0, limitMatch.index);
-  }
-  // Extract ORDER BY
-  let orderBy: Array<{ field: string; direction: 'asc' | 'desc' }> | undefined;
-  const orderMatch = restNoLimit.match(/\s+ORDER\s+BY\s+(.+)$/i);
-  let restNoOrder = restNoLimit;
-  if (orderMatch) {
-    restNoOrder = restNoLimit.slice(0, orderMatch.index);
-    orderBy = orderMatch[1]!.split(',').map(p => {
-      const [field, dir] = p.trim().split(/\s+/);
-      return { field: field!, direction: (dir?.toUpperCase() === 'DESC' ? 'desc' : 'asc') as 'asc' | 'desc' };
-    });
-  }
-  // Extract WHERE
-  let where: Array<{ field: string; op: string; value: unknown }> | undefined;
-  const whereMatch = restNoOrder.match(/\s+WHERE\s+(.+)$/i);
-  let restNoWhere = restNoOrder;
-  if (whereMatch) {
-    restNoWhere = restNoOrder.slice(0, whereMatch.index);
-    where = whereMatch[1]!.split(/\s+AND\s+/i).map(cond => {
-      const m = cond.match(/^(\w+)\s*(=|!=|<>|<=|>=|<|>)\s*(.+)$/);
-      if (!m) throw new Error(`Unsupported WHERE condition: ${cond}`);
-      const field = m[1]!;
-      const op = m[2] === '=' ? 'eq' : m[2] === '!=' || m[2] === '<>' ? 'neq' : m[2] === '<' ? 'lt' : m[2] === '>' ? 'gt' : m[2] === '<=' ? 'lte' : 'gte';
-      let value: unknown = m[3]!;
-      value = (value as string).replace(/^['"]|['"]$/g, '');
-      if (/^-?\d+(\.\d+)?$/.test(value as string)) value = Number(value);
-      return { field, op, value };
-    });
-  }
-  // Extract JOIN
-  let join: SqlAst['join'] | undefined;
-  let from = restNoWhere.trim();
-  const joinMatch = from.match(/^(.+?)\s+(INNER|LEFT|RIGHT|OUTER)?\s*JOIN\s+(\w+)\s+ON\s+(\w+)\.(\w+)\s*=\s*(\w+)\.(\w+)$/i);
-  if (joinMatch) {
-    from = joinMatch[1]!.trim();
-    const kindRaw = (joinMatch[2] ?? 'INNER').toUpperCase();
-    const kind = (kindRaw === 'LEFT' ? 'left' : kindRaw === 'RIGHT' ? 'right' : kindRaw === 'OUTER' ? 'outer' : 'inner') as 'inner' | 'left' | 'right' | 'outer';
-    join = { table: joinMatch[3]!, leftKey: joinMatch[5]!, rightKey: joinMatch[7]!, kind };
-  }
-  // FROM may have alias: "dataset a" or "dataset AS a"
-  const fromParts = from.split(/\s+(?:AS\s+)?/i);
-  return {
-    columns: columns as string[] | '*',
-    from: fromParts[0]!,
-    alias: fromParts[1],
-    where, orderBy, limit, join,
-  };
-}
-
 export class InMemorySqlQueryService implements SqlQueryService {
   private readonly jobs = new Map<string, Map<string, SqlQueryJob>>();
 
@@ -525,23 +450,30 @@ export class InMemorySqlQueryService implements SqlQueryService {
       if (ast.columns !== '*') readOpts.columns = ast.columns;
       let result = await this.datasets.read(ctx, ast.from, readOpts, input.branch);
       let rows = result.rows;
-      if (ast.join) {
-        const rightResult = await this.datasets.read(ctx, ast.join.table, undefined, input.branch);
-        const rightMap = new Map<string, Record<string, unknown>>();
-        for (const r of rightResult.rows) rightMap.set(String(r[ast.join.rightKey]), r);
-        const joined: Record<string, unknown>[] = [];
-        for (const l of rows) {
-          const r = rightMap.get(String(l[ast.join.leftKey]));
-          if (r) joined.push({ ...l, ...r });
-          else if (ast.join.kind === 'left' || ast.join.kind === 'outer') joined.push(l);
-        }
-        if (ast.join.kind === 'right' || ast.join.kind === 'outer') {
-          const leftKeys = new Set(rows.map(l => String(l[ast.join!.leftKey])));
-          for (const r of rightResult.rows) {
-            if (!leftKeys.has(String(r[ast.join!.rightKey]))) joined.push(r);
+      if (ast.joins.length > 0) {
+        const join = ast.joins[0]!;
+        // Parse "leftTable.leftKey = rightTable.rightKey"
+        const onParts = join.on.match(/(\w+)\.(\w+)\s*=\s*(\w+)\.(\w+)/);
+        if (onParts) {
+          const leftKey = onParts[2]!;
+          const rightKey = onParts[4]!;
+          const rightResult = await this.datasets.read(ctx, join.table, undefined, input.branch);
+          const rightMap = new Map<string, Record<string, unknown>>();
+          for (const r of rightResult.rows) rightMap.set(String(r[rightKey]), r);
+          const joined: Record<string, unknown>[] = [];
+          for (const l of rows) {
+            const r = rightMap.get(String(l[leftKey]));
+            if (r) joined.push({ ...l, ...r });
+            else if (join.type === 'left' || join.type === 'outer') joined.push(l);
           }
+          if (join.type === 'right' || join.type === 'outer') {
+            const leftKeys = new Set(rows.map(l => String(l[leftKey])));
+            for (const r of rightResult.rows) {
+              if (!leftKeys.has(String(r[rightKey]))) joined.push(r);
+            }
+          }
+          rows = joined;
         }
-        rows = joined;
       }
       const resultColumns = ast.columns === '*' ? (rows[0] ? Object.keys(rows[0]!) : []) : ast.columns;
       const completed: SqlQueryJob = {
