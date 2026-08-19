@@ -74,3 +74,6 @@ export { InMemoryWorkshopPlatformService } from './in-memory-workshop-platform.j
 export { InMemoryCommandExchangeService } from './in-memory-command-exchange.js';
 export { InMemoryObjectSetFilterStore } from './in-memory-object-set-filter.js';
 export { InMemoryGraphService } from './in-memory-graph-service.js';
+
+// Fase 23
+export { InMemoryTransformExpressionService } from './in-memory-transform-expression.js';

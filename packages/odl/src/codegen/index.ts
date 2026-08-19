@@ -32,12 +32,16 @@ const SCALAR_MAP: Record<string, string> = {
   JSON: 'JSON',
   URI: 'URI',
   Attachment: 'Attachment',
+  GeoShape: 'GeoShape',
+  Marking: 'Marking',
+  Cipher: 'Cipher',
+  Array: 'JSON',
 };
 
 const BUILTIN_SCALARS = new Set(Object.keys(SCALAR_MAP));
 
 // ODL custom scalars that need explicit declaration in GraphQL
-const CUSTOM_SCALARS = ['Date', 'DateTime', 'Duration', 'GeoPoint', 'JSON', 'URI', 'Attachment'];
+const CUSTOM_SCALARS = ['Date', 'DateTime', 'Duration', 'GeoPoint', 'JSON', 'URI', 'Attachment', 'GeoShape', 'Marking', 'Cipher'];
 
 // ─── Filter operator types by scalar category ───
 

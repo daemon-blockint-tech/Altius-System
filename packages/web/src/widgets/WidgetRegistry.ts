@@ -82,6 +82,12 @@ import {
   ObjectSetFilterStateWidget,
   CommandLauncherWidget,
 } from './components/Fase22Widgets.js';
+import {
+  ActionFormConfigWidget,
+  OntologyChangeManagerWidget,
+  BranchManagerWidget,
+  TransformExpressionWidget,
+} from './components/Fase23Widgets.js';
 // PlaceholderWidget is no longer imported — all widget types now have real implementations.
 // ── Registry ──────────────────────────────────────────────────
 
@@ -214,3 +220,9 @@ registerWidget('geolocation_prompt', GeolocationPromptWidget);
 registerWidget('graph_visualization', GraphVisualizationWidget);
 registerWidget('filter_state', ObjectSetFilterStateWidget);
 registerWidget('command_launcher', CommandLauncherWidget);
+
+// Fase 23 widgets:
+registerWidget('action_form_config', ActionFormConfigWidget);
+registerWidget('ontology_change_manager', OntologyChangeManagerWidget);
+registerWidget('branch_manager', BranchManagerWidget);
+registerWidget('transform_expression', TransformExpressionWidget);

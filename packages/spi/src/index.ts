@@ -449,6 +449,10 @@ export type {
   OntologyChangeRecord,
   OntologyChangeHistoryQuery,
   OntologyRestoreResult,
+  OntologyChangeInput,
+  OntologyChangeSave,
+  OntologyChangeValidationResult,
+  OntologyChangeApplyResult,
 } from './ontology-change-history.js';
 
 // Value and conditional formatting
@@ -712,3 +716,22 @@ export type {
   BuildGraphInput,
   GraphService,
 } from './graph-service.js';
+
+// Fase 23 — Ontology & schema tooling
+export type {
+  RichPropertyKind,
+  PropertyRedactionConfig,
+  PropertyConsentConfig,
+  PropertyValidationRule,
+  RichPropertyTypeInfo,
+  FormValueSource,
+  ActionFormField,
+  ActionFormConfig,
+  PropertyValidationResult,
+} from './ontology.js';
+export type {
+  TransformFunction,
+  TransformExpressionInput,
+  TransformExpressionResult,
+  TransformExpressionService,
+} from './transform-expression.js';

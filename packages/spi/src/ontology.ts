@@ -363,6 +363,30 @@ export interface LinkTypeDefinition {
   properties?: PropertyDefinition[];
 }
 
+export type RichPropertyKind =
+  | 'scalar'
+  | 'struct'
+  | 'array'
+  | 'geoshape'
+  | 'marking'
+  | 'cipher';
+
+export interface PropertyRedactionConfig {
+  mode: 'token' | 'mask' | 'drop';
+  reason?: string;
+}
+
+export interface PropertyConsentConfig {
+  purpose: string;
+  required: boolean;
+}
+
+export interface PropertyValidationRule {
+  type: 'required' | 'min' | 'max' | 'pattern' | 'enum';
+  value?: unknown;
+  message?: string;
+}
+
 export interface PropertyDefinition {
   name: string;
   type: string;
@@ -378,6 +402,18 @@ export interface PropertyDefinition {
    * memory one round-tripped.
    */
   isList?: boolean;
+  /** Rich property kind for ODL/SPI tooling. */
+  richKind?: RichPropertyKind;
+  /** For array kinds, the element type name. */
+  elementType?: string;
+  /** Storage hint — JSONB for rich structured types. */
+  storage?: 'jsonb' | 'text' | 'scalar';
+  /** Per-property redaction configuration. */
+  redaction?: PropertyRedactionConfig;
+  /** Per-property consent requirement. */
+  consent?: PropertyConsentConfig;
+  /** Validation rules for this property. */
+  validationRules?: PropertyValidationRule[];
 }
 
 export interface IndexDefinition {
@@ -587,4 +623,58 @@ export interface SearchResult {
   hits: SearchHit[];
   totalCount: number;
   hasNextPage: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Rich property types and form configuration (Fase 23)
+// ---------------------------------------------------------------------------
+
+/** A rich property type descriptor returned by the ontology introspection API. */
+export interface RichPropertyTypeInfo {
+  name: string;
+  kind: RichPropertyKind;
+  baseType: string;
+  isList: boolean;
+  elementType?: string;
+  storage: 'jsonb' | 'text' | 'scalar';
+  redaction?: PropertyRedactionConfig;
+  consent?: PropertyConsentConfig;
+  validationRules?: PropertyValidationRule[];
+}
+
+/** Value-source descriptor for an action/form field. */
+export interface FormValueSource {
+  kind: 'static' | 'query' | 'enum';
+  values?: unknown[];
+  objectType?: string;
+}
+
+/** A single action or function parameter field in form-layout terms. */
+export interface ActionFormField {
+  name: string;
+  type: string;
+  required: boolean;
+  hidden?: boolean;
+  readOnly?: boolean;
+  label?: string;
+  group?: string;
+  order?: number;
+  renderHint?: string;
+  format?: string;
+  defaultValue?: unknown;
+  validation?: PropertyValidationRule[];
+  valueSource?: FormValueSource;
+}
+
+/** Full form configuration for an action or function. */
+export interface ActionFormConfig {
+  name: string;
+  description?: string;
+  fields: ActionFormField[];
+}
+
+/** Validation result for a property value. */
+export interface PropertyValidationResult {
+  valid: boolean;
+  errors: string[];
 }

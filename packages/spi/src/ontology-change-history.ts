@@ -42,8 +42,32 @@ export interface OntologyRestoreResult {
   appliedAt: string;
 }
 
+/** A draft/saved ontology change. */
+export interface OntologyChangeInput {
+  migrationClass: string;
+  diffSummary?: string;
+  snapshot: Record<string, unknown>;
+}
+
+/** A saved ontology change record (used for updates too). */
+export type OntologyChangeSave = OntologyChangeInput | OntologyChangeRecord;
+
+/** Result of a change validation. */
+export interface OntologyChangeValidationResult {
+  valid: boolean;
+  errors: string[];
+}
+
+/** Result of applying a saved change. */
+export interface OntologyChangeApplyResult {
+  applied: boolean;
+  changeId: string;
+  version: number;
+  appliedAt: string;
+}
+
 /**
- * Read + restore service for ontology change history.
+ * Read + restore + manage service for ontology change history.
  */
 export interface OntologyChangeHistoryService {
   /** List change history records for the tenant. */
@@ -54,4 +78,13 @@ export interface OntologyChangeHistoryService {
 
   /** Restore a single object type to the schema captured in a prior change. */
   restore(ctx: RequestContext, id: string, objectType: string): Promise<OntologyRestoreResult>;
+
+  /** Save a new ontology change draft (or overwrite an existing record). */
+  saveChange(ctx: RequestContext, input: OntologyChangeSave): Promise<OntologyChangeRecord>;
+
+  /** Validate a saved ontology change before it is applied. */
+  validateChange(ctx: RequestContext, id: string): Promise<OntologyChangeValidationResult>;
+
+  /** Apply a validated ontology change. */
+  applyChange(ctx: RequestContext, id: string): Promise<OntologyChangeApplyResult>;
 }

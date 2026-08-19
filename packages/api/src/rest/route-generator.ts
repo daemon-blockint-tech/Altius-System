@@ -30,6 +30,7 @@ import { generateLlmRoutes } from './llm-routes.js';
 import { generateDataFreshnessRoutes } from './data-freshness-routes.js';
 import { generateFase21ObjectRoutes, generateFase21PlatformRoutes } from './fase21-routes.js';
 import { generateFase22ObjectRoutes, generateFase22PlatformRoutes } from './fase22-routes.js';
+import { generateFase23ActionFormRoutes, generateFase23PlatformRoutes } from './fase23-routes.js';
 import { generateSecurityGovernanceRoutes } from './security-governance-routes.js';
 import { generateOntologySqlRoutes } from './ontology-sql-routes.js';
 import { generateDatasetRoutes } from './dataset-routes.js';
@@ -445,6 +446,9 @@ export function generateRestRoutes(
     routes.push(...generateObjectRoutes(obj, deps));
   }
 
+  // Fase 23 — action/function form config (registered before generic action/function routes)
+  routes.push(...generateFase23ActionFormRoutes(schema, deps));
+
   for (const action of schema.actionTypes) {
     routes.push(generateActionRoute(action, schema, deps));
   }
@@ -475,6 +479,9 @@ export function generateRestRoutes(
   // Fase 22 — mobile, cross-app commands, graph, filter state
   routes.push(...generateFase22ObjectRoutes(schema, deps));
   routes.push(...generateFase22PlatformRoutes(deps));
+
+  // Fase 23 — ontology & schema tooling
+  routes.push(...generateFase23PlatformRoutes(deps));
 
   // Security governance routes (access explanation, justifications, scoped sessions)
   routes.push(...generateSecurityGovernanceRoutes(deps));

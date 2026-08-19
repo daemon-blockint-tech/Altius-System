@@ -623,6 +623,18 @@ function actionPath(action: ActionType): Record<string, unknown> {
         },
       },
     },
+    [`/api/v1/actions/${action.name}/form`]: {
+      post: {
+        tags: ['Actions'],
+        summary: `Get the JSON-Schema form configuration for ${action.name}`,
+        operationId: `get${action.name}FormConfig`,
+        requestBody: { required: false, content: { 'application/json': { schema: { type: 'object' } } } },
+        responses: {
+          '200': { description: 'Form configuration', content: { 'application/json': { schema: { type: 'object' } } } },
+          '401': { $ref: '#/components/responses/Unauthorized' },
+        },
+      },
+    },
   };
 }
 
@@ -1753,6 +1765,34 @@ function fase22Paths(): Record<string, unknown> {
   };
 }
 
+// ─── Fase 23 ontology & schema tooling paths (always served) ───────────────
+
+function fase23Paths(): Record<string, unknown> {
+  const jsonObject = { 'application/json': { schema: { type: 'object' } } };
+  const unauthorized = { $ref: '#/components/responses/Unauthorized' };
+  const typeParam = { name: 'type', in: 'path', required: true, schema: { type: 'string' } };
+  return {
+    '/api/v1/ontology/types/{type}/property-types': {
+      get: {
+        tags: ['Ontology'],
+        summary: 'List rich property types for an ontology type',
+        operationId: 'listPropertyTypes',
+        parameters: [typeParam],
+        responses: { '200': { description: 'Property type list', content: jsonObject }, '401': unauthorized, '404': { description: 'Ontology type not found' } },
+      },
+    },
+    '/api/v1/ontology/validate-property': {
+      post: {
+        tags: ['Ontology'],
+        summary: 'Validate a rich property value',
+        operationId: 'validateProperty',
+        requestBody: { required: true, content: jsonObject },
+        responses: { '200': { description: 'Validation result', content: jsonObject }, '400': { description: 'Invalid request' }, '401': unauthorized },
+      },
+    },
+  };
+}
+
 // ─── Public API ───
 
 /**
@@ -1776,6 +1816,8 @@ export function generateOpenApiSpec(schema: ParsedSchema, version = '1.0.0'): Re
   paths = { ...paths, ...platformPaths() };
   // Fase 22 — mobile, cross-app commands, graph, filter state.
   paths = { ...paths, ...fase22Paths() };
+  // Fase 23 — ontology & schema tooling.
+  paths = { ...paths, ...fase23Paths() };
 
   // Component schemas
   const schemas: Record<string, unknown> = {};

@@ -6,4 +6,5 @@ export { generateLlmRoutes } from './llm-routes.js';
 export { generateWorkflowRoutes } from './workflow-routes.js';
 export { generateFase21ObjectRoutes, generateFase21PlatformRoutes } from './fase21-routes.js';
 export { generateFase22ObjectRoutes, generateFase22PlatformRoutes } from './fase22-routes.js';
+export { generateFase23ActionFormRoutes, generateFase23PlatformRoutes } from './fase23-routes.js';
 export type { RestRequest, RestResponse, RestRoute } from './types.js';
