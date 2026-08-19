@@ -475,4 +475,20 @@ export class InMemoryWorkshopPlatformService implements WorkshopPlatformService 
   private getModuleMap(t: string) { let m = this.modules.get(t); if (!m) { m = new Map(); this.modules.set(t, m); } return m; }
   private getVariableMap(t: string) { let m = this.variables.get(t); if (!m) { m = new Map(); this.variables.set(t, m); } return m; }
   private getObjectViewMap(t: string) { let m = this.objectViews.get(t); if (!m) { m = new Map(); this.objectViews.set(t, m); } return m; }
+
+  // ── URL state encoding ──
+
+  async encodeState(_ctx: RequestContext, _appId: string, variables: Record<string, unknown>): Promise<string> {
+    // Encode as base64url(JSON(variables)) — URL-safe, no padding.
+    const json = JSON.stringify(variables);
+    const b64 = Buffer.from(json, 'utf8').toString('base64url');
+    return `s:${b64}`;
+  }
+
+  async decodeState(_ctx: RequestContext, encoded: string): Promise<Record<string, unknown>> {
+    // Strip the "s:" prefix and decode base64url.
+    const b64 = encoded.startsWith('s:') ? encoded.slice(2) : encoded;
+    const json = Buffer.from(b64, 'base64url').toString('utf8');
+    return JSON.parse(json) as Record<string, unknown>;
+  }
 }

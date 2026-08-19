@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { ActionLogTimelineWidget } from '../components/ActionLogTimelineWidget.js';
 import type { WidgetProps } from '../types.js';
 

@@ -39,6 +39,8 @@ export interface WorkshopBuilderProps {
   onSave?: (app: WorkshopAppDefinition) => void;
   /** Called when the user exports. */
   onExport?: (app: WorkshopAppDefinition) => void;
+  /** When true, persists the app to the backend on save. */
+  persistToBackend?: boolean;
 }
 
 let idCounter = 0;
@@ -54,6 +56,7 @@ export function WorkshopBuilder({
   userId,
   onSave,
   onExport,
+  persistToBackend = false,
 }: WorkshopBuilderProps): React.ReactNode {
   const [app, setApp] = useState<WorkshopAppDefinition>(initialApp);
   const [currentPageId, setCurrentPageId] = useState(initialApp.pages[0]?.id ?? '');
@@ -270,10 +273,25 @@ export function WorkshopBuilder({
 
   // ── Toolbar actions ──
 
-  const handleSave = useCallback(() => {
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  const handleSave = useCallback(async () => {
     onSave?.(app);
+    if (persistToBackend) {
+      setSaving(true);
+      setSaveError(null);
+      try {
+        const { updateApp } = await import('../workshop-client.js');
+        await updateApp(app.id, app as unknown as Record<string, unknown>);
+      } catch (err) {
+        setSaveError(err instanceof Error ? err.message : 'Failed to save');
+      } finally {
+        setSaving(false);
+      }
+    }
     setDirty(false);
-  }, [app, onSave]);
+  }, [app, onSave, persistToBackend]);
 
   const handleExport = useCallback(() => {
     onExport?.(app);
@@ -319,8 +337,13 @@ export function WorkshopBuilder({
         onExport={handleExport}
         onSave={handleSave}
         onNewApp={handleNewApp}
-        dirty={dirty}
+        dirty={dirty || saving}
       />
+      {saveError && (
+        <div style={{ background: '#fee', color: '#c00', padding: '4px 8px', fontSize: 12 }}>
+          Save error: {saveError}
+        </div>
+      )}
       <div className="ed-builder__body">
         <div className="ed-builder__sidebar-left">
           <PageManager

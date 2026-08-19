@@ -56,6 +56,7 @@ import {
   InMemoryModelInferenceService,
   InMemoryModelChainService,
   InMemoryScenarioService,
+  InMemoryWorkshopPlatformService,
   InMemoryDataFreshnessService,
   InMemoryJustificationStore,
   InMemoryScopedSessionStore,
@@ -114,6 +115,7 @@ import { registerEmbeddingRoutes } from './rest/embedding-routes.js';
 import { registerAlertingRoutes } from './rest/alerting-routes.js';
 import { registerGeospatialRoutes } from './rest/geospatial-routes.js';
 import { registerScenarioRoutes } from './rest/scenario-routes.js';
+import { registerWorkshopRoutes } from './rest/workshop-routes.js';
 import { registerLLMGatewayRoutes } from './rest/llm-gateway-routes.js';
 import { readPlatformVersion } from './version.js';
 import { createFhirRouter } from './fhir/index.js';
@@ -1211,6 +1213,8 @@ async function main(): Promise<void> {
         scenarioService: scenarios,
       };
     })(),
+    // Workshop platform service — in-memory app definition persistence.
+    workshopPlatformService: new InMemoryWorkshopPlatformService(),
     // Data freshness — in-memory only (no Postgres implementation yet).
     dataFreshnessService: new InMemoryDataFreshnessService(),
     // Security governance — real AccessExplanationService wired to the live
@@ -1649,6 +1653,7 @@ async function main(): Promise<void> {
   registerAlertingRoutes(app, deps, authenticator, isDev);
   registerGeospatialRoutes(app, deps, authenticator, isDev);
   registerScenarioRoutes(app, deps, authenticator, isDev);
+  registerWorkshopRoutes(app, deps, authenticator, isDev);
 
   // ── LLM gateway routes ──
   registerLLMGatewayRoutes(app, deps, authenticator, isDev);

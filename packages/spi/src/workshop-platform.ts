@@ -500,4 +500,10 @@ export interface WorkshopPlatformService {
   getDefaultObjectView(ctx: RequestContext, objectType: string): Promise<ObjectView | null>;
   /** Set the default object view for a type. */
   setDefaultObjectView(ctx: RequestContext, id: string): Promise<ObjectView>;
+
+  // ── URL state encoding ──
+  /** Encode variable state into a URL-safe string for deep linking. */
+  encodeState(ctx: RequestContext, appId: string, variables: Record<string, unknown>): Promise<string>;
+  /** Decode a URL-encoded state string back into variable values. */
+  decodeState(ctx: RequestContext, encoded: string): Promise<Record<string, unknown>>;
 }

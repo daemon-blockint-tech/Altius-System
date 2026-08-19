@@ -10,7 +10,7 @@ import type {
   MarkingPolicy,
 } from '@altius/security';
 import type { ParsedSchema } from '@altius/odl';
-import type { RequestContext, StorageProvider, LLMClient, BlobStore, TimeSeriesStore, BranchStore, CommentStore, NotificationStore, EmbeddingStore, AlertingService, LLMGateway, DataFreshnessService, JustificationStore, AccessExplanationService, ScopedSessionStore, OntologySqlService, DatasetService, OntologyUsageMetricsService, GeospatialMapService, ScenarioService, ModelInferenceService, ModelChainService } from '@altius/spi';
+import type { RequestContext, StorageProvider, LLMClient, BlobStore, TimeSeriesStore, BranchStore, CommentStore, NotificationStore, EmbeddingStore, AlertingService, LLMGateway, DataFreshnessService, JustificationStore, AccessExplanationService, ScopedSessionStore, OntologySqlService, DatasetService, OntologyUsageMetricsService, GeospatialMapService, ScenarioService, ModelInferenceService, ModelChainService, WorkshopPlatformService } from '@altius/spi';
 import { DataPurpose } from '@altius/spi';
 
 /**
@@ -279,6 +279,35 @@ export interface ApiDependencies {
    *   POST   /api/v1/scenarios/:id/apply    (apply staged actions)
    */
   scenarioService?: ScenarioService;
+  /**
+   * Workshop platform service — manages app definitions, pages, widgets,
+   * variables, modules, templates, and mobile config. When present, REST
+   * endpoints for workshop app management are registered:
+   *   POST   /api/v1/workshop/apps              (create app)
+   *   GET    /api/v1/workshop/apps              (list apps)
+   *   GET    /api/v1/workshop/apps/:id          (get app)
+   *   PATCH  /api/v1/workshop/apps/:id          (update app)
+   *   DELETE /api/v1/workshop/apps/:id          (delete app)
+   *   POST   /api/v1/workshop/apps/:id/share    (share app)
+   *   POST   /api/v1/workshop/apps/:id/duplicate (duplicate app)
+   *   POST   /api/v1/workshop/apps/:id/pages    (add page)
+   *   PATCH  /api/v1/workshop/apps/:id/pages/:pid (update page)
+   *   DELETE /api/v1/workshop/apps/:id/pages/:pid (remove page)
+   *   POST   /api/v1/workshop/apps/:id/widgets  (add widget)
+   *   PATCH  /api/v1/workshop/apps/:id/widgets/:wid (update widget)
+   *   DELETE /api/v1/workshop/apps/:id/widgets/:wid (remove widget)
+   *   GET    /api/v1/workshop/apps/:id/variables (list variables)
+   *   POST   /api/v1/workshop/apps/:id/variables (create variable)
+   *   GET    /api/v1/workshop/apps/:id/lineage  (get variable lineage)
+   *   POST   /api/v1/workshop/variables/:vid/evaluate (evaluate variable)
+   *   GET    /api/v1/workshop/modules            (list modules)
+   *   POST   /api/v1/workshop/modules            (create module)
+   *   GET    /api/v1/workshop/templates           (list templates)
+   *   POST   /api/v1/workshop/templates/:tid/instantiate (create from template)
+   *   POST   /api/v1/workshop/state/encode        (encode state to URL)
+   *   POST   /api/v1/workshop/state/decode        (decode state from URL)
+   */
+  workshopPlatformService?: WorkshopPlatformService;
   /**
    * Data freshness service — per-type and per-datasource last-synced
    * timestamps. When present, REST endpoints for freshness queries are
