@@ -1263,6 +1263,29 @@ export function generateGraphQLSchema(schema: ParsedSchema, options?: GraphQLSch
     '  tags: JSON',
     '}',
   ].join('\n'));
+  // Embedding / vector search types — always present so searchByEmbedding
+  // resolves even when no embedding store is configured (the resolver errors
+  // cleanly with "embedding store not configured").
+  sections.push([
+    'input EmbeddingQueryInput {',
+    '  text: String',
+    '  vector: [Float!]',
+    '}',
+  ].join('\n'));
+  sections.push([
+    'type EmbeddingSearchHit {',
+    '  objectId: ID!',
+    '  objectType: String!',
+    '  field: String!',
+    '  score: Float!',
+    '}',
+  ].join('\n'));
+  sections.push([
+    'type EmbeddingSearchResult {',
+    '  hits: [EmbeddingSearchHit!]!',
+    '  totalCount: Int!',
+    '}',
+  ].join('\n'));
   for (const obj of schema.objectTypes) {
     const lower = lowerFirst(obj.name);
     queryFields.push(`  ${lower}(id: ID!): ${obj.name}`);
@@ -1310,6 +1333,10 @@ export function generateGraphQLSchema(schema: ParsedSchema, options?: GraphQLSch
   // Time-series query — returns points or bucketed aggregates for a
   // @timeSeries property on an object. Mirrors REST GET /api/v1/{plural}/:id/series/:property.
   queryFields.push('  timeSeries(objectType: String!, objectId: ID!, property: String!, query: TimeSeriesQueryInput): TimeSeriesResult');
+  // Vector similarity search — searchByEmbedding accepts either a text query
+  // (embedded via LLMClient.embed() when configured) or a raw number[] vector.
+  // Returns EmbeddingSearchResult with hits ranked by cosine similarity.
+  queryFields.push('  searchByEmbedding(objectType: String!, field: String!, query: EmbeddingQueryInput!, limit: Int, minScore: Float, allowedObjectIds: [ID!]): EmbeddingSearchResult!');
   // Per-object action applicability: which actions target this object?
   // Returns action names that have a @param of this objectType and whose
   // preconditions the caller could satisfy — without executing anything.

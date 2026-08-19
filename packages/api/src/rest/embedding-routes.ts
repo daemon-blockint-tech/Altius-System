@@ -1,10 +1,11 @@
 /**
  * REST routes for embedding storage and vector similarity search.
  *
- *   PUT    /api/v1/embeddings/:type/:id/:field   — upsert embedding
- *   GET    /api/v1/embeddings/:type/:id/:field   — get embedding
- *   DELETE /api/v1/embeddings/:type/:id/:field   — delete embedding
- *   POST   /api/v1/embeddings/:type/:field/search — similarity search
+ *   PUT    /api/v1/embeddings/:type/:id/:field    — upsert embedding
+ *   GET    /api/v1/embeddings/:type/:id/:field    — get embedding
+ *   DELETE /api/v1/embeddings/:type/:id/:field    — delete embedding
+ *   POST   /api/v1/embeddings/:type/:field/search — similarity search (vector input)
+ *   POST   /api/v1/embeddings/:type/:field/query  — text-to-vector similarity search
  */
 
 import type { Express } from 'express';
@@ -25,6 +26,7 @@ export function registerEmbeddingRoutes(
 ): void {
   if (!deps.embeddingStore) return;
   const store = deps.embeddingStore;
+  const llmClient = deps.llmClient;
 
   // ── PUT /api/v1/embeddings/:type/:id/:field — upsert ──
   app.put('/api/v1/embeddings/:type/:id/:field', async (req, res) => {
@@ -89,6 +91,34 @@ export function registerEmbeddingRoutes(
         return;
       }
       const result = await store.search(ctx, req.params['type']!, req.params['field']!, body.vector, {
+        limit: body.limit,
+        minScore: body.minScore,
+        allowedObjectIds: body.allowedObjectIds,
+      });
+      res.status(200).json(result);
+    } catch (err) {
+      res.status(500).json({ error: 'INTERNAL', message: err instanceof Error ? err.message : 'Failed' });
+    }
+  });
+
+  // ── POST /api/v1/embeddings/:type/:field/query — text-to-vector similarity search ──
+  // Accepts a text query, embeds it via LLMClient.embed(), then runs vector search.
+  // Requires llmClient to be configured.
+  app.post('/api/v1/embeddings/:type/:field/query', async (req, res) => {
+    try {
+      const user = await extractUser(req, authenticator, isDev);
+      const ctx = ctxFromUser(user);
+      const body = req.body as { query: string; limit?: number; minScore?: number; allowedObjectIds?: string[] };
+      if (!body.query || typeof body.query !== 'string') {
+        res.status(400).json({ error: 'INVALID', message: 'query must be a non-empty string' });
+        return;
+      }
+      if (!llmClient || !llmClient.isConfigured()) {
+        res.status(503).json({ error: 'NOT_CONFIGURED', message: 'LLM client not configured — cannot embed text query' });
+        return;
+      }
+      const embedResult = await llmClient.embed(ctx, body.query);
+      const result = await store.search(ctx, req.params['type']!, req.params['field']!, embedResult.vector, {
         limit: body.limit,
         minScore: body.minScore,
         allowedObjectIds: body.allowedObjectIds,

@@ -760,6 +760,55 @@ export function generateResolvers(
     };
   }
 
+  // Vector similarity search resolver — searchByEmbedding(objectType, field, query, limit, minScore).
+  // When llmClient is configured and query.text is provided, the text is embedded
+  // via LLMClient.embed() before searching. When query.vector is provided, it is
+  // used directly as the query vector.
+  if (deps.embeddingStore) {
+    resolvers['Query']!['searchByEmbedding'] = async (
+      _parent: unknown,
+      args: {
+        objectType: string;
+        field: string;
+        query: { text?: string; vector?: number[] };
+        limit?: number;
+        minScore?: number;
+        allowedObjectIds?: string[];
+      },
+      ctx: ResolverContext,
+    ) => {
+      let queryVector: number[];
+
+      if (args.query.text) {
+        // Text query — embed via LLMClient if available
+        if (!deps.llmClient || !deps.llmClient.isConfigured()) {
+          throw new Error('LLM client not configured — cannot embed text query. Provide a vector directly.');
+        }
+        const embedResult = await deps.llmClient.embed(
+          { tenantId: ctx.user.tenantId, actorId: ctx.user.id },
+          args.query.text,
+        );
+        queryVector = embedResult.vector;
+      } else if (args.query.vector && Array.isArray(args.query.vector)) {
+        queryVector = args.query.vector;
+      } else {
+        throw new Error('query must provide either text or vector');
+      }
+
+      return deps.embeddingStore!.search(
+        { tenantId: ctx.user.tenantId, actorId: ctx.user.id },
+        args.objectType,
+        args.field,
+        queryVector,
+        {
+          limit: args.limit,
+          minScore: args.minScore,
+          allowedObjectIds: args.allowedObjectIds,
+        },
+      );
+    };
+  }
+
   return { resolvers, pubsub };
 }
 
