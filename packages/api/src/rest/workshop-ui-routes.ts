@@ -1,5 +1,5 @@
 /**
- * Fase 22 REST routes — mobile design/launch, cross-app drag-drop/commands,
+ * Workshop UI REST routes — mobile design/launch, cross-app drag-drop/commands,
  * interactive graph visualization, and object-set filter state.
  */
 
@@ -296,7 +296,7 @@ export function generateGlobalGraphRoutes(deps: ApiDependencies): RestRoute[] {
 
 // ─── Aggregate wiring for route-generator ────────────────────────────────
 
-export function generateFase22ObjectRoutes(schema: ParsedSchema, deps: ApiDependencies): RestRoute[] {
+export function generateWorkshopUiObjectRoutes(schema: ParsedSchema, deps: ApiDependencies): RestRoute[] {
   const routes: RestRoute[] = [];
   for (const obj of schema.objectTypes) {
     routes.push(...generateGraphVisualizationRoutes(obj, deps));
@@ -305,7 +305,7 @@ export function generateFase22ObjectRoutes(schema: ParsedSchema, deps: ApiDepend
   return routes;
 }
 
-export function generateFase22PlatformRoutes(deps: ApiDependencies): RestRoute[] {
+export function generateWorkshopUiPlatformRoutes(deps: ApiDependencies): RestRoute[] {
   return [
     ...generateMobileWorkshopRoutes(deps),
     ...generateCommandExchangeRoutes(deps),

@@ -1,5 +1,5 @@
 /**
- * Fase 25 — AIP/LLM Platform surface types.
+ * AIP LLM — AIP/LLM Platform surface types.
  *
  * Consolidates the missing platform contracts for governed LLM gateway,
  * agent construction and orchestration, multi-model catalog and prompt

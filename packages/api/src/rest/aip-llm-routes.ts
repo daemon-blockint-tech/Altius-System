@@ -1,12 +1,12 @@
 /**
- * Fase 25 — AIP/LLM Platform REST routes.
+ * AIP LLM — AIP/LLM Platform REST routes.
  */
 
 import type { ApiDependencies } from '../graphql/types.js';
 import type { RestRoute, RestResponse } from './types.js';
 import { createRestErrorResponse, wrapErrorToRest } from './errors.js';
 
-export function generateFase25Routes(deps: ApiDependencies): RestRoute[] {
+export function generateAipLlmRoutes(deps: ApiDependencies): RestRoute[] {
   const routes: RestRoute[] = [];
 
   // ── Agent construction and orchestration ─────────────────────────────────

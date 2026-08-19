@@ -1,5 +1,5 @@
 /**
- * Fase 21 REST route integration tests.
+ * API Tooling REST route integration tests.
  */
 
 import { describe, it, expect, vi } from 'vitest';
@@ -80,7 +80,7 @@ function findRoute(routes: ReturnType<typeof generateRestRoutes>, method: string
   return route;
 }
 
-describe('Fase 21 REST routes', () => {
+describe('API Tooling REST routes', () => {
   const parsed = parseOdl(ODL);
   const deps = createDeps(parsed);
   const routes = generateRestRoutes(parsed, deps);

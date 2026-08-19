@@ -1,5 +1,5 @@
 /**
- * Fase 21 widget tests.
+ * API Tooling widget tests.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -25,8 +25,8 @@ function makeWidget(type: string, config: Record<string, unknown> = {}, boundVar
   return { id: `w-${type}`, widgetType: type, config, boundVariable, visible: true };
 }
 
-describe('Fase 21 widget registry', () => {
-  it('registers all 11 Fase 21 widgets', () => {
+describe('API Tooling widget registry', () => {
+  it('registers all 11 API Tooling widgets', () => {
     const widgets = [
       'data_freshness', 'ontology_change_history', 'value_formatting', 'design_system_theme',
       'function_backed', 'live_data_push', 'qr_code_reader', 'camera_capture',
@@ -39,7 +39,7 @@ describe('Fase 21 widget registry', () => {
   });
 });
 
-describe('Fase 21 widget rendering', () => {
+describe('API Tooling widget rendering', () => {
   beforeEach(() => {
     globalThis.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data: {} }) }) as never;
   });

@@ -5,4 +5,4 @@
  * interfaces and functions, with visibility/status/indexing filters.
  */
 
-export { generateOntologyMetadataRoutes } from './fase21-routes.js';
+export { generateOntologyMetadataRoutes } from './api-tooling-routes.js';

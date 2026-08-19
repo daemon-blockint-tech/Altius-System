@@ -28,11 +28,11 @@ import { createRestErrorResponse, wrapErrorToRest, mapCodeToCategory, mapErrorTo
 import { invokeFunction } from '../functions/invoke-function.js';
 import { generateLlmRoutes } from './llm-routes.js';
 import { generateDataFreshnessRoutes } from './data-freshness-routes.js';
-import { generateFase21ObjectRoutes, generateFase21PlatformRoutes } from './fase21-routes.js';
-import { generateFase22ObjectRoutes, generateFase22PlatformRoutes } from './fase22-routes.js';
-import { generateFase23ActionFormRoutes, generateFase23PlatformRoutes } from './fase23-routes.js';
-import { generateFase24Routes } from './fase24-routes.js';
-import { generateFase25Routes } from './fase25-routes.js';
+import { generateApiToolingObjectRoutes, generateApiToolingPlatformRoutes } from './api-tooling-routes.js';
+import { generateWorkshopUiObjectRoutes, generateWorkshopUiPlatformRoutes } from './workshop-ui-routes.js';
+import { generateOntologySchemaActionFormRoutes, generateOntologySchemaPlatformRoutes } from './ontology-schema-routes.js';
+import { generatePipelineDataOpsRoutes } from './pipeline-data-ops-routes.js';
+import { generateAipLlmRoutes } from './aip-llm-routes.js';
 import { generateSecurityGovernanceRoutes } from './security-governance-routes.js';
 import { generateOntologySqlRoutes } from './ontology-sql-routes.js';
 import { generateDatasetRoutes } from './dataset-routes.js';
@@ -448,8 +448,8 @@ export function generateRestRoutes(
     routes.push(...generateObjectRoutes(obj, deps));
   }
 
-  // Fase 23 — action/function form config (registered before generic action/function routes)
-  routes.push(...generateFase23ActionFormRoutes(schema, deps));
+  // Ontology Schema — action/function form config (registered before generic action/function routes)
+  routes.push(...generateOntologySchemaActionFormRoutes(schema, deps));
 
   for (const action of schema.actionTypes) {
     routes.push(generateActionRoute(action, schema, deps));
@@ -474,16 +474,16 @@ export function generateRestRoutes(
   // Data freshness routes
   routes.push(...generateDataFreshnessRoutes(deps));
 
-  // Fase 21 object-level and platform routes
-  routes.push(...generateFase21ObjectRoutes(schema, deps));
-  routes.push(...generateFase21PlatformRoutes(deps));
+  // API Tooling object-level and platform routes
+  routes.push(...generateApiToolingObjectRoutes(schema, deps));
+  routes.push(...generateApiToolingPlatformRoutes(deps));
 
-  // Fase 22 — mobile, cross-app commands, graph, filter state
-  routes.push(...generateFase22ObjectRoutes(schema, deps));
-  routes.push(...generateFase22PlatformRoutes(deps));
+  // Workshop UI — mobile, cross-app commands, graph, filter state
+  routes.push(...generateWorkshopUiObjectRoutes(schema, deps));
+  routes.push(...generateWorkshopUiPlatformRoutes(deps));
 
-  // Fase 23 — ontology & schema tooling
-  routes.push(...generateFase23PlatformRoutes(deps));
+  // Ontology Schema — ontology & schema tooling
+  routes.push(...generateOntologySchemaPlatformRoutes(deps));
 
   // Security governance routes (access explanation, justifications, scoped sessions)
   routes.push(...generateSecurityGovernanceRoutes(deps));
@@ -494,11 +494,11 @@ export function generateRestRoutes(
   // Dataset routes (versioned transactional datasets)
   routes.push(...generateDatasetRoutes(deps));
 
-  // Fase 24 — Pipeline & Data Ops
-  routes.push(...generateFase24Routes(deps));
+  // Pipeline Data Ops — Pipeline & Data Ops
+  routes.push(...generatePipelineDataOpsRoutes(deps));
 
-  // Fase 25 — AIP/LLM Platform
-  routes.push(...generateFase25Routes(deps));
+  // AIP LLM — AIP/LLM Platform
+  routes.push(...generateAipLlmRoutes(deps));
 
   // Usage metrics routes (ontology observability)
   routes.push(...generateUsageMetricsRoutes(deps));

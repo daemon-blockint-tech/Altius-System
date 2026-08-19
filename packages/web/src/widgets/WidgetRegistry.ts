@@ -55,7 +55,7 @@ import {
   VectorSearchWidget,
   LlmUsageWidget,
   EmbeddedCopilotWidget,
-} from './components/Fase25Widgets.js';
+} from './components/AipLlmWidgets.js';
 import {
   SavedViewsWidget, EditHistoryWidget, ResourceBrowserWidget,
   IframeWidget, AppPairingWidget,
@@ -84,7 +84,7 @@ import {
   VisualOntologyManagerWidget,
   OntologyMetadataCatalogWidget,
   KioskModeWidget,
-} from './components/Fase21Widgets.js';
+} from './components/ApiToolingWidgets.js';
 import {
   MobileAppLauncherWidget,
   ViewportSwitcherWidget,
@@ -93,13 +93,13 @@ import {
   GraphVisualizationWidget,
   ObjectSetFilterStateWidget,
   CommandLauncherWidget,
-} from './components/Fase22Widgets.js';
+} from './components/WorkshopUiWidgets.js';
 import {
   ActionFormConfigWidget,
   OntologyChangeManagerWidget,
   BranchManagerWidget,
   TransformExpressionWidget,
-} from './components/Fase23Widgets.js';
+} from './components/OntologySchemaWidgets.js';
 import {
   DatasetTableWidget,
   BatchTransformWidget,
@@ -112,7 +112,7 @@ import {
   CdcIngestWidget,
   DatasourceMapperWidget,
   BuildTriggerWidget,
-} from './components/Fase24Widgets.js';
+} from './components/PipelineDataOpsWidgets.js';
 // PlaceholderWidget is no longer imported — all widget types now have real implementations.
 // ── Registry ──────────────────────────────────────────────────
 
@@ -224,7 +224,7 @@ registerWidget('resource_browser', ResourceBrowserWidget);
 registerWidget('iframe', IframeWidget);
 registerWidget('app_pairing', AppPairingWidget);
 
-// Phase 21 (Fase 21) widgets:
+// Phase 21 (API Tooling) widgets:
 registerWidget('data_freshness', DataFreshnessWidget);
 registerWidget('ontology_change_history', OntologyChangeHistoryWidget);
 registerWidget('value_formatting', ValueFormattingWidget);
@@ -237,7 +237,7 @@ registerWidget('visual_ontology_manager', VisualOntologyManagerWidget);
 registerWidget('ontology_metadata_catalog', OntologyMetadataCatalogWidget);
 registerWidget('kiosk_mode', KioskModeWidget);
 
-// Fase 22 widgets:
+// Workshop UI widgets:
 registerWidget('mobile_app_launcher', MobileAppLauncherWidget);
 registerWidget('viewport_switcher', ViewportSwitcherWidget);
 registerWidget('qr_deep_link_launch', QRDeepLinkLaunchWidget);
@@ -246,13 +246,13 @@ registerWidget('graph_visualization', GraphVisualizationWidget);
 registerWidget('filter_state', ObjectSetFilterStateWidget);
 registerWidget('command_launcher', CommandLauncherWidget);
 
-// Fase 23 widgets:
+// Ontology Schema widgets:
 registerWidget('action_form_config', ActionFormConfigWidget);
 registerWidget('ontology_change_manager', OntologyChangeManagerWidget);
 registerWidget('branch_manager', BranchManagerWidget);
 registerWidget('transform_expression', TransformExpressionWidget);
 
-// Fase 24 widgets:
+// Pipeline Data Ops widgets:
 registerWidget('dataset_table', DatasetTableWidget);
 registerWidget('batch_transform', BatchTransformWidget);
 registerWidget('sql_workbench', SqlWorkbenchWidget);
@@ -265,7 +265,7 @@ registerWidget('cdc_ingest', CdcIngestWidget);
 registerWidget('datasource_mapper', DatasourceMapperWidget);
 registerWidget('build_trigger', BuildTriggerWidget);
 
-// Fase 25 widgets:
+// AIP LLM widgets:
 registerWidget('llm_gateway', LlmGatewayWidget);
 registerWidget('agent_builder', AgentBuilderWidget);
 registerWidget('aip_chat', AipChatWidget);

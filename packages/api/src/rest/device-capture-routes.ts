@@ -8,4 +8,4 @@
  *   POST /api/v1/deep-links/resolve
  */
 
-export { generateDeviceCaptureRoutes } from './fase21-routes.js';
+export { generateDeviceCaptureRoutes } from './api-tooling-routes.js';

@@ -543,7 +543,7 @@ function objectPaths(obj: ObjectType): Record<string, unknown> {
     },
   };
 
-  // ─── Fase 21 per-object surfaces ───
+  // ─── API Tooling per-object surfaces ───
   paths[`/api/v1/${plural}/freshness`] = {
     get: {
       tags: [tag],
@@ -1622,9 +1622,9 @@ function governancePaths(): Record<string, unknown> {
   };
 }
 
-// ─── Fase 22 platform paths ──────────────────────────────────────────────
+// ─── Workshop UI platform paths ──────────────────────────────────────────────
 
-function fase22Paths(): Record<string, unknown> {
+function workshopUiPaths(): Record<string, unknown> {
   const jsonObject = { 'application/json': { schema: { type: 'object' } } };
   const unauthorized = { $ref: '#/components/responses/Unauthorized' };
   return {
@@ -1765,9 +1765,9 @@ function fase22Paths(): Record<string, unknown> {
   };
 }
 
-// ─── Fase 23 ontology & schema tooling paths (always served) ───────────────
+// ─── Ontology Schema ontology & schema tooling paths (always served) ───────────────
 
-function fase23Paths(): Record<string, unknown> {
+function ontologySchemaPaths(): Record<string, unknown> {
   const jsonObject = { 'application/json': { schema: { type: 'object' } } };
   const unauthorized = { $ref: '#/components/responses/Unauthorized' };
   const typeParam = { name: 'type', in: 'path', required: true, schema: { type: 'string' } };
@@ -1793,9 +1793,9 @@ function fase23Paths(): Record<string, unknown> {
   };
 }
 
-// ─── Fase 24 — Pipeline & Data Ops paths ───────────────────────────────────
+// ─── Pipeline Data Ops — Pipeline & Data Ops paths ───────────────────────────────────
 
-function fase24Paths(): Record<string, unknown> {
+function pipelineDataOpsPaths(): Record<string, unknown> {
   const jsonObject = { 'application/json': { schema: { type: 'object' } } };
   const unauthorized = { $ref: '#/components/responses/Unauthorized' };
   const idParam = { name: 'id', in: 'path', required: true, schema: { type: 'string' } };
@@ -1869,9 +1869,9 @@ function fase24Paths(): Record<string, unknown> {
   };
 }
 
-// ─── Fase 25 — AIP/LLM Platform paths ──────────────────────────────────────
+// ─── AIP LLM — AIP/LLM Platform paths ──────────────────────────────────────
 
-function fase25Paths(): Record<string, unknown> {
+function aipLlmPaths(): Record<string, unknown> {
   const jsonObject = { 'application/json': { schema: { type: 'object' } } };
   const unauthorized = { $ref: '#/components/responses/Unauthorized' };
   const idParam = { name: 'id', in: 'path', required: true, schema: { type: 'string' } };
@@ -1936,14 +1936,14 @@ export function generateOpenApiSpec(schema: ParsedSchema, version = '1.0.0'): Re
   paths = { ...paths, ...governancePaths() };
   // Object sets, action catalogue, LLM — per-deployment, also not ODL-derived.
   paths = { ...paths, ...platformPaths() };
-  // Fase 22 — mobile, cross-app commands, graph, filter state.
-  paths = { ...paths, ...fase22Paths() };
-  // Fase 23 — ontology & schema tooling.
-  paths = { ...paths, ...fase23Paths() };
-  // Fase 24 — Pipeline & Data Ops.
-  paths = { ...paths, ...fase24Paths() };
-  // Fase 25 — AIP/LLM Platform.
-  paths = { ...paths, ...fase25Paths() };
+  // Workshop UI — mobile, cross-app commands, graph, filter state.
+  paths = { ...paths, ...workshopUiPaths() };
+  // Ontology Schema — ontology & schema tooling.
+  paths = { ...paths, ...ontologySchemaPaths() };
+  // Pipeline Data Ops — Pipeline & Data Ops.
+  paths = { ...paths, ...pipelineDataOpsPaths() };
+  // AIP LLM — AIP/LLM Platform.
+  paths = { ...paths, ...aipLlmPaths() };
 
   // Component schemas
   const schemas: Record<string, unknown> = {};

@@ -1,5 +1,5 @@
 /**
- * Fase 22 widget implementations.
+ * Workshop UI widget implementations.
  */
 
 import { useState, useEffect, useCallback } from 'react';

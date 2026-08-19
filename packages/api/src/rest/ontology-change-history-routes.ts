@@ -6,4 +6,4 @@
  *   POST   /api/v1/ontology/changes/:id/restore
  */
 
-export { generateOntologyChangeHistoryRoutes } from './fase21-routes.js';
+export { generateOntologyChangeHistoryRoutes } from './api-tooling-routes.js';

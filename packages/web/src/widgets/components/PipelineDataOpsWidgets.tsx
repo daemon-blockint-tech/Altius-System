@@ -1,5 +1,5 @@
 /**
- * Fase 24 widget implementations — Pipeline & Data Ops.
+ * Pipeline Data Ops widget implementations — Pipeline & Data Ops.
  */
 
 import { useState, useCallback } from 'react';

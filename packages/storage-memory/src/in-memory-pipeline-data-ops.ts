@@ -1,5 +1,5 @@
 /**
- * Fase 24 in-memory service implementations.
+ * Pipeline Data Ops in-memory service implementations.
  */
 
 import { randomUUID } from 'node:crypto';

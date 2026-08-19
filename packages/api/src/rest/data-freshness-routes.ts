@@ -121,5 +121,5 @@ export function generateDataFreshnessRoutes(deps: ApiDependencies): RestRoute[] 
   return routes;
 }
 
-/** Per-object-type data-freshness routes (Fase 21). */
-export { generateObjectDataFreshnessRoutes } from './fase21-routes.js';
+/** Per-object-type data-freshness routes (API Tooling). */
+export { generateObjectDataFreshnessRoutes } from './api-tooling-routes.js';

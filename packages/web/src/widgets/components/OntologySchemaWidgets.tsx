@@ -1,5 +1,5 @@
 /**
- * Fase 23 widget implementations — ontology & schema tooling.
+ * Ontology Schema widget implementations — ontology & schema tooling.
  */
 
 import { useState, useCallback } from 'react';

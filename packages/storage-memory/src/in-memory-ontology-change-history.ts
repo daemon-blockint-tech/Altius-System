@@ -2,6 +2,7 @@
  * In-memory ontology change history service.
  */
 
+import { randomUUID } from 'crypto';
 import type {
   OntologyChangeHistoryService,
   OntologyChangeRecord,

@@ -137,7 +137,7 @@ function mockDeps(schema: ReturnType<typeof parseOdl>): ApiDependencies {
       deleteMonitoringRule: vi.fn().mockResolvedValue(undefined),
       evaluateMonitoringRules: vi.fn().mockResolvedValue([]),
     } as never,
-    // Fase 22 — required for the routes to be generated and match the spec.
+    // Workshop UI — required for the routes to be generated and match the spec.
     workshopPlatformService: {
       getMobileConfig: vi.fn().mockResolvedValue(null),
       launchMobileSession: vi.fn().mockResolvedValue({}),

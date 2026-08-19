@@ -1,5 +1,5 @@
 /**
- * Fase 22 widget tests.
+ * Workshop UI widget tests.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -25,8 +25,8 @@ function makeWidget(type: string, config: Record<string, unknown> = {}, boundVar
   return { id: `w-${type}`, widgetType: type, config, boundVariable, visible: true };
 }
 
-describe('Fase 22 widget registry', () => {
-  it('registers all 7 Fase 22 widgets', () => {
+describe('Workshop UI widget registry', () => {
+  it('registers all 7 Workshop UI widgets', () => {
     const widgets = [
       'mobile_app_launcher', 'viewport_switcher', 'qr_deep_link_launch',
       'geolocation_prompt', 'graph_visualization', 'filter_state', 'command_launcher',
@@ -38,7 +38,7 @@ describe('Fase 22 widget registry', () => {
   });
 });
 
-describe('Fase 22 widget rendering', () => {
+describe('Workshop UI widget rendering', () => {
   beforeEach(() => {
     globalThis.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data: {} }) }) as never;
   });

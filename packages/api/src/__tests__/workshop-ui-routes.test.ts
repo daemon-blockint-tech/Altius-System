@@ -1,5 +1,5 @@
 /**
- * Fase 22 REST route integration tests.
+ * Workshop UI REST route integration tests.
  */
 
 import { describe, it, expect, vi } from 'vitest';
@@ -84,7 +84,7 @@ function findRoute(routes: ReturnType<typeof generateRestRoutes>, method: string
   return route;
 }
 
-describe('Fase 22 REST routes', () => {
+describe('Workshop UI REST routes', () => {
   const parsed = parseOdl(ODL);
   const deps = createDeps(parsed);
   const routes = generateRestRoutes(parsed, deps);

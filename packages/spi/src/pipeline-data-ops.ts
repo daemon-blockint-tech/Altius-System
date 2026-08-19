@@ -1,5 +1,5 @@
 /**
- * Fase 24 — Pipeline & Data Ops surface types.
+ * Pipeline Data Ops — Pipeline & Data Ops surface types.
  *
  * Adds the missing service contracts for no-code pipeline authoring,
  * Foundry-style rules engine surfacing, CDC sync, backing datasource mapping,
@@ -11,7 +11,7 @@ import type { DataExpectation, ExpectationResult } from './data-pipelines.js';
 import type { BusinessRule, RuleExecutionResult } from './business-rules.js';
 import type { PipelineBuild } from './data-pipelines.js';
 
-// Re-export already-defined capability contracts under Fase 24 surface names
+// Re-export already-defined capability contracts under Pipeline Data Ops surface names
 export type { DataExpectationsService } from './data-pipelines.js';
 export type { BatchTransformService, SqlQueryService, VariableTransformService } from './datasets.js';
 export type { OntologySqlService } from './ontology-sql.js';

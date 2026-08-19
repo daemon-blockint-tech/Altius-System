@@ -9,4 +9,4 @@
  *   GET    /api/v1/kiosk/sessions/:id/access/:objectType
  */
 
-export { generateKioskRoutes } from './fase21-routes.js';
+export { generateKioskRoutes } from './api-tooling-routes.js';

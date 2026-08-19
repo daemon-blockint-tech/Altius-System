@@ -5,4 +5,4 @@
  * actions and functions, plus observability tabs.
  */
 
-export { generateOntologyManagerRoutes } from './fase21-routes.js';
+export { generateOntologyManagerRoutes } from './api-tooling-routes.js';

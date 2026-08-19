@@ -488,11 +488,11 @@ export interface ApiDependencies {
   /** Ontology change history service — read and restore schema versions. */
   ontologyChangeHistoryService?: OntologyChangeHistoryService;
 
-  /** Fase 22 — Cross-application command exchange. */
+  /** Workshop UI — Cross-application command exchange. */
   commandExchangeService?: CommandExchangeService;
-  /** Fase 22 — Object-set filter state store. */
+  /** Workshop UI — Object-set filter state store. */
   objectSetFilterStore?: ObjectSetFilterStore;
-  /** Fase 22 — Interactive graph visualization service. */
+  /** Workshop UI — Interactive graph visualization service. */
   graphService?: GraphService;
   /** Change proposal store for AI/human-in-the-loop governance. */
   changeProposalStore?: ChangeProposalStore;
@@ -523,36 +523,36 @@ export interface ApiDependencies {
   /** Process mining service for process model discovery. */
   processMiningService?: ProcessMiningService;
 
-  /** Fase 24 — Code-based batch transform framework. */
+  /** Pipeline Data Ops — Code-based batch transform framework. */
   batchTransformService?: BatchTransformService;
-  /** Fase 24 — Interactive SQL query service. */
+  /** Pipeline Data Ops — Interactive SQL query service. */
   sqlQueryService?: SqlQueryService;
-  /** Fase 24 — No-code client-side variable transformations. */
+  /** Pipeline Data Ops — No-code client-side variable transformations. */
   variableTransformService?: VariableTransformService;
-  /** Fase 24 — No-code rules engine (Foundry Rules). */
+  /** Pipeline Data Ops — No-code rules engine (Foundry Rules). */
   rulesEngineService?: RulesEngineService;
-  /** Fase 24 — No-code pipeline authoring. */
+  /** Pipeline Data Ops — No-code pipeline authoring. */
   pipelineService?: PipelineService;
-  /** Fase 24 — CDC ingestion with edit versioning. */
+  /** Pipeline Data Ops — CDC ingestion with edit versioning. */
   syncCdcService?: SyncCdcService;
-  /** Fase 24 — Backing datasources and property-to-column mapping. */
+  /** Pipeline Data Ops — Backing datasources and property-to-column mapping. */
   datasourceService?: DatasourceService;
-  /** Fase 24 — Action-triggered builds. */
+  /** Pipeline Data Ops — Action-triggered builds. */
   buildTriggerService?: BuildTriggerService;
-  /** Fase 24 — Ad-hoc SQL analytics over the ontology. */
+  /** Pipeline Data Ops — Ad-hoc SQL analytics over the ontology. */
   sqlAnalyticsService?: SqlAnalyticsService;
 
-  /** Fase 25 — Agent construction and orchestration. */
+  /** AIP LLM — Agent construction and orchestration. */
   agentService?: AgentService;
-  /** Fase 25 — Multi-model catalog and prompt playground. */
+  /** AIP LLM — Multi-model catalog and prompt playground. */
   modelCatalogService?: ModelCatalogService;
-  /** Fase 25 — Agent evaluation framework. */
+  /** AIP LLM — Agent evaluation framework. */
   evalService?: EvalService;
-  /** Fase 25 — Human-in-the-loop AI change proposals. */
+  /** AIP LLM — Human-in-the-loop AI change proposals. */
   humanInTheLoopService?: HumanInTheLoopService;
-  /** Fase 25 — Vector search and embedding services. */
+  /** AIP LLM — Vector search and embedding services. */
   vectorSearchService?: VectorSearchService;
-  /** Fase 25 — Embedded AI copilots. */
+  /** AIP LLM — Embedded AI copilots. */
   copilotService?: CopilotService;
 }
 

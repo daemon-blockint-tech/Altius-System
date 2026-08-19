@@ -1,5 +1,5 @@
 /**
- * Fase 24 — Pipeline & Data Ops REST routes.
+ * Pipeline Data Ops — Pipeline & Data Ops REST routes.
  *
  *   Datasets
  *     GET  /api/v1/datasets/:name/export         — export with projection/paging
@@ -82,7 +82,7 @@ function rowsToNdjson(rows: Record<string, unknown>[]): string {
   return rows.map(r => JSON.stringify(r)).join('\n') + (rows.length ? '\n' : '');
 }
 
-export function generateFase24Routes(deps: ApiDependencies): RestRoute[] {
+export function generatePipelineDataOpsRoutes(deps: ApiDependencies): RestRoute[] {
   const routes: RestRoute[] = [];
 
   // ── Dataset export ───────────────────────────────────────────────────────

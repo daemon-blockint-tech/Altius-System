@@ -6,4 +6,4 @@
  *   GET/PUT /api/v1/modules/:id/theme
  */
 
-export { generateDesignSystemRoutes } from './fase21-routes.js';
+export { generateDesignSystemRoutes } from './api-tooling-routes.js';

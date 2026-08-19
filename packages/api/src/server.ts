@@ -1277,7 +1277,7 @@ async function main(): Promise<void> {
       // implementation yet). The metadata service is Postgres-backed when
       // available (see deps literal below) so metadata/schema survives restarts.
       datasetService: datasets,
-      // Fase 21 services — in-memory only (no Postgres implementations yet).
+      // API Tooling services — in-memory only (no Postgres implementations yet).
       kioskService: new InMemoryKioskService(),
       layoutDeviceCaptureService: new InMemoryLayoutDeviceCaptureService(),
       ontologyManagerService: new InMemoryOntologyManagerService(),
@@ -1285,7 +1285,7 @@ async function main(): Promise<void> {
       valueFormattingService: new InMemoryValueFormattingService(),
       designSystemService: new InMemoryDesignSystemService(),
       ontologyChangeHistoryService: new InMemoryOntologyChangeHistoryService(),
-      // Fase 22 services.
+      // Workshop UI services.
       commandExchangeService: new InMemoryCommandExchangeService(),
       objectSetFilterStore: new InMemoryObjectSetFilterStore(),
       graphService: new InMemoryGraphService(),
@@ -1305,7 +1305,7 @@ async function main(): Promise<void> {
       pipelineBuildService: new InMemoryPipelineBuildService(),
       platformAssistantService: new InMemoryPlatformAssistantService(),
       processMiningService: new InMemoryProcessMiningService(),
-      // Fase 24 — Pipeline & Data Ops.
+      // Pipeline Data Ops — Pipeline & Data Ops.
       batchTransformService: new InMemoryBatchTransformService(datasets),
       sqlQueryService: new InMemorySqlQueryService(datasets),
       variableTransformService: new InMemoryVariableTransformService(),
@@ -1315,7 +1315,7 @@ async function main(): Promise<void> {
       datasourceService: new InMemoryDatasourceService(),
       buildTriggerService: new InMemoryBuildTriggerService(),
       sqlAnalyticsService: new InMemorySqlAnalyticsService(),
-      // Fase 25 — AIP/LLM Platform.
+      // AIP LLM — AIP/LLM Platform.
       agentService: new InMemoryAgentService(llmClient),
       modelCatalogService: new InMemoryModelCatalogService(llmClient),
       evalService: new InMemoryEvalService(),

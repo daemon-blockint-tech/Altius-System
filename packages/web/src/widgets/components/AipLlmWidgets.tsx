@@ -1,5 +1,5 @@
 /**
- * Fase 25 widget implementations — AIP/LLM Platform.
+ * AIP LLM widget implementations — AIP/LLM Platform.
  */
 
 import { useState, useCallback } from 'react';

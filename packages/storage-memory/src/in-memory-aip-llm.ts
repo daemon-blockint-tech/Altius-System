@@ -1,5 +1,5 @@
 /**
- * Fase 25 in-memory service implementations.
+ * AIP LLM in-memory service implementations.
  */
 
 import { randomUUID } from 'node:crypto';
@@ -23,7 +23,7 @@ import type {
   AgentDefinition,
   CreateAgentInput,
   AgentChatMessage,
-  Fase25AgentToolCall,
+  AipLlmAgentToolCall,
   AgentRunResult,
   AgentChatInput,
   AgentChatThread,
@@ -235,7 +235,7 @@ export class InMemoryAgentService implements AgentService {
     return {
       threadId: randomUUID(),
       response: result,
-      toolCalls: (input.useTools ? agent.tools.map(t => ({ id: randomUUID(), name: t.name, arguments: {} })) : []) as Fase25AgentToolCall[],
+      toolCalls: (input.useTools ? agent.tools.map(t => ({ id: randomUUID(), name: t.name, arguments: {} })) : []) as AipLlmAgentToolCall[],
       model: agent.modelRid ?? 'local',
       tokensUsed: Math.ceil(result.length / 4),
     };

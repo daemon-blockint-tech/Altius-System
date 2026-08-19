@@ -1,5 +1,5 @@
 /**
- * Fase 21 REST routes — shared implementation for the backlog surface work.
+ * API Tooling REST routes — shared implementation for the backlog surface work.
  *
  * This module exports per-object and global route generators for:
  *   - data freshness (per-type GET/POST on /{plural})
@@ -670,7 +670,7 @@ export function generateKioskRoutes(deps: ApiDependencies): RestRoute[] {
 
 // ─── Aggregate wiring for route-generator ───
 
-export function generateFase21ObjectRoutes(schema: ParsedSchema, deps: ApiDependencies): RestRoute[] {
+export function generateApiToolingObjectRoutes(schema: ParsedSchema, deps: ApiDependencies): RestRoute[] {
   const routes: RestRoute[] = [];
   for (const obj of schema.objectTypes) {
     routes.push(...generateObjectDataFreshnessRoutes(obj, deps));
@@ -681,7 +681,7 @@ export function generateFase21ObjectRoutes(schema: ParsedSchema, deps: ApiDepend
   return routes;
 }
 
-export function generateFase21PlatformRoutes(deps: ApiDependencies): RestRoute[] {
+export function generateApiToolingPlatformRoutes(deps: ApiDependencies): RestRoute[] {
   return [
     ...generateOntologyChangeHistoryRoutes(deps),
     ...generateDesignSystemRoutes(deps),

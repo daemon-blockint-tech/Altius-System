@@ -1,5 +1,5 @@
 /**
- * Fase 25 widget tests.
+ * AIP LLM widget tests.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -25,8 +25,8 @@ function makeWidget(type: string, config: Record<string, unknown> = {}, boundVar
   return { id: `w-${type}`, widgetType: type, config, boundVariable, visible: true };
 }
 
-describe('Fase 25 widget registry', () => {
-  it('registers all 10 Fase 25 widgets', () => {
+describe('AIP LLM widget registry', () => {
+  it('registers all 10 AIP LLM widgets', () => {
     const widgets = [
       'llm_gateway', 'agent_builder', 'aip_chat', 'model_catalog',
       'prompt_playground', 'eval_framework', 'ai_proposal_review',
@@ -39,7 +39,7 @@ describe('Fase 25 widget registry', () => {
   });
 });
 
-describe('Fase 25 widget rendering', () => {
+describe('AIP LLM widget rendering', () => {
   beforeEach(() => {
     globalThis.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data: {} }) }) as never;
   });

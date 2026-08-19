@@ -70,15 +70,15 @@ export type { SchemaReader, UsageStatsReader } from './in-memory-ontology-manage
 export { InMemoryWorkshopUxService } from './in-memory-workshop-ux.js';
 export { InMemoryWorkshopPlatformService } from './in-memory-workshop-platform.js';
 
-// Fase 22
+// Workshop UI
 export { InMemoryCommandExchangeService } from './in-memory-command-exchange.js';
 export { InMemoryObjectSetFilterStore } from './in-memory-object-set-filter.js';
 export { InMemoryGraphService } from './in-memory-graph-service.js';
 
-// Fase 23
+// Ontology Schema
 export { InMemoryTransformExpressionService } from './in-memory-transform-expression.js';
 
-// Fase 24 — Pipeline & Data Ops
+// Pipeline Data Ops — Pipeline & Data Ops
 export {
   InMemoryRulesEngineService,
   InMemoryPipelineService,
@@ -86,9 +86,9 @@ export {
   InMemoryDatasourceService,
   InMemoryBuildTriggerService,
   InMemorySqlAnalyticsService,
-} from './in-memory-fase24.js';
+} from './in-memory-pipeline-data-ops.js';
 
-// Fase 25 — AIP/LLM Platform
+// AIP LLM — AIP/LLM Platform
 export {
   InMemoryLLMGatewayService,
   InMemoryAgentService,
@@ -98,4 +98,4 @@ export {
   InMemoryVectorSearchService,
   InMemoryTokenMeteringService,
   InMemoryCopilotService,
-} from './in-memory-fase25.js';
+} from './in-memory-aip-llm.js';

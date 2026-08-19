@@ -1,5 +1,5 @@
 /**
- * Fase 23 REST routes — ontology & schema tooling.
+ * Ontology Schema REST routes — ontology & schema tooling.
  *
  *   POST /api/v1/actions/:name/form               — action form JSON-Schema config
  *   POST /api/v1/functions/:name/form             — function form JSON-Schema config
@@ -148,7 +148,7 @@ function findOntologyType(schema: ParsedSchema, typeName: string): { fields: Fie
 
 // ─── Action/Function form config (must be registered before generic action routes) ───
 
-export function generateFase23ActionFormRoutes(schema: ParsedSchema, _deps: ApiDependencies): RestRoute[] {
+export function generateOntologySchemaActionFormRoutes(schema: ParsedSchema, _deps: ApiDependencies): RestRoute[] {
   const routes: RestRoute[] = [];
   for (const action of schema.actionTypes) {
     routes.push({
@@ -189,7 +189,7 @@ export function generateFase23ActionFormRoutes(schema: ParsedSchema, _deps: ApiD
 
 // ─── Platform routes ───
 
-export function generateFase23PlatformRoutes(deps: ApiDependencies): RestRoute[] {
+export function generateOntologySchemaPlatformRoutes(deps: ApiDependencies): RestRoute[] {
   const routes: RestRoute[] = [];
 
   // Rich property introspection

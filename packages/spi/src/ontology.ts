@@ -626,7 +626,7 @@ export interface SearchResult {
 }
 
 // ---------------------------------------------------------------------------
-// Rich property types and form configuration (Fase 23)
+// Rich property types and form configuration (Ontology Schema)
 // ---------------------------------------------------------------------------
 
 /** A rich property type descriptor returned by the ontology introspection API. */

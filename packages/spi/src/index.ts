@@ -693,7 +693,7 @@ export type {
 export { parseSearchQuery } from './search-query-parser.js';
 export type { ParsedSearchQuery, SearchTerm } from './search-query-parser.js';
 
-// Fase 22 — Workshop UI hardening
+// Workshop UI — Workshop UI hardening
 export type {
   DeclaredCommand,
   DeclareCommandInput,
@@ -721,7 +721,7 @@ export type {
   GraphService,
 } from './graph-service.js';
 
-// Fase 23 — Ontology & schema tooling
+// Ontology Schema — Ontology & schema tooling
 export type {
   RichPropertyKind,
   PropertyRedactionConfig,
@@ -740,7 +740,7 @@ export type {
   TransformExpressionService,
 } from './transform-expression.js';
 
-// Fase 24 — Pipeline & Data Ops
+// Pipeline Data Ops — Pipeline & Data Ops
 export type {
   RulesEngineService,
   PipelineService,
@@ -757,9 +757,9 @@ export type {
   BuildTriggerConfig,
   SqlAnalyticsService,
   SqlAnalyticsResult,
-} from './fase24.js';
+} from './pipeline-data-ops.js';
 
-// Fase 25 — AIP/LLM Platform
+// AIP LLM — AIP/LLM Platform
 export type {
   LLMGatewayService,
   AgentService,
@@ -767,8 +767,8 @@ export type {
   CreateAgentInput,
   AgentChatMessage,
   AgentChatThread,
-  AgentTool as Fase25AgentTool,
-  AgentToolCall as Fase25AgentToolCall,
+  AgentTool as AipLlmAgentTool,
+  AgentToolCall as AipLlmAgentToolCall,
   AgentPromptTemplate,
   AgentRunResult,
   AgentChatInput,
@@ -790,4 +790,4 @@ export type {
   CopilotSuggestion,
   CopilotApplyInput,
   CopilotApplyResult,
-} from './fase25.js';
+} from './aip-llm.js';

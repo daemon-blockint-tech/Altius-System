@@ -1,5 +1,5 @@
 /**
- * Fase 24 widget tests.
+ * Pipeline Data Ops widget tests.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -25,8 +25,8 @@ function makeWidget(type: string, config: Record<string, unknown> = {}, boundVar
   return { id: `w-${type}`, widgetType: type, config, boundVariable, visible: true };
 }
 
-describe('Fase 24 widget registry', () => {
-  it('registers all 11 Fase 24 widgets', () => {
+describe('Pipeline Data Ops widget registry', () => {
+  it('registers all 11 Pipeline Data Ops widgets', () => {
     const widgets = [
       'dataset_table', 'batch_transform', 'sql_workbench', 'pipeline_builder',
       'data_expectations', 'rules_engine', 'variable_transformer', 'sql_analytics',
@@ -39,7 +39,7 @@ describe('Fase 24 widget registry', () => {
   });
 });
 
-describe('Fase 24 widget rendering', () => {
+describe('Pipeline Data Ops widget rendering', () => {
   beforeEach(() => {
     globalThis.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data: {} }) }) as never;
   });

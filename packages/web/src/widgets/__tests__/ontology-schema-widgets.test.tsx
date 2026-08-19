@@ -1,5 +1,5 @@
 /**
- * Fase 23 widget tests.
+ * Ontology Schema widget tests.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -25,8 +25,8 @@ function makeWidget(type: string, config: Record<string, unknown> = {}, boundVar
   return { id: `w-${type}`, widgetType: type, config, boundVariable, visible: true };
 }
 
-describe('Fase 23 widget registry', () => {
-  it('registers all 4 Fase 23 widgets', () => {
+describe('Ontology Schema widget registry', () => {
+  it('registers all 4 Ontology Schema widgets', () => {
     const widgets = [
       'action_form_config',
       'ontology_change_manager',
@@ -40,7 +40,7 @@ describe('Fase 23 widget registry', () => {
   });
 });
 
-describe('Fase 23 widget rendering', () => {
+describe('Ontology Schema widget rendering', () => {
   beforeEach(() => {
     globalThis.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data: {} }) }) as never;
   });

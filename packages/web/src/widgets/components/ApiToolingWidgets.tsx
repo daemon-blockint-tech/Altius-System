@@ -1,5 +1,5 @@
 /**
- * Fase 21 widget implementations.
+ * API Tooling widget implementations.
  *
  * All widgets are functional React components that render real UI
  * and, where applicable, read from or write to bound variables.
