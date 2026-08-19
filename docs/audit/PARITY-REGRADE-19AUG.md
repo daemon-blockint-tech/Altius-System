@@ -108,6 +108,58 @@ But it is **served by `Orion/docker-compose.yaml` only — no Helm template refe
 The ~34 `widgets` and `workshop-ui` rows should move off "no UI exists" and onto a
 per-widget grade against the surfaces each one needs, with the Helm gap recorded.
 
+## A `full` row that was broken on the production provider
+
+The strongest single argument for re-grading is `defect-fixes/full-text-search-index-backed`.
+The backlog grades it **`full`** and records "**Gap: None**", citing "104 search conformance
+tests + 3 weight tests + DDL generation tests all pass" and naming
+`search.integration.test.ts` as evidence.
+
+Run against a real PostgreSQL, that suite does not pass. It does not run at all: it
+fails in `beforeAll`, because `createObject` fails outright for **every object type
+carrying a FULLTEXT index**. The index adds `_fts_<field> … GENERATED ALWAYS AS (…)
+STORED` to the object table only, the write path reads the row back with `RETURNING *`,
+and the history insert copied that generated column into a history table that has no
+such column — and could not accept it if it did, since Postgres refuses an explicit
+value for a generated column.
+
+So the capability graded "Gap: None" could not create a searchable object on the
+production storage provider. The 104 passing tests were passing against the **memory
+provider**, which issues no SQL. The integration suite that would have caught it is
+skipped unless `PG_TEST_URL` is set, and CI does not set it for the unit job.
+
+Two further Postgres-only defects surfaced the same way: any `"quoted phrase"` search
+raised rather than returning (parameters supplied that no placeholder referenced), and
+`CREATE EXTENSION IF NOT EXISTS vector` aborted **every** schema apply on a server
+without pgvector — the official `postgres:17` image in `Orion/docker-compose.yaml`
+included, which is why the Postgres CI job has been red. Against Postgres the
+conformance suite reported **355 of 714 failing** and storage-postgres **22 of 309**;
+both are green after the fixes in `fix/postgres-provider-blockers`.
+
+The lesson generalises beyond these three rows: **a grade taken from tests that only
+ever ran against the memory provider is not evidence about production.** Any row whose
+evidence rests on conformance or unit tests should be re-checked with `PG_TEST_URL`
+set before it is called `full`.
+
+## Two risks the backlog overstates
+
+Both were checked at this HEAD and are in better shape than recorded.
+
+**Fail-open guards are closed.** The CEL client throws when its circuit breaker is open
+and after exhausting retries — there is no allow-all dev stub. Subscription property
+filters fail closed. The side-effect executor's failure logging is live: `server.ts`
+passes a real logger with a comment naming the exact hazard ("a webhook that exhausts
+its retries returns success:true with no trace anywhere in the running system").
+
+**Sync does not clobber action edits — it refuses to run instead.** `ConflictResolutionService`
+is dead as an interface, but `sync-boot.ts:161` *refuses to schedule* any datasource
+declaring `conflictResolution`, logging an error, because both strategies decide by
+comparing the existing value's writer and no production code writes field provenance
+(`LineageRecorder` is never constructed). Reconciliation is absent, and absent loudly.
+The residual limitation is unchanged: all three shipped connectors are `mode: OVERLAY`,
+which the scheduler skips by design, and `SYNC_SCHEDULER_ENABLED` appears in Helm and
+`.env.example` but in none of the four compose files — so nothing syncs out of the box.
+
 ## Scope and what this pass does not cover
 
 This measures the **service-shaped** capabilities — the 50 SPI interfaces, which is
@@ -123,8 +175,10 @@ the tracker moved 64 rows up while the code gained 33 unreachable interfaces.
 
 ## Recommended next measurements
 
-1. Run the SPI conformance suite against Postgres (`PG_TEST_URL`); CI runs memory only,
-   which is the root of the provider divergence the backlog lists.
+1. ~~Run the SPI conformance suite against Postgres~~ — done; see the section above.
+   Three Postgres-only defects, one of them in a row graded `full`. Worth making the
+   Postgres run non-optional rather than gated on an env var nobody sets locally.
 2. Re-grade `ontology-core`, `actions-*` and `security-*` from source to complete the
-   count.
+   count — and re-check any row whose evidence is "tests pass" against Postgres, not
+   just memory.
 3. Decide per widget row what surface it needs, now that a real UI exists to consume it.
