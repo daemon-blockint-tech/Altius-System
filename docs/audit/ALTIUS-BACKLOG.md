@@ -173,6 +173,32 @@ why the unanimity bar is there and why a single verifier is not enough.
 - **`hold-approve-policy-guard`** (working tree, uncommitted) — `HoldApprovePolicyGuard` (packages/actions/src/tools/hold-approve-policy-guard.ts) is the first concrete `PolicyGuard` implementation: holds high-risk agent actions for human approval with hold ID generation, approve/reject workflow, TTL-based expiry, and hold listing/cleanup. 13 tests pass. Partially closes `security-gov/ai-agent-write-governance-human-approved-non` — the hold mechanism exists but is not yet wired into the production ToolRegistry or MCP server, and no REST/GraphQL approve/reject endpoint exists.
 - **`cdc-reconciliation`** (working tree, uncommitted) — `ReconciliationService` (packages/sync/src/cdc/reconciliation.ts) detects drift between source systems and the ontology: missing objects, orphaned objects, and field-level value differences. 10 tests pass. Partially closes `sync-ingest-ops/source-system-sync-cdc-ingestion-with-edit-v` — drift detection exists but automated resolution (wiring ConflictResolver) and manifest/deployment fixes remain open.
 
+### Landed 19 Aug — SPI-to-REST wiring (§3.1–§3.5) and model consolidation (§4A–§4E, §5)
+
+Five SPI services that were internally reachable only were wired to externally usable REST surfaces, and three duplicate/dead models were consolidated or deleted. PR #13 (merged `b92e093`). The wiring uses the existing dependency-only route generator, so authentication, rate limiting, marking enforcement, and auditing are shared with all other REST routes. Each service remains `partial` — in-memory storage is not persistent, and `full` requires a competent user to get the whole capability without writing platform code.
+
+**§3.1 data-freshness** (`2b13e30`) — 5 REST endpoints: `GET /api/v1/data-freshness/types/:objectType`, `GET /api/v1/data-freshness/datasources/:datasourceId`, `GET /api/v1/data-freshness/query`, `GET /api/v1/data-freshness/summary`, `DELETE /api/v1/data-freshness/types/:objectType`. 7 tests. Invalidates the "no REST/GraphQL endpoint" gap on `widgets/data-freshness-widget-last-indexed-timestamp`.
+
+**§3.2 security-governance** (`7bbae51`) — 10 REST endpoints across three services: `AccessExplanationService` (real `DefaultAccessExplanationService` from `packages/security`, not the in-memory fake — uses live `AuthorizationService` for ReBAC checks), `JustificationStore`, `ScopedSessionStore`. Routes: `POST /api/v1/access-explanation`, `GET/POST /api/v1/justifications`, `POST /api/v1/justifications/:id/approve`, `GET/POST /api/v1/scoped-sessions`, `DELETE /api/v1/scoped-sessions/:id`, `POST /api/v1/scoped-sessions/:id/check-marking`. 13 tests. Invalidates the "no REST/GraphQL endpoint" gaps on `security-gov/justification-records-break-glass-and-routi`, `security-gov/scoped-sessions-marking-restricted-s`, and `security-gov/access-explanation-service-explain-wh`.
+
+**§3.3 ontology-sql** (`8f38d7b`) — 12 REST endpoints: `POST /api/v1/ontology-sql/execute`, `POST /api/v1/ontology-sql/explain`, `POST /api/v1/ontology-sql/validate`, `GET/POST /api/v1/ontology-sql/saved-queries`, `GET/PUT/DELETE /api/v1/ontology-sql/saved-queries/:id`, `POST /api/v1/ontology-sql/saved-queries/:id/execute`, `POST /api/v1/ontology-sql/saved-queries/:id/share`, `GET /api/v1/ontology-sql/virtual-tables`, `GET /api/v1/ontology-sql/virtual-tables/:objectType`. The in-memory service's object reader is wired to `ObjectManager.query()` so SQL queries read live ontology data. 13 tests. Invalidates the "no REST/GraphQL endpoint" gap on `misc-1/ad-hoc-sql-analytics-over-the-ontology-sql-s`.
+
+**§3.4 datasets** (`47a3b94`) — 15 REST endpoints for `DatasetService`: CRUD for datasets, schema, branches, transactions, insert/read/delete rows. Routes under `/api/v1/datasets/`. 9 tests. Invalidates the "no REST API" gap on `pipelines-data/versioned-transactional-dataset-primitive`.
+
+**§3.5 usage-metrics** (`65066d5`) — 9 REST endpoints: `GET /api/v1/usage-metrics/object-types/:objectType`, `GET /api/v1/usage-metrics/action-functions/:name`, `GET /api/v1/usage-metrics/summary`, `GET /api/v1/usage-metrics/events`, `GET /api/v1/usage-metrics/active-users`, `GET/POST /api/v1/usage-metrics/monitoring-rules`, `DELETE /api/v1/usage-metrics/monitoring-rules/:id`, `POST /api/v1/usage-metrics/monitoring-rules/evaluate`. `record()` is NOT exposed — it is an instrumentation hook only; exposing a manual write endpoint would allow callers to forge usage data. 12 tests. Invalidates the "no REST/GraphQL endpoint to query metrics" gap on `misc-3/ontology-usage-metrics-and-change-impact-obs`.
+
+**§4A marking model consolidation** (`6ca9b6d`) — Three marking models merged onto new `packages/spi/src/marking-policy.ts`: `MarkingRecord` (was `MarkingDefinition` in `multi-ontology.ts`), `CreateMarkingInput`, `MarkingPropagationRule`, `PropagatedMarkings` (were in `security-governance.ts`). Backward-compat alias `MarkingDefinition` → `MarkingRecord`. The security package's `MarkingPolicy` class (the real evaluation engine) is unchanged.
+
+**§4B SQL parser merge** (`0c39c9d`) — Two separate `parseSql()` functions (in `in-memory-ontology-sql.ts` and `in-memory-dataset-services.ts`) merged into one shared `packages/storage-memory/src/sql-parser.ts` returning `ParsedSqlAst`. Both consumers adapted to the unified AST.
+
+**§4C widget-library deletion** (`2c19c37`) — `WidgetLibraryService` SPI and `InMemoryWidgetLibraryService` deleted (-454 lines). Zero consumers outside index re-exports. `WorkshopPlatformService` already covers apps, templates, widget catalog, modules, variables, object views. **Falsifies evidence on `widgets/no-code-widget-library-app-building-ui-layer`** (cited `packages/spi/src/widget-library.ts`) and **`workshop-ui/widget-library-60-widgets-object-tables-list`** (cited `InMemoryWidgetLibraryService`).
+
+**§4D value-formatting deletion** (`5802447`) — `ValueFormattingService` SPI and `InMemoryValueFormattingService` deleted (-782 lines). Formatting concepts folded into `DisplayDirective` (`packages/odl/src/parser/types.ts`) which now has `formatKind`, `formatParams`, and `conditionalFormats` fields. **Falsifies evidence on `workshop-ui/value-and-conditional-formatting-metadata`** (cited `packages/spi/src/value-formatting.ts`).
+
+**§4E embedding rename** (`8d210af`) — `embedding.ts` → `app-embedding.ts` in both SPI and storage-memory. Disambiguates app embedding (`EmbeddingService`) from vector embeddings (`EmbeddingStore` in `embeddings.ts`).
+
+**§5 dead-code deletion** (`a33249b`) — `MarkingPropagationService` interface deleted (no consumers, no implementation). Multi-ontology marking CRUD methods removed from `MultiOntologyGovernanceService` and its in-memory implementation. **Falsifies evidence on `security-gov/marking-propagation-along-data-lineage-inher`** (cited `MarkingPropagationService` SPI — the interface no longer exists). `padding` was already absent from the codebase.
+
 **Open items this session did not close.** ~~`marking-write-bypass` above is the important one~~ — CLOSED in `c246b51`. Also still true: the `@computed` direction/argument inconsistency (`countLinks` vs the aggregates), and `packages/api/src/graphql/errors.ts` withholds error messages identically to the REST path fixed in `496299e` but still logs nothing, so the same failure over GraphQL remains untraceable.
 
 ### Rows whose stated evidence is now false
@@ -244,6 +270,42 @@ now exists). The rest stayed on their grades; see the "Re-grading pass, 17 Aug
 - `sync-ingest-ops/source-system-sync-cdc-ingestion-with-edit-v`
   - no longer true: "The scheduler remains unreachable in either shipped deployment: SYNC_SCHEDULER_ENABLED appears nowhere in Orion/helm/altius/templates/configmap.yaml (whole 89-line file read — INGE"
   - at HEAD: aee4dc9 put SYNC_SCHEDULER_ENABLED (and AUTOMATION_ENABLED) into exactly that fixed literal block — Orion/helm/altius/templates/api-gateway-deployment.yaml:78-81, driven by values.yaml:55-59 `singleInstance.syncScheduler
+
+**Rows falsified by §3–§5 (19 Aug, PR #13).** These rows cited files or interfaces that were deleted, or claimed "no REST endpoint" for services that now have one. None has been re-graded — the grade may still be right (wiring a service to REST does not make it `full`), but the evidence is stale.
+
+- `widgets/no-code-widget-library-app-building-ui-layer`
+  - no longer true: "`WidgetLibraryService` SPI (packages/spi/src/widget-library.ts) defines a widget registry..."
+  - at HEAD: `widget-library.ts` and `in-memory-widget-library.ts` were DELETED in §4C. `WorkshopPlatformService` is the surviving app-definition model.
+- `workshop-ui/widget-library-60-widgets-object-tables-list`
+  - no longer true: "`InMemoryWidgetLibraryService` (packages/storage-memory/src/in-memory-widget-library.ts) ships with 22 pre-registered widget definitions..."
+  - at HEAD: File deleted in §4C. The widget catalog now lives in `WorkshopPlatformService` (`workshop-platform.ts`).
+- `workshop-ui/value-and-conditional-formatting-metadata`
+  - no longer true: "`ValueFormattingService` SPI (packages/spi/src/value-formatting.ts) defines value formats..."
+  - at HEAD: `value-formatting.ts` and `in-memory-value-formatting.ts` were DELETED in §4D. Formatting concepts folded into `DisplayDirective` (`packages/odl/src/parser/types.ts`).
+- `security-gov/marking-propagation-along-data-lineage-inher`
+  - no longer true: "`MarkingPropagationService` SPI now exists with `computeEffectiveMarkings`, `getRules`, `setRules`, and `simulate` (packages/spi/src/security-governance.ts)."
+  - at HEAD: `MarkingPropagationService` interface was DELETED in §5 (no consumers, no implementation). `MarkingPropagationRule` and `PropagatedMarkings` types moved to `marking-policy.ts`.
+- `misc-3/ontology-usage-metrics-and-change-impact-obs`
+  - no longer true: "no REST/GraphQL endpoint to query metrics"
+  - at HEAD: 9 REST endpoints wired in §3.5 under `/api/v1/usage-metrics/`. `record()` is intentionally not exposed (instrumentation-only).
+- `widgets/data-freshness-widget-last-indexed-timestamp`
+  - no longer true: evidence does not mention REST endpoints (they did not exist when graded)
+  - at HEAD: 5 REST endpoints wired in §3.1 under `/api/v1/data-freshness/`.
+- `misc-1/ad-hoc-sql-analytics-over-the-ontology-sql-s`
+  - no longer true: evidence does not mention REST endpoints (they did not exist when graded)
+  - at HEAD: 12 REST endpoints wired in §3.3 under `/api/v1/ontology-sql/`.
+- `pipelines-data/versioned-transactional-dataset-primitive`
+  - no longer true: evidence does not mention REST endpoints for DatasetService (they did not exist when graded)
+  - at HEAD: 15 REST endpoints wired in §3.4 under `/api/v1/datasets/`.
+- `security-gov/justification-records-break-glass-and-routi`
+  - no longer true: "no GraphQL/REST endpoint to submit justifications"
+  - at HEAD: REST endpoints wired in §3.2 under `/api/v1/justifications`.
+- `security-gov/scoped-sessions-marking-restricted-s`
+  - no longer true: "no REST/GraphQL endpoint to create/manage sessions"
+  - at HEAD: REST endpoints wired in §3.2 under `/api/v1/scoped-sessions`.
+- `security-gov/access-explanation-service-explain-wh`
+  - no longer true: "no REST/GraphQL endpoint to request explanations"
+  - at HEAD: REST endpoint wired in §3.2 at `POST /api/v1/access-explanation`. Uses the real `DefaultAccessExplanationService` from `packages/security`, not an in-memory fake.
 
 ## Re-verification, 15 Aug 2026
 
