@@ -10,7 +10,7 @@ import type {
   MarkingPolicy,
 } from '@altius/security';
 import type { ParsedSchema } from '@altius/odl';
-import type { RequestContext, StorageProvider, LLMClient, BlobStore, TimeSeriesStore, BranchStore, CommentStore, NotificationStore, EmbeddingStore, AlertingService, LLMGateway, DataFreshnessService, JustificationStore, AccessExplanationService, ScopedSessionStore, OntologySqlService, DatasetService } from '@altius/spi';
+import type { RequestContext, StorageProvider, LLMClient, BlobStore, TimeSeriesStore, BranchStore, CommentStore, NotificationStore, EmbeddingStore, AlertingService, LLMGateway, DataFreshnessService, JustificationStore, AccessExplanationService, ScopedSessionStore, OntologySqlService, DatasetService, OntologyUsageMetricsService } from '@altius/spi';
 import { DataPurpose } from '@altius/spi';
 
 /**
@@ -291,6 +291,22 @@ export interface ApiDependencies {
    *   POST   /api/v1/datasets/:name/merge         (merge branch)
    */
   datasetService?: DatasetService;
+  /**
+   * Ontology usage metrics service. When present, REST endpoints for
+   * metrics aggregation, event querying, and monitoring rules are
+   * registered. The record() method is NOT exposed as a REST endpoint —
+   * it is an instrumentation hook called internally by the API layer.
+   *   GET    /api/v1/usage/object-types       (per-type metrics)
+   *   GET    /api/v1/usage/actions             (per-action/function metrics)
+   *   GET    /api/v1/usage/summary             (full usage summary)
+   *   GET    /api/v1/usage/events              (query raw events)
+   *   GET    /api/v1/usage/active-users        (active user count)
+   *   POST   /api/v1/usage/rules               (create monitoring rule)
+   *   GET    /api/v1/usage/rules               (list monitoring rules)
+   *   DELETE /api/v1/usage/rules/:id           (delete monitoring rule)
+   *   POST   /api/v1/usage/rules/evaluate      (evaluate monitoring rules)
+   */
+  usageMetricsService?: OntologyUsageMetricsService;
 }
 
 /**

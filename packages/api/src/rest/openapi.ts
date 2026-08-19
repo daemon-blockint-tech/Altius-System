@@ -1224,6 +1224,102 @@ function platformPaths(): Record<string, unknown> {
         responses: { '200': { description: 'Merge result', content: jsonObject }, '401': unauthorized },
       },
     },
+    // ── Usage Metrics ──
+    '/api/v1/usage/object-types': {
+      get: {
+        tags: ['Usage'],
+        summary: 'Get per-object-type usage metrics',
+        operationId: 'getObjectTypeMetrics',
+        parameters: [
+          { name: 'startTime', in: 'query', schema: { type: 'string', format: 'date-time' } },
+          { name: 'endTime', in: 'query', schema: { type: 'string', format: 'date-time' } },
+        ],
+        responses: { '200': { description: 'Per-type metrics', content: jsonObject }, '401': unauthorized },
+      },
+    },
+    '/api/v1/usage/actions': {
+      get: {
+        tags: ['Usage'],
+        summary: 'Get per-action/function usage metrics',
+        operationId: 'getActionFunctionMetrics',
+        parameters: [
+          { name: 'startTime', in: 'query', schema: { type: 'string', format: 'date-time' } },
+          { name: 'endTime', in: 'query', schema: { type: 'string', format: 'date-time' } },
+        ],
+        responses: { '200': { description: 'Per-action metrics', content: jsonObject }, '401': unauthorized },
+      },
+    },
+    '/api/v1/usage/summary': {
+      get: {
+        tags: ['Usage'],
+        summary: 'Get a full usage summary for the tenant',
+        operationId: 'getUsageSummary',
+        parameters: [
+          { name: 'startTime', in: 'query', schema: { type: 'string', format: 'date-time' } },
+          { name: 'endTime', in: 'query', schema: { type: 'string', format: 'date-time' } },
+        ],
+        responses: { '200': { description: 'Usage summary', content: jsonObject }, '401': unauthorized },
+      },
+    },
+    '/api/v1/usage/events': {
+      get: {
+        tags: ['Usage'],
+        summary: 'Query raw usage events',
+        operationId: 'queryUsageEvents',
+        parameters: [
+          { name: 'startTime', in: 'query', schema: { type: 'string', format: 'date-time' } },
+          { name: 'endTime', in: 'query', schema: { type: 'string', format: 'date-time' } },
+          { name: 'objectType', in: 'query', schema: { type: 'string' } },
+          { name: 'operation', in: 'query', schema: { type: 'string' } },
+          { name: 'userId', in: 'query', schema: { type: 'string' } },
+        ],
+        responses: { '200': { description: 'Usage events', content: jsonObject }, '401': unauthorized },
+      },
+    },
+    '/api/v1/usage/active-users': {
+      get: {
+        tags: ['Usage'],
+        summary: 'Get active user count for the tenant',
+        operationId: 'getActiveUserCount',
+        parameters: [
+          { name: 'startTime', in: 'query', schema: { type: 'string', format: 'date-time' } },
+          { name: 'endTime', in: 'query', schema: { type: 'string', format: 'date-time' } },
+        ],
+        responses: { '200': { description: 'Active user count', content: jsonObject }, '401': unauthorized },
+      },
+    },
+    '/api/v1/usage/rules': {
+      post: {
+        tags: ['Usage'],
+        summary: 'Create a usage monitoring rule',
+        operationId: 'createUsageMonitoringRule',
+        requestBody: { required: true, content: jsonObject },
+        responses: { '201': { description: 'Monitoring rule', content: jsonObject }, '400': { description: 'Validation error' }, '401': unauthorized },
+      },
+      get: {
+        tags: ['Usage'],
+        summary: 'List usage monitoring rules',
+        operationId: 'listUsageMonitoringRules',
+        responses: { '200': { description: 'Monitoring rules', content: jsonObject }, '401': unauthorized },
+      },
+    },
+    '/api/v1/usage/rules/{id}': {
+      delete: {
+        tags: ['Usage'],
+        summary: 'Delete a usage monitoring rule',
+        operationId: 'deleteUsageMonitoringRule',
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: { '204': { description: 'Deleted' }, '401': unauthorized },
+      },
+    },
+    '/api/v1/usage/rules/evaluate': {
+      post: {
+        tags: ['Usage'],
+        summary: 'Evaluate all monitoring rules',
+        operationId: 'evaluateUsageMonitoringRules',
+        responses: { '200': { description: 'Evaluation results', content: jsonObject }, '401': unauthorized },
+      },
+    },
   };
 }
 

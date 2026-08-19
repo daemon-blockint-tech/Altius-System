@@ -117,6 +117,18 @@ function mockDeps(schema: ReturnType<typeof parseOdl>): ApiDependencies {
       listBranches: vi.fn().mockResolvedValue([]),
       mergeBranch: vi.fn().mockResolvedValue({}),
     } as never,
+    usageMetricsService: {
+      record: vi.fn().mockResolvedValue(undefined),
+      getObjectTypeMetrics: vi.fn().mockResolvedValue([]),
+      getActionFunctionMetrics: vi.fn().mockResolvedValue([]),
+      getSummary: vi.fn().mockResolvedValue({}),
+      queryEvents: vi.fn().mockResolvedValue({ events: [], totalCount: 0 }),
+      getActiveUserCount: vi.fn().mockResolvedValue(0),
+      createMonitoringRule: vi.fn().mockResolvedValue({}),
+      listMonitoringRules: vi.fn().mockResolvedValue([]),
+      deleteMonitoringRule: vi.fn().mockResolvedValue(undefined),
+      evaluateMonitoringRules: vi.fn().mockResolvedValue([]),
+    } as never,
   } as ApiDependencies;
 }
 

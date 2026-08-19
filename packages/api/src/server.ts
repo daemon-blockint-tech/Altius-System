@@ -56,6 +56,7 @@ import {
   InMemoryScopedSessionStore,
   InMemoryOntologySqlService,
   InMemoryDatasetService,
+  InMemoryOntologyUsageMetricsService,
 } from '@altius/storage-memory';
 import { PostgresStorageProvider, PostgresLineageStore, PostgresAuditStore, PostgresConsentStore, PostgresSchemaRegistry, PostgresObjectSetStore,
   PostgresLLMUsageTracker, PostgresLLMRateLimiter,
@@ -1207,6 +1208,10 @@ async function main(): Promise<void> {
     }),
     // Datasets — in-memory only (no Postgres implementation yet).
     datasetService: new InMemoryDatasetService(),
+    // Usage metrics — in-memory only. The record() method is an
+    // instrumentation hook, not a REST endpoint. Future instrumentation
+    // points: REST dispatch loop, GraphQL resolvers, action executor.
+    usageMetricsService: new InMemoryOntologyUsageMetricsService(),
   };
 
   // ── Express + HTTP Server ──
