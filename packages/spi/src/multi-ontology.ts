@@ -6,10 +6,6 @@
  */
 
 import type { RequestContext } from './ontology.js';
-import type { MarkingRecord, CreateMarkingInput } from './marking-policy.js';
-
-// Re-export marking types for backward compatibility — moved to marking-policy.ts
-export type { MarkingRecord, CreateMarkingInput };
 
 // ===========================================================================
 // Ontology spaces
@@ -174,11 +170,7 @@ export interface MultiOntologyGovernanceService {
   updateOntology(ctx: RequestContext, id: string, updates: Partial<CreateOntologyInput>): Promise<OntologyEntity>;
   deleteOntology(ctx: RequestContext, id: string): Promise<void>;
 
-  // ── Markings ──
-  createMarking(ctx: RequestContext, input: CreateMarkingInput): Promise<MarkingRecord>;
-  getMarking(ctx: RequestContext, name: string): Promise<MarkingRecord | null>;
-  listMarkings(ctx: RequestContext, category?: string): Promise<MarkingRecord[]>;
-  deleteMarking(ctx: RequestContext, name: string): Promise<void>;
+  // ── Markings — CRUD removed in §5, consolidated onto marking-policy.ts ──
 
   // ── Sharing rules ──
   createSharingRule(ctx: RequestContext, input: CreateSharingRuleInput): Promise<SharingRule>;

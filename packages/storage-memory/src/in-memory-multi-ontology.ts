@@ -9,8 +9,6 @@ import type {
   CreateSpaceInput,
   OntologyEntity,
   CreateOntologyInput,
-  MarkingRecord,
-  CreateMarkingInput,
   SharingRule,
   CreateSharingRuleInput,
   OntologyAccessResult,
@@ -21,7 +19,7 @@ export class InMemoryMultiOntologyGovernanceService implements MultiOntologyGove
   private readonly spaces = new Map<string, Map<string, OntologySpace>>();
   private readonly spacesByName = new Map<string, Map<string, string>>(); // tenant → name → id
   private readonly ontologies = new Map<string, Map<string, OntologyEntity>>();
-  private readonly markings = new Map<string, Map<string, MarkingRecord>>();
+  // markings map removed in §5 — marking CRUD consolidated onto marking-policy.ts
   private readonly sharingRules = new Map<string, Map<string, SharingRule>>();
 
   async createSpace(ctx: RequestContext, input: CreateSpaceInput): Promise<OntologySpace> {
@@ -155,36 +153,7 @@ export class InMemoryMultiOntologyGovernanceService implements MultiOntologyGove
     this.ontologies.get(ctx.tenantId)?.delete(id);
   }
 
-  async createMarking(ctx: RequestContext, input: CreateMarkingInput): Promise<MarkingRecord> {
-    const id = randomUUID();
-    const marking: MarkingRecord = {
-      id, tenantId: ctx.tenantId,
-      name: input.name, label: input.label,
-      description: input.description ?? '',
-      category: input.category,
-      requiredClearance: input.requiredClearance,
-      propagates: input.propagates ?? false,
-      createdAt: new Date().toISOString(),
-    };
-    this.getMarkingMap(ctx.tenantId).set(input.name, marking);
-    return marking;
-  }
-
-  async getMarking(ctx: RequestContext, name: string): Promise<MarkingRecord | null> {
-    return this.markings.get(ctx.tenantId)?.get(name) ?? null;
-  }
-
-  async listMarkings(ctx: RequestContext, category?: string): Promise<MarkingRecord[]> {
-    const m = this.markings.get(ctx.tenantId);
-    if (!m) return [];
-    let list = Array.from(m.values());
-    if (category) list = list.filter(mk => mk.category === category);
-    return list;
-  }
-
-  async deleteMarking(ctx: RequestContext, name: string): Promise<void> {
-    this.markings.get(ctx.tenantId)?.delete(name);
-  }
+  // Marking CRUD removed in §5 — consolidated onto marking-policy.ts
 
   async createSharingRule(ctx: RequestContext, input: CreateSharingRuleInput): Promise<SharingRule> {
     const id = randomUUID();
@@ -289,11 +258,6 @@ export class InMemoryMultiOntologyGovernanceService implements MultiOntologyGove
   private getOntologyMap(tenantId: string): Map<string, OntologyEntity> {
     let m = this.ontologies.get(tenantId);
     if (!m) { m = new Map(); this.ontologies.set(tenantId, m); }
-    return m;
-  }
-  private getMarkingMap(tenantId: string): Map<string, MarkingRecord> {
-    let m = this.markings.get(tenantId);
-    if (!m) { m = new Map(); this.markings.set(tenantId, m); }
     return m;
   }
   private getRuleMap(tenantId: string): Map<string, SharingRule> {

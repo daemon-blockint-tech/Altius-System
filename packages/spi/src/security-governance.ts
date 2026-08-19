@@ -120,28 +120,10 @@ export interface AccessExplanationService {
 // ---------------------------------------------------------------------------
 // 3. Marking propagation along data lineage
 //    Types moved to marking-policy.ts; re-exported for backward compatibility.
+//    MarkingPropagationService deleted in §5 (dead code — no consumers).
 // ---------------------------------------------------------------------------
 
 export type { MarkingPropagationRule, PropagatedMarkings } from './marking-policy.js';
-import type { MarkingPropagationRule, PropagatedMarkings } from './marking-policy.js';
-
-/**
- * Marking propagation service — computes effective markings along data lineage.
- * Scheduled for deletion in §5 (dead code — no consumers).
- */
-export interface MarkingPropagationService {
-  /** Compute effective markings for an object, considering lineage. */
-  computeEffectiveMarkings(tenantId: string, objectType: string, objectId: string): Promise<PropagatedMarkings>;
-
-  /** Get propagation rules. */
-  getRules(tenantId: string): Promise<MarkingPropagationRule[]>;
-
-  /** Set propagation rules. */
-  setRules(tenantId: string, rules: MarkingPropagationRule[]): Promise<void>;
-
-  /** Simulate marking propagation without applying. */
-  simulate(tenantId: string, objectType: string, objectId: string, hypotheticalMarkings: string[]): Promise<PropagatedMarkings>;
-}
 
 // ---------------------------------------------------------------------------
 // 4. Scoped sessions

@@ -157,7 +157,6 @@ export type {
   AccessExplanationService,
   AccessExplanation,
   AccessExplanationReason,
-  MarkingPropagationService,
   ScopedSessionStore,
   ScopedSession,
   CreateScopedSessionInput,
@@ -372,7 +371,6 @@ export type {
   CreateSpaceInput,
   OntologyEntity,
   CreateOntologyInput,
-  CreateMarkingInput,
   SharingRule,
   CreateSharingRuleInput,
   OntologyAccessResult,
@@ -382,7 +380,7 @@ export type {
 // and security-governance.ts)
 export type {
   MarkingRecord,
-  CreateMarkingInput as CreateMarkingRecordInput,
+  CreateMarkingInput,
   MarkingPropagationRule,
   PropagatedMarkings,
 } from './marking-policy.js';

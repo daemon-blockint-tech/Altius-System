@@ -149,15 +149,7 @@ describe('InMemoryMultiOntologyGovernanceService', () => {
     expect(fetched?.name).toBe('core');
   });
 
-  it('creates and lists markings', async () => {
-    await service.createMarking(CTX, { name: 'CONFIDENTIAL', label: 'Confidential', category: 'sensitivity', requiredClearance: 'L2' });
-    await service.createMarking(CTX, { name: 'PHI', label: 'Protected Health Information', category: 'compliance', requiredClearance: 'L3' });
-    const all = await service.listMarkings(CTX);
-    expect(all).toHaveLength(2);
-    const sens = await service.listMarkings(CTX, 'sensitivity');
-    expect(sens).toHaveLength(1);
-    expect(sens[0]!.name).toBe('CONFIDENTIAL');
-  });
+  // marking CRUD test removed in §5 — consolidated onto marking-policy.ts
 
   it('checks same-org access (allowed)', async () => {
     const space = await service.createSpace(CTX, { name: 'ops', orgScope: 'operations' });
