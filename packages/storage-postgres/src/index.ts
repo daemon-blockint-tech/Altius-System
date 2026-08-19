@@ -97,3 +97,13 @@ export { PostgresBranchStore } from './branch/postgres-branch-store.js';
 export { PostgresCommentStore } from './comment/postgres-comment-store.js';
 export { PostgresNotificationStore } from './notification/postgres-notification-store.js';
 export { generatePlatformDDL } from './schema/ddl-platform.js';
+export {
+  PostgresAlertingService,
+  PostgresDataFreshnessService,
+  PostgresDatasetMetadataService,
+  PostgresGeospatialMapService,
+  PostgresJustificationStore,
+  PostgresOntologySqlService,
+  PostgresOntologyUsageMetricsService,
+  PostgresScopedSessionStore,
+} from './postgres-platform-stores.js';
