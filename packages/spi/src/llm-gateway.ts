@@ -56,6 +56,16 @@ export interface ChatMessage {
   toolCallId?: string;
 }
 
+/** Tool call requested by the model. */
+export interface ChatToolCall {
+  id: string;
+  type: 'function';
+  function: {
+    name: string;
+    arguments: string;
+  };
+}
+
 /** Options for a chat completion request. */
 export interface ChatCompletionOptions {
   /** Model RID from the catalog. */
@@ -70,6 +80,25 @@ export interface ChatCompletionOptions {
   stop?: string[];
   /** Whether to stream the response. */
   stream?: boolean;
+  /** Optional tools the model may call. */
+  tools?: Array<{ type: 'function'; function: { name: string; description: string; parameters: Record<string, unknown> } }>;
+  /** Data retention preference. ZDR models require 'ephemeral'. */
+  retention?: 'ephemeral' | 'retain';
+  /** Requested data residency (EU, US, any). Used for geo routing. */
+  dataRegion?: 'EU' | 'US' | 'any';
+}
+
+/** A single chunk of a streaming chat completion. */
+export interface ChatCompletionStreamChunk {
+  id: string;
+  object: 'chat.completion.chunk';
+  created: number;
+  model: string;
+  choices: Array<{
+    index: number;
+    delta: { role?: string; content?: string; toolCalls?: ChatToolCall[] };
+    finishReason: string | null;
+  }>;
 }
 
 /** A chat completion response (OpenAI-compatible). */
@@ -93,6 +122,34 @@ export interface ChatCompletionResponse {
 // ---------------------------------------------------------------------------
 // Usage tracking
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Embeddings
+// ---------------------------------------------------------------------------
+
+/** Options for an embedding request. */
+export interface EmbeddingOptions {
+  /** Model RID from the catalog. */
+  model: string;
+  /** Input text(s) to embed. */
+  input: string | string[];
+}
+
+/** A single embedding vector. */
+export interface EmbeddingVector {
+  /** The index of the input this vector corresponds to. */
+  index: number;
+  /** Embedding values. */
+  embedding: number[];
+}
+
+/** Embedding response (OpenAI-compatible shape). */
+export interface EmbeddingResult {
+  object: 'list';
+  model: string;
+  data: EmbeddingVector[];
+  usage: { promptTokens: number; totalTokens: number };
+}
 
 /** A usage record for metering and attribution. */
 export interface LLMUsageRecord {
@@ -238,6 +295,12 @@ export interface LLMGateway {
    * report them).
    */
   streamChatCompletion(ctx: RequestContext, options: ChatCompletionOptions): AsyncIterable<ChatCompletionChunk>;
+
+  /** Create a streaming chat completion (SSE). */
+  chatCompletionStream(ctx: RequestContext, options: ChatCompletionOptions): AsyncIterable<ChatCompletionStreamChunk>;
+
+  /** Create an embedding (OpenAI-compatible). */
+  createEmbedding(ctx: RequestContext, options: EmbeddingOptions): Promise<EmbeddingResult>;
 
   /** Get the usage tracker. */
   usageTracker: LLMUsageTracker;

@@ -11,6 +11,9 @@ import type {
   ChatCompletionOptions,
   ChatCompletionResponse,
   ChatCompletionChunk,
+  ChatCompletionStreamChunk,
+  EmbeddingOptions,
+  EmbeddingResult,
   ChatMessage,
   RequestContext,
   LLMClient,
@@ -50,9 +53,24 @@ export class DefaultLLMGateway implements LLMGateway {
     return this.modelMap.get(rid) ?? null;
   }
 
+  private resolveGeo(ctx: RequestContext, options: ChatCompletionOptions): 'EU' | 'US' | 'any' {
+    return options.dataRegion ?? (ctx as { dataRegion?: 'EU' | 'US' | 'any' }).dataRegion ?? 'any';
+  }
+
   async chatCompletion(ctx: RequestContext, options: ChatCompletionOptions): Promise<ChatCompletionResponse> {
     const model = this.resolveModel(options.model);
     this.enforceGovernance(ctx, model);
+
+    // ZDR enforcement: ZDR models require ephemeral retention
+    if (model.zdr && options.retention !== 'ephemeral') {
+      throw new Error(`Model ${options.model} requires ephemeral retention (ZDR)`);
+    }
+
+    // Geo routing: the requested data region must be compatible with the model
+    const requestedRegion = this.resolveGeo(ctx, options);
+    if (model.geo !== 'any' && requestedRegion !== 'any' && model.geo !== requestedRegion) {
+      throw new Error(`Model ${options.model} is not available in region ${requestedRegion}`);
+    }
 
     // Estimate tokens (rough: ~4 chars per token)
     const promptText = options.messages.map(m => m.content).join('\n');
@@ -236,6 +254,142 @@ export class DefaultLLMGateway implements LLMGateway {
         completionTokens: result.completionTokens,
         totalTokens: result.totalTokens,
       },
+    };
+  }
+
+  async *chatCompletionStream(ctx: RequestContext, options: ChatCompletionOptions): AsyncIterable<ChatCompletionStreamChunk> {
+    const model = this.modelMap.get(options.model);
+    if (!model) {
+      throw new Error(`Model not found in catalog: ${options.model}`);
+    }
+    if (!model.enabled) {
+      throw new Error(`Model is disabled: ${options.model}`);
+    }
+    if (model.zdr && options.retention !== 'ephemeral') {
+      throw new Error(`Model ${options.model} requires ephemeral retention (ZDR)`);
+    }
+    const requestedRegion = this.resolveGeo(ctx, options);
+    if (model.geo !== 'any' && requestedRegion !== 'any' && model.geo !== requestedRegion) {
+      throw new Error(`Model ${options.model} is not available in region ${requestedRegion}`);
+    }
+
+    const promptText = options.messages.map(m => m.content).join('\n');
+    const estimatedTokens = Math.ceil(promptText.length / 4) + (options.maxTokens ?? 1000);
+    const rateLimit = await this.rateLimiter.check(ctx.tenantId, estimatedTokens);
+    if (!rateLimit.allowed) {
+      throw new Error(rateLimit.reason ?? 'Rate limit exceeded');
+    }
+
+    const systemMessages = options.messages.filter(m => m.role === 'system').map(m => m.content);
+    const systemPrompt = systemMessages.join('\n');
+    const userPrompt = options.messages
+      .filter(m => m.role !== 'system')
+      .map(m => `${m.role}: ${m.content}`)
+      .join('\n');
+
+    const id = `chatcmpl_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+    const created = Math.floor(Date.now() / 1000);
+
+    let promptTokens = 0;
+    let completionTokens = 0;
+    let fullText = '';
+    try {
+      for await (const chunk of this.llmClient.stream(ctx, userPrompt, {
+        model: model.modelId,
+        temperature: options.temperature,
+        maxTokens: options.maxTokens,
+        stop: options.stop,
+        systemPrompt: systemPrompt || undefined,
+      })) {
+        fullText += chunk;
+        completionTokens += chunk.length;
+        yield {
+          id,
+          object: 'chat.completion.chunk',
+          created,
+          model: options.model,
+          choices: [{ index: 0, delta: { content: chunk }, finishReason: null }],
+        };
+      }
+    } catch {
+      // If streaming is unsupported, fall back to one-shot and emit a single chunk.
+      const result = await this.llmClient.complete(ctx, userPrompt, {
+        model: model.modelId,
+        temperature: options.temperature,
+        maxTokens: options.maxTokens,
+        stop: options.stop,
+        systemPrompt: systemPrompt || undefined,
+      });
+      fullText = result.text;
+      promptTokens = result.promptTokens;
+      completionTokens = result.completionTokens;
+      yield {
+        id,
+        object: 'chat.completion.chunk',
+        created,
+        model: options.model,
+        choices: [{ index: 0, delta: { content: fullText }, finishReason: null }],
+      };
+    }
+
+    promptTokens = promptTokens || Math.ceil(promptText.length / 4);
+    const totalTokens = promptTokens + completionTokens;
+    await this.rateLimiter.recordUsage(ctx.tenantId, totalTokens);
+    await this.usageTracker.record({
+      tenantId: ctx.tenantId,
+      userId: ctx.actorId ?? 'anonymous',
+      model: options.model,
+      operation: 'stream',
+      promptTokens,
+      completionTokens,
+      totalTokens,
+      timestamp: new Date().toISOString(),
+    });
+
+    yield {
+      id,
+      object: 'chat.completion.chunk',
+      created,
+      model: options.model,
+      choices: [{ index: 0, delta: {}, finishReason: 'stop' }],
+    };
+  }
+
+  async createEmbedding(ctx: RequestContext, options: EmbeddingOptions): Promise<EmbeddingResult> {
+    const model = this.modelMap.get(options.model);
+    if (!model) {
+      throw new Error(`Model not found in catalog: ${options.model}`);
+    }
+    if (!model.enabled) {
+      throw new Error(`Model is disabled: ${options.model}`);
+    }
+
+    const inputs = Array.isArray(options.input) ? options.input : [options.input];
+    const data: EmbeddingResult['data'] = [];
+    let totalTokens = 0;
+
+    for (const [i, text] of inputs.entries()) {
+      const result = await this.llmClient.embed(ctx, text, { model: model.modelId });
+      data.push({ index: i, embedding: result.vector });
+      totalTokens += result.vector.length;
+    }
+
+    await this.usageTracker.record({
+      tenantId: ctx.tenantId,
+      userId: ctx.actorId ?? 'anonymous',
+      model: options.model,
+      operation: 'embedding',
+      promptTokens: totalTokens,
+      completionTokens: 0,
+      totalTokens,
+      timestamp: new Date().toISOString(),
+    });
+
+    return {
+      object: 'list',
+      model: options.model,
+      data,
+      usage: { promptTokens: totalTokens, totalTokens },
     };
   }
 }

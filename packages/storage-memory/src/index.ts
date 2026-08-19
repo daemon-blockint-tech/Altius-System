@@ -87,3 +87,15 @@ export {
   InMemoryBuildTriggerService,
   InMemorySqlAnalyticsService,
 } from './in-memory-fase24.js';
+
+// Fase 25 — AIP/LLM Platform
+export {
+  InMemoryLLMGatewayService,
+  InMemoryAgentService,
+  InMemoryModelCatalogService,
+  InMemoryEvalService,
+  InMemoryHumanInTheLoopService,
+  InMemoryVectorSearchService,
+  InMemoryTokenMeteringService,
+  InMemoryCopilotService,
+} from './in-memory-fase25.js';

@@ -40,10 +40,22 @@ import {
   SpacerWidget, DividerWidget, ProgressBarWidget, BadgeWidget, TooltipWidget,
   AccordionWidget, PropertyListWidget, ObjectSetTitleWidget, LinksWidget,
   TreeViewWidget, KanbanWidget,
-  AipChatWidget, AipGeneratedContentWidget,
+  AipGeneratedContentWidget,
   BreadcrumbWidget,
   GanttWidget, TimelineWidget, CalendarWidget,
 } from './components/StubWidgets.js';
+import {
+  AipChatWidget,
+  LlmGatewayWidget,
+  AgentBuilderWidget,
+  ModelCatalogWidget,
+  PromptPlaygroundWidget,
+  EvalFrameworkWidget,
+  AiProposalReviewWidget,
+  VectorSearchWidget,
+  LlmUsageWidget,
+  EmbeddedCopilotWidget,
+} from './components/Fase25Widgets.js';
 import {
   SavedViewsWidget, EditHistoryWidget, ResourceBrowserWidget,
   IframeWidget, AppPairingWidget,
@@ -252,3 +264,15 @@ registerWidget('sql_analytics', SqlAnalyticsWidget);
 registerWidget('cdc_ingest', CdcIngestWidget);
 registerWidget('datasource_mapper', DatasourceMapperWidget);
 registerWidget('build_trigger', BuildTriggerWidget);
+
+// Fase 25 widgets:
+registerWidget('llm_gateway', LlmGatewayWidget);
+registerWidget('agent_builder', AgentBuilderWidget);
+registerWidget('aip_chat', AipChatWidget);
+registerWidget('model_catalog', ModelCatalogWidget);
+registerWidget('prompt_playground', PromptPlaygroundWidget);
+registerWidget('eval_framework', EvalFrameworkWidget);
+registerWidget('ai_proposal_review', AiProposalReviewWidget);
+registerWidget('vector_search', VectorSearchWidget);
+registerWidget('llm_usage', LlmUsageWidget);
+registerWidget('embedded_copilot', EmbeddedCopilotWidget);

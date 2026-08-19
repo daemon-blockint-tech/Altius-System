@@ -104,6 +104,12 @@ import {
   InMemoryDatasourceService,
   InMemoryBuildTriggerService,
   InMemorySqlAnalyticsService,
+  InMemoryAgentService,
+  InMemoryModelCatalogService,
+  InMemoryEvalService,
+  InMemoryHumanInTheLoopService,
+  InMemoryVectorSearchService,
+  InMemoryCopilotService,
 } from '@altius/storage-memory';
 import { PostgresStorageProvider, PostgresLineageStore, PostgresAuditStore, PostgresConsentStore, PostgresSchemaRegistry, PostgresObjectSetStore,
   PostgresLLMUsageTracker, PostgresLLMRateLimiter,
@@ -1191,6 +1197,7 @@ async function main(): Promise<void> {
   // in-memory otherwise (lost on restart, single-replica only).
   const isPostgres = storage instanceof PostgresStorageProvider;
   const pgPool = isPostgres ? (storage as PostgresStorageProvider).pool : null;
+  const embeddingStore = pgPool ? new PostgresEmbeddingStore(pgPool) : new InMemoryEmbeddingStore();
 
   // Services with no Postgres implementation keep their state in process memory.
   // Without a Postgres pool that is the only option and matches the deployment
@@ -1308,6 +1315,13 @@ async function main(): Promise<void> {
       datasourceService: new InMemoryDatasourceService(),
       buildTriggerService: new InMemoryBuildTriggerService(),
       sqlAnalyticsService: new InMemorySqlAnalyticsService(),
+      // Fase 25 — AIP/LLM Platform.
+      agentService: new InMemoryAgentService(llmClient),
+      modelCatalogService: new InMemoryModelCatalogService(llmClient),
+      evalService: new InMemoryEvalService(),
+      humanInTheLoopService: new InMemoryHumanInTheLoopService(),
+      vectorSearchService: new InMemoryVectorSearchService(embeddingStore, llmClient),
+      copilotService: new InMemoryCopilotService(),
       }
     : {};
 
@@ -1371,7 +1385,7 @@ async function main(): Promise<void> {
     branchStore: pgPool ? new PostgresBranchStore(pgPool) : new InMemoryBranchStore(),
     commentStore: pgPool ? new PostgresCommentStore(pgPool) : new InMemoryCommentStore(),
     notificationStore: pgPool ? new PostgresNotificationStore(pgPool) : new InMemoryNotificationStore(),
-    embeddingStore: pgPool ? new PostgresEmbeddingStore(pgPool) : new InMemoryEmbeddingStore(),
+    embeddingStore,
     // Services that graduated from non-durable to durable: these now have
     // Postgres implementations and are always registered. The in-memory
     // fallback is for development (no pgPool); under Postgres the durable

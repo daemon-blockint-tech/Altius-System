@@ -10,7 +10,7 @@ import type {
   MarkingPolicy,
 } from '@altius/security';
 import type { ParsedSchema } from '@altius/odl';
-import type { RequestContext, StorageProvider, LLMClient, BlobStore, TimeSeriesStore, BranchStore, CommentStore, NotificationStore, EmbeddingStore, AlertingService, LLMGateway, DataFreshnessService, JustificationStore, AccessExplanationService, ScopedSessionStore, OntologySqlService, DatasetService, DatasetMetadataService, OntologyUsageMetricsService, GeospatialMapService, ScenarioService, ModelInferenceService, ModelChainService, WorkshopPlatformService, EmbeddingService, PlatformResourceService, SavedViewStore, UserDirectoryService, KioskService, LayoutDeviceCaptureService, OntologyManagerService, WorkshopUxService, ValueFormattingService, DesignSystemService, OntologyChangeHistoryService, CommandExchangeService, ObjectSetFilterStore, GraphService, TransformExpressionService, ChangeProposalStore, BusinessRulesService, AgentEvaluationService, AgentThreadStore, ConflictResolutionService, ConnectorCatalogService, DataExpectationsService, EmbeddedCopilotService, EventObjectService, GraphAnalysisService, MultiOntologyGovernanceService, PipelineBuildService, PlatformAssistantService, ProcessMiningService, BatchTransformService, SqlQueryService, VariableTransformService, RulesEngineService, PipelineService, SyncCdcService, DatasourceService, BuildTriggerService, SqlAnalyticsService } from '@altius/spi';
+import type { RequestContext, StorageProvider, LLMClient, BlobStore, TimeSeriesStore, BranchStore, CommentStore, NotificationStore, EmbeddingStore, AlertingService, LLMGateway, DataFreshnessService, JustificationStore, AccessExplanationService, ScopedSessionStore, OntologySqlService, DatasetService, DatasetMetadataService, OntologyUsageMetricsService, GeospatialMapService, ScenarioService, ModelInferenceService, ModelChainService, WorkshopPlatformService, EmbeddingService, PlatformResourceService, SavedViewStore, UserDirectoryService, KioskService, LayoutDeviceCaptureService, OntologyManagerService, WorkshopUxService, ValueFormattingService, DesignSystemService, OntologyChangeHistoryService, CommandExchangeService, ObjectSetFilterStore, GraphService, TransformExpressionService, ChangeProposalStore, BusinessRulesService, AgentEvaluationService, AgentThreadStore, ConflictResolutionService, ConnectorCatalogService, DataExpectationsService, EmbeddedCopilotService, EventObjectService, GraphAnalysisService, MultiOntologyGovernanceService, PipelineBuildService, PlatformAssistantService, ProcessMiningService, BatchTransformService, SqlQueryService, VariableTransformService, RulesEngineService, PipelineService, SyncCdcService, DatasourceService, BuildTriggerService, SqlAnalyticsService, AgentService, ModelCatalogService, EvalService, HumanInTheLoopService, VectorSearchService, CopilotService } from '@altius/spi';
 import { DataPurpose } from '@altius/spi';
 
 /**
@@ -541,6 +541,19 @@ export interface ApiDependencies {
   buildTriggerService?: BuildTriggerService;
   /** Fase 24 — Ad-hoc SQL analytics over the ontology. */
   sqlAnalyticsService?: SqlAnalyticsService;
+
+  /** Fase 25 — Agent construction and orchestration. */
+  agentService?: AgentService;
+  /** Fase 25 — Multi-model catalog and prompt playground. */
+  modelCatalogService?: ModelCatalogService;
+  /** Fase 25 — Agent evaluation framework. */
+  evalService?: EvalService;
+  /** Fase 25 — Human-in-the-loop AI change proposals. */
+  humanInTheLoopService?: HumanInTheLoopService;
+  /** Fase 25 — Vector search and embedding services. */
+  vectorSearchService?: VectorSearchService;
+  /** Fase 25 — Embedded AI copilots. */
+  copilotService?: CopilotService;
 }
 
 /**

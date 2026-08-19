@@ -8,4 +8,5 @@ export { generateFase21ObjectRoutes, generateFase21PlatformRoutes } from './fase
 export { generateFase22ObjectRoutes, generateFase22PlatformRoutes } from './fase22-routes.js';
 export { generateFase23ActionFormRoutes, generateFase23PlatformRoutes } from './fase23-routes.js';
 export { generateFase24Routes } from './fase24-routes.js';
+export { generateFase25Routes } from './fase25-routes.js';
 export type { RestRequest, RestResponse, RestRoute } from './types.js';

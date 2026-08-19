@@ -1869,6 +1869,52 @@ function fase24Paths(): Record<string, unknown> {
   };
 }
 
+// ─── Fase 25 — AIP/LLM Platform paths ──────────────────────────────────────
+
+function fase25Paths(): Record<string, unknown> {
+  const jsonObject = { 'application/json': { schema: { type: 'object' } } };
+  const unauthorized = { $ref: '#/components/responses/Unauthorized' };
+  const idParam = { name: 'id', in: 'path', required: true, schema: { type: 'string' } };
+  const ridParam = { name: 'rid', in: 'path', required: true, schema: { type: 'string' } };
+  const userParam = { name: 'user', in: 'path', required: true, schema: { type: 'string' } };
+  return {
+    '/api/v1/agents': {
+      get: { tags: ['AIP Agents'], summary: 'List agents', operationId: 'listAgents', responses: { '200': { description: 'Agents list', content: jsonObject }, '401': unauthorized } },
+      post: { tags: ['AIP Agents'], summary: 'Create an agent', operationId: 'createAgent', requestBody: { required: true, content: jsonObject }, responses: { '201': { description: 'Agent created', content: jsonObject }, '401': unauthorized } },
+    },
+    '/api/v1/agents/{id}': { get: { tags: ['AIP Agents'], summary: 'Get an agent', operationId: 'getAgent', parameters: [idParam], responses: { '200': { description: 'Agent', content: jsonObject }, '401': unauthorized, '404': { description: 'Not found' } } } },
+    '/api/v1/agents/{id}/run': { post: { tags: ['AIP Agents'], summary: 'Run an agent', operationId: 'runAgent', parameters: [idParam], requestBody: { required: true, content: jsonObject }, responses: { '200': { description: 'Agent run result', content: jsonObject }, '401': unauthorized } } },
+    '/api/v1/agents/{id}/chat': { post: { tags: ['AIP Agents'], summary: 'Chat with an agent', operationId: 'chatAgent', parameters: [idParam], requestBody: { required: true, content: jsonObject }, responses: { '200': { description: 'Agent thread', content: jsonObject }, '401': unauthorized } } },
+    '/api/v1/llm/models': { get: { tags: ['LLM'], summary: 'List model catalog', operationId: 'listLlmModels', responses: { '200': { description: 'Model catalog', content: jsonObject }, '401': unauthorized } } },
+    '/api/v1/llm/models/{rid}': { get: { tags: ['LLM'], summary: 'Get a model', operationId: 'getLlmModel', parameters: [ridParam], responses: { '200': { description: 'Model', content: jsonObject }, '401': unauthorized, '404': { description: 'Not found' } } } },
+    '/api/v1/llm/applications': {
+      get: { tags: ['LLM'], summary: 'List LLM applications', operationId: 'listLlmApplications', responses: { '200': { description: 'Applications list', content: jsonObject }, '401': unauthorized } },
+      post: { tags: ['LLM'], summary: 'Create an LLM application', operationId: 'createLlmApplication', requestBody: { required: true, content: jsonObject }, responses: { '201': { description: 'Application created', content: jsonObject }, '401': unauthorized } },
+    },
+    '/api/v1/llm/applications/{id}': { get: { tags: ['LLM'], summary: 'Get an LLM application', operationId: 'getLlmApplication', parameters: [idParam], responses: { '200': { description: 'Application', content: jsonObject }, '401': unauthorized, '404': { description: 'Not found' } } } },
+    '/api/v1/llm/playground': { post: { tags: ['LLM'], summary: 'Run a prompt playground', operationId: 'runPromptPlayground', requestBody: { required: true, content: jsonObject }, responses: { '200': { description: 'Playground result', content: jsonObject }, '401': unauthorized } } },
+    '/api/v1/llm/embeddings': { post: { tags: ['LLM'], summary: 'Create embeddings', operationId: 'createEmbeddings', requestBody: { required: true, content: jsonObject }, responses: { '200': { description: 'Embeddings', content: jsonObject }, '401': unauthorized } } },
+    '/api/v1/llm/usage/{user}': { get: { tags: ['LLM'], summary: 'Per-user LLM usage', operationId: 'getUserLlmUsage', parameters: [userParam], responses: { '200': { description: 'Usage records', content: jsonObject }, '401': unauthorized } } },
+    '/api/v1/evals': {
+      get: { tags: ['AIP Evals'], summary: 'List eval suites', operationId: 'listEvalSuites', responses: { '200': { description: 'Eval suites', content: jsonObject }, '401': unauthorized } },
+      post: { tags: ['AIP Evals'], summary: 'Create an eval suite', operationId: 'createEvalSuite', requestBody: { required: true, content: jsonObject }, responses: { '201': { description: 'Eval suite created', content: jsonObject }, '401': unauthorized } },
+    },
+    '/api/v1/evals/{id}': { get: { tags: ['AIP Evals'], summary: 'Get an eval suite', operationId: 'getEvalSuite', parameters: [idParam], responses: { '200': { description: 'Eval suite', content: jsonObject }, '401': unauthorized, '404': { description: 'Not found' } } } },
+    '/api/v1/evals/{id}/run': { post: { tags: ['AIP Evals'], summary: 'Run an eval suite', operationId: 'runEvalSuite', parameters: [idParam], requestBody: { required: true, content: jsonObject }, responses: { '200': { description: 'Eval run result', content: jsonObject }, '401': unauthorized } } },
+    '/api/v1/ai-proposals': {
+      get: { tags: ['AI Proposals'], summary: 'List AI change proposals', operationId: 'listAiProposals', responses: { '200': { description: 'Proposals', content: jsonObject }, '401': unauthorized } },
+      post: { tags: ['AI Proposals'], summary: 'Create an AI change proposal', operationId: 'createAiProposal', requestBody: { required: true, content: jsonObject }, responses: { '201': { description: 'Proposal created', content: jsonObject }, '401': unauthorized } },
+    },
+    '/api/v1/ai-proposals/{id}/approve': { post: { tags: ['AI Proposals'], summary: 'Approve an AI proposal', operationId: 'approveAiProposal', parameters: [idParam], requestBody: { required: true, content: jsonObject }, responses: { '200': { description: 'Proposal approved', content: jsonObject }, '401': unauthorized } } },
+    '/api/v1/ai-proposals/{id}/reject': { post: { tags: ['AI Proposals'], summary: 'Reject an AI proposal', operationId: 'rejectAiProposal', parameters: [idParam], requestBody: { required: true, content: jsonObject }, responses: { '200': { description: 'Proposal rejected', content: jsonObject }, '401': unauthorized } } },
+    '/api/v1/embeddings/models': { get: { tags: ['Embeddings'], summary: 'List embedding models', operationId: 'listEmbeddingModels', responses: { '200': { description: 'Embedding models', content: jsonObject }, '401': unauthorized } } },
+    '/api/v1/embeddings': { post: { tags: ['Embeddings'], summary: 'Generate an embedding', operationId: 'generateEmbedding', requestBody: { required: true, content: jsonObject }, responses: { '200': { description: 'Embedding vector', content: jsonObject }, '401': unauthorized } } },
+    '/api/v1/embeddings/search': { post: { tags: ['Embeddings'], summary: 'Semantic search', operationId: 'semanticSearch', requestBody: { required: true, content: jsonObject }, responses: { '200': { description: 'Search results', content: jsonObject }, '401': unauthorized } } },
+    '/api/v1/copilots/suggest': { post: { tags: ['Copilots'], summary: 'Get copilot suggestions', operationId: 'copilotSuggest', requestBody: { required: true, content: jsonObject }, responses: { '200': { description: 'Suggestions', content: jsonObject }, '401': unauthorized } } },
+    '/api/v1/copilots/apply': { post: { tags: ['Copilots'], summary: 'Apply a copilot suggestion', operationId: 'copilotApply', requestBody: { required: true, content: jsonObject }, responses: { '200': { description: 'Apply result', content: jsonObject }, '401': unauthorized } } },
+  };
+}
+
 // ─── Public API ───
 
 /**
@@ -1896,6 +1942,8 @@ export function generateOpenApiSpec(schema: ParsedSchema, version = '1.0.0'): Re
   paths = { ...paths, ...fase23Paths() };
   // Fase 24 — Pipeline & Data Ops.
   paths = { ...paths, ...fase24Paths() };
+  // Fase 25 — AIP/LLM Platform.
+  paths = { ...paths, ...fase25Paths() };
 
   // Component schemas
   const schemas: Record<string, unknown> = {};

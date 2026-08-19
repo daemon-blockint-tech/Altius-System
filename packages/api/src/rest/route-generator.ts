@@ -32,6 +32,7 @@ import { generateFase21ObjectRoutes, generateFase21PlatformRoutes } from './fase
 import { generateFase22ObjectRoutes, generateFase22PlatformRoutes } from './fase22-routes.js';
 import { generateFase23ActionFormRoutes, generateFase23PlatformRoutes } from './fase23-routes.js';
 import { generateFase24Routes } from './fase24-routes.js';
+import { generateFase25Routes } from './fase25-routes.js';
 import { generateSecurityGovernanceRoutes } from './security-governance-routes.js';
 import { generateOntologySqlRoutes } from './ontology-sql-routes.js';
 import { generateDatasetRoutes } from './dataset-routes.js';
@@ -495,6 +496,9 @@ export function generateRestRoutes(
 
   // Fase 24 — Pipeline & Data Ops
   routes.push(...generateFase24Routes(deps));
+
+  // Fase 25 — AIP/LLM Platform
+  routes.push(...generateFase25Routes(deps));
 
   // Usage metrics routes (ontology observability)
   routes.push(...generateUsageMetricsRoutes(deps));
