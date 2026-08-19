@@ -45,7 +45,9 @@ export class PostgresNotificationStore implements NotificationStore {
         notification.title, notification.body, notification.read ?? false, now,
         notification.sourceObjectType ?? null, notification.sourceObjectId ?? null,
         notification.linkUrl ?? null, notification.severity,
-        JSON.stringify(notification.channels),
+        // TEXT[] column — pass the array itself, not a JSON string. The
+        // column is NOT NULL, so an absent list becomes the empty array.
+        notification.channels ?? [],
       ],
     );
     return {
