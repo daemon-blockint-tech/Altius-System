@@ -1223,13 +1223,38 @@ function generateLinksRoute(
         const { offset, limit, after } = parsePagination(req.query);
         const direction = (req.query['direction'] as string) || 'outbound';
 
-        const linkPage = await deps.linkManager.getLinks(
-          id,
-          linkType,
-          direction as 'inbound' | 'outbound',
-          after ? { limit, offset, after } : { limit, offset },
-          requestContext,
-        );
+        // ?asOf= asks which links existed at that instant. Same parser and the
+        // same refusal-not-coercion rule as the object read paths: a timestamp
+        // the caller did not mean would produce a historical answer that reads
+        // like a current one.
+        const parsedAsOf = parseAsOf(req.query);
+        if (!parsedAsOf.ok) {
+          return createRestErrorResponse({
+            code: 'VALIDATION_ERROR',
+            category: 'validation',
+            message: parsedAsOf.message,
+            retryable: false,
+            traceId: requestContext.traceId,
+          });
+        }
+
+        const pageOptions = after ? { limit, offset, after } : { limit, offset };
+        const linkPage = parsedAsOf.value
+          ? await deps.linkManager.getLinksAtTime(
+              id,
+              linkType,
+              direction as 'inbound' | 'outbound',
+              parsedAsOf.value,
+              pageOptions,
+              requestContext,
+            )
+          : await deps.linkManager.getLinks(
+              id,
+              linkType,
+              direction as 'inbound' | 'outbound',
+              pageOptions,
+              requestContext,
+            );
 
         // Field-level redaction on link properties
         const redacted = deps.authorizationService.redactFieldsBatch(

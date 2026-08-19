@@ -507,6 +507,16 @@ function objectPaths(obj: ObjectType): Record<string, unknown> {
         { name: 'linkType', in: 'path', required: true, schema: { type: 'string' } },
         { name: 'limit', in: 'query', schema: { type: 'integer', default: 25 } },
         { name: 'offset', in: 'query', schema: { type: 'integer', default: 0 } },
+        { name: 'direction', in: 'query', schema: { type: 'string', enum: ['outbound', 'inbound'], default: 'outbound' } },
+        {
+          name: 'asOf',
+          in: 'query',
+          schema: { type: 'string', format: 'date-time' },
+          description:
+            'Return the links that existed at this instant: created at or before it and not ' +
+            'deleted by it. Link PROPERTIES are current values — no per-link version history ' +
+            'is stored — so this answers membership, not property history.',
+        },
       ],
       responses: {
         '200': { description: 'Linked objects', content: { 'application/json': { schema: { type: 'object' } } } },
