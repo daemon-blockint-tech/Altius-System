@@ -9,7 +9,7 @@ import type {
   CreateSpaceInput,
   OntologyEntity,
   CreateOntologyInput,
-  MarkingDefinition,
+  MarkingRecord,
   CreateMarkingInput,
   SharingRule,
   CreateSharingRuleInput,
@@ -21,7 +21,7 @@ export class InMemoryMultiOntologyGovernanceService implements MultiOntologyGove
   private readonly spaces = new Map<string, Map<string, OntologySpace>>();
   private readonly spacesByName = new Map<string, Map<string, string>>(); // tenant → name → id
   private readonly ontologies = new Map<string, Map<string, OntologyEntity>>();
-  private readonly markings = new Map<string, Map<string, MarkingDefinition>>();
+  private readonly markings = new Map<string, Map<string, MarkingRecord>>();
   private readonly sharingRules = new Map<string, Map<string, SharingRule>>();
 
   async createSpace(ctx: RequestContext, input: CreateSpaceInput): Promise<OntologySpace> {
@@ -155,9 +155,9 @@ export class InMemoryMultiOntologyGovernanceService implements MultiOntologyGove
     this.ontologies.get(ctx.tenantId)?.delete(id);
   }
 
-  async createMarking(ctx: RequestContext, input: CreateMarkingInput): Promise<MarkingDefinition> {
+  async createMarking(ctx: RequestContext, input: CreateMarkingInput): Promise<MarkingRecord> {
     const id = randomUUID();
-    const marking: MarkingDefinition = {
+    const marking: MarkingRecord = {
       id, tenantId: ctx.tenantId,
       name: input.name, label: input.label,
       description: input.description ?? '',
@@ -170,11 +170,11 @@ export class InMemoryMultiOntologyGovernanceService implements MultiOntologyGove
     return marking;
   }
 
-  async getMarking(ctx: RequestContext, name: string): Promise<MarkingDefinition | null> {
+  async getMarking(ctx: RequestContext, name: string): Promise<MarkingRecord | null> {
     return this.markings.get(ctx.tenantId)?.get(name) ?? null;
   }
 
-  async listMarkings(ctx: RequestContext, category?: string): Promise<MarkingDefinition[]> {
+  async listMarkings(ctx: RequestContext, category?: string): Promise<MarkingRecord[]> {
     const m = this.markings.get(ctx.tenantId);
     if (!m) return [];
     let list = Array.from(m.values());
@@ -291,7 +291,7 @@ export class InMemoryMultiOntologyGovernanceService implements MultiOntologyGove
     if (!m) { m = new Map(); this.ontologies.set(tenantId, m); }
     return m;
   }
-  private getMarkingMap(tenantId: string): Map<string, MarkingDefinition> {
+  private getMarkingMap(tenantId: string): Map<string, MarkingRecord> {
     let m = this.markings.get(tenantId);
     if (!m) { m = new Map(); this.markings.set(tenantId, m); }
     return m;

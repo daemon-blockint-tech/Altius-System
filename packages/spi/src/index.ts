@@ -158,8 +158,6 @@ export type {
   AccessExplanation,
   AccessExplanationReason,
   MarkingPropagationService,
-  MarkingPropagationRule,
-  PropagatedMarkings,
   ScopedSessionStore,
   ScopedSession,
   CreateScopedSessionInput,
@@ -374,12 +372,23 @@ export type {
   CreateSpaceInput,
   OntologyEntity,
   CreateOntologyInput,
-  MarkingDefinition,
   CreateMarkingInput,
   SharingRule,
   CreateSharingRuleInput,
   OntologyAccessResult,
 } from './multi-ontology.js';
+
+// Marking policy — consolidated marking types (previously in multi-ontology.ts
+// and security-governance.ts)
+export type {
+  MarkingRecord,
+  CreateMarkingInput as CreateMarkingRecordInput,
+  MarkingPropagationRule,
+  PropagatedMarkings,
+} from './marking-policy.js';
+
+// Backward-compatibility alias — MarkingDefinition was the old name for MarkingRecord
+export type { MarkingRecord as MarkingDefinition } from './marking-policy.js';
 
 // Time-aware graph analysis
 export type {

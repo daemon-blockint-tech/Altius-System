@@ -6,6 +6,10 @@
  */
 
 import type { RequestContext } from './ontology.js';
+import type { MarkingRecord, CreateMarkingInput } from './marking-policy.js';
+
+// Re-export marking types for backward compatibility — moved to marking-policy.ts
+export type { MarkingRecord, CreateMarkingInput };
 
 // ===========================================================================
 // Ontology spaces
@@ -85,38 +89,8 @@ export interface CreateOntologyInput {
 }
 
 // ===========================================================================
-// Markings
+// Markings — types moved to marking-policy.ts; re-exported above
 // ===========================================================================
-
-/** A marking definition — a sensitivity/classification label. */
-export interface MarkingDefinition {
-  id: string;
-  tenantId: string;
-  /** Marking name (e.g. 'CONFIDENTIAL', 'RESTRICTED', 'PHI'). */
-  name: string;
-  /** Display label. */
-  label: string;
-  /** Description. */
-  description: string;
-  /** Marking category (e.g. 'sensitivity', 'classification', 'compliance'). */
-  category: string;
-  /** Required clearance level to read objects with this marking. */
-  requiredClearance: string;
-  /** Whether this marking propagates to linked objects. */
-  propagates: boolean;
-  /** ISO 8601 creation timestamp. */
-  createdAt: string;
-}
-
-/** Input for creating a marking. */
-export interface CreateMarkingInput {
-  name: string;
-  label: string;
-  description?: string;
-  category: string;
-  requiredClearance: string;
-  propagates?: boolean;
-}
 
 // ===========================================================================
 // Cross-ontology sharing
@@ -201,9 +175,9 @@ export interface MultiOntologyGovernanceService {
   deleteOntology(ctx: RequestContext, id: string): Promise<void>;
 
   // ── Markings ──
-  createMarking(ctx: RequestContext, input: CreateMarkingInput): Promise<MarkingDefinition>;
-  getMarking(ctx: RequestContext, name: string): Promise<MarkingDefinition | null>;
-  listMarkings(ctx: RequestContext, category?: string): Promise<MarkingDefinition[]>;
+  createMarking(ctx: RequestContext, input: CreateMarkingInput): Promise<MarkingRecord>;
+  getMarking(ctx: RequestContext, name: string): Promise<MarkingRecord | null>;
+  listMarkings(ctx: RequestContext, category?: string): Promise<MarkingRecord[]>;
   deleteMarking(ctx: RequestContext, name: string): Promise<void>;
 
   // ── Sharing rules ──
