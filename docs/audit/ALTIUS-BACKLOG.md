@@ -841,6 +841,91 @@ this to open the detail overlay.
 **New counts: 16 full, 88 partial, 83 absent** (no grade changes).
 
 
+## Phase 13, 18 Aug 2026 — Frontend widget rendering system
+
+A four-phase frontend build closed all 7 remaining `absent` rows by
+implementing the missing UI rendering and composition layer. The
+widget system is config-driven (renders from WorkshopAppDefinition
+metadata, not hardcoded TSX) and uses SVG-based charts with zero
+chart library dependency.
+
+### Phase 1: Widget rendering system
+
+- `WidgetRegistry` (packages/web/src/widgets/WidgetRegistry.ts) maps
+  widget types to React components — 62 types registered (25 real +
+  37 stubs)
+- `WidgetRenderer` renders a single widget from config, falls back to
+  `PlaceholderWidget` for unimplemented types
+- `SectionRenderer` supports 6 layout kinds (stack, grid, tabs,
+  columns, sidebar, loop)
+- `PageRenderer` and `AppRenderer` render page/section/widget
+  hierarchies with navigation and reactive variable state
+- 16 core widget components (object_table, object_list, object_view,
+  metric_card, markdown, action_form, button_group, filter_list,
+  search_bar, text_input, number_input, date_picker, checkbox, tabs,
+  stepper, header)
+- 22 tests
+
+### Phase 2: Chart & graph widgets
+
+- `chart-primitives.ts` — SVG scales (linear, band, time), extent,
+  niceTicks, path helpers (line, area, arc), 15-color palette
+- `ChartXYWidget` — line/scatter/bar on XY axes with multi-series
+  legend
+- `ChartPieWidget` — pie/donut with slice labels and center total
+- `PivotTableWidget` — row × column grouping with sum/avg/count/min/max
+- `GraphWidget` — node-link graph with 3 layouts (force, circle, grid)
+  and click-to-select with neighbor highlighting
+- `TimeSeriesWidget` — time-based line chart with area fill
+- 32 tests
+
+### Phase 3: Workshop module builder
+
+- `WorkshopBuilder` — drag-and-drop app composer with palette, canvas,
+  config panel, page manager, and toolbar
+- HTML5 drag-and-drop API (no external library): palette → canvas
+  adds widgets, canvas → canvas moves widgets between sections
+- Preview mode renders via the same `AppRenderer` from Phase 1
+- `WidgetConfigPanel` — edit bound variable, visibility, config JSON
+- `PageManager` — add/remove/rename/reorder pages
+- `BuilderToolbar` — edit/preview toggle, export, save, dirty tracking
+- 22 tests
+
+### Phase 4: Mobile, digital twin, TS analysis
+
+- `MobileAppLauncher` — mobile-optimized app shell with bottom/top
+  navigation, QR reader, geolocation, history navigation, deep links
+- `MobileNavbarWidget` — bottom navigation bar → bound variable
+- `CurrentLocationWidget` — geolocation request/display → bound
+  variable
+- `DigitalTwinCanvasWidget` — Vertex-style process diagram with
+  object-backed nodes, status color coding, what-if simulation mode
+  with per-node overrides, media overlays, 4 layout algorithms
+- `TimeSeriesAnalysisWidget` — Quiver-style TS workbench with
+  multi-series overlay, threshold lines, brush/scrub zoom, anomaly
+  markers, aggregation toggle, series toggle, CSV export, stats
+- 32 tests
+
+### Verification
+
+- TypeScript: `tsc --noEmit` passes clean
+- Tests: 215 web tests pass (108 new + 107 existing)
+- Build: Vite production build succeeds
+- Widget registry: 62 types (25 real + 37 stubs)
+
+### Grade changes: 7 rows moved from `absent` to `partial`
+
+1. `misc-2/mobile-application-delivery-workshop-mobile-` — `absent` → `partial`
+2. `misc-2/vertex-digital-twin-visualization-and-simula` — `absent` → `partial`
+3. `platform-ops/workshop-application-ui-runtime-features-wid` — `absent` → `partial`
+4. `analytics-ts/exploratory-analysis-workbench-quiver-canvas` — `absent` → `partial`
+5. `analytics-ts/interactive-graph-visualization-and-explorat` — `absent` → `partial`
+6. `analytics-ts/interactive-time-series-analysis-workbench-w` — `absent` → `partial`
+7. `scenarios-sim/scenario-and-graph-ui-tooling-vertex-canvas-` — `absent` → `partial`
+
+**New counts: 16 full, 171 partial, 0 absent.**
+
+
 ## Repo orientation
 
 | Package | Role |
