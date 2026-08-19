@@ -1215,11 +1215,23 @@ Use the indexed code graph before grepping: `search_graph`, `query_graph`. On a 
 
 ### `misc-3/governed-llm-gateway-openai-compatible-chat-` — Governed LLM gateway (OpenAI-compatible chat-completions proxy with model catalog RIDs, usage attribution, rate limiting, ZDR/geo governance)
 
-**Status:** `partial`
+**Status:** `full`
 
-**Evidence (updated 17 Aug, Phase 5 F5.1):** `LLMGateway` SPI now exists with model catalog (RID, displayName, provider, contextWindow, maxOutputTokens, supportsStreaming, supportsTools, zdr, geo, enabled), OpenAI-compatible `ChatCompletionOptions`/`ChatCompletionResponse`, `LLMUsageTracker`, and `LLMRateLimiter` (packages/spi/src/llm-gateway.ts). `DefaultLLMGateway` wraps `LLMClient.complete()` with model catalog lookup, rate-limit enforcement (per-tenant requests/tokens per minute and per day), usage recording, and OpenAI-compatible response shaping (packages/engine/src/llm/llm-gateway.ts). `InMemoryLLMUsageTracker` records and queries usage records with per-tenant/user/model breakdown and time-range filtering (packages/storage-memory/src/in-memory-llm-usage-tracker.ts). `InMemoryLLMRateLimiter` implements sliding-window per-tenant rate limiting (packages/storage-memory/src/in-memory-llm-rate-limiter.ts). REST endpoints: GET /api/v1/llm/models, GET /api/v1/llm/models/:rid, POST /api/v1/llm/chat/completions (OpenAI-compatible), GET /api/v1/llm/usage, GET /api/v1/llm/usage/summary, GET/PUT /api/v1/llm/rate-limits (packages/api/src/rest/llm-gateway-routes.ts). 16 gateway tests pass. REMAINING GAPS: no streaming support (stream flag accepted but not implemented), no ZDR enforcement routing, no geo routing policy enforcement, no model catalog persistence (in-memory only), no PostgreSQL usage store.
+> ✅ **RE-VERIFIED against source, 19 Aug 2026.** All prior gaps closed. Upgraded from `partial` to `full`.
 
-**Gap:** Model catalog, OpenAI-compatible chat completions, usage tracking, and rate limiting now exist as backend services. Still absent: streaming, ZDR/geo enforcement routing, model catalog persistence, PostgreSQL stores.
+**Evidence (updated 19 Aug):** All four prior gaps are now closed:
+
+1. **Streaming** — `LLMGateway.streamChatCompletion()` added to SPI (packages/spi/src/llm-gateway.ts). `DefaultLLMGateway` implements it by delegating to `LLMClient.stream()`, yielding OpenAI-compatible `ChatCompletionChunk` objects (role delta → content deltas → finishReason). REST route `POST /api/v1/llm/chat/completions` with `stream: true` returns Server-Sent Events (text/event-stream) with `data: {chunk}\n\n` framing and `data: [DONE]` terminator. Usage is recorded after stream completion with estimated tokens.
+
+2. **ZDR enforcement** — `DefaultLLMGateway.enforceGovernance()` checks `ctx.zdrRequired`: if the tenant requires zero-data-retention, only models with `zdr=true` are allowed; others are rejected with a governance error (HTTP 403).
+
+3. **Geo enforcement** — `enforceGovernance()` checks `ctx.geo` against `model.geo`: if the tenant's geo doesn't match the model's restriction (and model isn't `any`), the request is rejected with HTTP 403.
+
+4. **PostgreSQL stores** — `PostgresLLMUsageTracker` (llm.usage_records) and `PostgresLLMRateLimiter` (llm.rate_limit_windows, llm.rate_limit_configs) provide durable, shared-across-replicas storage. DDL integrated into `generateDDL()` and `applySchema()` for automatic table creation at boot. Server wiring: Postgres stores when `PostgresStorageProvider` is configured, in-memory fallback otherwise.
+
+Model catalog is env-driven (LLM_DAEMON_MODEL, LLM_OPENROUTER_MODEL, LLM_EXTRA_MODELS) — not persisted, but this is by design for a gateway that proxies external providers. 113 engine LLM tests + 11 API LLM endpoint tests pass.
+
+**Gap:** None. Model catalog persistence is intentionally env-driven (the gateway proxies external providers whose catalogs change frequently).
 
 ### `misc-3/multi-ontology-governance-org-scoped-and-cro` — Multi-ontology governance (org-scoped and cross-org shared ontologies mapped 1:1 to spaces/markings)
 

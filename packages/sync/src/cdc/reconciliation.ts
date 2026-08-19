@@ -159,6 +159,11 @@ export class ReconciliationService {
     };
   }
 
+  private _getPrimaryKey(record: MappedObject): string | undefined {
+    // MappedObject.id is the generated ontology ID from the primary key transform
+    return record.id ?? record.properties['_id'] as string | undefined;
+  }
+
   private _valuesEqual(a: unknown, b: unknown): boolean {
     if (a === b) return true;
     if (a === null || b === null) return a === b;

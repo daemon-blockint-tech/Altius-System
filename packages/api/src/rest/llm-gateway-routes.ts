@@ -58,6 +58,7 @@ export function registerLLMGatewayRoutes(
   });
 
   // ── POST /api/v1/llm/chat/completions — OpenAI-compatible ──
+  // Supports both non-streaming (JSON response) and streaming (SSE).
   app.post('/api/v1/llm/chat/completions', async (req, res) => {
     try {
       const user = await extractUser(req, authenticator, isDev);
@@ -67,6 +68,31 @@ export function registerLLMGatewayRoutes(
         res.status(400).json({ error: 'INVALID', message: 'model and messages are required' });
         return;
       }
+
+      // Streaming: return Server-Sent Events
+      if (body.stream) {
+        res.writeHead(200, {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive',
+        });
+
+        try {
+          for await (const chunk of gateway.streamChatCompletion(ctx, body)) {
+            res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+          }
+          res.write('data: [DONE]\n\n');
+        } catch (streamErr) {
+          const message = streamErr instanceof Error ? streamErr.message : 'Stream failed';
+          const errorChunk = { error: { message, type: 'stream_error' } };
+          res.write(`data: ${JSON.stringify(errorChunk)}\n\n`);
+        } finally {
+          res.end();
+        }
+        return;
+      }
+
+      // Non-streaming: JSON response
       const result = await gateway.chatCompletion(ctx, body);
       res.status(200).json(result);
     } catch (err) {
@@ -75,6 +101,8 @@ export function registerLLMGatewayRoutes(
         res.status(429).json({ error: 'RATE_LIMITED', message });
       } else if (message.includes('not found') || message.includes('disabled')) {
         res.status(404).json({ error: 'NOT_FOUND', message });
+      } else if (message.includes('Geo governance') || message.includes('ZDR governance')) {
+        res.status(403).json({ error: 'GOVERNANCE', message });
       } else {
         res.status(500).json({ error: 'INTERNAL', message });
       }
