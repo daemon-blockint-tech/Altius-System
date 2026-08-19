@@ -2166,3 +2166,455 @@ a:hover { color: var(--ed-muted); }
   color: #dc2626;
 }
 
+/* ─── Phase 4: Mobile, digital twin, TS analysis ────────────── */
+
+/* ── Mobile app launcher ── */
+
+.ed-mobile {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  max-width: 480px;
+  margin: 0 auto;
+  background: var(--ed-surface, #fff);
+  box-shadow: 0 0 20px rgba(0,0,0,0.1);
+  position: relative;
+}
+
+.ed-mobile__frame {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.ed-mobile__screen {
+  min-height: 100%;
+}
+
+.ed-mobile__nav {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  padding: 0;
+  background: var(--ed-surface, #fff);
+  border-top: 1px solid var(--ed-rule, #e0e0e0);
+  flex-shrink: 0;
+}
+
+.ed-mobile__nav--top {
+  border-top: none;
+  border-bottom: 1px solid var(--ed-rule, #e0e0e0);
+  order: -1;
+}
+
+.ed-mobile__nav-btn {
+  padding: 12px 16px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 1.2rem;
+  color: var(--ed-muted, #666);
+}
+
+.ed-mobile__nav-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 4px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  color: var(--ed-muted, #666);
+}
+
+.ed-mobile__nav-item--active {
+  color: var(--ed-accent, #2563eb);
+}
+
+.ed-mobile__nav-icon {
+  font-size: 1.2rem;
+}
+
+.ed-mobile__nav-label {
+  font-size: 0.7rem;
+}
+
+.ed-mobile__actions {
+  display: flex;
+  gap: 8px;
+  padding: 8px;
+  justify-content: center;
+}
+
+.ed-mobile__action-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid var(--ed-rule, #ccc);
+  background: var(--ed-surface, #fff);
+  cursor: pointer;
+  font-size: 1.2rem;
+}
+
+.ed-mobile__action-btn--active {
+  background: var(--ed-accent, #2563eb);
+  color: #fff;
+  border-color: var(--ed-accent, #2563eb);
+}
+
+.ed-mobile__qr-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+}
+
+.ed-mobile__qr-frame {
+  background: var(--ed-surface, #fff);
+  padding: 24px;
+  border-radius: 12px;
+  text-align: center;
+}
+
+.ed-mobile__qr-hint {
+  color: var(--ed-muted, #666);
+  font-size: 0.85rem;
+  margin-top: 8px;
+}
+
+/* ── Mobile navbar widget ── */
+
+.ed-mobile-nav {
+  display: flex;
+  width: 100%;
+  background: var(--ed-surface, #fff);
+}
+
+.ed-mobile-nav--bottom {
+  border-top: 1px solid var(--ed-rule, #e0e0e0);
+}
+
+.ed-mobile-nav--top {
+  border-bottom: 1px solid var(--ed-rule, #e0e0e0);
+}
+
+.ed-mobile-nav__item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 4px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  color: var(--ed-muted, #666);
+}
+
+.ed-mobile-nav__item--active {
+  color: var(--ed-accent, #2563eb);
+}
+
+.ed-mobile-nav__icon {
+  font-size: 1.1rem;
+}
+
+.ed-mobile-nav__label {
+  font-size: 0.7rem;
+}
+
+/* ── Current location widget ── */
+
+.ed-current-location {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ed-current-location__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ed-current-location__label {
+  font-weight: 500;
+  font-size: 0.9rem;
+}
+
+.ed-current-location__btn {
+  padding: 4px 12px;
+  border: 1px solid var(--ed-accent, #2563eb);
+  border-radius: 4px;
+  background: var(--ed-accent, #2563eb);
+  color: #fff;
+  cursor: pointer;
+  font-size: 0.8rem;
+}
+
+.ed-current-location__btn:disabled {
+  opacity: 0.5;
+}
+
+.ed-current-location__data {
+  display: flex;
+  gap: 12px;
+  font-size: 0.85rem;
+  font-family: monospace;
+}
+
+.ed-current-location__coord {
+  color: var(--ed-ink, #111);
+}
+
+.ed-current-location__accuracy {
+  color: var(--ed-muted, #666);
+}
+
+.ed-current-location__error {
+  color: #dc2626;
+  font-size: 0.85rem;
+}
+
+.ed-current-location__empty {
+  color: var(--ed-muted, #999);
+  font-size: 0.85rem;
+}
+
+/* ── Digital twin canvas ── */
+
+.ed-digital-twin {
+  padding: 16px;
+}
+
+.ed-digital-twin__scenario-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0 12px;
+}
+
+.ed-digital-twin__scenario-btn {
+  padding: 4px 12px;
+  border: 1px solid var(--ed-rule, #ccc);
+  border-radius: 4px;
+  background: var(--ed-surface, #fff);
+  cursor: pointer;
+  font-size: 0.8rem;
+}
+
+.ed-digital-twin__scenario-btn--active {
+  background: #fef3c7;
+  border-color: #ca8a04;
+  color: #92400e;
+}
+
+.ed-digital-twin__scenario-count {
+  font-size: 0.75rem;
+  color: var(--ed-muted, #666);
+}
+
+.ed-digital-twin__svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.ed-digital-twin__node {
+  cursor: pointer;
+}
+
+.ed-digital-twin__link-label {
+  pointer-events: none;
+  user-select: none;
+}
+
+.ed-digital-twin__metric {
+  pointer-events: none;
+  user-select: none;
+}
+
+.ed-digital-twin__detail {
+  padding: 12px 0 0;
+  border-top: 1px solid var(--ed-rule, #e0e0e0);
+  margin-top: 12px;
+}
+
+.ed-digital-twin__detail-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.ed-digital-twin__detail-type {
+  font-family: monospace;
+  font-size: 0.75rem;
+  color: var(--ed-muted, #666);
+  background: var(--ed-bg, #f0f0f0);
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+.ed-digital-twin__detail-row {
+  display: flex;
+  gap: 8px;
+  font-size: 0.85rem;
+  margin-bottom: 4px;
+}
+
+.ed-digital-twin__detail-label {
+  color: var(--ed-muted, #666);
+  min-width: 80px;
+}
+
+.ed-digital-twin__detail-status {
+  font-weight: 600;
+}
+
+.ed-digital-twin__whatif {
+  margin-top: 8px;
+  padding: 8px;
+  background: #fef3c7;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ed-digital-twin__whatif-label {
+  font-size: 0.8rem;
+  color: #92400e;
+}
+
+.ed-digital-twin__whatif-select {
+  padding: 4px 8px;
+  border: 1px solid #ca8a04;
+  border-radius: 4px;
+  font-size: 0.8rem;
+}
+
+/* ── Time series analysis ── */
+
+.ed-ts-analysis {
+  padding: 16px;
+}
+
+.ed-ts-analysis__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 0 12px;
+  flex-wrap: wrap;
+}
+
+.ed-ts-analysis__toolbar-group {
+  display: flex;
+  gap: 0;
+  border: 1px solid var(--ed-rule, #ccc);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.ed-ts-analysis__btn {
+  padding: 4px 12px;
+  border: none;
+  background: var(--ed-surface, #fff);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.8rem;
+}
+
+.ed-ts-analysis__toolbar-group .ed-ts-analysis__btn {
+  border-right: 1px solid var(--ed-rule, #ccc);
+  border-radius: 0;
+}
+
+.ed-ts-analysis__toolbar-group .ed-ts-analysis__btn:last-child {
+  border-right: none;
+}
+
+.ed-ts-analysis__btn--active {
+  background: var(--ed-accent, #2563eb);
+  color: #fff;
+}
+
+.ed-ts-analysis__btn:hover:not(.ed-ts-analysis__btn--active) {
+  background: var(--ed-bg, #f0f0f0);
+}
+
+.ed-ts-analysis__series-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 0 0 12px;
+}
+
+.ed-ts-analysis__series-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.ed-ts-analysis__series-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.ed-ts-analysis__svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.ed-ts-analysis__anomaly {
+  cursor: pointer;
+}
+
+.ed-ts-analysis__stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 12px 0 0;
+  border-top: 1px solid var(--ed-rule, #e0e0e0);
+  margin-top: 12px;
+}
+
+.ed-ts-analysis__stat {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+}
+
+.ed-ts-analysis__stat-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.ed-ts-analysis__stat-label {
+  font-weight: 500;
+}
+
+.ed-ts-analysis__stat-value {
+  color: var(--ed-muted, #666);
+  font-variant-numeric: tabular-nums;
+}
+
+.ed-ts-analysis__stat--anomaly {
+  color: #dc2626;
+}
+

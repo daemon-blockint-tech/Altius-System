@@ -5,6 +5,8 @@
 export { WorkshopBuilder } from './WorkshopBuilder.js';
 export type { WorkshopBuilderProps } from './WorkshopBuilder.js';
 export { createEmptyApp } from './WorkshopBuilder.js';
+export { MobileAppLauncher } from './MobileAppLauncher.js';
+export type { MobileAppLauncherProps } from './MobileAppLauncher.js';
 export { BuilderToolbar } from './BuilderToolbar.js';
 export type { BuilderToolbarProps } from './BuilderToolbar.js';
 export { PageManager } from './PageManager.js';

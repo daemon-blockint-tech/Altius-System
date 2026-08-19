@@ -34,8 +34,8 @@ function makeWidget(type: string, config: Record<string, unknown>, boundVariable
 // ── Registry counts ───────────────────────────────────────────
 
 describe('Phase 2 widget registry', () => {
-  it('registers 60 widget types total', () => {
-    expect(listRegisteredWidgets().length).toBe(60);
+  it('registers 62 widget types total', () => {
+    expect(listRegisteredWidgets().length).toBe(62);
   });
 
   it('marks chart widgets as implemented', () => {

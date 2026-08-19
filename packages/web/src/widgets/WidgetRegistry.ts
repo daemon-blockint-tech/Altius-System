@@ -29,6 +29,10 @@ import { ChartPieWidget } from './components/ChartPieWidget.js';
 import { PivotTableWidget } from './components/PivotTableWidget.js';
 import { GraphWidget } from './components/GraphWidget.js';
 import { TimeSeriesWidget } from './components/TimeSeriesWidget.js';
+import { MobileNavbarWidget } from './components/MobileNavbarWidget.js';
+import { CurrentLocationWidget } from './components/CurrentLocationWidget.js';
+import { DigitalTwinCanvasWidget } from './components/DigitalTwinCanvasWidget.js';
+import { TimeSeriesAnalysisWidget } from './components/TimeSeriesAnalysisWidget.js';
 import { PlaceholderWidget } from './components/PlaceholderWidget.js';
 
 // ── Registry ──────────────────────────────────────────────────
@@ -81,7 +85,13 @@ registerWidget('pivot_table', PivotTableWidget);
 registerWidget('map', GraphWidget);       // graph visualization reuses GraphWidget for now
 registerWidget('time_series', TimeSeriesWidget);
 
-// Stubs for the remaining 39 widget types (Phase 3+ will implement them):
+// Phase 4: Mobile, digital twin, and TS analysis widgets (4 real implementations):
+registerWidget('mobile_navbar', MobileNavbarWidget);
+registerWidget('current_location', CurrentLocationWidget);
+registerWidget('digital_twin', DigitalTwinCanvasWidget);
+registerWidget('time_series_analysis', TimeSeriesAnalysisWidget);
+
+// Stubs for the remaining 35 widget types:
 const STUB_TYPES = [
   // chart
   'chart_bar', 'chart_vega',
@@ -102,11 +112,9 @@ const STUB_TYPES = [
   // ai
   'aip_chat', 'aip_generated_content',
   // navigation
-  'mobile_navbar', 'breadcrumb',
+  'breadcrumb',
   // time
   'gantt', 'timeline', 'calendar',
-  // geo
-  'current_location',
 ];
 
 for (const type of STUB_TYPES) {
