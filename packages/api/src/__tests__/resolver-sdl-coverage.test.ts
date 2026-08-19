@@ -66,6 +66,8 @@ function mockDeps(schema: ReturnType<typeof parseOdl>): ApiDependencies {
     } as never,
     authenticator: {} as never,
     storage: {} as never,
+    blobStore: { getMetadata: vi.fn().mockResolvedValue(null) } as never,
+    timeSeriesStore: { getSeries: vi.fn().mockResolvedValue({ points: [] }) } as never,
   } as ApiDependencies;
 }
 

@@ -332,11 +332,14 @@ function generateFilter(obj: ObjectType, enumNames: Set<string>): string {
 
 function generateScalarFilter(typeName: string): string {
   // GeoPoint is a JSONB {lat,lng}; scalar comparison operators are meaningless.
-  // Expose spatial bounding-box containment plus presence instead.
+  // Expose spatial bounding-box containment, radius search, polygon containment,
+  // and presence instead.
   if (typeName === 'GeoPoint') {
     return [
       'input GeoPointFilter {',
       '  within: GeoBoundingBoxInput',
+      '  near: GeoRadiusInput',
+      '  withinPolygon: GeoPolygonInput',
       '  exists: Boolean',
       '}',
     ].join('\n');
@@ -368,6 +371,18 @@ function generateGeoBoundingBoxInput(): string {
     '  minLng: Float!',
     '  maxLat: Float!',
     '  maxLng: Float!',
+    '}',
+    'input GeoRadiusInput {',
+    '  lat: Float!',
+    '  lng: Float!',
+    '  radiusMeters: Float!',
+    '}',
+    'input GeoPolygonInput {',
+    '  points: [GeoPointCoordInput!]!',
+    '}',
+    'input GeoPointCoordInput {',
+    '  lat: Float!',
+    '  lng: Float!',
     '}',
   ].join('\n');
 }

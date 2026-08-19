@@ -10,7 +10,7 @@ import type {
   MarkingPolicy,
 } from '@altius/security';
 import type { ParsedSchema } from '@altius/odl';
-import type { RequestContext, StorageProvider, LLMClient, BlobStore, TimeSeriesStore, BranchStore, CommentStore, NotificationStore, EmbeddingStore, AlertingService, LLMGateway, DataFreshnessService, JustificationStore, AccessExplanationService, ScopedSessionStore, OntologySqlService, DatasetService, OntologyUsageMetricsService } from '@altius/spi';
+import type { RequestContext, StorageProvider, LLMClient, BlobStore, TimeSeriesStore, BranchStore, CommentStore, NotificationStore, EmbeddingStore, AlertingService, LLMGateway, DataFreshnessService, JustificationStore, AccessExplanationService, ScopedSessionStore, OntologySqlService, DatasetService, OntologyUsageMetricsService, GeospatialMapService } from '@altius/spi';
 import { DataPurpose } from '@altius/spi';
 
 /**
@@ -223,6 +223,35 @@ export interface ApiDependencies {
    *   GET/PUT /api/v1/llm/rate-limits
    */
   llmGateway?: LLMGateway;
+  /**
+   * Geospatial map service — map layers, saved maps, annotations,
+   * spatial search, geocoding, and geometry helpers. When present,
+   * REST endpoints for map operations are registered:
+   *   POST   /api/v1/geo/layers
+   *   GET    /api/v1/geo/layers
+   *   GET    /api/v1/geo/layers/:id
+   *   PATCH  /api/v1/geo/layers/:id
+   *   DELETE /api/v1/geo/layers/:id
+   *   POST   /api/v1/geo/maps
+   *   GET    /api/v1/geo/maps
+   *   GET    /api/v1/geo/maps/:id
+   *   PATCH  /api/v1/geo/maps/:id
+   *   DELETE /api/v1/geo/maps/:id
+   *   POST   /api/v1/geo/maps/:id/share
+   *   POST   /api/v1/geo/annotations
+   *   GET    /api/v1/geo/annotations
+   *   DELETE /api/v1/geo/annotations/:id
+   *   POST   /api/v1/geo/search/intersect
+   *   POST   /api/v1/geo/search/around
+   *   POST   /api/v1/geo/search/bbox
+   *   GET    /api/v1/geo/geocode?q=...
+   *   GET    /api/v1/geo/reverse-geocode?lat=...&lng=...
+   *   POST   /api/v1/geo/geometry/buffer
+   *   POST   /api/v1/geo/geometry/area
+   *   POST   /api/v1/geo/geometry/distance
+   *   POST   /api/v1/geo/geometry/contains
+   */
+  geospatialMapService?: GeospatialMapService;
   /**
    * Data freshness service — per-type and per-datasource last-synced
    * timestamps. When present, REST endpoints for freshness queries are

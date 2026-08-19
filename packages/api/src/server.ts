@@ -51,6 +51,7 @@ import {
   InMemoryAlertingService,
   InMemoryLLMUsageTracker,
   InMemoryLLMRateLimiter,
+  InMemoryGeospatialMapService,
   InMemoryDataFreshnessService,
   InMemoryJustificationStore,
   InMemoryScopedSessionStore,
@@ -107,6 +108,7 @@ import { registerCommentRoutes } from './rest/comment-routes.js';
 import { registerNotificationRoutes } from './rest/notification-routes.js';
 import { registerEmbeddingRoutes } from './rest/embedding-routes.js';
 import { registerAlertingRoutes } from './rest/alerting-routes.js';
+import { registerGeospatialRoutes } from './rest/geospatial-routes.js';
 import { registerLLMGatewayRoutes } from './rest/llm-gateway-routes.js';
 import { readPlatformVersion } from './version.js';
 import { createFhirRouter } from './fhir/index.js';
@@ -1189,6 +1191,8 @@ async function main(): Promise<void> {
     notificationStore: pgPool ? new PostgresNotificationStore(pgPool) : new InMemoryNotificationStore(),
     embeddingStore: pgPool ? new PostgresEmbeddingStore(pgPool) : new InMemoryEmbeddingStore(),
     alertingService: new InMemoryAlertingService(),
+    // Geospatial map service — in-memory only (no Postgres implementation yet).
+    geospatialMapService: new InMemoryGeospatialMapService(),
     // Data freshness — in-memory only (no Postgres implementation yet).
     dataFreshnessService: new InMemoryDataFreshnessService(),
     // Security governance — real AccessExplanationService wired to the live
@@ -1625,6 +1629,7 @@ async function main(): Promise<void> {
 
   // ── Alerting routes ──
   registerAlertingRoutes(app, deps, authenticator, isDev);
+  registerGeospatialRoutes(app, deps, authenticator, isDev);
 
   // ── LLM gateway routes ──
   registerLLMGatewayRoutes(app, deps, authenticator, isDev);

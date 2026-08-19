@@ -28,8 +28,8 @@ function makeWidget(type: string, config: Record<string, unknown>, boundVariable
 // ── Registry ──────────────────────────────────────────────────
 
 describe('Phase 14 widget registry', () => {
-  it('registers 62 widget types total', () => {
-    expect(listRegisteredWidgets().length).toBe(62);
+  it('registers 63 widget types total', () => {
+    expect(listRegisteredWidgets().length).toBe(63);
   });
 
   it('marks media widgets as implemented', () => {

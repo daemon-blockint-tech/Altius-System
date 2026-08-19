@@ -27,6 +27,7 @@ import { HeaderWidget } from './components/HeaderWidget.js';
 import { ChartXYWidget } from './components/ChartXYWidget.js';
 import { ChartPieWidget } from './components/ChartPieWidget.js';
 import { PivotTableWidget } from './components/PivotTableWidget.js';
+import { MapWidget } from './components/MapWidget.js';
 import { GraphWidget } from './components/GraphWidget.js';
 import { TimeSeriesWidget } from './components/TimeSeriesWidget.js';
 import { MobileNavbarWidget } from './components/MobileNavbarWidget.js';
@@ -89,7 +90,8 @@ registerWidget('header', HeaderWidget);
 registerWidget('chart_xy', ChartXYWidget);
 registerWidget('chart_pie', ChartPieWidget);
 registerWidget('pivot_table', PivotTableWidget);
-registerWidget('map', GraphWidget);       // graph visualization reuses GraphWidget for now
+registerWidget('map', MapWidget);
+registerWidget('graph', GraphWidget);
 registerWidget('time_series', TimeSeriesWidget);
 
 // Phase 4: Mobile, digital twin, and TS analysis widgets (4 real implementations):

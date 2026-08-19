@@ -34,8 +34,8 @@ function makeWidget(type: string, config: Record<string, unknown>, boundVariable
 // ── Registry counts ───────────────────────────────────────────
 
 describe('Phase 2 widget registry', () => {
-  it('registers 62 widget types total', () => {
-    expect(listRegisteredWidgets().length).toBe(62);
+  it('registers 63 widget types total', () => {
+    expect(listRegisteredWidgets().length).toBe(63);
   });
 
   it('marks chart widgets as implemented', () => {
@@ -45,7 +45,11 @@ describe('Phase 2 widget registry', () => {
     expect(isWidgetImplemented('time_series')).toBe(true);
   });
 
-  it('marks graph widget (map) as implemented', () => {
+  it('marks graph widget (graph) as implemented', () => {
+    expect(isWidgetImplemented('graph')).toBe(true);
+  });
+
+  it('marks map widget as implemented', () => {
     expect(isWidgetImplemented('map')).toBe(true);
   });
 
@@ -308,7 +312,7 @@ describe('PivotTableWidget', () => {
 
 describe('GraphWidget', () => {
   it('renders a graph with nodes and links', () => {
-    const widget = makeWidget('map', {
+    const widget = makeWidget('graph', {
       nodes: [
         { id: 'a', label: 'Node A' },
         { id: 'b', label: 'Node B' },
@@ -331,7 +335,7 @@ describe('GraphWidget', () => {
   });
 
   it('renders node labels', () => {
-    const widget = makeWidget('map', {
+    const widget = makeWidget('graph', {
       nodes: [
         { id: 'a', label: 'Alpha' },
         { id: 'b', label: 'Beta' },
@@ -345,7 +349,7 @@ describe('GraphWidget', () => {
   });
 
   it('highlights neighbors on node click', () => {
-    const widget = makeWidget('map', {
+    const widget = makeWidget('graph', {
       nodes: [
         { id: 'a', label: 'Alpha' },
         { id: 'b', label: 'Beta' },
@@ -367,13 +371,13 @@ describe('GraphWidget', () => {
   });
 
   it('renders empty state when no nodes', () => {
-    const widget = makeWidget('map', { nodes: [], links: [] });
+    const widget = makeWidget('graph', { nodes: [], links: [] });
     render(<WidgetRenderer instance={widget} ctx={makeCtx()} />);
     expect(screen.getByText('No graph data')).toBeTruthy();
   });
 
   it('renders from a bound variable', () => {
-    const widget = makeWidget('map', {}, 'graphData');
+    const widget = makeWidget('graph', {}, 'graphData');
     const ctx = makeCtx({
       variables: {
         graphData: {
@@ -387,7 +391,7 @@ describe('GraphWidget', () => {
   });
 
   it('supports grid layout', () => {
-    const widget = makeWidget('map', {
+    const widget = makeWidget('graph', {
       nodes: [
         { id: 'a', label: 'A' },
         { id: 'b', label: 'B' },

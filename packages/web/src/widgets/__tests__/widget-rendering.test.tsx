@@ -28,9 +28,9 @@ function makeCtx(overrides?: Partial<WidgetContext>): WidgetContext {
 // ── WidgetRegistry ────────────────────────────────────────────
 
 describe('WidgetRegistry', () => {
-  it('registers 62 widget types', () => {
+  it('registers 63 widget types', () => {
     const types = listRegisteredWidgets();
-    expect(types.length).toBe(62);
+    expect(types.length).toBe(63);
   });
 
   it('marks implemented widgets as implemented', () => {
