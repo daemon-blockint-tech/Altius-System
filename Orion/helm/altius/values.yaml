@@ -57,6 +57,15 @@ singleInstance:
   automation: false
   # -- Start the sync poll loop for POLLING/CDC/BATCH pack connectors.
   syncScheduler: false
+  # -- Serve the platform services that have no Postgres implementation from
+  # the gateway's own memory. The gateway names them at boot; the set grows as
+  # capabilities land, so it is not duplicated here. Off by
+  # default: with Postgres configured the deployment claims durability, and
+  # these would accept writes that are lost on restart and never shared across
+  # pods, so they are withheld and their routes answer 404. Turning this on
+  # constrains the release to a single replica for the same reason the two
+  # switches above do.
+  allowNonDurableServices: false
 
 # -- Authentication / OIDC
 auth:
