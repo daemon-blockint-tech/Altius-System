@@ -45,8 +45,8 @@ function makeWidget(
 // ── Registry: all 70 widgets implemented, no stubs ─────────────
 
 describe('Phase 20 widget registry', () => {
-  it('registers 69 widget types total', () => {
-    expect(listRegisteredWidgets().length).toBe(69);
+  it('registers 87 widget types total', () => {
+    expect(listRegisteredWidgets().length).toBe(87);
   });
 
   it('marks every registered widget as implemented (no stubs left)', () => {

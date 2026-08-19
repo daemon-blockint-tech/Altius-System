@@ -82,11 +82,27 @@ import {
   InMemoryCommandExchangeService,
   InMemoryObjectSetFilterStore,
   InMemoryGraphService,
+  InMemoryChangeProposalStore,
+  InMemoryBusinessRulesService,
+  InMemoryAgentEvaluationService,
+  InMemoryDataExpectationsService,
+  InMemoryConflictResolutionService,
+  InMemoryPipelineBuildService,
+  InMemoryEventObjectService,
+  InMemoryProcessMiningService,
+  InMemoryConnectorCatalogService,
+  InMemoryMultiOntologyGovernanceService,
+  InMemoryGraphAnalysisService,
+  InMemoryPlatformAssistantService,
+  InMemoryEmbeddedCopilotService,
 } from '@altius/storage-memory';
 import { PostgresStorageProvider, PostgresLineageStore, PostgresAuditStore, PostgresConsentStore, PostgresSchemaRegistry, PostgresObjectSetStore,
   PostgresLLMUsageTracker, PostgresLLMRateLimiter,
   PostgresEmbeddingStore, PostgresBlobStore, PostgresTimeSeriesStore,
   PostgresBranchStore, PostgresCommentStore, PostgresNotificationStore,
+  PostgresAlertingService, PostgresDataFreshnessService, PostgresDatasetMetadataService,
+  PostgresGeospatialMapService, PostgresJustificationStore, PostgresOntologySqlService,
+  PostgresOntologyUsageMetricsService, PostgresScopedSessionStore,
 } from '@altius/storage-postgres';
 import {
   ObjectManager, LineageRecorder,
@@ -109,6 +125,7 @@ import {
   WorkflowMonitor,
   InMemoryWorkflowEventStore,
   InMemoryLineageStore,
+  InMemoryAgentThreadStore,
 } from '@altius/engine';
 import type { ModelCatalogEntry } from '@altius/spi';
 import { ActionExecutor, CelClient, SideEffectExecutor } from '@altius/actions';
@@ -140,6 +157,7 @@ import { registerWorkshopRoutes } from './rest/workshop-routes.js';
 import { registerLLMGatewayRoutes } from './rest/llm-gateway-routes.js';
 import { registerAppEmbeddingRoutes } from './rest/app-embedding-routes.js';
 import { registerPlatformResourceRoutes } from './rest/platform-resource-routes.js';
+import { registerAbsentServiceRoutes } from './rest/absent-services-routes.js';
 import { registerSavedViewRoutes } from './rest/saved-view-routes.js';
 import { registerUserDirectoryRoutes } from './rest/user-directory-routes.js';
 import { readPlatformVersion } from './version.js';
@@ -1203,11 +1221,19 @@ async function main(): Promise<void> {
   // stores below — which is exactly what a Postgres-backing PR should do to it.
   // The boot log names whatever is in here, so it stays accurate as the set
   // changes.
+  //
+  // Services that have since gained a Postgres implementation (see the
+  // `pgPool ? … : …` stores in the deps literal below) graduate OUT of this
+  // object — they are durable and belong on the always-registered path. This
+  // object holds only what is still memory-only.
+  //
+  // The DatasetService keeps row/transaction state in memory — the metadata
+  // service gets a Postgres implementation in the deps literal, but the row
+  // store does not. The same instance is shared so the in-memory metadata
+  // fallback reads through it.
+  const datasets = new InMemoryDatasetService();
   const nonDurableServices = nonDurableServicesEnabled
     ? {
-      alertingService: new InMemoryAlertingService(),
-      // Geospatial map service — in-memory only (no Postgres implementation yet).
-      geospatialMapService: new InMemoryGeospatialMapService(),
       // Model inference and chain services — in-memory only.
       // Scenario service — in-memory, wired to the model services.
       ...(() => {
@@ -1223,8 +1249,6 @@ async function main(): Promise<void> {
       })(),
       // Workshop platform service — in-memory app definition persistence.
       workshopPlatformService: new InMemoryWorkshopPlatformService(),
-      // Data freshness — in-memory only (no Postgres implementation yet).
-      dataFreshnessService: new InMemoryDataFreshnessService(),
       // App embedding & cross-app widgets — in-memory app registry, commands, pairing.
       embeddingService: new InMemoryEmbeddingService(),
       // Platform resources — in-memory resource catalog and object linking.
@@ -1233,34 +1257,10 @@ async function main(): Promise<void> {
       savedViewStore: new InMemorySavedViewStore(),
       // User directory — in-memory, seeded from authenticated users.
       userDirectoryService: new InMemoryUserDirectoryService(),
-      // Security governance — real AccessExplanationService wired to the live
-      // AuthorizationService; JustificationStore and ScopedSessionStore are
-      // in-memory only (no Postgres implementation yet).
-      justificationStore: new InMemoryJustificationStore(),
-      scopedSessionStore: new InMemoryScopedSessionStore(),
-      // Ontology SQL — in-memory only. Object reader delegates to the
-      // ObjectManager so SQL queries read live ontology data.
-      ontologySqlService: new InMemoryOntologySqlService(async (ctx, objectType) => {
-        const page = await objectManager.query(objectType, {}, { limit: 10000 }, ctx);
-        return page.items.map((obj: Record<string, unknown>) => ({
-          id: obj['_id'] as string,
-          properties: obj,
-        }));
-      }),
-      // Datasets — in-memory only (no Postgres implementation yet).
-      // The metadata service reads through the same DatasetService instance, so
-      // metadata/schema retrieval and the row/transaction routes agree.
-      ...(() => {
-        const datasets = new InMemoryDatasetService();
-        return {
-          datasetService: datasets,
-          datasetMetadataService: new InMemoryDatasetMetadataService(datasets),
-        };
-      })(),
-      // Usage metrics — in-memory only. The record() method is an
-      // instrumentation hook, not a REST endpoint. Future instrumentation
-      // points: REST dispatch loop, GraphQL resolvers, action executor.
-      usageMetricsService: new InMemoryOntologyUsageMetricsService(),
+      // Datasets — row/transaction state is in-memory only (no Postgres
+      // implementation yet). The metadata service is Postgres-backed when
+      // available (see deps literal below) so metadata/schema survives restarts.
+      datasetService: datasets,
       // Fase 21 services — in-memory only (no Postgres implementations yet).
       kioskService: new InMemoryKioskService(),
       layoutDeviceCaptureService: new InMemoryLayoutDeviceCaptureService(),
@@ -1273,6 +1273,22 @@ async function main(): Promise<void> {
       commandExchangeService: new InMemoryCommandExchangeService(),
       objectSetFilterStore: new InMemoryObjectSetFilterStore(),
       graphService: new InMemoryGraphService(),
+      // Previously-unreachable services — in-memory only, wired so they have a
+      // REST surface when the non-durable gate is open.
+      changeProposalStore: new InMemoryChangeProposalStore(),
+      businessRulesService: new InMemoryBusinessRulesService(),
+      agentEvaluationService: new InMemoryAgentEvaluationService(),
+      agentThreadStore: new InMemoryAgentThreadStore(),
+      conflictResolutionService: new InMemoryConflictResolutionService(),
+      connectorCatalogService: new InMemoryConnectorCatalogService(),
+      dataExpectationsService: new InMemoryDataExpectationsService(),
+      embeddedCopilotService: new InMemoryEmbeddedCopilotService(),
+      eventObjectService: new InMemoryEventObjectService(),
+      graphAnalysisService: new InMemoryGraphAnalysisService(),
+      multiOntologyGovernanceService: new InMemoryMultiOntologyGovernanceService(),
+      pipelineBuildService: new InMemoryPipelineBuildService(),
+      platformAssistantService: new InMemoryPlatformAssistantService(),
+      processMiningService: new InMemoryProcessMiningService(),
       }
     : {};
 
@@ -1337,6 +1353,19 @@ async function main(): Promise<void> {
     commentStore: pgPool ? new PostgresCommentStore(pgPool) : new InMemoryCommentStore(),
     notificationStore: pgPool ? new PostgresNotificationStore(pgPool) : new InMemoryNotificationStore(),
     embeddingStore: pgPool ? new PostgresEmbeddingStore(pgPool) : new InMemoryEmbeddingStore(),
+    // Services that graduated from non-durable to durable: these now have
+    // Postgres implementations and are always registered. The in-memory
+    // fallback is for development (no pgPool); under Postgres the durable
+    // implementation serves the route.
+    alertingService: pgPool ? new PostgresAlertingService(pgPool) : new InMemoryAlertingService(),
+    // Geospatial map service — Postgres-backed when available.
+    geospatialMapService: pgPool ? new PostgresGeospatialMapService(pgPool) : new InMemoryGeospatialMapService(),
+    // Data freshness — Postgres-backed when available.
+    dataFreshnessService: pgPool ? new PostgresDataFreshnessService(pgPool) : new InMemoryDataFreshnessService(),
+    // Security governance — JustificationStore is Postgres-backed when
+    // available; ScopedSessionStore is below. The AccessExplanationService
+    // runs the live marking policy and consent service (next block).
+    justificationStore: pgPool ? new PostgresJustificationStore(pgPool) : new InMemoryJustificationStore(),
     // The explanation runs the live marking policy and consent service, not a
     // default-allow placeholder — an explanation that disagrees with the read
     // path sends the operator to debug the wrong layer.
@@ -1346,6 +1375,26 @@ async function main(): Promise<void> {
       ...(consentSubjectTypes ? { consentSubjectTypes } : {}),
       ...(consentService ? { consent: consentService } : {}),
     }),
+    // ScopedSessionStore — Postgres-backed when available.
+    scopedSessionStore: pgPool ? new PostgresScopedSessionStore(pgPool) : new InMemoryScopedSessionStore(),
+    // Ontology SQL — Postgres-backed when available; falls back to in-memory
+    // with ObjectManager delegation for ontology reads.
+    ontologySqlService: pgPool ? new PostgresOntologySqlService(pgPool) : new InMemoryOntologySqlService(async (ctx, objectType) => {
+      const page = await objectManager.query(objectType, {}, { limit: 10000 }, ctx);
+      return page.items.map((obj: Record<string, unknown>) => ({
+        id: obj['_id'] as string,
+        properties: obj,
+      }));
+    }),
+    // Dataset metadata — Postgres-backed when available so dataset
+    // metadata/schema survives restarts. The DatasetService itself (row/
+    // transaction state) remains in-memory only and lives in nonDurableServices
+    // above; the same `datasets` instance is shared so the in-memory metadata
+    // fallback reads through it.
+    datasetMetadataService: pgPool ? new PostgresDatasetMetadataService(pgPool) : new InMemoryDatasetMetadataService(datasets),
+    // Usage metrics — Postgres-backed when available. The record() method is
+    // an instrumentation hook; query/summary endpoints read from Postgres.
+    usageMetricsService: pgPool ? new PostgresOntologyUsageMetricsService(pgPool) : new InMemoryOntologyUsageMetricsService(),
 
     // Non-durable platform services — withheld under Postgres unless opted in.
     // Built and explained above.
@@ -1782,6 +1831,12 @@ async function main(): Promise<void> {
   registerPlatformResourceRoutes(app, deps, authenticator, isDev);
   registerSavedViewRoutes(app, deps, authenticator, isDev);
   registerUserDirectoryRoutes(app, deps, authenticator, isDev);
+
+  // ── Previously-unreachable SPI services (change-proposals, business-rules,
+  // agent-evals, agent-threads, conflict-resolution, connectors, data-expectations,
+  // embedded-copilots, event-objects, graph-analyses, multi-ontology, pipeline-builds,
+  // platform-assistant, process-mining, workshop-ux) ──
+  registerAbsentServiceRoutes(app, deps, authenticator, isDev);
 
   // ── LLM gateway routes ──
   registerLLMGatewayRoutes(app, deps, authenticator, isDev);

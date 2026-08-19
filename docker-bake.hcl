@@ -22,9 +22,13 @@ variable "IMAGE_PREFIX" {
   default = "orion"
 }
 
+variable "SEP" {
+  default = "-"
+}
+
 function "tag" {
   params = [service]
-  result = ["${REGISTRY}${IMAGE_PREFIX}-${service}:${GIT_REVISION}", "${REGISTRY}${IMAGE_PREFIX}-${service}:latest"]
+  result = ["${REGISTRY}${IMAGE_PREFIX}${SEP}${service}:${GIT_REVISION}", "${REGISTRY}${IMAGE_PREFIX}${SEP}${service}:latest"]
 }
 
 group "default" {
@@ -40,6 +44,7 @@ target "deps-full" {
   dockerfile = "Dockerfile.deps"
   target     = "deps-full"
   context    = "."
+  tags       = ["deps-full:latest"]
   cache-from = ["type=gha,scope=deps-full"]
   cache-to   = ["type=gha,mode=max,scope=deps-full"]
 }
@@ -48,6 +53,7 @@ target "deps-app" {
   dockerfile = "Dockerfile.deps"
   target     = "deps-app"
   context    = "."
+  tags       = ["deps-app:latest"]
   cache-from = ["type=gha,scope=deps-app"]
   cache-to   = ["type=gha,mode=max,scope=deps-app"]
 }

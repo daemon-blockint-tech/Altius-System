@@ -133,5 +133,221 @@ export function generatePlatformDDL(): string[] {
   PRIMARY KEY ("tenant_id", "user_id")
 );`);
 
+  // ── Alerting service (threshold rules + alerts) ──
+  statements.push(`CREATE SCHEMA IF NOT EXISTS "alerting";`);
+  statements.push(`CREATE TABLE IF NOT EXISTS "alerting"."rules" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "tenant_id" TEXT NOT NULL,
+  "name" TEXT NOT NULL,
+  "object_type" TEXT NOT NULL,
+  "object_id" TEXT NOT NULL,
+  "property" TEXT NOT NULL,
+  "tag_filter" JSONB NOT NULL DEFAULT '{}',
+  "operator" TEXT NOT NULL DEFAULT 'gt',
+  "threshold" DOUBLE PRECISION NOT NULL,
+  "consecutive_points" INTEGER NOT NULL DEFAULT 1,
+  "min_duration_seconds" INTEGER,
+  "enabled" BOOLEAN NOT NULL DEFAULT TRUE,
+  "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_alert_rules_tenant" ON "alerting"."rules" ("tenant_id");`);
+  statements.push(`CREATE TABLE IF NOT EXISTS "alerting"."alerts" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "tenant_id" TEXT NOT NULL,
+  "rule_id" TEXT NOT NULL,
+  "rule_name" TEXT NOT NULL DEFAULT '',
+  "object_type" TEXT NOT NULL,
+  "object_id" TEXT NOT NULL,
+  "property" TEXT NOT NULL DEFAULT '',
+  "triggered_value" DOUBLE PRECISION NOT NULL DEFAULT 0,
+  "threshold" DOUBLE PRECISION NOT NULL DEFAULT 0,
+  "operator" TEXT NOT NULL DEFAULT 'gt',
+  "triggered_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "status" TEXT NOT NULL DEFAULT 'active',
+  "acknowledged_by" TEXT,
+  "notification_ids" JSONB NOT NULL DEFAULT '[]'
+);`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_alerts_tenant_status" ON "alerting"."alerts" ("tenant_id", "status");`);
+
+  // ── Data freshness ──
+  statements.push(`CREATE SCHEMA IF NOT EXISTS "freshness";`);
+  statements.push(`CREATE TABLE IF NOT EXISTS "freshness"."records" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "tenant_id" TEXT NOT NULL,
+  "object_type" TEXT,
+  "datasource" TEXT,
+  "last_synced_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "last_attempted_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "last_record_count" BIGINT NOT NULL DEFAULT 0,
+  "last_sync_succeeded" BOOLEAN NOT NULL DEFAULT TRUE,
+  "last_error" TEXT,
+  "interval_ms" BIGINT,
+  "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE ("tenant_id", "object_type", "datasource")
+);`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_freshness_tenant" ON "freshness"."records" ("tenant_id");`);
+
+  // ── Dataset metadata ──
+  statements.push(`CREATE SCHEMA IF NOT EXISTS "dataset";`);
+  statements.push(`CREATE TABLE IF NOT EXISTS "dataset"."metadata" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "tenant_id" TEXT NOT NULL,
+  "name" TEXT NOT NULL,
+  "branch" TEXT NOT NULL DEFAULT 'main',
+  "schema" JSONB NOT NULL DEFAULT '{}',
+  "description" TEXT NOT NULL DEFAULT '',
+  "latest_transaction_id" TEXT NOT NULL DEFAULT '',
+  "row_count" BIGINT NOT NULL DEFAULT 0,
+  "size_bytes" BIGINT,
+  "created_by" TEXT NOT NULL DEFAULT '',
+  "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE ("tenant_id", "name", "branch")
+);`);
+  statements.push(`CREATE TABLE IF NOT EXISTS "dataset"."rows" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "tenant_id" TEXT NOT NULL,
+  "dataset_name" TEXT NOT NULL,
+  "branch" TEXT NOT NULL DEFAULT 'main',
+  "data" JSONB NOT NULL DEFAULT '{}',
+  "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_dataset_rows_tenant_name_branch" ON "dataset"."rows" ("tenant_id", "dataset_name", "branch");`);
+
+  // ── Geospatial maps ──
+  statements.push(`CREATE SCHEMA IF NOT EXISTS "geospatial";`);
+  statements.push(`CREATE TABLE IF NOT EXISTS "geospatial"."layers" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "tenant_id" TEXT NOT NULL,
+  "name" TEXT NOT NULL,
+  "description" TEXT NOT NULL DEFAULT '',
+  "object_type" TEXT NOT NULL,
+  "geometry_field" TEXT NOT NULL,
+  "kind" TEXT NOT NULL DEFAULT 'point',
+  "base_url" TEXT,
+  "style" JSONB NOT NULL DEFAULT '{}',
+  "filter" JSONB,
+  "visible" BOOLEAN NOT NULL DEFAULT TRUE,
+  "opacity" DOUBLE PRECISION NOT NULL DEFAULT 1,
+  "z_index" INTEGER DEFAULT 0,
+  "created_by" TEXT,
+  "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);`);
+  statements.push(`CREATE TABLE IF NOT EXISTS "geospatial"."saved_maps" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "tenant_id" TEXT NOT NULL,
+  "name" TEXT NOT NULL,
+  "description" TEXT NOT NULL DEFAULT '',
+  "layer_ids" JSONB NOT NULL DEFAULT '[]',
+  "viewport" JSONB NOT NULL DEFAULT '{}',
+  "annotation_ids" JSONB NOT NULL DEFAULT '[]',
+  "owner_id" TEXT NOT NULL,
+  "shared_with" JSONB NOT NULL DEFAULT '[]',
+  "is_public" BOOLEAN NOT NULL DEFAULT FALSE,
+  "tags" JSONB NOT NULL DEFAULT '[]',
+  "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);`);
+  statements.push(`CREATE TABLE IF NOT EXISTS "geospatial"."annotations" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "tenant_id" TEXT NOT NULL,
+  "label" TEXT NOT NULL,
+  "description" TEXT NOT NULL DEFAULT '',
+  "shape" JSONB NOT NULL,
+  "kind" TEXT NOT NULL DEFAULT 'marker',
+  "style" JSONB,
+  "object_id" TEXT,
+  "object_type" TEXT,
+  "owner_id" TEXT NOT NULL,
+  "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);`);
+
+  // ── Justification store ──
+  statements.push(`CREATE SCHEMA IF NOT EXISTS "justification";`);
+  statements.push(`CREATE TABLE IF NOT EXISTS "justification"."records" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "tenant_id" TEXT NOT NULL,
+  "user_id" TEXT NOT NULL,
+  "action_name" TEXT NOT NULL,
+  "object_type" TEXT,
+  "object_id" TEXT,
+  "justification" TEXT NOT NULL,
+  "category" TEXT NOT NULL DEFAULT 'routine',
+  "approved" BOOLEAN NOT NULL DEFAULT FALSE,
+  "approved_by" TEXT,
+  "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_just_tenant_user" ON "justification"."records" ("tenant_id", "user_id");`);
+
+  // ── Ontology SQL (saved queries) ──
+  statements.push(`CREATE SCHEMA IF NOT EXISTS "ontology_sql";`);
+  statements.push(`CREATE TABLE IF NOT EXISTS "ontology_sql"."saved_queries" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "tenant_id" TEXT NOT NULL,
+  "name" TEXT NOT NULL,
+  "sql" TEXT NOT NULL,
+  "description" TEXT NOT NULL DEFAULT '',
+  "object_types" TEXT[] NOT NULL DEFAULT '{}',
+  "parameterized" BOOLEAN NOT NULL DEFAULT FALSE,
+  "parameters" JSONB,
+  "owner_id" TEXT NOT NULL,
+  "shared_with" TEXT[] NOT NULL DEFAULT '{}',
+  "is_public" BOOLEAN NOT NULL DEFAULT FALSE,
+  "tags" TEXT[] NOT NULL DEFAULT '{}',
+  "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_osql_tenant" ON "ontology_sql"."saved_queries" ("tenant_id");`);
+
+  // ── Usage metrics ──
+  statements.push(`CREATE SCHEMA IF NOT EXISTS "usage_metrics";`);
+  statements.push(`CREATE TABLE IF NOT EXISTS "usage_metrics"."events" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "tenant_id" TEXT NOT NULL,
+  "user_id" TEXT,
+  "object_type" TEXT,
+  "object_id" TEXT,
+  "action_or_function_name" TEXT,
+  "operation" TEXT NOT NULL,
+  "success" BOOLEAN NOT NULL DEFAULT TRUE,
+  "duration_ms" INTEGER,
+  "metadata" JSONB NOT NULL DEFAULT '{}',
+  "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_usage_tenant_time" ON "usage_metrics"."events" ("tenant_id", "created_at");`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_usage_tenant_type" ON "usage_metrics"."events" ("tenant_id", "object_type");`);
+  statements.push(`CREATE TABLE IF NOT EXISTS "usage_metrics"."monitoring_rules" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "tenant_id" TEXT NOT NULL,
+  "name" TEXT NOT NULL,
+  "metric" TEXT NOT NULL,
+  "object_type" TEXT NOT NULL DEFAULT '*',
+  "operation" TEXT NOT NULL DEFAULT '*',
+  "threshold" DOUBLE PRECISION NOT NULL,
+  "operator" TEXT NOT NULL DEFAULT 'gt',
+  "window_seconds" INTEGER NOT NULL DEFAULT 300,
+  "enabled" BOOLEAN NOT NULL DEFAULT TRUE,
+  "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);`);
+
+  // ── Scoped sessions ──
+  statements.push(`CREATE SCHEMA IF NOT EXISTS "scoped_session";`);
+  statements.push(`CREATE TABLE IF NOT EXISTS "scoped_session"."sessions" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "tenant_id" TEXT NOT NULL,
+  "user_id" TEXT NOT NULL,
+  "allowed_markings" TEXT[] NOT NULL DEFAULT '{}',
+  "excluded_markings" TEXT[] NOT NULL DEFAULT '{}',
+  "label" TEXT NOT NULL DEFAULT '',
+  "expires_at" TIMESTAMPTZ NOT NULL,
+  "created_by" TEXT,
+  "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "revoked" BOOLEAN NOT NULL DEFAULT FALSE
+);`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_scoped_tenant_user" ON "scoped_session"."sessions" ("tenant_id", "user_id");`);
+
   return statements;
 }

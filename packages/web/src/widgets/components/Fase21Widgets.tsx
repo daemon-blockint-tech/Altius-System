@@ -63,7 +63,7 @@ export function OntologyChangeHistoryWidget(): React.ReactNode {
       <ul className="ed-list">
         {records.map((r, i) => (
           <li key={i} className="ed-list__item" onClick={() => setSelected(r)}>
-            v{r['version']} — {String(r['migrationClass'])} — {String(r['appliedAt'])}
+            v{String(r['version'])} — {String(r['migrationClass'])} — {String(r['appliedAt'])}
           </li>
         ))}
       </ul>
@@ -79,7 +79,7 @@ export function OntologyChangeHistoryWidget(): React.ReactNode {
 
 // ─── 21C Value formatting widget ───
 
-export function ValueFormattingWidget({ instance, ctx }: WidgetProps): React.ReactNode {
+export function ValueFormattingWidget({ instance }: WidgetProps): React.ReactNode {
   const config = (instance.config ?? {}) as { format?: string; field?: string; objectType?: string; value?: unknown };
   const [formatted, setFormatted] = useState<Record<string, unknown> | null>(null);
   const [input, setInput] = useState<string>(String(config.value ?? ''));
@@ -120,7 +120,7 @@ export function ValueFormattingWidget({ instance, ctx }: WidgetProps): React.Rea
 
 // ─── 21D Design system theme widget ───
 
-export function DesignSystemThemeWidget({ instance, ctx }: WidgetProps): React.ReactNode {
+export function DesignSystemThemeWidget({ instance }: WidgetProps): React.ReactNode {
   const config = (instance.config ?? {}) as { moduleId?: string };
   const [theme, setTheme] = useState<Record<string, unknown> | null>(null);
   const [primary, setPrimary] = useState<string>('#2563eb');
@@ -161,7 +161,7 @@ export function DesignSystemThemeWidget({ instance, ctx }: WidgetProps): React.R
 
 // ─── 21E Function-backed widget data ───
 
-export function FunctionBackedWidget({ instance, ctx }: WidgetProps): React.ReactNode {
+export function FunctionBackedWidget({ instance }: WidgetProps): React.ReactNode {
   const config = (instance.config ?? {}) as { functionName?: string; objectType?: string; objectId?: string };
   const [result, setResult] = useState<unknown>(null);
 
@@ -190,7 +190,7 @@ export function FunctionBackedWidget({ instance, ctx }: WidgetProps): React.Reac
 
 // ─── 21F Live data push / auto-refresh widget ───
 
-export function LiveDataPushWidget({ instance, ctx }: WidgetProps): React.ReactNode {
+export function LiveDataPushWidget({ instance }: WidgetProps): React.ReactNode {
   const config = (instance.config ?? {}) as { objectType?: string; fields?: Array<{ field: string; fn: string }>; intervalMs?: number };
   const [data, setData] = useState<unknown>(null);
   const [lastRefreshed, setLastRefreshed] = useState<string>('—');
@@ -340,7 +340,7 @@ export function OntologyMetadataCatalogWidget(): React.ReactNode {
 
 // ─── 21J Kiosk mode widget ───
 
-export function KioskModeWidget({ instance, ctx }: WidgetProps): React.ReactNode {
+export function KioskModeWidget({ instance }: WidgetProps): React.ReactNode {
   const config = (instance.config ?? {}) as { objectTypes?: string[]; durationSeconds?: number; location?: string };
   const [session, setSession] = useState<Record<string, unknown> | null>(null);
 

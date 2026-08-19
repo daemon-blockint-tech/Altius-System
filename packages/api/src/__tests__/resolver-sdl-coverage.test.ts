@@ -68,6 +68,14 @@ function mockDeps(schema: ReturnType<typeof parseOdl>): ApiDependencies {
     storage: {} as never,
     blobStore: { getMetadata: vi.fn().mockResolvedValue(null) } as never,
     timeSeriesStore: { getSeries: vi.fn().mockResolvedValue({ points: [] }) } as never,
+    embeddingStore: { search: vi.fn().mockResolvedValue([]) } as never,
+    notificationStore: {
+      list: vi.fn().mockResolvedValue([]),
+      getPreferences: vi.fn().mockResolvedValue(null),
+      markRead: vi.fn().mockResolvedValue(undefined),
+      markAllRead: vi.fn().mockResolvedValue(undefined),
+      setPreferences: vi.fn().mockResolvedValue(undefined),
+    } as never,
   } as ApiDependencies;
 }
 

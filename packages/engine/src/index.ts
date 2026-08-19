@@ -159,3 +159,10 @@ export {
   InMemoryWorkflowEventStore,
   newWorkflowId,
 } from './workflow/index.js';
+
+// Agent threads (durable conversation persistence)
+export {
+  InMemoryAgentThreadStore,
+  type AgentThread,
+  type ThreadMessage,
+} from './agent-threads/index.js';

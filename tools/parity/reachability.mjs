@@ -31,7 +31,7 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
-const ROOT = new URL('../..', import.meta.url).pathname.replace(/\/$/, '');
+const ROOT = new URL('../..', import.meta.url).pathname.replace(/^\//, '').replace(/\/$/, '');
 const PKGS = join(ROOT, 'packages');
 
 const isTest = (p) =>
@@ -59,7 +59,7 @@ const source = new Map(files.map((f) => [f, readFileSync(f, 'utf8')]));
 
 // SPI service interfaces are the unit of capability here: each is the contract
 // a capability is delivered through.
-const spiFiles = files.filter((f) => f.includes('/spi/src/'));
+const spiFiles = files.filter((f) => f.replace(/\\/g, '/').includes('/spi/src/'));
 const services = new Set();
 for (const f of spiFiles) {
   for (const m of source.get(f).matchAll(/^export interface ([A-Za-z0-9_]*(?:Service|Store))\b/gm)) {
@@ -69,15 +69,16 @@ for (const f of spiFiles) {
 
 // Entry points: the files that actually put a capability in front of a user.
 const surfaceOf = (p) => {
-  if (/\/api\/src\/rest\//.test(p)) return 'rest';
-  if (/\/api\/src\/graphql\//.test(p)) return 'graphql';
-  if (/\/api\/src\/fhir\//.test(p)) return 'fhir';
-  if (/\/mcp-server\/src\//.test(p)) return 'mcp';
+  const n = p.replace(/\\/g, '/');
+  if (/\/api\/src\/rest\//.test(n)) return 'rest';
+  if (/\/api\/src\/graphql\//.test(n)) return 'graphql';
+  if (/\/api\/src\/fhir\//.test(n)) return 'fhir';
+  if (/\/mcp-server\/src\//.test(n)) return 'mcp';
   return null;
 };
 
 // A barrel re-export is not a caller.
-const isBarrel = (p) => /\/src\/index\.ts$/.test(p);
+const isBarrel = (p) => /\/src\/index\.ts$/.test(p.replace(/\\/g, '/'));
 
 // Route modules never name the interface — they read the dependency slot
 // (`deps.datasetService`). Matching only the interface name reports every wired

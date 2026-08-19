@@ -10,7 +10,7 @@ import type {
   MarkingPolicy,
 } from '@altius/security';
 import type { ParsedSchema } from '@altius/odl';
-import type { RequestContext, StorageProvider, LLMClient, BlobStore, TimeSeriesStore, BranchStore, CommentStore, NotificationStore, EmbeddingStore, AlertingService, LLMGateway, DataFreshnessService, JustificationStore, AccessExplanationService, ScopedSessionStore, OntologySqlService, DatasetService, DatasetMetadataService, OntologyUsageMetricsService, GeospatialMapService, ScenarioService, ModelInferenceService, ModelChainService, WorkshopPlatformService, EmbeddingService, PlatformResourceService, SavedViewStore, UserDirectoryService, KioskService, LayoutDeviceCaptureService, OntologyManagerService, WorkshopUxService, ValueFormattingService, DesignSystemService, OntologyChangeHistoryService, CommandExchangeService, ObjectSetFilterStore, GraphService } from '@altius/spi';
+import type { RequestContext, StorageProvider, LLMClient, BlobStore, TimeSeriesStore, BranchStore, CommentStore, NotificationStore, EmbeddingStore, AlertingService, LLMGateway, DataFreshnessService, JustificationStore, AccessExplanationService, ScopedSessionStore, OntologySqlService, DatasetService, DatasetMetadataService, OntologyUsageMetricsService, GeospatialMapService, ScenarioService, ModelInferenceService, ModelChainService, WorkshopPlatformService, EmbeddingService, PlatformResourceService, SavedViewStore, UserDirectoryService, KioskService, LayoutDeviceCaptureService, OntologyManagerService, WorkshopUxService, ValueFormattingService, DesignSystemService, OntologyChangeHistoryService, CommandExchangeService, ObjectSetFilterStore, GraphService, ChangeProposalStore, BusinessRulesService, AgentEvaluationService, AgentThreadStore, ConflictResolutionService, ConnectorCatalogService, DataExpectationsService, EmbeddedCopilotService, EventObjectService, GraphAnalysisService, MultiOntologyGovernanceService, PipelineBuildService, PlatformAssistantService, ProcessMiningService } from '@altius/spi';
 import { DataPurpose } from '@altius/spi';
 
 /**
@@ -491,6 +491,34 @@ export interface ApiDependencies {
   objectSetFilterStore?: ObjectSetFilterStore;
   /** Fase 22 — Interactive graph visualization service. */
   graphService?: GraphService;
+  /** Change proposal store for AI/human-in-the-loop governance. */
+  changeProposalStore?: ChangeProposalStore;
+  /** Business rules service for no-code rule authoring. */
+  businessRulesService?: BusinessRulesService;
+  /** Agent evaluation service for AIP Evals. */
+  agentEvaluationService?: AgentEvaluationService;
+  /** Agent thread store for durable conversation persistence. */
+  agentThreadStore?: AgentThreadStore;
+  /** Conflict resolution service for sync-vs-edit reconciliation. */
+  conflictResolutionService?: ConflictResolutionService;
+  /** Connector catalog service for prebuilt source connectors. */
+  connectorCatalogService?: ConnectorCatalogService;
+  /** Data expectations service for quality checks that gate builds. */
+  dataExpectationsService?: DataExpectationsService;
+  /** Embedded copilot service for in-app AI assistants. */
+  embeddedCopilotService?: EmbeddedCopilotService;
+  /** Event object service for timeline analytics. */
+  eventObjectService?: EventObjectService;
+  /** Graph analysis service for saved graph explorations. */
+  graphAnalysisService?: GraphAnalysisService;
+  /** Multi-ontology governance service for org-scoped ontologies. */
+  multiOntologyGovernanceService?: MultiOntologyGovernanceService;
+  /** Pipeline build service for batch pipeline orchestration. */
+  pipelineBuildService?: PipelineBuildService;
+  /** Platform assistant service for AI FDE agentic assistance. */
+  platformAssistantService?: PlatformAssistantService;
+  /** Process mining service for process model discovery. */
+  processMiningService?: ProcessMiningService;
 }
 
 /**

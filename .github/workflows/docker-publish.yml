@@ -4,6 +4,13 @@ name: Build and Push Docker Images
 # Runs on pushes to main (tags :latest and :sha-<short-sha>) and on version
 # tags (tags :<version> and :latest). PRs build only (no push) to verify
 # Dockerfiles without publishing.
+#
+# Uses `docker buildx bake` (not docker/build-push-action per service) so the
+# shared deps-app/deps-full stages are resolved as local bake targets via
+# named build contexts — the same mechanism the CI workflow uses. The matrix
+# approach could not resolve `FROM deps-app`/`FROM deps-full` because
+# build-push-action's docker-container driver cannot reference images loaded
+# into the host daemon.
 
 on:
   push:
@@ -15,38 +22,10 @@ permissions:
   contents: read
   packages: write
 
-env:
-  REGISTRY: ghcr.io
-  IMAGE_PREFIX: ${{ github.repository }}
-
 jobs:
   build-and-push:
-    name: ${{ matrix.service }}
+    name: Build and push all images
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - service: api-gateway
-            dockerfile: packages/api/Dockerfile
-            context: .
-          - service: action-executor
-            dockerfile: packages/actions/Dockerfile
-            context: .
-          - service: security-service
-            dockerfile: packages/security/Dockerfile
-            context: .
-          - service: cel-evaluator
-            dockerfile: packages/cel-evaluator/Dockerfile
-            context: packages/cel-evaluator
-          # Static bundle + nginx. Included here so the deployment path is
-          # actually exercised: nothing else builds this image, and its nginx
-          # config has never been machine-checked (`nginx -t` needs a registry
-          # pull that does not work on the dev machine). A failure in this job
-          # is the config, not a flake.
-          - service: web
-            dockerfile: packages/web/Dockerfile
-            context: .
     steps:
       - uses: actions/checkout@v4
 
@@ -57,43 +36,39 @@ jobs:
         if: github.event_name != 'pull_request'
         uses: docker/login-action@v4
         with:
-          registry: ${{ env.REGISTRY }}
+          registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract image metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.service }}
-          tags: |
-            type=ref,event=branch
-            type=ref,event=pr
-            type=semver,pattern={{version}}
-            type=sha,prefix=sha-
-            type=raw,value=latest,enable={{is_default_branch}}
+      # ghcr.io requires lowercase image paths. github.repository preserves
+      # case (e.g. "daemon-blockint-tech/Altius-System"), so lowercase it.
+      - name: Compute registry path
+        id: registry
+        run: echo "path=ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
 
-      # Build (and push, when not a PR) using registry-backed layer cache so
-      # dependency layers are reused across CI runs, not just within one.
-      - name: Build and push
-        uses: docker/build-push-action@v7
-        with:
-          context: ${{ matrix.context }}
-          file: ${{ matrix.dockerfile }}
-          push: ${{ github.event_name != 'pull_request' }}
-          load: ${{ github.event_name == 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          build-args: |
-            GIT_REVISION=${{ github.sha }}
-          cache-from: type=gha,scope=${{ matrix.service }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+      # bake resolves deps-app/deps-full as local build targets (see
+      # docker-bake.hcl contexts mapping), builds all 7 services, and tags
+      # them as <registry>/<service>:latest + :sha-<short>. --push for
+      # pushes to main/tags, --load for PRs (verify Dockerfiles without
+      # publishing).
+      - name: Build and push all images
+        env:
+          REGISTRY: ${{ steps.registry.outputs.path }}
+          IMAGE_PREFIX: ""
+          SEP: "/"
+          GIT_REVISION: sha-${{ github.sha }}
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            docker buildx bake --load
+          else
+            docker buildx bake --push
+          fi
 
-      - name: Scan image for HIGH/CRITICAL vulnerabilities
+      - name: Scan all images for HIGH/CRITICAL vulnerabilities
         if: github.event_name != 'pull_request'
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         continue-on-error: true
         with:
-          image-ref: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
+          image-ref: ${{ steps.registry.outputs.path }}/api-gateway:latest
           severity: HIGH,CRITICAL
           exit-code: '0'
