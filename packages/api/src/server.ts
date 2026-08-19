@@ -78,6 +78,19 @@ import {
   InMemoryCommandExchangeService,
   InMemoryObjectSetFilterStore,
   InMemoryGraphService,
+  InMemoryChangeProposalStore,
+  InMemoryBusinessRulesService,
+  InMemoryAgentEvaluationService,
+  InMemoryDataExpectationsService,
+  InMemoryConflictResolutionService,
+  InMemoryPipelineBuildService,
+  InMemoryEventObjectService,
+  InMemoryProcessMiningService,
+  InMemoryConnectorCatalogService,
+  InMemoryMultiOntologyGovernanceService,
+  InMemoryGraphAnalysisService,
+  InMemoryPlatformAssistantService,
+  InMemoryEmbeddedCopilotService,
 } from '@altius/storage-memory';
 import { PostgresStorageProvider, PostgresLineageStore, PostgresAuditStore, PostgresConsentStore, PostgresSchemaRegistry, PostgresObjectSetStore,
   PostgresLLMUsageTracker, PostgresLLMRateLimiter,
@@ -105,6 +118,7 @@ import {
   WorkflowMonitor,
   InMemoryWorkflowEventStore,
   InMemoryLineageStore,
+  InMemoryAgentThreadStore,
 } from '@altius/engine';
 import type { ModelCatalogEntry } from '@altius/spi';
 import { ActionExecutor, CelClient, SideEffectExecutor } from '@altius/actions';
@@ -136,6 +150,7 @@ import { registerWorkshopRoutes } from './rest/workshop-routes.js';
 import { registerLLMGatewayRoutes } from './rest/llm-gateway-routes.js';
 import { registerAppEmbeddingRoutes } from './rest/app-embedding-routes.js';
 import { registerPlatformResourceRoutes } from './rest/platform-resource-routes.js';
+import { registerAbsentServiceRoutes } from './rest/absent-services-routes.js';
 import { registerSavedViewRoutes } from './rest/saved-view-routes.js';
 import { registerUserDirectoryRoutes } from './rest/user-directory-routes.js';
 import { readPlatformVersion } from './version.js';
@@ -1300,6 +1315,21 @@ async function main(): Promise<void> {
     commandExchangeService: new InMemoryCommandExchangeService(),
     objectSetFilterStore: new InMemoryObjectSetFilterStore(),
     graphService: new InMemoryGraphService(),
+    // Previously-unreachable services — wired so they have a REST surface.
+    changeProposalStore: new InMemoryChangeProposalStore(),
+    businessRulesService: new InMemoryBusinessRulesService(),
+    agentEvaluationService: new InMemoryAgentEvaluationService(),
+    agentThreadStore: new InMemoryAgentThreadStore(),
+    conflictResolutionService: new InMemoryConflictResolutionService(),
+    connectorCatalogService: new InMemoryConnectorCatalogService(),
+    dataExpectationsService: new InMemoryDataExpectationsService(),
+    embeddedCopilotService: new InMemoryEmbeddedCopilotService(),
+    eventObjectService: new InMemoryEventObjectService(),
+    graphAnalysisService: new InMemoryGraphAnalysisService(),
+    multiOntologyGovernanceService: new InMemoryMultiOntologyGovernanceService(),
+    pipelineBuildService: new InMemoryPipelineBuildService(),
+    platformAssistantService: new InMemoryPlatformAssistantService(),
+    processMiningService: new InMemoryProcessMiningService(),
   };
 
   // ── Express + HTTP Server ──
@@ -1732,6 +1762,12 @@ async function main(): Promise<void> {
   registerPlatformResourceRoutes(app, deps, authenticator, isDev);
   registerSavedViewRoutes(app, deps, authenticator, isDev);
   registerUserDirectoryRoutes(app, deps, authenticator, isDev);
+
+  // ── Previously-unreachable SPI services (change-proposals, business-rules,
+  // agent-evals, agent-threads, conflict-resolution, connectors, data-expectations,
+  // embedded-copilots, event-objects, graph-analyses, multi-ontology, pipeline-builds,
+  // platform-assistant, process-mining, workshop-ux) ──
+  registerAbsentServiceRoutes(app, deps, authenticator, isDev);
 
   // ── LLM gateway routes ──
   registerLLMGatewayRoutes(app, deps, authenticator, isDev);
