@@ -15,7 +15,8 @@
 import type { Express } from 'express';
 import type { ApiDependencies } from '../graphql/types.js';
 import type { OidcAuthenticator } from '@altius/security';
-import type { RequestContext, CreateThresholdRuleInput, AlertQuery, TimeSeriesPoint } from '@altius/spi';
+import type { RequestContext, CreateThresholdRuleInput, AlertQuery, TimeSeriesPoint, AnomalyDetectionConfig } from '@altius/spi';
+import { detectAnomalies, detectInterval } from '@altius/spi';
 import { extractUser } from '../config.js';
 
 function ctxFromUser(user: { tenantId: string; id: string }): RequestContext {
@@ -162,6 +163,37 @@ export function registerAlertingRoutes(
       }
       const results = await service.evaluateForSeries(ctx, body.objectType, body.objectId, body.property, body.points);
       res.status(200).json({ results });
+    } catch (err) {
+      res.status(500).json({ error: 'INTERNAL', message: err instanceof Error ? err.message : 'Failed' });
+    }
+  });
+
+  // ── POST /api/v1/alerting/anomalies — detect anomalies in a series ──
+  app.post('/api/v1/alerting/anomalies', async (req, res) => {
+    try {
+      const body = req.body as { points: TimeSeriesPoint[]; config?: AnomalyDetectionConfig };
+      if (!Array.isArray(body.points)) {
+        res.status(400).json({ error: 'INVALID', message: 'points array is required' });
+        return;
+      }
+      const cfg: AnomalyDetectionConfig = body.config ?? { method: 'zscore', zThreshold: 3.0 };
+      const anomalies = detectAnomalies(body.points, cfg);
+      res.status(200).json({ anomalies });
+    } catch (err) {
+      res.status(500).json({ error: 'INTERNAL', message: err instanceof Error ? err.message : 'Failed' });
+    }
+  });
+
+  // ── POST /api/v1/alerting/interval — detect sampling interval ──
+  app.post('/api/v1/alerting/interval', async (req, res) => {
+    try {
+      const body = req.body as { points: TimeSeriesPoint[] };
+      if (!Array.isArray(body.points)) {
+        res.status(400).json({ error: 'INVALID', message: 'points array is required' });
+        return;
+      }
+      const result = detectInterval(body.points);
+      res.status(200).json({ result });
     } catch (err) {
       res.status(500).json({ error: 'INTERNAL', message: err instanceof Error ? err.message : 'Failed' });
     }

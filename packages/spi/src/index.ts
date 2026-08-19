@@ -128,8 +128,17 @@ export type {
   AlertQuery,
   RuleEvaluationResult,
   ThresholdOperator,
+  AnomalyMethod,
+  AnomalyDetectionConfig,
+  AnomalyPoint,
+  IntervalDetectionResult,
 } from './alerting.js';
-export { pointSatisfies, findConsecutiveRun } from './alerting.js';
+export {
+  pointSatisfies,
+  findConsecutiveRun,
+  detectAnomalies,
+  detectInterval,
+} from './alerting.js';
 
 // Governed LLM gateway
 export type {

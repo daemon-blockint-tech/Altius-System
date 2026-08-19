@@ -214,3 +214,227 @@ export function findConsecutiveRun(
 
   return null;
 }
+
+// ─── Anomaly detection ────────────────────────────────────────────────────
+
+/** Anomaly detection method. */
+export type AnomalyMethod = 'zscore' | 'iqr' | 'moving_average';
+
+/** Configuration for anomaly detection. */
+export interface AnomalyDetectionConfig {
+  /** Detection method. */
+  method: AnomalyMethod;
+  /** Z-score threshold (for 'zscore' method). Default 3.0. */
+  zThreshold?: number;
+  /** IQR multiplier (for 'iqr' method). Default 1.5. */
+  iqrMultiplier?: number;
+  /** Window size for moving average (for 'moving_average' method). Default 10. */
+  windowSize?: number;
+  /** Number of standard deviations for moving average bands. Default 3.0. */
+  sigmaThreshold?: number;
+}
+
+/** A detected anomaly in a time series. */
+export interface AnomalyPoint {
+  /** The timestamp of the anomalous point. */
+  timestamp: string;
+  /** The anomalous value. */
+  value: number;
+  /** The method that detected the anomaly. */
+  method: AnomalyMethod;
+  /** Score: z-score, IQR distance, or sigma deviation. */
+  score: number;
+  /** Expected value (mean, median, or moving average). */
+  expected: number;
+}
+
+/**
+ * Detect anomalies in a time series using statistical methods.
+ *
+ * - zscore: flags points whose value deviates more than `zThreshold` standard
+ *   deviations from the mean.
+ * - iqr: flags points outside [Q1 - k*IQR, Q3 + k*IQR] where k is
+ *   `iqrMultiplier`.
+ * - moving_average: flags points whose value deviates more than
+ *   `sigmaThreshold` standard deviations from a rolling moving average.
+ */
+export function detectAnomalies(
+  points: TimeSeriesPoint[],
+  config: AnomalyDetectionConfig,
+): AnomalyPoint[] {
+  const numeric = points.filter((p) => typeof p.value === 'number') as Array<
+    TimeSeriesPoint & { value: number }
+  >;
+  if (numeric.length === 0) return [];
+
+  const anomalies: AnomalyPoint[] = [];
+
+  switch (config.method) {
+    case 'zscore': {
+      const values = numeric.map((p) => p.value);
+      const mean = values.reduce((s, v) => s + v, 0) / values.length;
+      const variance =
+        values.reduce((s, v) => s + (v - mean) ** 2, 0) / values.length;
+      const std = Math.sqrt(variance);
+      if (std === 0) return [];
+      const z = config.zThreshold ?? 3.0;
+      for (const p of numeric) {
+        const zscore = Math.abs((p.value - mean) / std);
+        if (zscore > z) {
+          anomalies.push({
+            timestamp: p.timestamp,
+            value: p.value,
+            method: 'zscore',
+            score: zscore,
+            expected: mean,
+          });
+        }
+      }
+      break;
+    }
+    case 'iqr': {
+      const sorted = [...numeric.map((p) => p.value)].sort((a, b) => a - b);
+      const q1 = sorted[Math.floor(sorted.length * 0.25)]!;
+      const q3 = sorted[Math.floor(sorted.length * 0.75)]!;
+      const iqr = q3 - q1;
+      const k = config.iqrMultiplier ?? 1.5;
+      const lower = q1 - k * iqr;
+      const upper = q3 + k * iqr;
+      for (const p of numeric) {
+        if (p.value < lower || p.value > upper) {
+          const dist = p.value < lower ? lower - p.value : p.value - upper;
+          anomalies.push({
+            timestamp: p.timestamp,
+            value: p.value,
+            method: 'iqr',
+            score: dist,
+            expected: p.value < lower ? q1 : q3,
+          });
+        }
+      }
+      break;
+    }
+    case 'moving_average': {
+      const window = config.windowSize ?? 10;
+      const sigma = config.sigmaThreshold ?? 3.0;
+      for (let i = 0; i < numeric.length; i++) {
+        const start = Math.max(0, i - window);
+        const windowPts = numeric.slice(start, i);
+        if (windowPts.length < 3) continue;
+        const values = windowPts.map((p) => p.value);
+        const ma = values.reduce((s, v) => s + v, 0) / values.length;
+        const variance =
+          values.reduce((s, v) => s + (v - ma) ** 2, 0) / values.length;
+        const std = Math.sqrt(variance);
+        if (std === 0) continue;
+        const dev = Math.abs((numeric[i]!.value - ma) / std);
+        if (dev > sigma) {
+          anomalies.push({
+            timestamp: numeric[i]!.timestamp,
+            value: numeric[i]!.value,
+            method: 'moving_average',
+            score: dev,
+            expected: ma,
+          });
+        }
+      }
+      break;
+    }
+  }
+
+  return anomalies;
+}
+
+// ─── Interval detection ───────────────────────────────────────────────────
+
+/** Result of interval detection on a time series. */
+export interface IntervalDetectionResult {
+  /** Detected median interval between points, in seconds. */
+  medianIntervalSeconds: number;
+  /** Mean interval between points, in seconds. */
+  meanIntervalSeconds: number;
+  /** Minimum interval between consecutive points, in seconds. */
+  minIntervalSeconds: number;
+  /** Maximum interval between consecutive points, in seconds. */
+  maxIntervalSeconds: number;
+  /** Standard deviation of intervals, in seconds. */
+  stdIntervalSeconds: number;
+  /** Human-readable bucket label (e.g. "1s", "5m", "1h", "1d"). */
+  detectedBucket: string;
+  /** Whether the intervals are regular (std/mean < 0.1). */
+  isRegular: boolean;
+  /** Gaps: intervals that are more than 3x the median. */
+  gaps: Array<{ start: string; end: string; durationSeconds: number }>;
+}
+
+/**
+ * Detect the sampling interval of a time series.
+ *
+ * Computes the intervals between consecutive points and returns statistics
+ * plus a human-readable bucket label. Also identifies gaps where the interval
+ * is more than 3x the median.
+ */
+export function detectInterval(points: TimeSeriesPoint[]): IntervalDetectionResult | null {
+  if (points.length < 2) return null;
+
+  const sorted = [...points].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+  const intervals: number[] = [];
+  for (let i = 1; i < sorted.length; i++) {
+    const dt =
+      (new Date(sorted[i]!.timestamp).getTime() -
+        new Date(sorted[i - 1]!.timestamp).getTime()) /
+      1000;
+    if (dt > 0) intervals.push(dt);
+  }
+
+  if (intervals.length === 0) return null;
+
+  const sortedIntervals = [...intervals].sort((a, b) => a - b);
+  const mean = intervals.reduce((s, v) => s + v, 0) / intervals.length;
+  const median =
+    sortedIntervals.length % 2 === 0
+      ? (sortedIntervals[sortedIntervals.length / 2 - 1]! +
+          sortedIntervals[sortedIntervals.length / 2]!) /
+        2
+      : sortedIntervals[Math.floor(sortedIntervals.length / 2)]!;
+  const min = sortedIntervals[0]!;
+  const max = sortedIntervals[sortedIntervals.length - 1]!;
+  const variance =
+    intervals.reduce((s, v) => s + (v - mean) ** 2, 0) / intervals.length;
+  const std = Math.sqrt(variance);
+
+  // Detect gaps
+  const gaps: Array<{ start: string; end: string; durationSeconds: number }> = [];
+  for (let i = 1; i < sorted.length; i++) {
+    const dt =
+      (new Date(sorted[i]!.timestamp).getTime() -
+        new Date(sorted[i - 1]!.timestamp).getTime()) /
+      1000;
+    if (dt > median * 3) {
+      gaps.push({
+        start: sorted[i - 1]!.timestamp,
+        end: sorted[i]!.timestamp,
+        durationSeconds: dt,
+      });
+    }
+  }
+
+  return {
+    medianIntervalSeconds: median,
+    meanIntervalSeconds: mean,
+    minIntervalSeconds: min,
+    maxIntervalSeconds: max,
+    stdIntervalSeconds: std,
+    detectedBucket: bucketLabel(median),
+    isRegular: std / mean < 0.1,
+    gaps,
+  };
+}
+
+function bucketLabel(seconds: number): string {
+  if (seconds < 60) return `${Math.round(seconds)}s`;
+  if (seconds < 3600) return `${Math.round(seconds / 60)}m`;
+  if (seconds < 86400) return `${Math.round(seconds / 3600)}h`;
+  if (seconds < 604800) return `${Math.round(seconds / 86400)}d`;
+  return `${Math.round(seconds / 604800)}w`;
+}

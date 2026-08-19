@@ -26,9 +26,10 @@
  *   showAnomalies?: boolean
  */
 
-import { useMemo, useState, useCallback, useRef } from 'react';
+import { useMemo, useState, useCallback, useRef, useEffect } from 'react';
 import type { WidgetProps } from '../types.js';
 import { timeScale, linearScale, extent, niceTicks, formatTick, formatDateTick, linePath, areaPath, colorFor } from '../chart-primitives.js';
+import { fetchTimeSeries } from '../timeseries-client.js';
 
 interface TSPoint { timestamp: string | number; value: number; }
 interface TSSeries {
@@ -42,14 +43,28 @@ interface Threshold {
   label?: string;
   severity?: 'warning' | 'alert';
 }
+interface TSDataSource {
+  objectType: string;
+  objectId: string;
+  property: string;
+  label?: string;
+  start?: string;
+  end?: string;
+  limit?: number;
+  bucketInterval?: string;
+  bucketFunction?: 'avg' | 'sum' | 'min' | 'max' | 'count' | 'first' | 'last';
+}
 interface TSAnalysisConfig {
   series?: TSSeries[];
+  dataSources?: TSDataSource[];
   thresholds?: Threshold[];
   aggregation?: 'raw' | 'hourly' | 'daily';
   width?: number;
   height?: number;
   showBrush?: boolean;
   showAnomalies?: boolean;
+  autoRefresh?: boolean;
+  refreshIntervalMs?: number;
 }
 
 const MARGIN = { top: 20, right: 60, bottom: 60, left: 60 };
@@ -58,7 +73,64 @@ const BRUSH_HEIGHT = 40;
 export function TimeSeriesAnalysisWidget({ instance, ctx }: WidgetProps): React.ReactNode {
   const config = (instance.config ?? {}) as unknown as TSAnalysisConfig;
 
+  const [fetchedSeries, setFetchedSeries] = useState<TSSeries[] | null>(null);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+
+  // Fetch series from backend when dataSources are configured
+  useEffect(() => {
+    if (!config.dataSources || config.dataSources.length === 0) {
+      setFetchedSeries(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    const load = async () => {
+      try {
+        setFetchError(null);
+        const results: TSSeries[] = [];
+        for (let i = 0; i < config.dataSources!.length; i++) {
+          const ds = config.dataSources![i]!;
+          const r = await fetchTimeSeries(ds.objectType, ds.objectId, ds.property, {
+            start: ds.start,
+            end: ds.end,
+            limit: ds.limit,
+            bucketInterval: ds.bucketInterval,
+            bucketFunction: ds.bucketFunction,
+          });
+          const points: TSPoint[] = (r.buckets ?? r.points ?? []).map((p) => ({
+            timestamp: p.timestamp,
+            value: typeof p.value === 'number' ? p.value : Number(p.value),
+          }));
+          results.push({
+            id: `ds-${i}`,
+            label: ds.label ?? `${ds.objectType}.${ds.property}`,
+            data: points,
+          });
+        }
+        if (!cancelled) setFetchedSeries(results);
+      } catch (err) {
+        if (!cancelled) setFetchError(err instanceof Error ? err.message : 'Fetch failed');
+      }
+    };
+
+    load();
+
+    // Auto-refresh
+    let interval: ReturnType<typeof setInterval> | undefined;
+    if (config.autoRefresh && config.refreshIntervalMs) {
+      interval = setInterval(load, config.refreshIntervalMs);
+    }
+
+    return () => {
+      cancelled = true;
+      if (interval) clearInterval(interval);
+    };
+  }, [config.dataSources, config.autoRefresh, config.refreshIntervalMs]);
+
   const series: TSSeries[] = useMemo(() => {
+    // Priority: fetched from backend > bound variable > inline config
+    if (fetchedSeries) return fetchedSeries;
     if (instance.boundVariable) {
       const varData = ctx.variables[instance.boundVariable];
       if (Array.isArray(varData)) {
@@ -69,7 +141,7 @@ export function TimeSeriesAnalysisWidget({ instance, ctx }: WidgetProps): React.
       }
     }
     return config.series ?? [];
-  }, [config.series, ctx.variables, instance.boundVariable]);
+  }, [fetchedSeries, config.series, ctx.variables, instance.boundVariable]);
 
   const thresholds = config.thresholds ?? [];
   const width = config.width ?? 700;
@@ -205,6 +277,14 @@ export function TimeSeriesAnalysisWidget({ instance, ctx }: WidgetProps): React.
     a.click();
     URL.revokeObjectURL(url);
   }, [visibleSeriesData]);
+
+  if (fetchError) {
+    return <div className="ed-widget ed-widget--error" data-widget-id={instance.id}>Failed to load: {fetchError}</div>;
+  }
+
+  if (config.dataSources && fetchedSeries === null) {
+    return <div className="ed-widget ed-widget--empty" data-widget-id={instance.id}>Loading time series data...</div>;
+  }
 
   if (series.length === 0 || series.every((s) => s.data.length === 0)) {
     return <div className="ed-widget ed-widget--empty" data-widget-id={instance.id}>No time series data</div>;

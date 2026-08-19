@@ -17,7 +17,7 @@
 
 import type { ParsedSchema, ObjectType, ActionType, FunctionType, FieldDefinition, LinkType, LinkDirective } from '@altius/odl';
 import { DataPurpose, MAX_LINK_QUERY_LIMIT } from '@altius/spi';
-import type { OntologyObject, OntologyLink, FilterExpression, AggregateQuery, AggregateField, AggregateFunction, BucketInterval, SearchQuery, ErrorCategory, RequestContext } from '@altius/spi';
+import type { OntologyObject, OntologyLink, FilterExpression, AggregateQuery, AggregateField, AggregateFunction, BucketInterval, SearchQuery, ErrorCategory, RequestContext, TimeSeriesQuery, TimeSeriesBucket } from '@altius/spi';
 import type { FunctionRevision } from '@altius/engine';
 import { ToolRegistry } from '@altius/actions';
 import type { ActionActor, ActionContext, ActionManifest } from '@altius/actions';
@@ -26,6 +26,17 @@ import { PubSub } from 'graphql-subscriptions';
 import { writeReadAudit } from '../rest/audit-read.js';
 import { isTypeVisible } from '../markings/enforce.js';
 import type { ApiDependencies, ResolverContext, PaginationArgs } from './types.js';
+
+/** Input shape for the GraphQL timeSeries query. */
+interface TimeSeriesQueryInput {
+  start?: string;
+  end?: string;
+  limit?: number;
+  order?: string;
+  bucketInterval?: string;
+  bucketFunction?: string;
+  tags?: unknown;
+}
 import { DEFAULT_CONSENT_PURPOSE, DEFAULT_CONSENT_SUBJECT_TYPES, DEFAULT_PAGE_SIZE, isConsentSubjectType } from './types.js';
 import { resolvePagination, buildConnection, decodeCursor } from './pagination.js';
 import { paginateWithConsent } from '../consent-pagination.js';
@@ -711,9 +722,39 @@ export function generateResolvers(
       args: { blobId: string },
       ctx: ResolverContext,
     ) => {
-      const meta = await deps.blobStore!.getMetadata(ctx.tenantId, args.blobId);
+      const meta = await deps.blobStore!.getMetadata(ctx.user.tenantId, args.blobId);
       if (!meta) return null;
       return meta;
+    };
+  }
+
+  // Time-series resolver — returns points or bucketed aggregates.
+  if (deps.timeSeriesStore) {
+    resolvers['Query']!['timeSeries'] = async (
+      _parent: unknown,
+      args: { objectType: string; objectId: string; property: string; query?: TimeSeriesQueryInput },
+      ctx: ResolverContext,
+    ) => {
+      const q: TimeSeriesQuery = {
+        start: args.query?.start,
+        end: args.query?.end,
+        limit: args.query?.limit,
+        order: (args.query?.order as 'asc' | 'desc' | undefined) ?? 'asc',
+        tags: args.query?.tags as Record<string, string> | undefined,
+      };
+      if (args.query?.bucketInterval && args.query?.bucketFunction) {
+        q.bucket = {
+          interval: args.query.bucketInterval,
+          function: args.query.bucketFunction as TimeSeriesBucket['function'],
+        };
+      }
+      return deps.timeSeriesStore!.getSeries(
+        { tenantId: ctx.user.tenantId, branch: ctx.requestContext.branch },
+        args.objectType,
+        args.objectId,
+        args.property,
+        q,
+      );
     };
   }
 

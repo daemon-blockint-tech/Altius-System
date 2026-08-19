@@ -1210,6 +1210,44 @@ export function generateGraphQLSchema(schema: ParsedSchema, options?: GraphQLSch
     '  uploadedBy: String',
     '}',
   ].join('\n'));
+
+  // Time-series types — always present so timeSeries queries resolve
+  // even when no ObjectType uses @timeSeries (the resolver errors cleanly).
+  sections.push([
+    'type TimeSeriesPoint {',
+    '  timestamp: DateTime!',
+    '  value: JSON!',
+    '  tags: JSON',
+    '}',
+  ].join('\n'));
+  sections.push([
+    'type TimeSeriesBucketPoint {',
+    '  timestamp: DateTime!',
+    '  value: Float!',
+    '  count: Int!',
+    '}',
+  ].join('\n'));
+  sections.push([
+    'type TimeSeriesResult {',
+    '  objectType: String!',
+    '  objectId: ID!',
+    '  property: String!',
+    '  points: [TimeSeriesPoint!]',
+    '  buckets: [TimeSeriesBucketPoint!]',
+    '  totalCount: Int!',
+    '}',
+  ].join('\n'));
+  sections.push([
+    'input TimeSeriesQueryInput {',
+    '  start: DateTime',
+    '  end: DateTime',
+    '  limit: Int',
+    '  order: String',
+    '  bucketInterval: String',
+    '  bucketFunction: String',
+    '  tags: JSON',
+    '}',
+  ].join('\n'));
   for (const obj of schema.objectTypes) {
     const lower = lowerFirst(obj.name);
     queryFields.push(`  ${lower}(id: ID!): ${obj.name}`);
@@ -1254,6 +1292,9 @@ export function generateGraphQLSchema(schema: ParsedSchema, options?: GraphQLSch
   // Attachment metadata query — returns AttachmentRef without the blob bytes.
   // The blob content is fetched via REST GET /api/v1/attachments/:blobId.
   queryFields.push('  attachment(blobId: ID!): AttachmentRef');
+  // Time-series query — returns points or bucketed aggregates for a
+  // @timeSeries property on an object. Mirrors REST GET /api/v1/{plural}/:id/series/:property.
+  queryFields.push('  timeSeries(objectType: String!, objectId: ID!, property: String!, query: TimeSeriesQueryInput): TimeSeriesResult');
   // Per-object action applicability: which actions target this object?
   // Returns action names that have a @param of this objectType and whose
   // preconditions the caller could satisfy — without executing anything.
