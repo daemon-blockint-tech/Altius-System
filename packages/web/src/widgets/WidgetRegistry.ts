@@ -24,6 +24,11 @@ import { CheckboxWidget } from './components/CheckboxWidget.js';
 import { TabsWidget } from './components/TabsWidget.js';
 import { StepperWidget } from './components/StepperWidget.js';
 import { HeaderWidget } from './components/HeaderWidget.js';
+import { ChartXYWidget } from './components/ChartXYWidget.js';
+import { ChartPieWidget } from './components/ChartPieWidget.js';
+import { PivotTableWidget } from './components/PivotTableWidget.js';
+import { GraphWidget } from './components/GraphWidget.js';
+import { TimeSeriesWidget } from './components/TimeSeriesWidget.js';
 import { PlaceholderWidget } from './components/PlaceholderWidget.js';
 
 // ── Registry ──────────────────────────────────────────────────
@@ -69,10 +74,17 @@ registerWidget('tabs', TabsWidget);
 registerWidget('stepper', StepperWidget);
 registerWidget('header', HeaderWidget);
 
-// Stubs for the remaining 44 widget types (Phase 2+ will implement them):
+// Phase 2: Chart & graph widgets (5 real implementations):
+registerWidget('chart_xy', ChartXYWidget);
+registerWidget('chart_pie', ChartPieWidget);
+registerWidget('pivot_table', PivotTableWidget);
+registerWidget('map', GraphWidget);       // graph visualization reuses GraphWidget for now
+registerWidget('time_series', TimeSeriesWidget);
+
+// Stubs for the remaining 39 widget types (Phase 3+ will implement them):
 const STUB_TYPES = [
   // chart
-  'chart_xy', 'chart_pie', 'chart_bar', 'chart_vega', 'pivot_table',
+  'chart_bar', 'chart_vega',
   'waterfall', 'observability_chart', 'heatmap', 'scatter_plot',
   // filter
   'object_selector', 'date_range', 'user_select',
@@ -92,9 +104,9 @@ const STUB_TYPES = [
   // navigation
   'mobile_navbar', 'breadcrumb',
   // time
-  'time_series', 'gantt', 'timeline', 'calendar',
+  'gantt', 'timeline', 'calendar',
   // geo
-  'map', 'current_location',
+  'current_location',
 ];
 
 for (const type of STUB_TYPES) {

@@ -40,8 +40,8 @@ describe('WidgetRegistry', () => {
   });
 
   it('marks unimplemented widgets as not implemented', () => {
-    expect(isWidgetImplemented('chart_xy')).toBe(false);
-    expect(isWidgetImplemented('map')).toBe(false);
+    expect(isWidgetImplemented('chart_bar')).toBe(false);
+    expect(isWidgetImplemented('heatmap')).toBe(false);
     expect(isWidgetImplemented('aip_chat')).toBe(false);
   });
 
@@ -57,12 +57,12 @@ describe('WidgetRenderer', () => {
   it('renders a placeholder for unimplemented widgets', () => {
     const instance: WorkshopWidgetInstance = {
       id: 'w1',
-      widgetType: 'chart_xy',
+      widgetType: 'heatmap',
       config: {},
       visible: true,
     };
     render(<WidgetRenderer instance={instance} ctx={makeCtx()} />);
-    expect(screen.getByText('chart_xy')).toBeTruthy();
+    expect(screen.getByText('heatmap')).toBeTruthy();
     expect(screen.getByText('Not yet implemented')).toBeTruthy();
   });
 

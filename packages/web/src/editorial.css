@@ -1514,3 +1514,124 @@ a:hover { color: var(--ed-muted); }
   font-size: 0.9rem;
 }
 
+/* ─── Chart widgets (Phase 2) ─────────────────────────────────── */
+
+.ed-chart-xy,
+.ed-chart-pie,
+.ed-time-series,
+.ed-graph {
+  padding: 16px;
+}
+
+.ed-chart-xy__svg,
+.ed-chart-pie__svg,
+.ed-time-series__svg,
+.ed-graph__svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.ed-chart__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 8px 0 0;
+  font-size: 0.8rem;
+}
+
+.ed-chart__legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ed-muted, #666);
+}
+
+.ed-chart__legend-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+/* ── Pivot table ── */
+
+.ed-pivot-table {
+  overflow-x: auto;
+}
+
+.ed-pivot-table__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.ed-pivot-table__corner {
+  text-align: left;
+  padding: 8px 12px;
+  background: var(--ed-bg, #f8f9fa);
+  font-weight: 600;
+  border-bottom: 2px solid var(--ed-rule, #e0e0e0);
+}
+
+.ed-pivot-table__col-header {
+  padding: 8px 12px;
+  background: var(--ed-bg, #f8f9fa);
+  font-weight: 600;
+  text-align: right;
+  border-bottom: 2px solid var(--ed-rule, #e0e0e0);
+}
+
+.ed-pivot-table__row-header {
+  padding: 6px 12px;
+  text-align: left;
+  font-weight: 500;
+  border-bottom: 1px solid var(--ed-rule, #e0e0e0);
+  white-space: nowrap;
+}
+
+.ed-pivot-table__cell {
+  padding: 6px 12px;
+  text-align: right;
+  border-bottom: 1px solid var(--ed-rule, #e0e0e0);
+  font-variant-numeric: tabular-nums;
+}
+
+.ed-pivot-table__cell--total {
+  font-weight: 600;
+  border-top: 2px solid var(--ed-rule, #e0e0e0);
+}
+
+/* ── Graph widget ── */
+
+.ed-graph__svg {
+  cursor: default;
+}
+
+.ed-graph__node {
+  transition: opacity 0.2s;
+}
+
+.ed-graph__node:hover {
+  opacity: 0.8;
+}
+
+.ed-graph__link-label {
+  pointer-events: none;
+  user-select: none;
+}
+
+.ed-graph__detail {
+  padding: 8px 0 0;
+  font-size: 0.85rem;
+  color: var(--ed-muted, #666);
+}
+
+.ed-time-series__point {
+  cursor: pointer;
+}
+
+.ed-time-series__point:hover {
+  r: 5;
+}
+
