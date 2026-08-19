@@ -30,6 +30,8 @@ import { PivotTableWidget } from './components/PivotTableWidget.js';
 import { MapWidget } from './components/MapWidget.js';
 import { GraphWidget } from './components/GraphWidget.js';
 import { ScenarioWidget } from './components/ScenarioWidget.js';
+import { CommentsWidget } from './components/CommentsWidget.js';
+import { ActionLogTimelineWidget } from './components/ActionLogTimelineWidget.js';
 import { TimeSeriesWidget } from './components/TimeSeriesWidget.js';
 import { MobileNavbarWidget } from './components/MobileNavbarWidget.js';
 import { CurrentLocationWidget } from './components/CurrentLocationWidget.js';
@@ -113,6 +115,10 @@ registerWidget('audio_player', AudioPlayerWidget);
 // Phase 17: Scenario widget (1 real implementation):
 registerWidget('scenario_panel', ScenarioWidget);
 
+// Phase 18: Comments and action log widgets (2 real implementations):
+registerWidget('comments', CommentsWidget);
+registerWidget('action_log', ActionLogTimelineWidget);
+
 // Stubs for the remaining 28 widget types:
 const STUB_TYPES = [
   // chart
@@ -125,8 +131,6 @@ const STUB_TYPES = [
   // layout
   'spacer', 'divider', 'progress_bar', 'badge', 'tooltip', 'accordion',
   'property_list', 'object_set_title', 'links', 'tree_view', 'kanban',
-  // collaboration
-  'comments', 'action_log',
   // ai
   'aip_chat', 'aip_generated_content',
   // navigation
