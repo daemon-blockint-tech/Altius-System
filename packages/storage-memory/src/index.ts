@@ -69,3 +69,8 @@ export { InMemoryOntologyManagerService } from './in-memory-ontology-manager.js'
 export type { SchemaReader, UsageStatsReader } from './in-memory-ontology-manager.js';
 export { InMemoryWorkshopUxService } from './in-memory-workshop-ux.js';
 export { InMemoryWorkshopPlatformService } from './in-memory-workshop-platform.js';
+
+// Fase 22
+export { InMemoryCommandExchangeService } from './in-memory-command-exchange.js';
+export { InMemoryObjectSetFilterStore } from './in-memory-object-set-filter.js';
+export { InMemoryGraphService } from './in-memory-graph-service.js';

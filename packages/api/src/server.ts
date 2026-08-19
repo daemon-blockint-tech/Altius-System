@@ -75,6 +75,9 @@ import {
   InMemoryValueFormattingService,
   InMemoryDesignSystemService,
   InMemoryOntologyChangeHistoryService,
+  InMemoryCommandExchangeService,
+  InMemoryObjectSetFilterStore,
+  InMemoryGraphService,
 } from '@altius/storage-memory';
 import { PostgresStorageProvider, PostgresLineageStore, PostgresAuditStore, PostgresConsentStore, PostgresSchemaRegistry, PostgresObjectSetStore,
   PostgresLLMUsageTracker, PostgresLLMRateLimiter,
@@ -118,6 +121,8 @@ import { invokeFunction } from './functions/invoke-function.js';
 import { generateAuditRoutes } from './rest/audit-routes.js';
 import { generateLlmRoutes, generateWorkflowRoutes } from './rest/index.js';
 import { generateTraverseRoutes } from './rest/traverse-route.js';
+import { recordRestUsage } from './rest/usage-recording.js';
+import { generateSyncStatusRoutes } from './rest/sync-status-routes.js';
 import { registerAttachmentRoutes } from './rest/attachment-routes.js';
 import { registerTimeSeriesRoutes } from './rest/timeseries-routes.js';
 import { registerBranchRoutes } from './rest/branch-routes.js';
@@ -164,7 +169,7 @@ import { recordSchemaVersion, BreakingSchemaChangeError } from './schema-registr
 import { SlidingWindowRateLimiter, RedisRateLimiter } from './governance/index.js';
 import type { RateLimiter, RateLimitIdentity } from './governance/index.js';
 import { toSnakeCase } from './utils.js';
-import { metricsMiddleware, metricsEndpoint, startStorageHealthGauge, startSyncMetricsGauge, packLoaded, podDirectOnly } from './metrics.js';
+import { metricsMiddleware, metricsEndpoint, startStorageHealthGauge, startSyncMetricsGauge, syncSchedulerEnabled, packLoaded, podDirectOnly } from './metrics.js';
 import { buildHealthReport } from './health.js';
 import type { HealthProbe } from './health.js';
 import { logger } from './logger.js';
@@ -1129,6 +1134,11 @@ async function main(): Promise<void> {
       tenantId: process.env.SYNC_TENANT || process.env.SEED_TENANT || 'system',
     });
   }
+  // Always exported, 0 or 1. The per-datasource sync gauges only exist once a
+  // scheduler has registered a datasource, so without this a deployment with
+  // ingestion off emits no sync series at all and every sync alert stays silent
+  // rather than firing.
+  syncSchedulerEnabled.set(syncBoot.scheduler ? 1 : 0);
   const stopSyncMetricsGauge = syncBoot.scheduler ? startSyncMetricsGauge(syncBoot.scheduler) : (() => {});
 
   // ── API Dependencies ──
@@ -1286,6 +1296,10 @@ async function main(): Promise<void> {
     valueFormattingService: new InMemoryValueFormattingService(),
     designSystemService: new InMemoryDesignSystemService(),
     ontologyChangeHistoryService: new InMemoryOntologyChangeHistoryService(),
+    // Fase 22 services.
+    commandExchangeService: new InMemoryCommandExchangeService(),
+    objectSetFilterStore: new InMemoryObjectSetFilterStore(),
+    graphService: new InMemoryGraphService(),
   };
 
   // ── Express + HTTP Server ──
@@ -1588,6 +1602,13 @@ async function main(): Promise<void> {
     ...generateConsentRoutes(deps),
     ...generateLlmRoutes(deps),
     ...generateWorkflowRoutes(deps),
+    // Sync scheduler status. Registered unconditionally so the endpoint can
+    // report "not running" — the state an operator most needs to see, and the
+    // one an absent route cannot express.
+    ...generateSyncStatusRoutes({
+      enabled: syncBoot.scheduler !== null,
+      datasources: () => syncBoot.scheduler?.stats() ?? [],
+    }, deps.auditReaderRoles),
   ];
   for (const route of restRoutes) {
     const method = route.method.toLowerCase() as 'get' | 'post' | 'put' | 'delete';
@@ -1646,8 +1667,13 @@ async function main(): Promise<void> {
           return;
         }
 
+        const startedAt = Date.now();
         const result = await route.handler(restReq, ctx);
         await auditRead(deps.auditWriter, route, restReq, ctx, result.status);
+        // Usage metrics for the observability surface. Recorded here for the
+        // same reason read auditing is: this is where every REST route
+        // converges, so a route added later is instrumented the day it lands.
+        await recordRestUsage(deps, route, restReq, result.status, Date.now() - startedAt, logger);
         // Apply optional response headers (e.g. Content-Type for export endpoints)
         if (result.headers) {
           for (const [key, value] of Object.entries(result.headers)) res.setHeader(key, value);

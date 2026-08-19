@@ -19,6 +19,7 @@ import { generateAuditRoutes } from '../rest/audit-routes.js';
 import { generateTraverseRoutes } from '../rest/traverse-route.js';
 import { generateRelationshipRoutes } from '../relationships/router.js';
 import { generateConsentRoutes } from '../consent/router.js';
+import { generateSyncStatusRoutes } from '../rest/sync-status-routes.js';
 import { generateOpenApiSpec } from '../rest/openapi.js';
 import type { ApiDependencies } from '../graphql/types.js';
 
@@ -136,6 +137,35 @@ function mockDeps(schema: ReturnType<typeof parseOdl>): ApiDependencies {
       deleteMonitoringRule: vi.fn().mockResolvedValue(undefined),
       evaluateMonitoringRules: vi.fn().mockResolvedValue([]),
     } as never,
+    // Fase 22 — required for the routes to be generated and match the spec.
+    workshopPlatformService: {
+      getMobileConfig: vi.fn().mockResolvedValue(null),
+      launchMobileSession: vi.fn().mockResolvedValue({}),
+    } as never,
+    commandExchangeService: {
+      listDeclaredCommands: vi.fn().mockResolvedValue([]),
+      declareCommand: vi.fn().mockResolvedValue({}),
+      executeCommand: vi.fn().mockResolvedValue({}),
+      recordDragDrop: vi.fn().mockResolvedValue({}),
+      listDragDrops: vi.fn().mockResolvedValue([]),
+      recordPair: vi.fn().mockResolvedValue({}),
+      listPairs: vi.fn().mockResolvedValue([]),
+    } as never,
+    objectSetFilterStore: {
+      getFilterState: vi.fn().mockResolvedValue(null),
+      saveFilterState: vi.fn().mockResolvedValue({}),
+      listFilterStates: vi.fn().mockResolvedValue([]),
+      deleteFilterState: vi.fn().mockResolvedValue(undefined),
+      extractVariables: vi.fn().mockResolvedValue({}),
+      applyFilter: vi.fn().mockResolvedValue({ filter: { and: [] }, variables: {} }),
+      combine: vi.fn().mockResolvedValue({}),
+    } as never,
+    graphService: {
+      buildGraph: vi.fn().mockResolvedValue({ nodes: [], edges: [], layout: { algorithm: 'force' } }),
+      saveView: vi.fn().mockResolvedValue({}),
+      getView: vi.fn().mockResolvedValue(null),
+      listViews: vi.fn().mockResolvedValue([]),
+    } as never,
   } as ApiDependencies;
 }
 
@@ -157,6 +187,10 @@ describe('OpenAPI spec covers the REST routes', () => {
     ...generateTraverseRoutes(deps),
     ...generateRelationshipRoutes(deps, new Map()),
     ...generateConsentRoutes(deps),
+    // Sync scheduler status is mounted from server.ts, where the scheduler
+    // binding lives; the provider is stubbed here because the route exists
+    // whether or not a scheduler is running.
+    ...generateSyncStatusRoutes({ enabled: false, datasources: () => [] }),
     // The function pipeline webhook is mounted directly in server.ts (not via
     // a route generator) but is documented in the OpenAPI spec, so include it
     // here to avoid a false "phantom route" finding.

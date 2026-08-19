@@ -29,6 +29,7 @@ import { invokeFunction } from '../functions/invoke-function.js';
 import { generateLlmRoutes } from './llm-routes.js';
 import { generateDataFreshnessRoutes } from './data-freshness-routes.js';
 import { generateFase21ObjectRoutes, generateFase21PlatformRoutes } from './fase21-routes.js';
+import { generateFase22ObjectRoutes, generateFase22PlatformRoutes } from './fase22-routes.js';
 import { generateSecurityGovernanceRoutes } from './security-governance-routes.js';
 import { generateOntologySqlRoutes } from './ontology-sql-routes.js';
 import { generateDatasetRoutes } from './dataset-routes.js';
@@ -470,6 +471,10 @@ export function generateRestRoutes(
   // Fase 21 object-level and platform routes
   routes.push(...generateFase21ObjectRoutes(schema, deps));
   routes.push(...generateFase21PlatformRoutes(deps));
+
+  // Fase 22 — mobile, cross-app commands, graph, filter state
+  routes.push(...generateFase22ObjectRoutes(schema, deps));
+  routes.push(...generateFase22PlatformRoutes(deps));
 
   // Security governance routes (access explanation, justifications, scoped sessions)
   routes.push(...generateSecurityGovernanceRoutes(deps));

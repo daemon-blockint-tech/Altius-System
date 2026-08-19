@@ -10,7 +10,7 @@ import type {
   MarkingPolicy,
 } from '@altius/security';
 import type { ParsedSchema } from '@altius/odl';
-import type { RequestContext, StorageProvider, LLMClient, BlobStore, TimeSeriesStore, BranchStore, CommentStore, NotificationStore, EmbeddingStore, AlertingService, LLMGateway, DataFreshnessService, JustificationStore, AccessExplanationService, ScopedSessionStore, OntologySqlService, DatasetService, DatasetMetadataService, OntologyUsageMetricsService, GeospatialMapService, ScenarioService, ModelInferenceService, ModelChainService, WorkshopPlatformService, EmbeddingService, PlatformResourceService, SavedViewStore, UserDirectoryService, KioskService, LayoutDeviceCaptureService, OntologyManagerService, WorkshopUxService, ValueFormattingService, DesignSystemService, OntologyChangeHistoryService } from '@altius/spi';
+import type { RequestContext, StorageProvider, LLMClient, BlobStore, TimeSeriesStore, BranchStore, CommentStore, NotificationStore, EmbeddingStore, AlertingService, LLMGateway, DataFreshnessService, JustificationStore, AccessExplanationService, ScopedSessionStore, OntologySqlService, DatasetService, DatasetMetadataService, OntologyUsageMetricsService, GeospatialMapService, ScenarioService, ModelInferenceService, ModelChainService, WorkshopPlatformService, EmbeddingService, PlatformResourceService, SavedViewStore, UserDirectoryService, KioskService, LayoutDeviceCaptureService, OntologyManagerService, WorkshopUxService, ValueFormattingService, DesignSystemService, OntologyChangeHistoryService, CommandExchangeService, ObjectSetFilterStore, GraphService } from '@altius/spi';
 import { DataPurpose } from '@altius/spi';
 
 /**
@@ -484,6 +484,13 @@ export interface ApiDependencies {
 
   /** Ontology change history service — read and restore schema versions. */
   ontologyChangeHistoryService?: OntologyChangeHistoryService;
+
+  /** Fase 22 — Cross-application command exchange. */
+  commandExchangeService?: CommandExchangeService;
+  /** Fase 22 — Object-set filter state store. */
+  objectSetFilterStore?: ObjectSetFilterStore;
+  /** Fase 22 — Interactive graph visualization service. */
+  graphService?: GraphService;
 }
 
 /**

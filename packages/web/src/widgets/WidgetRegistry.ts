@@ -73,6 +73,15 @@ import {
   OntologyMetadataCatalogWidget,
   KioskModeWidget,
 } from './components/Fase21Widgets.js';
+import {
+  MobileAppLauncherWidget,
+  ViewportSwitcherWidget,
+  QRDeepLinkLaunchWidget,
+  GeolocationPromptWidget,
+  GraphVisualizationWidget,
+  ObjectSetFilterStateWidget,
+  CommandLauncherWidget,
+} from './components/Fase22Widgets.js';
 // PlaceholderWidget is no longer imported — all widget types now have real implementations.
 // ── Registry ──────────────────────────────────────────────────
 
@@ -196,3 +205,12 @@ registerWidget('camera_capture', CameraCaptureWidget);
 registerWidget('visual_ontology_manager', VisualOntologyManagerWidget);
 registerWidget('ontology_metadata_catalog', OntologyMetadataCatalogWidget);
 registerWidget('kiosk_mode', KioskModeWidget);
+
+// Fase 22 widgets:
+registerWidget('mobile_app_launcher', MobileAppLauncherWidget);
+registerWidget('viewport_switcher', ViewportSwitcherWidget);
+registerWidget('qr_deep_link_launch', QRDeepLinkLaunchWidget);
+registerWidget('geolocation_prompt', GeolocationPromptWidget);
+registerWidget('graph_visualization', GraphVisualizationWidget);
+registerWidget('filter_state', ObjectSetFilterStateWidget);
+registerWidget('command_launcher', CommandLauncherWidget);

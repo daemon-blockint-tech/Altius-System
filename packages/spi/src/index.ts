@@ -683,3 +683,31 @@ export type {
 } from './agent-threads.js';
 export { parseSearchQuery } from './search-query-parser.js';
 export type { ParsedSearchQuery, SearchTerm } from './search-query-parser.js';
+
+// Fase 22 — Workshop UI hardening
+export type {
+  DeclaredCommand,
+  DeclareCommandInput,
+  CommandExecution,
+  DragDropEvent,
+  RecordDragDropInput,
+  PairSyncEvent,
+  RecordPairInput,
+  CommandExchangeService,
+} from './command-exchange.js';
+export type {
+  FilterChip,
+  FilterState,
+  SaveFilterStateInput,
+  FilterSetOp,
+  ObjectSetFilterStore,
+} from './object-set-filter.js';
+export type {
+  GraphNode,
+  GraphEdge,
+  GraphLayout,
+  GraphResult,
+  SavedGraphView,
+  BuildGraphInput,
+  GraphService,
+} from './graph-service.js';
