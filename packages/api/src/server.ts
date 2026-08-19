@@ -52,6 +52,10 @@ import {
   InMemoryLLMUsageTracker,
   InMemoryLLMRateLimiter,
   InMemoryGeospatialMapService,
+  InMemoryModelRegistryService,
+  InMemoryModelInferenceService,
+  InMemoryModelChainService,
+  InMemoryScenarioService,
   InMemoryDataFreshnessService,
   InMemoryJustificationStore,
   InMemoryScopedSessionStore,
@@ -109,6 +113,7 @@ import { registerNotificationRoutes } from './rest/notification-routes.js';
 import { registerEmbeddingRoutes } from './rest/embedding-routes.js';
 import { registerAlertingRoutes } from './rest/alerting-routes.js';
 import { registerGeospatialRoutes } from './rest/geospatial-routes.js';
+import { registerScenarioRoutes } from './rest/scenario-routes.js';
 import { registerLLMGatewayRoutes } from './rest/llm-gateway-routes.js';
 import { readPlatformVersion } from './version.js';
 import { createFhirRouter } from './fhir/index.js';
@@ -1193,6 +1198,19 @@ async function main(): Promise<void> {
     alertingService: new InMemoryAlertingService(),
     // Geospatial map service — in-memory only (no Postgres implementation yet).
     geospatialMapService: new InMemoryGeospatialMapService(),
+    // Model inference and chain services — in-memory only.
+    // Scenario service — in-memory, wired to the model services.
+    ...(() => {
+      const registry = new InMemoryModelRegistryService();
+      const inference = new InMemoryModelInferenceService(registry);
+      const chain = new InMemoryModelChainService(inference);
+      const scenarios = new InMemoryScenarioService({ inferenceService: inference, chainService: chain });
+      return {
+        modelInferenceService: inference,
+        modelChainService: chain,
+        scenarioService: scenarios,
+      };
+    })(),
     // Data freshness — in-memory only (no Postgres implementation yet).
     dataFreshnessService: new InMemoryDataFreshnessService(),
     // Security governance — real AccessExplanationService wired to the live
@@ -1630,6 +1648,7 @@ async function main(): Promise<void> {
   // ── Alerting routes ──
   registerAlertingRoutes(app, deps, authenticator, isDev);
   registerGeospatialRoutes(app, deps, authenticator, isDev);
+  registerScenarioRoutes(app, deps, authenticator, isDev);
 
   // ── LLM gateway routes ──
   registerLLMGatewayRoutes(app, deps, authenticator, isDev);

@@ -10,7 +10,7 @@ import type {
   MarkingPolicy,
 } from '@altius/security';
 import type { ParsedSchema } from '@altius/odl';
-import type { RequestContext, StorageProvider, LLMClient, BlobStore, TimeSeriesStore, BranchStore, CommentStore, NotificationStore, EmbeddingStore, AlertingService, LLMGateway, DataFreshnessService, JustificationStore, AccessExplanationService, ScopedSessionStore, OntologySqlService, DatasetService, OntologyUsageMetricsService, GeospatialMapService } from '@altius/spi';
+import type { RequestContext, StorageProvider, LLMClient, BlobStore, TimeSeriesStore, BranchStore, CommentStore, NotificationStore, EmbeddingStore, AlertingService, LLMGateway, DataFreshnessService, JustificationStore, AccessExplanationService, ScopedSessionStore, OntologySqlService, DatasetService, OntologyUsageMetricsService, GeospatialMapService, ScenarioService, ModelInferenceService, ModelChainService } from '@altius/spi';
 import { DataPurpose } from '@altius/spi';
 
 /**
@@ -252,6 +252,33 @@ export interface ApiDependencies {
    *   POST   /api/v1/geo/geometry/contains
    */
   geospatialMapService?: GeospatialMapService;
+  /**
+   * Model inference service — executes ML model inference. Required by
+   * the scenario service for running what-if scenarios against models.
+   */
+  modelInferenceService?: ModelInferenceService;
+  /**
+   * Model chain service — executes chained model orchestration. Required
+   * by the scenario service for running what-if scenarios against chains.
+   */
+  modelChainService?: ModelChainService;
+  /**
+   * Scenario simulation service — manages what-if scenarios, execution,
+   * comparison, and persistence. When present, REST endpoints for
+   * scenario management are registered:
+   *   POST   /api/v1/scenarios              (create scenario)
+   *   GET    /api/v1/scenarios              (list scenarios)
+   *   GET    /api/v1/scenarios/:id          (get scenario)
+   *   PATCH  /api/v1/scenarios/:id          (update scenario)
+   *   DELETE /api/v1/scenarios/:id          (delete scenario)
+   *   POST   /api/v1/scenarios/:id/run      (run scenario)
+   *   POST   /api/v1/scenarios/:id/duplicate (duplicate scenario)
+   *   GET    /api/v1/scenarios/:id/results  (get scenario results)
+   *   POST   /api/v1/scenarios/compare      (compare two scenarios)
+   *   POST   /api/v1/scenarios/:id/stage    (stage actions for apply)
+   *   POST   /api/v1/scenarios/:id/apply    (apply staged actions)
+   */
+  scenarioService?: ScenarioService;
   /**
    * Data freshness service — per-type and per-datasource last-synced
    * timestamps. When present, REST endpoints for freshness queries are

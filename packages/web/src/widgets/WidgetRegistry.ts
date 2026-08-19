@@ -29,6 +29,7 @@ import { ChartPieWidget } from './components/ChartPieWidget.js';
 import { PivotTableWidget } from './components/PivotTableWidget.js';
 import { MapWidget } from './components/MapWidget.js';
 import { GraphWidget } from './components/GraphWidget.js';
+import { ScenarioWidget } from './components/ScenarioWidget.js';
 import { TimeSeriesWidget } from './components/TimeSeriesWidget.js';
 import { MobileNavbarWidget } from './components/MobileNavbarWidget.js';
 import { CurrentLocationWidget } from './components/CurrentLocationWidget.js';
@@ -108,6 +109,9 @@ registerWidget('image_annotation', ImageAnnotationWidget);
 registerWidget('spreadsheet_display', SpreadsheetDisplayWidget);
 registerWidget('video_player', VideoPlayerWidget);
 registerWidget('audio_player', AudioPlayerWidget);
+
+// Phase 17: Scenario widget (1 real implementation):
+registerWidget('scenario_panel', ScenarioWidget);
 
 // Stubs for the remaining 28 widget types:
 const STUB_TYPES = [
