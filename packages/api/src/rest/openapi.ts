@@ -241,6 +241,71 @@ function objectPaths(obj: ObjectType): Record<string, unknown> {
     },
   };
 
+  // POST /api/v1/{plural}/histogram
+  paths[`/api/v1/${plural}/histogram`] = {
+    post: {
+      tags: [tag],
+      summary: `Histogram of ${obj.name} objects over a date or numeric field`,
+      operationId: `histogram${obj.name}s`,
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              required: ['field'],
+              properties: {
+                field: { type: 'string', description: 'Date or numeric field to bucket.' },
+                interval: { type: 'string', enum: ['day', 'week', 'month', 'year'], description: 'Date bucket granularity (date fields only).' },
+                min: { type: 'number', description: 'Numeric histogram lower bound (numeric fields only).' },
+                max: { type: 'number', description: 'Numeric histogram upper bound (numeric fields only).' },
+                numBuckets: { type: 'integer', description: 'Number of numeric buckets (default 10).', default: 10 },
+                filter: { type: 'object', description: 'Filter expression applied before bucketing.' },
+                limit: { type: 'integer' },
+                offset: { type: 'integer' },
+              },
+            },
+          },
+        },
+      },
+      responses: {
+        '200': { description: 'Histogram result', content: { 'application/json': { schema: { type: 'object' } } } },
+        '400': { description: 'Invalid field or bucket parameters' },
+        '401': { $ref: '#/components/responses/Unauthorized' },
+      },
+    },
+  };
+
+  // POST /api/v1/{plural}/facets
+  paths[`/api/v1/${plural}/facets`] = {
+    post: {
+      tags: [tag],
+      summary: `Facet counts for ${obj.name} objects (categorical field value counts)`,
+      operationId: `facets${obj.name}s`,
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              required: ['fields'],
+              properties: {
+                fields: { type: 'array', items: { type: 'string' }, description: 'Categorical fields to facet on.' },
+                filter: { type: 'object', description: 'Filter expression applied before faceting.' },
+                limit: { type: 'integer', description: 'Max values per facet (default 20).', default: 20 },
+              },
+            },
+          },
+        },
+      },
+      responses: {
+        '200': { description: 'Facet result', content: { 'application/json': { schema: { type: 'object' } } } },
+        '400': { description: 'Invalid field' },
+        '401': { $ref: '#/components/responses/Unauthorized' },
+      },
+    },
+  };
+
   // GET /api/v1/{plural}/export
   paths[`/api/v1/${plural}/export`] = {
     get: {

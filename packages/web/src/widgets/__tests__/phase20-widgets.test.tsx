@@ -298,7 +298,7 @@ describe('Phase 20 layout widgets', () => {
     const { container } = render(<WidgetRenderer instance={widget} ctx={makeCtx()} />);
     const dividers = container.querySelectorAll('[aria-label="Divider"]');
     expect(dividers.length).toBe(1);
-    expect(dividers[0].tagName).not.toBe('HR'); // vertical uses a div
+    expect(dividers[0]?.tagName).not.toBe('HR'); // vertical uses a div
   });
 
   it('ProgressBarWidget renders percentage of value/max', () => {
@@ -421,10 +421,10 @@ describe('Phase 20 AI widgets', () => {
     expect(screen.getByText('Summary: all good')).toBeTruthy();
   });
 
-  it('AipGeneratedContentWidget shows loading state', () => {
-    const widget = makeWidget('aip_generated_content', { loading: true });
+  it('AipGeneratedContentWidget shows placeholder when no content and no auto-generate', () => {
+    const widget = makeWidget('aip_generated_content', { prompt: 'write a summary' });
     render(<WidgetRenderer instance={widget} ctx={makeCtx()} />);
-    expect(screen.getByText('Generating...')).toBeTruthy();
+    expect(screen.getByText(/No content generated yet/)).toBeTruthy();
   });
 
   it('AipGeneratedContentWidget shows placeholder when no content', () => {
@@ -622,7 +622,7 @@ describe('ResourceBrowserWidget', () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(fetchMock).toHaveBeenCalled();
     // The URL should include the basePath param
-    const calledUrl = fetchMock.mock.calls[0][0] as string;
+    const calledUrl = fetchMock.mock.calls[0]?.[0] as string;
     expect(calledUrl).toContain('path=%2Freports');
     expect(await screen.findByText('report.csv')).toBeTruthy();
   });

@@ -60,6 +60,8 @@ export { InMemoryEmbeddingService } from './in-memory-app-embedding.js';
 export { InMemoryLayoutDeviceCaptureService } from './in-memory-layout-device-capture.js';
 // InMemoryWidgetLibraryService — DELETED in §4C, consolidated onto workshop-platform
 export { InMemoryPlatformResourceService } from './in-memory-platform-resources.js';
+export { InMemorySavedViewStore } from './in-memory-saved-views.js';
+export { InMemoryUserDirectoryService } from './in-memory-user-directory.js';
 export { InMemoryOntologyManagerService } from './in-memory-ontology-manager.js';
 export type { SchemaReader, UsageStatsReader } from './in-memory-ontology-manager.js';
 export { InMemoryWorkshopUxService } from './in-memory-workshop-ux.js';

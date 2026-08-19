@@ -32,6 +32,7 @@ import { generateSecurityGovernanceRoutes } from './security-governance-routes.j
 import { generateOntologySqlRoutes } from './ontology-sql-routes.js';
 import { generateDatasetRoutes } from './dataset-routes.js';
 import { generateUsageMetricsRoutes } from './usage-metrics-routes.js';
+import { generateHistogramFacetRoutes } from './histogram-facet-routes.js';
 import { isTypeVisible } from '../markings/enforce.js';
 import { writeReadAuditFor } from './audit-read.js';
 import { lowerFirst, toSnakeCase, searchableTextFields } from '../utils.js';
@@ -497,6 +498,7 @@ function generateObjectRoutes(
     generateListRoute(obj, plural, fgaType, deps),
     generateExportRoute(obj, plural, deps),
     generateAggregateRoute(obj, plural, fgaType, deps),
+    ...generateHistogramFacetRoutes(obj, plural, fgaType, deps),
     generateSearchRoute(obj, plural, fgaType, deps),
     generateGetByIdRoute(obj, plural, fgaType, deps),
     generateUpdateRoute(obj, plural, fgaType, deps),

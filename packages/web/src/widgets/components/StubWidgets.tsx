@@ -16,7 +16,7 @@
  *   time: gantt, timeline, calendar
  */
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import type { WidgetProps } from '../types.js';
 
 // ── Chart widgets ──
@@ -534,20 +534,49 @@ export function KanbanWidget({ instance, ctx }: WidgetProps): React.ReactNode {
 
 // ── AI widgets ──
 
-export function AipChatWidget({ instance }: WidgetProps): React.ReactNode {
-  const config = (instance.config ?? {}) as { placeholder?: string; title?: string };
+export function AipChatWidget({ instance, ctx }: WidgetProps): React.ReactNode {
+  const config = (instance.config ?? {}) as { placeholder?: string; title?: string; systemPrompt?: string; model?: string };
   const [messages, setMessages] = useState<Array<{ role: 'user' | 'assistant'; content: string }>>([]);
   const [input, setInput] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const send = useCallback(() => {
-    if (!input.trim()) return;
-    setMessages(prev => [...prev, { role: 'user', content: input }]);
+  const send = useCallback(async () => {
+    const text = input.trim();
+    if (!text || loading) return;
+    setMessages(prev => [...prev, { role: 'user', content: text }]);
     setInput('');
-    // Simulated response — real LLM integration would call the API
-    setTimeout(() => {
-      setMessages(prev => [...prev, { role: 'assistant', content: 'This is a simulated response. Connect an LLM endpoint to enable real AI responses.' }]);
-    }, 500);
-  }, [input]);
+    setLoading(true);
+    setError(null);
+    try {
+      // Try the real LLM endpoint via the SDK client
+      const client = ctx.client as { llm?: { generate: (req: { prompt: string; systemPrompt?: string; model?: string }) => Promise<{ text: string }> } };
+      if (client.llm?.generate) {
+        const result = await client.llm.generate({ prompt: text, systemPrompt: config.systemPrompt, model: config.model });
+        setMessages(prev => [...prev, { role: 'assistant', content: result.text }]);
+      } else {
+        // Fallback: direct fetch to the REST endpoint
+        const resp = await fetch('/api/v1/llm/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt: text, systemPrompt: config.systemPrompt, model: config.model }),
+        });
+        if (resp.status === 503) {
+          const body = await resp.json() as { error?: string; message?: string };
+          throw new Error(body.message ?? 'LLM not configured. Set LLM_PROVIDER and associated credentials.');
+        }
+        if (!resp.ok) throw new Error(`LLM request failed: ${resp.status}`);
+        const body = await resp.json() as { data?: { text: string } };
+        setMessages(prev => [...prev, { role: 'assistant', content: body.data?.text ?? 'No response text.' }]);
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setError(msg);
+      setMessages(prev => [...prev, { role: 'assistant', content: `[Error] ${msg}` }]);
+    } finally {
+      setLoading(false);
+    }
+  }, [input, loading, config.systemPrompt, config.model, ctx.client]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: 300, border: '1px solid #e5e7eb', borderRadius: 4, fontFamily: 'sans-serif', fontSize: 12 }} aria-label="AIP chat">
@@ -562,6 +591,8 @@ export function AipChatWidget({ instance }: WidgetProps): React.ReactNode {
             }}>{m.content}</span>
           </div>
         ))}
+        {loading && <div style={{ color: '#999', padding: 4 }}>Thinking…</div>}
+        {error && <div style={{ color: '#dc2626', padding: 4, fontSize: 11 }}>{error}</div>}
       </div>
       <div style={{ display: 'flex', gap: 4, padding: 8, borderTop: '1px solid #e5e7eb' }}>
         <input
@@ -570,26 +601,74 @@ export function AipChatWidget({ instance }: WidgetProps): React.ReactNode {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && send()}
+          disabled={loading}
           style={{ flex: 1, padding: '4px', border: '1px solid #ddd', borderRadius: 4 }}
           aria-label="Chat input"
         />
-        <button onClick={send} style={{ padding: '4px 12px', background: '#3b82f6', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer' }}>Send</button>
+        <button onClick={send} disabled={loading} style={{ padding: '4px 12px', background: '#3b82f6', color: '#fff', border: 'none', borderRadius: 4, cursor: loading ? 'wait' : 'pointer' }}>Send</button>
       </div>
     </div>
   );
 }
 
-export function AipGeneratedContentWidget({ instance }: WidgetProps): React.ReactNode {
-  const config = (instance.config ?? {}) as { content?: string; prompt?: string; loading?: boolean };
+export function AipGeneratedContentWidget({ instance, ctx }: WidgetProps): React.ReactNode {
+  const config = (instance.config ?? {}) as { content?: string; prompt?: string; model?: string; systemPrompt?: string; autoGenerate?: boolean };
+  const [generated, setGenerated] = useState<string | null>(config.content ?? null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const generate = useCallback(async () => {
+    if (!config.prompt) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const client = ctx.client as { llm?: { generate: (req: { prompt: string; systemPrompt?: string; model?: string }) => Promise<{ text: string }> } };
+      if (client.llm?.generate) {
+        const result = await client.llm.generate({ prompt: config.prompt, systemPrompt: config.systemPrompt, model: config.model });
+        setGenerated(result.text);
+      } else {
+        const resp = await fetch('/api/v1/llm/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt: config.prompt, systemPrompt: config.systemPrompt, model: config.model }),
+        });
+        if (resp.status === 503) {
+          const body = await resp.json() as { message?: string };
+          throw new Error(body.message ?? 'LLM not configured');
+        }
+        if (!resp.ok) throw new Error(`LLM request failed: ${resp.status}`);
+        const body = await resp.json() as { data?: { text: string } };
+        setGenerated(body.data?.text ?? 'No content generated.');
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  }, [config.prompt, config.systemPrompt, config.model, ctx.client]);
+
+  // Auto-generate on mount if configured
+  useEffect(() => {
+    if (config.autoGenerate && config.prompt && !generated && !loading) {
+      generate();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <div style={{ padding: 8, fontFamily: 'sans-serif', fontSize: 12, border: '1px solid #e5e7eb', borderRadius: 4 }} aria-label="AIP generated content">
       <div style={{ fontSize: 10, color: '#999', marginBottom: 4 }}>AI Generated</div>
-      {config.loading ? (
-        <div style={{ color: '#999' }}>Generating...</div>
-      ) : config.content ? (
-        <div>{config.content}</div>
+      {loading ? (
+        <div style={{ color: '#999' }}>Generating…</div>
+      ) : error ? (
+        <div style={{ color: '#dc2626' }}>Error: {error}</div>
+      ) : generated ? (
+        <div>{generated}</div>
       ) : (
         <div style={{ color: '#999' }}>No content generated yet. Prompt: {config.prompt ?? 'N/A'}</div>
+      )}
+      {!loading && config.prompt && (
+        <button onClick={generate} style={{ marginTop: 4, padding: '2px 8px', fontSize: 11, cursor: 'pointer' }}>Regenerate</button>
       )}
     </div>
   );

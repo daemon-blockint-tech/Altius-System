@@ -63,6 +63,10 @@ import {
   InMemoryOntologySqlService,
   InMemoryDatasetService,
   InMemoryOntologyUsageMetricsService,
+  InMemoryEmbeddingService,
+  InMemoryPlatformResourceService,
+  InMemorySavedViewStore,
+  InMemoryUserDirectoryService,
 } from '@altius/storage-memory';
 import { PostgresStorageProvider, PostgresLineageStore, PostgresAuditStore, PostgresConsentStore, PostgresSchemaRegistry, PostgresObjectSetStore,
   PostgresLLMUsageTracker, PostgresLLMRateLimiter,
@@ -117,6 +121,10 @@ import { registerGeospatialRoutes } from './rest/geospatial-routes.js';
 import { registerScenarioRoutes } from './rest/scenario-routes.js';
 import { registerWorkshopRoutes } from './rest/workshop-routes.js';
 import { registerLLMGatewayRoutes } from './rest/llm-gateway-routes.js';
+import { registerAppEmbeddingRoutes } from './rest/app-embedding-routes.js';
+import { registerPlatformResourceRoutes } from './rest/platform-resource-routes.js';
+import { registerSavedViewRoutes } from './rest/saved-view-routes.js';
+import { registerUserDirectoryRoutes } from './rest/user-directory-routes.js';
 import { readPlatformVersion } from './version.js';
 import { createFhirRouter } from './fhir/index.js';
 import { createCdmRouter } from './cdm/index.js';
@@ -1217,6 +1225,14 @@ async function main(): Promise<void> {
     workshopPlatformService: new InMemoryWorkshopPlatformService(),
     // Data freshness — in-memory only (no Postgres implementation yet).
     dataFreshnessService: new InMemoryDataFreshnessService(),
+    // App embedding & cross-app widgets — in-memory app registry, commands, pairing.
+    embeddingService: new InMemoryEmbeddingService(),
+    // Platform resources — in-memory resource catalog and object linking.
+    platformResourceService: new InMemoryPlatformResourceService(),
+    // Saved views — in-memory per-user widget view persistence.
+    savedViewStore: new InMemorySavedViewStore(),
+    // User directory — in-memory, seeded from authenticated users.
+    userDirectoryService: new InMemoryUserDirectoryService(),
     // Security governance — real AccessExplanationService wired to the live
     // AuthorizationService; JustificationStore and ScopedSessionStore are
     // in-memory only (no Postgres implementation yet).
@@ -1654,6 +1670,10 @@ async function main(): Promise<void> {
   registerGeospatialRoutes(app, deps, authenticator, isDev);
   registerScenarioRoutes(app, deps, authenticator, isDev);
   registerWorkshopRoutes(app, deps, authenticator, isDev);
+  registerAppEmbeddingRoutes(app, deps, authenticator, isDev);
+  registerPlatformResourceRoutes(app, deps, authenticator, isDev);
+  registerSavedViewRoutes(app, deps, authenticator, isDev);
+  registerUserDirectoryRoutes(app, deps, authenticator, isDev);
 
   // ── LLM gateway routes ──
   registerLLMGatewayRoutes(app, deps, authenticator, isDev);

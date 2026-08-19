@@ -10,7 +10,7 @@ import type {
   MarkingPolicy,
 } from '@altius/security';
 import type { ParsedSchema } from '@altius/odl';
-import type { RequestContext, StorageProvider, LLMClient, BlobStore, TimeSeriesStore, BranchStore, CommentStore, NotificationStore, EmbeddingStore, AlertingService, LLMGateway, DataFreshnessService, JustificationStore, AccessExplanationService, ScopedSessionStore, OntologySqlService, DatasetService, OntologyUsageMetricsService, GeospatialMapService, ScenarioService, ModelInferenceService, ModelChainService, WorkshopPlatformService } from '@altius/spi';
+import type { RequestContext, StorageProvider, LLMClient, BlobStore, TimeSeriesStore, BranchStore, CommentStore, NotificationStore, EmbeddingStore, AlertingService, LLMGateway, DataFreshnessService, JustificationStore, AccessExplanationService, ScopedSessionStore, OntologySqlService, DatasetService, OntologyUsageMetricsService, GeospatialMapService, ScenarioService, ModelInferenceService, ModelChainService, WorkshopPlatformService, EmbeddingService, PlatformResourceService, SavedViewStore, UserDirectoryService } from '@altius/spi';
 import { DataPurpose } from '@altius/spi';
 
 /**
@@ -392,6 +392,64 @@ export interface ApiDependencies {
    *   POST   /api/v1/usage/rules/evaluate      (evaluate monitoring rules)
    */
   usageMetricsService?: OntologyUsageMetricsService;
+  /**
+   * App embedding & cross-app service — app registry, embedding manifests,
+   * cross-app commands, and app pairing. When present, REST endpoints
+   * under /api/v1/embedding/* are registered:
+   *   POST   /api/v1/embedding/apps             (register app)
+   *   GET    /api/v1/embedding/apps             (list apps)
+   *   GET    /api/v1/embedding/apps/:id         (get app)
+   *   GET    /api/v1/embedding/apps/by-name/:name (get app by name)
+   *   PATCH  /api/v1/embedding/apps/:id         (update app)
+   *   DELETE /api/v1/embedding/apps/:id         (delete app)
+   *   GET    /api/v1/embedding/apps/:id/manifest (get embedding manifest)
+   *   POST   /api/v1/embedding/commands         (send cross-app command)
+   *   GET    /api/v1/embedding/commands         (list commands)
+   *   GET    /api/v1/embedding/commands/:id     (get command)
+   *   PATCH  /api/v1/embedding/commands/:id     (update command status)
+   *   POST   /api/v1/embedding/pairings         (create app pairing)
+   *   GET    /api/v1/embedding/pairings         (list pairings)
+   *   GET    /api/v1/embedding/pairings/:id     (get pairing)
+   *   DELETE /api/v1/embedding/pairings/:id     (delete pairing)
+   *   POST   /api/v1/embedding/pairings/:id/sync (sync shared state)
+   */
+  embeddingService?: EmbeddingService;
+  /**
+   * Platform resource service — resource catalog, resource-to-object links,
+   * browse, search, and upload-and-link. When present, REST endpoints
+   * under /api/v1/resources/* are registered:
+   *   POST   /api/v1/resources                  (create resource)
+   *   GET    /api/v1/resources                  (list resources)
+   *   GET    /api/v1/resources/browse           (browse by path)
+   *   GET    /api/v1/resources/search           (search by name/tag)
+   *   GET    /api/v1/resources/:id              (get resource)
+   *   PATCH  /api/v1/resources/:id              (update resource)
+   *   DELETE /api/v1/resources/:id              (delete resource)
+   *   POST   /api/v1/resources/:id/links        (link resource to object)
+   *   GET    /api/v1/resources/:id/links        (get links for resource)
+   *   GET    /api/v1/resources/links            (get links for object)
+   *   DELETE /api/v1/resources/links/:linkId    (unlink)
+   *   POST   /api/v1/resources/upload-and-link  (upload and link)
+   */
+  platformResourceService?: PlatformResourceService;
+  /**
+   * Saved view store — per-user and shared widget view configurations
+   * (column config, filters, sort order, density). When present, REST
+   * endpoints under /api/v1/saved-views/* are registered:
+   *   POST   /api/v1/saved-views               (create saved view)
+   *   GET    /api/v1/saved-views               (list saved views)
+   *   GET    /api/v1/saved-views/:id           (get saved view)
+   *   PATCH  /api/v1/saved-views/:id           (update saved view)
+   *   DELETE /api/v1/saved-views/:id           (delete saved view)
+   */
+  savedViewStore?: SavedViewStore;
+  /**
+   * User directory service — lists platform users for User Select widgets.
+   * When present, REST endpoint is registered:
+   *   GET    /api/v1/users                      (list users, optional ?q=)
+   *   GET    /api/v1/users/:id                  (get user)
+   */
+  userDirectoryService?: UserDirectoryService;
 }
 
 /**

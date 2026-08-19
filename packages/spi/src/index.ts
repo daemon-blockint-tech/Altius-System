@@ -523,6 +523,21 @@ export type {
   UploadAndLinkInput,
 } from './platform-resources.js';
 
+// Saved views
+export type {
+  SavedView,
+  CreateSavedViewInput,
+  SavedViewStore,
+} from './saved-views.js';
+
+// User directory
+export type {
+  DirectoryUser,
+  ListUsersOptions,
+  ListUsersResult,
+  UserDirectoryService,
+} from './user-directory.js';
+
 // Ontology manager
 export type {
   OntologyManagerService,
