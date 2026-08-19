@@ -77,3 +77,13 @@ export { InMemoryGraphService } from './in-memory-graph-service.js';
 
 // Fase 23
 export { InMemoryTransformExpressionService } from './in-memory-transform-expression.js';
+
+// Fase 24 — Pipeline & Data Ops
+export {
+  InMemoryRulesEngineService,
+  InMemoryPipelineService,
+  InMemorySyncCdcService,
+  InMemoryDatasourceService,
+  InMemoryBuildTriggerService,
+  InMemorySqlAnalyticsService,
+} from './in-memory-fase24.js';

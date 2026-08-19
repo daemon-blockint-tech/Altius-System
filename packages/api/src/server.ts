@@ -95,6 +95,15 @@ import {
   InMemoryGraphAnalysisService,
   InMemoryPlatformAssistantService,
   InMemoryEmbeddedCopilotService,
+  InMemoryBatchTransformService,
+  InMemorySqlQueryService,
+  InMemoryVariableTransformService,
+  InMemoryRulesEngineService,
+  InMemoryPipelineService,
+  InMemorySyncCdcService,
+  InMemoryDatasourceService,
+  InMemoryBuildTriggerService,
+  InMemorySqlAnalyticsService,
 } from '@altius/storage-memory';
 import { PostgresStorageProvider, PostgresLineageStore, PostgresAuditStore, PostgresConsentStore, PostgresSchemaRegistry, PostgresObjectSetStore,
   PostgresLLMUsageTracker, PostgresLLMRateLimiter,
@@ -1289,6 +1298,16 @@ async function main(): Promise<void> {
       pipelineBuildService: new InMemoryPipelineBuildService(),
       platformAssistantService: new InMemoryPlatformAssistantService(),
       processMiningService: new InMemoryProcessMiningService(),
+      // Fase 24 — Pipeline & Data Ops.
+      batchTransformService: new InMemoryBatchTransformService(datasets),
+      sqlQueryService: new InMemorySqlQueryService(datasets),
+      variableTransformService: new InMemoryVariableTransformService(),
+      rulesEngineService: new InMemoryRulesEngineService(),
+      pipelineService: new InMemoryPipelineService(),
+      syncCdcService: new InMemorySyncCdcService(),
+      datasourceService: new InMemoryDatasourceService(),
+      buildTriggerService: new InMemoryBuildTriggerService(),
+      sqlAnalyticsService: new InMemorySqlAnalyticsService(),
       }
     : {};
 

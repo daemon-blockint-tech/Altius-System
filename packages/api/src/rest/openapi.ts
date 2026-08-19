@@ -1793,6 +1793,82 @@ function fase23Paths(): Record<string, unknown> {
   };
 }
 
+// ─── Fase 24 — Pipeline & Data Ops paths ───────────────────────────────────
+
+function fase24Paths(): Record<string, unknown> {
+  const jsonObject = { 'application/json': { schema: { type: 'object' } } };
+  const unauthorized = { $ref: '#/components/responses/Unauthorized' };
+  const idParam = { name: 'id', in: 'path', required: true, schema: { type: 'string' } };
+  const nameParam = { name: 'name', in: 'path', required: true, schema: { type: 'string' } };
+  return {
+    '/api/v1/datasets/{name}/export': {
+      get: {
+        tags: ['Datasets'],
+        summary: 'Export a dataset with projection, filtering, sorting and paging',
+        operationId: 'exportDataset',
+        parameters: [
+          nameParam,
+          { name: 'format', in: 'query', schema: { type: 'string', enum: ['csv', 'ndjson', 'arrow', 'json'], default: 'ndjson' } },
+          { name: 'columns', in: 'query', schema: { type: 'string' } },
+          { name: 'filter', in: 'query', schema: { type: 'string' } },
+          { name: 'orderBy', in: 'query', schema: { type: 'string' } },
+          { name: 'limit', in: 'query', schema: { type: 'integer' } },
+          { name: 'offset', in: 'query', schema: { type: 'integer' } },
+          { name: 'branch', in: 'query', schema: { type: 'string' } },
+        ],
+        responses: { '200': { description: 'Exported rows' }, '401': unauthorized, '404': { description: 'Dataset not found' } },
+      },
+    },
+    '/api/v1/transforms': {
+      get: { tags: ['Transforms'], summary: 'List batch transforms', operationId: 'listTransforms', responses: { '200': { description: 'Transforms list', content: jsonObject }, '401': unauthorized } },
+      post: { tags: ['Transforms'], summary: 'Create a batch transform', operationId: 'createTransform', requestBody: { required: true, content: jsonObject }, responses: { '201': { description: 'Transform created', content: jsonObject }, '401': unauthorized } },
+    },
+    '/api/v1/transforms/{id}': { get: { tags: ['Transforms'], summary: 'Get a transform', operationId: 'getTransform', parameters: [idParam], responses: { '200': { description: 'Transform', content: jsonObject }, '401': unauthorized, '404': { description: 'Not found' } } } },
+    '/api/v1/transforms/{id}/run': { post: { tags: ['Transforms'], summary: 'Run a transform', operationId: 'runTransform', parameters: [idParam], responses: { '200': { description: 'Build started', content: jsonObject }, '401': unauthorized } } },
+    '/api/v1/sql/query': { post: { tags: ['SQL'], summary: 'Submit an interactive SQL query', operationId: 'querySql', requestBody: { required: true, content: jsonObject }, responses: { '202': { description: 'Query submitted', content: jsonObject }, '401': unauthorized } } },
+    '/api/v1/sql/explain': { post: { tags: ['SQL'], summary: 'Explain a SQL query', operationId: 'explainSql', requestBody: { required: true, content: jsonObject }, responses: { '200': { description: 'Explanation', content: jsonObject }, '401': unauthorized } } },
+    '/api/v1/pipelines': {
+      get: { tags: ['Pipelines'], summary: 'List pipelines', operationId: 'listPipelines', responses: { '200': { description: 'Pipelines list', content: jsonObject }, '401': unauthorized } },
+      post: { tags: ['Pipelines'], summary: 'Create a pipeline', operationId: 'createPipeline', requestBody: { required: true, content: jsonObject }, responses: { '201': { description: 'Pipeline created', content: jsonObject }, '401': unauthorized } },
+    },
+    '/api/v1/pipelines/{id}': { get: { tags: ['Pipelines'], summary: 'Get a pipeline', operationId: 'getPipeline', parameters: [idParam], responses: { '200': { description: 'Pipeline', content: jsonObject }, '401': unauthorized, '404': { description: 'Not found' } } } },
+    '/api/v1/pipelines/{id}/run': { post: { tags: ['Pipelines'], summary: 'Run a pipeline', operationId: 'runPipeline', parameters: [idParam], responses: { '200': { description: 'Pipeline run', content: jsonObject }, '401': unauthorized } } },
+    '/api/v1/pipelines/{id}/runs': { get: { tags: ['Pipelines'], summary: 'List pipeline runs', operationId: 'listPipelineRuns', parameters: [idParam], responses: { '200': { description: 'Pipeline runs', content: jsonObject }, '401': unauthorized } } },
+    '/api/v1/expectations': {
+      get: { tags: ['Expectations'], summary: 'List data expectations', operationId: 'listExpectations', responses: { '200': { description: 'Expectations list', content: jsonObject }, '401': unauthorized } },
+      post: { tags: ['Expectations'], summary: 'Create a data expectation', operationId: 'createExpectation', requestBody: { required: true, content: jsonObject }, responses: { '201': { description: 'Expectation created', content: jsonObject }, '401': unauthorized } },
+    },
+    '/api/v1/expectations/{id}/run': { post: { tags: ['Expectations'], summary: 'Run a data expectation', operationId: 'runExpectation', parameters: [idParam], requestBody: { required: true, content: jsonObject }, responses: { '200': { description: 'Expectation results', content: jsonObject }, '401': unauthorized } } },
+    '/api/v1/rules': {
+      get: { tags: ['Rules'], summary: 'List rules', operationId: 'listRules', responses: { '200': { description: 'Rules list', content: jsonObject }, '401': unauthorized } },
+      post: { tags: ['Rules'], summary: 'Create a rule', operationId: 'createRule', requestBody: { required: true, content: jsonObject }, responses: { '201': { description: 'Rule created', content: jsonObject }, '401': unauthorized } },
+    },
+    '/api/v1/rules/{id}/run': { post: { tags: ['Rules'], summary: 'Execute a rule', operationId: 'runRule', parameters: [idParam], requestBody: { required: true, content: jsonObject }, responses: { '200': { description: 'Rule result', content: jsonObject }, '401': unauthorized } } },
+    '/api/v1/variables/transforms': { get: { tags: ['Variables'], summary: 'List variable transform pipelines', operationId: 'listVariableTransforms', responses: { '200': { description: 'Transform pipelines', content: jsonObject }, '401': unauthorized } } },
+    '/api/v1/variables/transform': { post: { tags: ['Variables'], summary: 'Apply a variable transform', operationId: 'applyVariableTransform', requestBody: { required: true, content: jsonObject }, responses: { '200': { description: 'Transform result', content: jsonObject }, '401': unauthorized } } },
+    '/api/v1/sql/analytics': { post: { tags: ['SQL'], summary: 'Ad-hoc SQL analytics over the ontology', operationId: 'analyticsSql', requestBody: { required: true, content: jsonObject }, responses: { '200': { description: 'Analytics result', content: jsonObject }, '401': unauthorized } } },
+    '/api/v1/sync/cdc': { post: { tags: ['Sync'], summary: 'Start a CDC sync job', operationId: 'startCdcSync', requestBody: { required: true, content: jsonObject }, responses: { '201': { description: 'CDC sync started', content: jsonObject }, '401': unauthorized } } },
+    '/api/v1/sync/cdc/{id}/commits': { get: { tags: ['Sync'], summary: 'List CDC commits', operationId: 'listCdcCommits', parameters: [idParam], responses: { '200': { description: 'CDC commits', content: jsonObject }, '401': unauthorized } } },
+    '/api/v1/sync/cdc/{id}/apply': { post: { tags: ['Sync'], summary: 'Apply CDC commits', operationId: 'applyCdcCommits', parameters: [idParam], requestBody: { required: true, content: jsonObject }, responses: { '200': { description: 'Commits applied', content: jsonObject }, '401': unauthorized } } },
+    '/api/v1/datasources': {
+      get: { tags: ['Datasources'], summary: 'List datasources', operationId: 'listDatasources', responses: { '200': { description: 'Datasources list', content: jsonObject }, '401': unauthorized } },
+      post: { tags: ['Datasources'], summary: 'Create a datasource', operationId: 'createDatasource', requestBody: { required: true, content: jsonObject }, responses: { '201': { description: 'Datasource created', content: jsonObject }, '401': unauthorized } },
+    },
+    '/api/v1/datasources/{id}/map': { post: { tags: ['Datasources'], summary: 'Set property-to-column mappings', operationId: 'mapDatasource', parameters: [idParam], requestBody: { required: true, content: jsonObject }, responses: { '200': { description: 'Mappings saved', content: jsonObject }, '401': unauthorized } } },
+    '/api/v1/datasources/{id}/sync': { post: { tags: ['Datasources'], summary: 'Sync a datasource', operationId: 'syncDatasource', parameters: [idParam], responses: { '200': { description: 'Sync result', content: jsonObject }, '401': unauthorized } } },
+    '/api/v1/builds': {
+      get: { tags: ['Builds'], summary: 'List builds', operationId: 'listBuilds', responses: { '200': { description: 'Builds list', content: jsonObject }, '401': unauthorized } },
+      post: { tags: ['Builds'], summary: 'Start a build', operationId: 'startBuild', requestBody: { required: true, content: jsonObject }, responses: { '201': { description: 'Build started', content: jsonObject }, '401': unauthorized } },
+    },
+    '/api/v1/builds/{id}/run': { post: { tags: ['Builds'], summary: 'Retry a build', operationId: 'runBuild', parameters: [idParam], responses: { '200': { description: 'Build retried', content: jsonObject }, '401': unauthorized } } },
+    '/api/v1/build-triggers': {
+      get: { tags: ['Builds'], summary: 'List build triggers', operationId: 'listBuildTriggers', responses: { '200': { description: 'Build triggers', content: jsonObject }, '401': unauthorized } },
+      post: { tags: ['Builds'], summary: 'Register a build trigger', operationId: 'createBuildTrigger', requestBody: { required: true, content: jsonObject }, responses: { '201': { description: 'Trigger created', content: jsonObject }, '401': unauthorized } },
+    },
+    '/api/v1/build-triggers/{id}/trigger': { post: { tags: ['Builds'], summary: 'Trigger builds for an action', operationId: 'triggerBuilds', parameters: [idParam], requestBody: { required: true, content: jsonObject }, responses: { '200': { description: 'Builds triggered', content: jsonObject }, '401': unauthorized } } },
+  };
+}
+
 // ─── Public API ───
 
 /**
@@ -1818,6 +1894,8 @@ export function generateOpenApiSpec(schema: ParsedSchema, version = '1.0.0'): Re
   paths = { ...paths, ...fase22Paths() };
   // Fase 23 — ontology & schema tooling.
   paths = { ...paths, ...fase23Paths() };
+  // Fase 24 — Pipeline & Data Ops.
+  paths = { ...paths, ...fase24Paths() };
 
   // Component schemas
   const schemas: Record<string, unknown> = {};

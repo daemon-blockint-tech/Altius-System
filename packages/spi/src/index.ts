@@ -735,3 +735,22 @@ export type {
   TransformExpressionResult,
   TransformExpressionService,
 } from './transform-expression.js';
+
+// Fase 24 — Pipeline & Data Ops
+export type {
+  RulesEngineService,
+  PipelineService,
+  Pipeline,
+  PipelineRun,
+  CreatePipelineInput,
+  SyncCdcService,
+  CdcSyncJob,
+  CdcCommit,
+  DatasourceService,
+  Datasource,
+  PropertyColumnMapping,
+  BuildTriggerService,
+  BuildTriggerConfig,
+  SqlAnalyticsService,
+  SqlAnalyticsResult,
+} from './fase24.js';

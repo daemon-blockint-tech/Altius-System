@@ -88,6 +88,19 @@ import {
   BranchManagerWidget,
   TransformExpressionWidget,
 } from './components/Fase23Widgets.js';
+import {
+  DatasetTableWidget,
+  BatchTransformWidget,
+  SqlWorkbenchWidget,
+  PipelineBuilderWidget,
+  DataExpectationsWidget,
+  RulesEngineWidget,
+  VariableTransformerWidget,
+  SqlAnalyticsWidget,
+  CdcIngestWidget,
+  DatasourceMapperWidget,
+  BuildTriggerWidget,
+} from './components/Fase24Widgets.js';
 // PlaceholderWidget is no longer imported — all widget types now have real implementations.
 // ── Registry ──────────────────────────────────────────────────
 
@@ -226,3 +239,16 @@ registerWidget('action_form_config', ActionFormConfigWidget);
 registerWidget('ontology_change_manager', OntologyChangeManagerWidget);
 registerWidget('branch_manager', BranchManagerWidget);
 registerWidget('transform_expression', TransformExpressionWidget);
+
+// Fase 24 widgets:
+registerWidget('dataset_table', DatasetTableWidget);
+registerWidget('batch_transform', BatchTransformWidget);
+registerWidget('sql_workbench', SqlWorkbenchWidget);
+registerWidget('pipeline_builder', PipelineBuilderWidget);
+registerWidget('data_expectations', DataExpectationsWidget);
+registerWidget('rules_engine', RulesEngineWidget);
+registerWidget('variable_transformer', VariableTransformerWidget);
+registerWidget('sql_analytics', SqlAnalyticsWidget);
+registerWidget('cdc_ingest', CdcIngestWidget);
+registerWidget('datasource_mapper', DatasourceMapperWidget);
+registerWidget('build_trigger', BuildTriggerWidget);
