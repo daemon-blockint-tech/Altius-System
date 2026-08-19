@@ -186,7 +186,7 @@ export function generatePlatformDDL(): string[] {
   "interval_ms" BIGINT,
   "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  "UNIQUE ("tenant_id", "object_type", "datasource")
+  UNIQUE ("tenant_id", "object_type", "datasource")
 );`);
   statements.push(`CREATE INDEX IF NOT EXISTS "idx_freshness_tenant" ON "freshness"."records" ("tenant_id");`);
 
@@ -205,7 +205,7 @@ export function generatePlatformDDL(): string[] {
   "created_by" TEXT NOT NULL DEFAULT '',
   "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  "UNIQUE ("tenant_id", "name", "branch")
+  UNIQUE ("tenant_id", "name", "branch")
 );`);
   statements.push(`CREATE TABLE IF NOT EXISTS "dataset"."rows" (
   "id" TEXT NOT NULL PRIMARY KEY,
