@@ -520,5 +520,32 @@ export function generatePlatformDDL(): string[] {
   statements.push(`CREATE INDEX IF NOT EXISTS "idx_business_rules_tenant_state" ON "governance"."business_rules" ("tenant_id", "state");`);
   statements.push(`CREATE INDEX IF NOT EXISTS "idx_business_rules_tenant_created" ON "governance"."business_rules" ("tenant_id", "created_at" DESC);`);
 
+  // ── Saved views ──
+  statements.push(`CREATE TABLE IF NOT EXISTS "governance"."saved_views" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "tenant_id" TEXT NOT NULL,
+  "name" TEXT NOT NULL,
+  "description" TEXT,
+  "object_type" TEXT,
+  "widget_type" TEXT,
+  "app_id" TEXT,
+  "columns" JSONB,
+  "filter" JSONB,
+  "order_by" JSONB,
+  "density" TEXT,
+  "page_size" INT,
+  "widget_config" JSONB,
+  "is_public" BOOLEAN NOT NULL DEFAULT FALSE,
+  "created_by" TEXT,
+  "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_saved_views_tenant" ON "governance"."saved_views" ("tenant_id");`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_saved_views_tenant_created_by" ON "governance"."saved_views" ("tenant_id", "created_by");`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_saved_views_tenant_object_type" ON "governance"."saved_views" ("tenant_id", "object_type");`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_saved_views_tenant_widget_type" ON "governance"."saved_views" ("tenant_id", "widget_type");`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_saved_views_tenant_app_id" ON "governance"."saved_views" ("tenant_id", "app_id");`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_saved_views_tenant_is_public" ON "governance"."saved_views" ("tenant_id", "is_public");`);
+
   return statements;
 }

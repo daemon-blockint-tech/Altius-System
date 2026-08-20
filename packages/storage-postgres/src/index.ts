@@ -100,6 +100,7 @@ export { PostgresChangeProposalStore } from './governance/postgres-change-propos
 export { PostgresApprovalWorkflowService } from './governance/postgres-approval-workflow-service.js';
 export { PostgresBusinessRulesService } from './governance/postgres-business-rules-service.js';
 export { PostgresKioskService } from './governance/postgres-kiosk-service.js';
+export { PostgresSavedViewStore } from './governance/postgres-saved-view-store.js';
 export { PostgresDatasetService } from './dataset/postgres-dataset-service.js';
 export { generatePlatformDDL } from './schema/ddl-platform.js';
 export {

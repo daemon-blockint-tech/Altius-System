@@ -116,7 +116,7 @@ import { PostgresStorageProvider, PostgresLineageStore, PostgresAuditStore, Post
   PostgresLLMUsageTracker, PostgresLLMRateLimiter,
   PostgresEmbeddingStore, PostgresBlobStore, PostgresTimeSeriesStore,
   PostgresBranchStore, PostgresCommentStore, PostgresNotificationStore,
-  PostgresAlertingService, PostgresBusinessRulesService, PostgresKioskService, PostgresDataFreshnessService, PostgresDatasetMetadataService,
+  PostgresAlertingService, PostgresBusinessRulesService, PostgresKioskService, PostgresSavedViewStore, PostgresDataFreshnessService, PostgresDatasetMetadataService,
   PostgresGeospatialMapService, PostgresJustificationStore, PostgresOntologySqlService,
   PostgresOntologyUsageMetricsService, PostgresScopedSessionStore,
   PostgresChangeProposalStore,
@@ -1276,8 +1276,6 @@ async function main(): Promise<void> {
       embeddingService: new InMemoryEmbeddingService(),
       // Platform resources — in-memory resource catalog and object linking.
       platformResourceService: new InMemoryPlatformResourceService(),
-      // Saved views — in-memory per-user widget view persistence.
-      savedViewStore: new InMemorySavedViewStore(),
       // User directory — in-memory, seeded from authenticated users.
       userDirectoryService: new InMemoryUserDirectoryService(),
       // API Tooling services — in-memory only (no Postgres implementations yet).
@@ -1448,6 +1446,8 @@ async function main(): Promise<void> {
     // Kiosk sessions — Postgres-backed when available. Long-lived read-only
     // display sessions are durable and shared across replicas.
     kioskService: pgPool ? new PostgresKioskService(pgPool) : new InMemoryKioskService(),
+    // Saved views — Postgres-backed when available; private views are owner-only.
+    savedViewStore: pgPool ? new PostgresSavedViewStore(pgPool) : new InMemorySavedViewStore(),
 
     // Non-durable platform services — withheld under Postgres unless opted in.
     // Built and explained above.
