@@ -11,7 +11,8 @@ against real Postgres. Reproduce with `node tools/parity/reachability.mjs`.
 | `ALTIUS-BACKLOG.md` (189 rows) | ~77 | ~110 | **0** | carried-forward prose |
 | External audit (`ebba280`) | 2 | 91 | 96 | read from source |
 | Measured 19 Aug (`f188339`, 58 services) | 8 | 35 | 15 | this tool |
-| **Measured now (`177b628`, 71 services)** | **16** | **55** | **0** | this tool |
+| Measured 20 Aug (`177b628`, 71 services) | 16 | 55 | 0 | this tool |
+| **Measured now (`DatasetService` branch, 71 services)** | **17** | **54** | **0** | this tool |
 
 **Durability moved this time, and it was real.** The previous pass recorded reachability
 improving while `full` stayed pinned at 8 — services were being wired to REST without
@@ -19,8 +20,12 @@ gaining a Postgres implementation. That changed: #18 added eight Postgres platfo
 stores and `full` doubled, 8 → 16. This is the first pass where the honest number went
 up for the right reason.
 
-The gap to the tracker is still large (16 vs ~77) but it is now a gap of *degree*
-rather than *kind*: the remaining 55 are genuinely reachable, and each needs a Postgres
+`DatasetService` then took it to 17, by the same route: a Postgres store, restart
+survival proven, no new surface claimed. One service per pass is the expected rate —
+the count is meant to move slowly and mean something, rather than quickly and not.
+
+The gap to the tracker is still large (17 vs ~77) but it is now a gap of *degree*
+rather than *kind*: the remaining 54 are genuinely reachable, and each needs a Postgres
 implementation rather than a rethink.
 
 ## Verified, not inferred
@@ -38,20 +43,29 @@ mean "works":
   new instances.**
 - Two apparent defects investigated and dismissed as harness errors on my side
   (a wrong `create()` arg order, an omitted required `objectId`) rather than filed.
+- **`DatasetService`, for its promotion to `full`.** 26 Postgres integration cases,
+  including two restart-survival ones (write → `provider.close()` → read through a
+  fresh provider): rows, transaction log, branches and a replayed `asOfTransactionId`
+  snapshot all survive. Full suites re-run against real Postgres: storage-postgres
+  342/342 (316 before), SPI conformance 746/746 unchanged.
+- **Those tests proven non-vacuous.** The in-memory row key joins composite parts on a
+  NUL byte, which Postgres cannot store in `TEXT` at all. Re-introducing that join
+  makes exactly the two composite-key cases fail with `invalid byte sequence for
+  encoding "UTF8": 0x00`, and nothing else — so the cases test what they claim to.
 
-## The 16 that reach a durable implementation
+## The 17 that reach a durable implementation
 
 `AlertingService` · `AuditStore` · `BlobStore` · `BranchStore` · `CommentStore` ·
-`DataFreshnessService` · `DatasetMetadataService` · `EmbeddingStore` ·
-`GeospatialMapService` · `JustificationStore` · `NotificationStore` · `ObjectSetStore` ·
-`OntologySqlService` · `OntologyUsageMetricsService` · `ScopedSessionStore` ·
-`TimeSeriesStore`
+`DataFreshnessService` · `DatasetMetadataService` · **`DatasetService`** ·
+`EmbeddingStore` · `GeospatialMapService` · `JustificationStore` ·
+`NotificationStore` · `ObjectSetStore` · `OntologySqlService` ·
+`OntologyUsageMetricsService` · `ScopedSessionStore` · `TimeSeriesStore`
 
 `full` here stays a **necessary, not sufficient** condition: it says a user can reach a
 durable implementation, not that the capability is complete. Rows still need demoting
 by hand where behaviour is missing.
 
-## Work queue — reachable but memory-only (55)
+## Work queue — reachable but memory-only (54)
 
 Every one is already wired to REST, so the remaining work is persistence alone. These
 are the honest `partial → full` candidates:
@@ -61,7 +75,7 @@ are the honest `partial → full` candidates:
 `BuildTriggerService` · `BusinessRulesService` · `ChangeProposalStore` ·
 `CommandExchangeService` · `CommandService` · `ConflictResolutionService` ·
 `ConnectorCatalogService` · `CopilotService` · `DataExpectationsService` ·
-`DatasetProjectionService` · **`DatasetService`** · `DatasourceService` ·
+`DatasetProjectionService` · `DatasourceService` ·
 `DesignSystemService` · `EmbeddedCopilotService` · `EmbeddingService` · `EvalService` ·
 `EventObjectService` · `GraphAnalysisService` · `GraphService` ·
 `HumanInTheLoopService` · `KioskService` · `LayoutDeviceCaptureService` ·
@@ -85,10 +99,30 @@ what moves it from 404 to working.
 
 ## Next
 
-`DatasetService` first. It is the one platform store #18 deliberately left in memory
-("the DatasetService remains in-memory for row/transaction semantics") while giving its
-metadata sibling Postgres backing, it carries ~15 REST endpoints, and datasets are a
-data-plane primitive rather than UI furniture.
+`DatasetService` is **done** — the one platform store #18 deliberately left in memory
+("the DatasetService remains in-memory for row/transaction semantics"). It now has
+`dataset.metadata` / `.rows` / `.transactions` / `.branches` behind it, and the routes
+that answered 404 on a Postgres deployment work.
+
+Two things that conversion surfaced, neither of them the dataset store's own bug:
+
+- **`dataset.metadata` had no writer.** #18 shipped `PostgresDatasetMetadataService`
+  reading a table nothing populated, so on every Postgres deployment it answered 200
+  with an empty list and a `listTransactions` hardcoded to `[]`. Reachable-and-empty,
+  graded `full`. It reads real rows now, but the lesson generalises: **a store counts
+  as durable only once something writes to it**, and the analyser cannot see that. Worth
+  a pass over the other seven #18 stores for the same shape.
+- **`pnpm test` at the root silently skips the Postgres suites** even with `PG_TEST_URL`
+  and `REQUIRE_PG` exported, because turbo's strict env mode drops them before the task
+  runs. CI is unaffected — it calls `pnpm --filter <pkg> test` directly, bypassing turbo
+  (`ci.yml` already notes this for the compose job) — so #20's gate still holds where it
+  matters. But a developer running the root command sees "342 passed" having exercised
+  no Postgres. Adding `"env": ["PG_TEST_URL", "REQUIRE_PG"]` to the `test` task in
+  `turbo.json` closes it; left out of the dataset change deliberately.
+
+Next candidates, same pattern: `BatchTransformService`, `DatasetProjectionService` and
+`SqlQueryService` are the rest of the dataset/pipeline data plane and now have durable
+datasets to build on.
 
 ## Standing caveat
 

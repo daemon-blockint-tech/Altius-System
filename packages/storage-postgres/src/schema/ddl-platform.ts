@@ -207,15 +207,70 @@ export function generatePlatformDDL(): string[] {
   "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE ("tenant_id", "name", "branch")
 );`);
+  // `dataset_id` is the identity of the dataset itself, stable across every
+  // branch; the per-row `id` is not, because metadata carries one row per
+  // (name, branch). Transactions and branches reference the former.
+  statements.push(`ALTER TABLE "dataset"."metadata" ADD COLUMN IF NOT EXISTS "dataset_id" TEXT;`);
+
+  // Rows are keyed by the dataset's primary key so a re-insert of the same key
+  // replaces rather than duplicates. `row_key` is the JSON-encoded PK tuple
+  // (see datasetRowKey in @altius/spi); a schema with no primary key gets a
+  // fresh UUID per row, which is what makes those datasets append-only.
+  //
+  // `seq` preserves insertion order. A read with no `orderBy` returns rows in
+  // insertion order on the in-memory provider (Map iteration order), and
+  // Postgres has no inherent row order at all — without this the two providers
+  // answer the same unordered read differently.
   statements.push(`CREATE TABLE IF NOT EXISTS "dataset"."rows" (
   "id" TEXT NOT NULL PRIMARY KEY,
   "tenant_id" TEXT NOT NULL,
   "dataset_name" TEXT NOT NULL,
   "branch" TEXT NOT NULL DEFAULT 'main',
+  "row_key" TEXT NOT NULL DEFAULT '',
+  "seq" BIGSERIAL,
   "data" JSONB NOT NULL DEFAULT '{}',
   "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );`);
+  statements.push(`ALTER TABLE "dataset"."rows" ADD COLUMN IF NOT EXISTS "row_key" TEXT NOT NULL DEFAULT '';`);
+  statements.push(`ALTER TABLE "dataset"."rows" ADD COLUMN IF NOT EXISTS "seq" BIGSERIAL;`);
   statements.push(`CREATE INDEX IF NOT EXISTS "idx_dataset_rows_tenant_name_branch" ON "dataset"."rows" ("tenant_id", "dataset_name", "branch");`);
+  statements.push(`CREATE UNIQUE INDEX IF NOT EXISTS "uq_dataset_rows_tenant_name_branch_key" ON "dataset"."rows" ("tenant_id", "dataset_name", "branch", "row_key");`);
+
+  // Append-only transaction log. `seq` orders entries within a branch: the
+  // snapshot read (`asOfTransactionId`) replays the log up to a transaction, so
+  // it needs a total order, and `timestamp` alone ties when two writes land in
+  // the same millisecond.
+  statements.push(`CREATE TABLE IF NOT EXISTS "dataset"."transactions" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "seq" BIGSERIAL,
+  "tenant_id" TEXT NOT NULL,
+  "dataset_id" TEXT NOT NULL DEFAULT '',
+  "dataset_name" TEXT NOT NULL,
+  "branch" TEXT NOT NULL DEFAULT 'main',
+  "type" TEXT NOT NULL,
+  "rows" JSONB NOT NULL DEFAULT '[]',
+  "schema_version" INTEGER NOT NULL DEFAULT 0,
+  "schema_snapshot" JSONB,
+  "previous_schema_snapshot" JSONB,
+  "timestamp" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "actor_id" TEXT NOT NULL DEFAULT '',
+  "message" TEXT
+);`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_dataset_tx_tenant_name_branch_seq" ON "dataset"."transactions" ("tenant_id", "dataset_name", "branch", "seq");`);
+
+  statements.push(`CREATE TABLE IF NOT EXISTS "dataset"."branches" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "tenant_id" TEXT NOT NULL,
+  "dataset_id" TEXT NOT NULL DEFAULT '',
+  "dataset_name" TEXT NOT NULL,
+  "name" TEXT NOT NULL,
+  "parent_branch" TEXT NOT NULL,
+  "parent_transaction_id" TEXT NOT NULL DEFAULT '',
+  "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "created_by" TEXT NOT NULL DEFAULT '',
+  UNIQUE ("tenant_id", "dataset_name", "name")
+);`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_dataset_branches_tenant_name" ON "dataset"."branches" ("tenant_id", "dataset_name");`);
 
   // ── Geospatial maps ──
   statements.push(`CREATE SCHEMA IF NOT EXISTS "geospatial";`);
