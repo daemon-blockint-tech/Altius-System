@@ -16,11 +16,12 @@
  * how the defect survived, so treat a skip as "unverified", not "passing".
  */
 
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { it, expect, beforeAll, afterAll } from 'vitest';
 import type { RequestContext, OntologySchema } from '@altius/spi';
 import { PostgresStorageProvider } from '../postgres-storage-provider.js';
 import { PostgresCommentStore } from '../comment/postgres-comment-store.js';
 import { PostgresNotificationStore } from '../notification/postgres-notification-store.js';
+import { describeWithPg as pgGate } from './pg-gate.js';
 
 const PG_TEST_URL = process.env['PG_TEST_URL'];
 
@@ -35,7 +36,9 @@ function parseUrl(url: string) {
   };
 }
 
-const describeWithPg = PG_TEST_URL ? describe : describe.skip;
+// Gate shared with the other Postgres suites so CI can turn a skip into a
+// failure (REQUIRE_PG) instead of a silent pass. See pg-gate.ts.
+const describeWithPg = pgGate;
 
 describeWithPg('platform stores with TEXT[] columns (integration)', () => {
   let provider: PostgresStorageProvider;
@@ -81,6 +84,7 @@ describeWithPg('platform stores with TEXT[] columns (integration)', () => {
       tenantId: TENANT,
       objectType: 'ArrayDoc',
       objectId: 'doc-empty',
+      parentCommentId: null,
       body: 'no mentions here',
       authorId: 'u1',
       authorName: 'U One',
@@ -96,6 +100,7 @@ describeWithPg('platform stores with TEXT[] columns (integration)', () => {
       tenantId: TENANT,
       objectType: 'ArrayDoc',
       objectId: 'doc-mentions',
+      parentCommentId: null,
       body: 'ping @bob and @carol',
       authorId: 'u1',
       authorName: 'U One',
@@ -112,6 +117,7 @@ describeWithPg('platform stores with TEXT[] columns (integration)', () => {
       tenantId: TENANT,
       objectType: 'ArrayDoc',
       objectId: 'doc-update',
+      parentCommentId: null,
       body: 'first @bob',
       authorId: 'u1',
       authorName: 'U One',
