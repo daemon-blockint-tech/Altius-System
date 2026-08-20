@@ -15,6 +15,8 @@ against real Postgres. Reproduce with `node tools/parity/reachability.mjs`.
 | Measured 20 Aug (`DatasetService`, merged) | 17 | 54 | 0 | this tool |
 | Measured 20 Aug (`ChangeProposalStore`) | 18 | 53 | 0 | this tool |
 | **Measured now (`BusinessRulesService` branch, 71 services)** | **19** | **52** | **0** | this tool |
+| Measured 20 Aug (`ChangeProposalStore`, merged) | 18 | 53 | 0 | this tool |
+| **Measured now — analyser co-implementation leak fixed** | **18** | **47** | **6** | this tool |
 
 **Durability moved this time, and it was real.** The previous pass recorded reachability
 improving while `full` stayed pinned at 8 — services were being wired to REST without
@@ -29,6 +31,8 @@ the count is meant to move slowly and mean something, rather than quickly and no
 
 The gap to the tracker is still large (19 vs ~77) but it is now a gap of *degree*
 rather than *kind*: the remaining 52 are genuinely reachable, and each needs a Postgres
+The gap to the tracker is still large (18 vs ~77) but it is now a gap of *degree*
+rather than *kind*: the remaining 47 are genuinely reachable, and each needs a Postgres
 implementation rather than a rethink.
 
 ## Verified, not inferred
@@ -70,6 +74,7 @@ durable implementation, not that the capability is complete. Rows still need dem
 by hand where behaviour is missing.
 
 ## Work queue — reachable but memory-only (52)
+## Work queue — reachable but memory-only (47)
 
 Every one is already wired to REST, so the remaining work is persistence alone. These
 are the honest `partial → full` candidates:
@@ -269,13 +274,49 @@ and that asymmetry is precisely the signature the suite exists to catch.
 `latestTransactionId` that `get` and `read` report, rather than the written branch's.
 Both providers agree, so nothing diverges and nothing is being hidden — but the shared
 behaviour is arguably wrong, and per this rule it changes in both or neither.
+## Correction — the analyser was inflating its own numbers
+
+`0 absent` was **wrong**, and it was the measurement tool producing it.
+
+Resolving reachability transitively, the analyser followed a wired service into the file
+that implements it and then treated every other service *mentioned there* as reached
+too. `storage-memory/src/in-memory-dataset-services.ts` implements **eight** classes in
+one file, so one genuinely-wired service — `BatchTransformService` — dragged in
+`DatasetProjectionService`, `SqlQueryService`, `TabularSdk` and `VariableTransformService`
+as "reached via rest". No route touches any of them.
+
+The tool already refused to do this for interface *declaration* files, with the right
+reason attached: "the SPI co-declares many services per file, and sharing a file is not
+a call relationship." Implementation files have the identical problem and were not
+guarded. Fixed by skipping a service the file *implements* rather than consumes; a real
+dependency — the way `InMemoryBatchTransformService` takes an `InMemoryDatasetService` —
+lives in another file and still resolves, which is why `SqlQueryService` and
+`VariableTransformService` keep their `rest` surface.
+
+**How it surfaced is the uncomfortable part.** Converting `DatasetProjectionService` to
+Postgres made the analyser grade it `full` — a service with no route anywhere, one
+Postgres class away from being counted as a delivered capability. The inflation this
+tool exists to catch, produced by the tool itself. The projection work is parked rather
+than shipped as a parity win.
+
+**Six services are genuinely unreachable**, each independently confirmed to have zero
+non-test references in `packages/api/src`:
+
+`ApprovalWorkflowService` · `CommandService` · `DatasetProjectionService` ·
+`ModelRegistryService` · `ModelingObjectiveService` · `TokenMeteringService`
+
+Making any of them durable buys nothing until it has a route. That is now the tool's
+answer too, rather than a judgement call made by hand each pass.
+
+**The analyser has no tests and does not run in CI.** Every number in this document
+comes from it, and it was wrong in the inflating direction for at least three passes.
+Worth fixing next: fixtures for the grading rules, and a CI job so a regression in the
+measurement is caught like any other.
 
 ## Standing caveat
 
-The tracker's `0 absent` is now literally true by this method — every SPI service is
-reachable from some surface — but it should not be read as "nothing is missing".
-Reachable-and-empty is still the common case, and entire capability families the audit
+`6 absent` still understates what is missing. The tool grades the services that exist,
+not the ones that were never written — entire capability families the external audit
 listed as absent (federation runtime, markings, Spark/datasets, an LLM model runtime)
-are absent in a sense this tool does not measure: it grades the services that exist, not
-the ones that were never written. Phase 25 ships an "AIP/LLM Platform" surface; whether
-a model runtime sits behind it is not something a reachability count can answer.
+are invisible to a reachability count. Phase 25 ships an "AIP/LLM Platform" surface;
+whether a model runtime sits behind it is not something this method can answer.
