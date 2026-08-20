@@ -383,6 +383,11 @@ export {
   datasetBranchNotFoundError,
 } from './dataset-contract.js';
 export type { CodedError } from './dataset-contract.js';
+// Which value wins a conflict is a pure function of the conflict and the
+// strategy, and its output is *data* — two providers that disagreed would write
+// different values into the same field and neither would error. So it is
+// decided once, here.
+export { resolveConflictValue, DEFAULT_CONFLICT_STRATEGY } from './conflict-resolution.js';
 
 // Enterprise connector catalog
 export type {

@@ -15,6 +15,8 @@ against real Postgres. Reproduce with `node tools/parity/reachability.mjs`.
 | Measured 20 Aug (`DatasetService`, merged) | 17 | 54 | 0 | this tool |
 | Measured 20 Aug (`ChangeProposalStore`) | 18 | 53 | 0 | this tool |
 | **Measured now (`BusinessRulesService` branch, 71 services)** | **19** | **52** | **0** | this tool |
+| Measured 20 Aug (`ChangeProposalStore`, merged) | 18 | 53 | 0 | this tool |
+| **Measured now (`ConflictResolutionService`, 71 services)** | **19** | **52** | **0** | this tool |
 
 **Durability moved this time, and it was real.** The previous pass recorded reachability
 improving while `full` stayed pinned at 8 — services were being wired to REST without
@@ -26,6 +28,10 @@ up for the right reason.
 `BusinessRulesService` to 19, by the same route each time: a Postgres store, restart
 survival proven, no new surface claimed. One service per pass is the expected rate —
 the count is meant to move slowly and mean something, rather than quickly and not.
+`ConflictResolutionService` to 19, by the same route each time: a Postgres store,
+restart survival proven, no new surface claimed. One service per pass is the expected
+rate — the count is meant to move slowly and mean something, rather than quickly and
+not.
 
 The gap to the tracker is still large (19 vs ~77) but it is now a gap of *degree*
 rather than *kind*: the remaining 52 are genuinely reachable, and each needs a Postgres
@@ -60,6 +66,8 @@ mean "works":
 
 `AlertingService` · `AuditStore` · `BlobStore` · `BranchStore` ·
 **`BusinessRulesService`** · **`ChangeProposalStore`** · `CommentStore` · `DataFreshnessService` ·
+**`ChangeProposalStore`** · `CommentStore` · **`ConflictResolutionService`** ·
+`DataFreshnessService` ·
 `DatasetMetadataService` · **`DatasetService`** · `EmbeddingStore` ·
 `GeospatialMapService` · `JustificationStore` · `NotificationStore` · `ObjectSetStore` ·
 `OntologySqlService` · `OntologyUsageMetricsService` · `ScopedSessionStore` ·
@@ -79,6 +87,8 @@ are the honest `partial → full` candidates:
 `BuildTriggerService` ·
 `CommandExchangeService` · `CommandService` · `ConflictResolutionService` ·
 `ConnectorCatalogService` · `CopilotService` · `DataExpectationsService` ·
+`BuildTriggerService` · `BusinessRulesService` ·
+`CommandExchangeService` · `CommandService` · `ConnectorCatalogService` · `CopilotService` · `DataExpectationsService` ·
 `DatasetProjectionService` · `DatasourceService` ·
 `DesignSystemService` · `EmbeddedCopilotService` · `EmbeddingService` · `EvalService` ·
 `EventObjectService` · `GraphAnalysisService` · `GraphService` ·
@@ -170,6 +180,52 @@ state = $expected` clause, not only checked beforehand. Two concurrent approvals
 one process would otherwise both read `proposed` and both write `approved`, recording
 the second reviewer over the first. A `Map` cannot interleave that way, so the
 in-memory service needs no equivalent.
+## This pass — `ConflictResolutionService`
+
+A conflict is a datasource sync and a user edit disagreeing about one field. Two pieces
+of state live behind this service, and **both fail silently when lost**:
+
+- **unresolved conflicts** — the queue of disagreements waiting on a decision. Lose it
+  and the discrepancy is never surfaced: no error, no alert, just two systems quietly
+  holding different values for the same field.
+- **the tenant's default strategy** — `getDefaultStrategy` falls back to
+  `user_edits_win` when none is stored, so a tenant that chose `latest_value_wins` and
+  lost it does not get an error after a restart. It gets the other answer, on every
+  conflict, indefinitely. The durability injection reports exactly that:
+  `expected 'user_edits_win' to be 'latest_value_wins'`.
+
+**Choosing the winner moved into `@altius/spi`, and the reason is stronger here than in
+any previous pass: the output of that function is data.** Two providers disagreeing
+about `latest_value_wins` would write different values into the same field for the same
+conflict, and neither would error — the divergence would surface much later, in the data
+itself, with nothing to say which deployment produced it. So most of the conformance
+cases are about *which value wins* rather than about the record round-tripping, and the
+two injections that break the shared resolver fail on both providers.
+
+Two things the Postgres store had to get right that the `Map` got for free.
+
+**A stored `null` and an absent value are the same thing once they come back.**
+`undefined` binds as SQL NULL, `null` binds as JSON null, and the driver parses both to
+`null`. So every read also asks Postgres `IS NULL` per column, and that boolean decides
+between them. It is not academic: resolving `manual` with no value stores nothing, a
+conflict never resolved stores nothing, and a conflict whose user value genuinely *is*
+null has to round-trip as null rather than vanish.
+
+**The driver already parses JSONB.** The `typeof v === 'string' ? JSON.parse(v) : v`
+idiom the other stores in this repo use is harmless there because those columns only
+ever hold objects — here a column legitimately holds a bare string, and parsing it a
+second time throws `Unexpected token 'C', "Cardiology" is not valid JSON`. Found by the
+conformance suite on its first run, before any injection.
+
+**And an injection taught me a case was weaker than it looked — again.** Dropping the
+null guard from `merge` passed, because the case testing it used a null *datasource*
+value, and spreading `null` in an object literal is a no-op: guard or no guard, the
+answer is the same. The direction that makes the guard load-bearing is a null *user*
+value — without the guard both sides look mergeable and the result is the datasource
+object; with it, the user's null wins and the field is cleared. That case fails the
+injection. Recorded because this is the second pass in a row where a passing injection
+meant a badly aimed test rather than a badly aimed injection, and the two are only
+distinguishable by looking.
 
 ## Previous pass — `ChangeProposalStore`
 
@@ -237,9 +293,31 @@ Two things that conversion surfaced, neither of them the dataset store's own bug
 
 Same pattern, in rough order of what losing it costs: `ApprovalWorkflowService` (the
 other governance audit trail — but it is **not wired into the API at all**, so it needs
-routes before persistence is worth anything), then `BatchTransformService`,
-`DatasetProjectionService` and `SqlQueryService`, which are the rest of the
-dataset/pipeline data plane.
+routes before persistence is worth anything), then `VariableTransformService` and
+`EventObjectService`.
+
+**Two candidates are deliberately blocked, and need a decision rather than a PR.**
+`ConnectorCatalogService` and `DatasourceService` both hold credentials in the state
+they would persist: `EnterpriseAuthScheme` carries `clientSecret`, `apiKey`, `password`,
+`token` and `refreshToken` as plain fields, and `Datasource.connection` is an untyped
+bag that in practice holds the same. There is **no encryption-at-rest machinery anywhere
+in this repo** — no `createCipheriv`, no KMS client, no `pgcrypto` in the DDL (checked,
+not assumed). Converting either as-is would move secrets from a `Map` that dies with the
+process into a table that does not, which is a security decision and not one to take as
+a side effect of a durability pass.
+
+**Two more are skipped for reasons that are not about secrets.** `BuildTriggerService`
+duplicates what `PipelineBuildService` already does with action triggers, and its
+`trigger()` fabricates a `succeeded` build into a `builds` map that **no method on the
+interface ever reads** — persisting write-only state that shadows another service is not
+worth a table, and the two should be reconciled first. And `TransformExpressionService`
+holds **no state at all**: it is `listFunctions()` plus a pure `evaluate()`, so it
+belongs beside `AccessExplanationService` as a standing false demotion rather than in
+the work queue.
+
+Counts here are measured on **this branch's base**, `main`. Several durability PRs are
+open and unmerged, each moving the same counters, so the headline row will need
+re-measuring once they land rather than being added up.
 
 ## Standing rule — a contract changes in every provider or in none
 
