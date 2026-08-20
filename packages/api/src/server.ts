@@ -83,6 +83,7 @@ import {
   InMemoryObjectSetFilterStore,
   InMemoryGraphService,
   InMemoryChangeProposalStore,
+  InMemoryApprovalWorkflowService,
   InMemoryBusinessRulesService,
   InMemoryAgentEvaluationService,
   InMemoryDataExpectationsService,
@@ -119,6 +120,7 @@ import { PostgresStorageProvider, PostgresLineageStore, PostgresAuditStore, Post
   PostgresGeospatialMapService, PostgresJustificationStore, PostgresOntologySqlService,
   PostgresOntologyUsageMetricsService, PostgresScopedSessionStore,
   PostgresChangeProposalStore,
+  PostgresApprovalWorkflowService,
   PostgresDatasetService,
 } from '@altius/storage-postgres';
 import {
@@ -1199,6 +1201,9 @@ async function main(): Promise<void> {
   // in-memory otherwise (lost on restart, single-replica only).
   const isPostgres = storage instanceof PostgresStorageProvider;
   const pgPool = isPostgres ? (storage as PostgresStorageProvider).pool : null;
+  const approvalWorkflowService = pgPool
+    ? new PostgresApprovalWorkflowService(pgPool)
+    : new InMemoryApprovalWorkflowService();
   const embeddingStore = pgPool ? new PostgresEmbeddingStore(pgPool) : new InMemoryEmbeddingStore();
 
   // Services with no Postgres implementation keep their state in process memory.
@@ -1435,6 +1440,10 @@ async function main(): Promise<void> {
     // Usage metrics — Postgres-backed when available. The record() method is
     // an instrumentation hook; query/summary endpoints read from Postgres.
     usageMetricsService: pgPool ? new PostgresOntologyUsageMetricsService(pgPool) : new InMemoryOntologyUsageMetricsService(),
+    // Approval workflows — Postgres-backed when available. The workflow and
+    // submission tables are tenant-scoped and the same state machine as the
+    // in-memory service.
+    approvalWorkflowService,
 
     // Non-durable platform services — withheld under Postgres unless opted in.
     // Built and explained above.

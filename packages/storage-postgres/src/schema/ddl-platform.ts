@@ -437,5 +437,47 @@ export function generatePlatformDDL(): string[] {
   // of the pending-review query.
   statements.push(`CREATE INDEX IF NOT EXISTS "idx_proposals_tenant_updated" ON "governance"."change_proposals" ("tenant_id", "updated_at" DESC);`);
 
+  // ── Approval workflows and submissions ──
+  statements.push(`CREATE TABLE IF NOT EXISTS "governance"."approval_workflows" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "tenant_id" TEXT NOT NULL,
+  "name" TEXT NOT NULL,
+  "description" TEXT NOT NULL DEFAULT '',
+  "action_type" TEXT NOT NULL,
+  "criteria" JSONB NOT NULL DEFAULT '[]',
+  "approver_attributes" JSONB NOT NULL DEFAULT '[]',
+  "multi_step" BOOLEAN NOT NULL DEFAULT FALSE,
+  "enabled" BOOLEAN NOT NULL DEFAULT TRUE,
+  "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "created_by" TEXT
+);`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_approval_workflows_tenant" ON "governance"."approval_workflows" ("tenant_id");`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_approval_workflows_tenant_action" ON "governance"."approval_workflows" ("tenant_id", "action_type");`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_approval_workflows_tenant_created" ON "governance"."approval_workflows" ("tenant_id", "created_at" DESC);`);
+
+  statements.push(`CREATE TABLE IF NOT EXISTS "governance"."approval_submissions" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "tenant_id" TEXT NOT NULL,
+  "workflow_id" TEXT NOT NULL,
+  "action_type" TEXT NOT NULL,
+  "parameters" JSONB NOT NULL DEFAULT '{}',
+  "submitter_attributes" JSONB NOT NULL DEFAULT '{}',
+  "resource_attributes" JSONB NOT NULL DEFAULT '{}',
+  "risk_level" TEXT NOT NULL,
+  "state" TEXT NOT NULL DEFAULT 'pending',
+  "submitted_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "submitted_by" TEXT NOT NULL DEFAULT '',
+  "decided_at" TIMESTAMPTZ,
+  "decided_by" TEXT,
+  "decision_notes" TEXT,
+  "criteria_passed" BOOLEAN NOT NULL DEFAULT FALSE,
+  "criteria_details" JSONB NOT NULL DEFAULT '[]',
+  FOREIGN KEY ("workflow_id") REFERENCES "governance"."approval_workflows" ("id")
+);`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_approval_submissions_tenant" ON "governance"."approval_submissions" ("tenant_id");`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_approval_submissions_tenant_state" ON "governance"."approval_submissions" ("tenant_id", "state");`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_approval_submissions_tenant_workflow" ON "governance"."approval_submissions" ("tenant_id", "workflow_id");`);
+
   return statements;
 }

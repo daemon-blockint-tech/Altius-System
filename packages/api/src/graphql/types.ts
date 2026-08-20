@@ -12,6 +12,7 @@ import type {
 import type { ParsedSchema } from '@altius/odl';
 import type { RequestContext, StorageProvider, LLMClient, BlobStore, TimeSeriesStore, BranchStore, CommentStore, NotificationStore, EmbeddingStore, AlertingService, LLMGateway, DataFreshnessService, JustificationStore, AccessExplanationService, ScopedSessionStore, OntologySqlService, DatasetService, DatasetMetadataService, OntologyUsageMetricsService, GeospatialMapService, ScenarioService, ModelInferenceService, ModelChainService, WorkshopPlatformService, EmbeddingService, PlatformResourceService, SavedViewStore, UserDirectoryService, KioskService, LayoutDeviceCaptureService, OntologyManagerService, WorkshopUxService, ValueFormattingService, DesignSystemService, OntologyChangeHistoryService, CommandExchangeService, ObjectSetFilterStore, GraphService, TransformExpressionService, ChangeProposalStore, BusinessRulesService, AgentEvaluationService, AgentThreadStore, ConflictResolutionService, ConnectorCatalogService, DataExpectationsService, EmbeddedCopilotService, EventObjectService, GraphAnalysisService, MultiOntologyGovernanceService, PipelineBuildService, PlatformAssistantService, ProcessMiningService, BatchTransformService, SqlQueryService, VariableTransformService, RulesEngineService, PipelineService, SyncCdcService, DatasourceService, BuildTriggerService, SqlAnalyticsService, AgentService, ModelCatalogService, EvalService, HumanInTheLoopService, VectorSearchService, CopilotService } from '@altius/spi';
 import { DataPurpose } from '@altius/spi';
+import type { ApprovalWorkflowService } from '@altius/spi';
 
 /**
  * Registry that resolves action names to parsed YAML manifests.
@@ -405,6 +406,11 @@ export interface ApiDependencies {
    *   POST   /api/v1/usage/rules/evaluate      (evaluate monitoring rules)
    */
   usageMetricsService?: OntologyUsageMetricsService;
+  /**
+   * Approval workflow service — manages ABAC-governed approval workflows
+   * and their submissions.
+   */
+  approvalWorkflowService?: ApprovalWorkflowService;
   /**
    * App embedding & cross-app service — app registry, embedding manifests,
    * cross-app commands, and app pairing. When present, REST endpoints
