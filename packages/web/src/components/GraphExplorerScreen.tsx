@@ -88,8 +88,11 @@ export function GraphExplorerScreen({ endpoint, getToken }: GraphExplorerScreenP
         </p>
       </header>
 
-      <div style={{ padding: '0 44px 40px' }}>
-        <div className="ed-filter-bar" style={{ display: 'flex', gap: 12, alignItems: 'end', flexWrap: 'wrap', marginBottom: 24 }}>
+            <div className="ed-table-wrap">
+        <div
+          className="ed-filter-bar"
+          style={{ display: 'flex', gap: 12, alignItems: 'end', flexWrap: 'wrap', marginBottom: 24 }}
+        >
           <label>
             Start type
             <input type="text" value={startType} onChange={(e) => setStartType(e.target.value)} placeholder="Patient" />
@@ -117,10 +120,10 @@ export function GraphExplorerScreen({ endpoint, getToken }: GraphExplorerScreenP
 
         {result && status === 'ready' && (
           <div>
-            <h2 style={{ fontSize: '0.875rem', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 12 }}>
+                        <h2 className="ed-subhead">
               Nodes ({result.nodes.length}) — {result.totalCount} total
             </h2>
-            <table>
+            <table className="ed-table">
               <thead>
                 <tr>
                   <th scope="col">ID</th>
@@ -143,10 +146,10 @@ export function GraphExplorerScreen({ endpoint, getToken }: GraphExplorerScreenP
               </tbody>
             </table>
 
-            <h2 style={{ fontSize: '0.875rem', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '24px 0 12px' }}>
+                        <h2 className="ed-subhead">
               Edges ({result.edges.length})
             </h2>
-            <table>
+            <table className="ed-table">
               <thead>
                 <tr>
                   <th scope="col">From</th>

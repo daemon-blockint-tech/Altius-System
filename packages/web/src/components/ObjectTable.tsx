@@ -246,9 +246,9 @@ export function ObjectTable<T extends RowMetadata>({
     });
   };
 
-  if (status === 'error') {
+      if (status === 'error') {
     return (
-      <div role="alert">
+      <div role="alert" className="ed-error ed-error--inline">
         <p>Could not load {caption}.</p>
         <p>{error}</p>
         {/* Retries the SAME page and the SAME sort — a retry that silently
@@ -263,9 +263,9 @@ export function ObjectTable<T extends RowMetadata>({
   const rows = connection?.edges ?? [];
   const identity = rowKey ?? ((row: T) => String((row as Record<string, unknown>)['id'] ?? ''));
 
-  return (
+    return (
     <div>
-      <table>
+      <table className="ed-table">
         <caption>
           {caption}
           {connection ? ` — ${connection.totalCount} total` : ''}
@@ -347,12 +347,18 @@ export function ObjectTable<T extends RowMetadata>({
         {status === 'loading' ? 'Loading…' : rows.length === 0 ? `No ${caption} to show.` : ''}
       </p>
 
-      <nav aria-label={`${caption} pagination`}>
-        <button type="button" onClick={goPrevious} disabled={cursorStack.length === 0 || status === 'loading'}>
+      <nav aria-label={`${caption} pagination`} className="ed-pagination">
+        <button
+          type="button"
+          className={`ed-pagination__btn${cursorStack.length === 0 || status === 'loading' ? ' ed-pagination__btn--disabled' : ''}`}
+          onClick={goPrevious}
+          disabled={cursorStack.length === 0 || status === 'loading'}
+        >
           Previous
         </button>
         <button
           type="button"
+          className={`ed-pagination__btn${!connection?.pageInfo.hasNextPage || status === 'loading' ? ' ed-pagination__btn--disabled' : ''}`}
           onClick={goNext}
           disabled={!connection?.pageInfo.hasNextPage || status === 'loading'}
         >

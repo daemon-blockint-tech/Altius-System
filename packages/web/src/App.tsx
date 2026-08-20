@@ -322,6 +322,7 @@ export function App({ config }: { config: WebConfig }): ReactNode {
       )}
     </EditorialShell>
 
+
     {detailObject && (
       <ObjectDetailScreen
         objectType={detailObject.type}
@@ -329,7 +330,7 @@ export function App({ config }: { config: WebConfig }): ReactNode {
         getToken={session && authState === 'signed-in' ? session.getAccessToken : null}
         onClose={() => setDetailObject(null)}
       />
-    )}
+)}
     </>
   );
 
@@ -432,6 +433,7 @@ function renderScreen(
   }
 
   // Pack manager — browse loaded domain packs.
+
   if (screenId === 'pack-manager') {
     const getToken = session && authState === 'signed-in' ? session.getAccessToken : null;
     return <PackManagerScreen endpoint={config.endpoint} getToken={getToken} />;
@@ -504,3 +506,5 @@ function renderScreen(
     </main>
   );
 }
+
+

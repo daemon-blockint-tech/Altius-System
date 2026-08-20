@@ -51,7 +51,7 @@ The real client coalesces subscription events over 250ms — mirror that cadence
 
 ## Source of truth — read these, do not invent
 - `packages/web/src/App.tsx`, `components/ObjectTable.tsx`, `ActionPanel.tsx`,
-  `ActionForm.tsx`, `index.css` — today's UI, and the redaction/consent/empty distinction.
+  `ActionForm.tsx`, `editorial.css` — today's UI, and the redaction/consent/empty distinction.
 - `domain-packs/supply-chain/schema/*.odl` — Facility, Supplier, Product, PurchaseOrder,
   Shipment, InventoryRecord; 7 link types; enums incl. ShipmentStatus CUSTOMS_HOLD / LOST.
 - `domain-packs/supply-chain/permissions/supply-chain-roles.fga` — `facility.viewer: assigned`,

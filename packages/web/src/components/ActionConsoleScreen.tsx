@@ -31,7 +31,7 @@ export function ActionConsoleScreen({
           the action's JSON-Schema parameter descriptor — no form is hard-coded.
         </p>
       </header>
-      <div style={{ padding: '0 44px 40px', maxWidth: 1180 }}>
+                        <div className="ed-table-wrap">
         <ActionPanel loadActions={loadActions} submit={submit} />
       </div>
     </main>

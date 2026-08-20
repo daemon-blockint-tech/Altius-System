@@ -13,9 +13,10 @@
 :root {
   color-scheme: light dark;
 
-  /* Chrome — greyscale */
+      /* Chrome — greyscale */
   --ed-bg: #faf9f6;
   --ed-fg: #1b1b17;
+  --ed-ink: #1b1b17;
   --ed-muted: #71716a;
   --ed-faint: #9b9a92;
   --ed-rule: #e7e6e0;
@@ -24,6 +25,12 @@
   --ed-row-active: #f2f1ec;
   --ed-cell-border: #ecebe5;
   --ed-track: #ecebe5;
+  --ed-surface: #f2f1ec;
+  --ed-surface-raised: #f2f1ec;
+
+  /* Accent — greyscale in Shell-C; functional colour only in data viz */
+  --ed-accent: var(--ed-fg);
+  --ed-accent-fg: var(--ed-bg);
 
   /* Data viz — the only place colour appears */
   --ed-healthy: #2f6b4f;
@@ -38,15 +45,23 @@
 @media (prefers-color-scheme: dark) {
   :root {
     --ed-bg: #14171a;
-    --ed-fg: #e8eaed;
+        --ed-fg: #e8eaed;
+    --ed-ink: #e8eaed;
     --ed-muted: #a3abb5;
     --ed-faint: #6b7480;
     --ed-rule: #333a42;
     --ed-rule-strong: #e8eaed;
     --ed-row-hover: #1d2126;
     --ed-row-active: #222831;
-    --ed-cell-border: #2a3038;
+        --ed-cell-border: #2a3038;
     --ed-track: #2a3038;
+    --ed-surface: #1d2126;
+    --ed-surface-raised: #222831;
+
+    /* Accent — greyscale in Shell-C; functional colour only in data viz.
+       Shell-B overrides these to a blue accent (see Shell-B theme). */
+    --ed-accent: var(--ed-fg);
+    --ed-accent-fg: var(--ed-bg);
 
     --ed-healthy: #4ca877;
     --ed-pressure: #c4a24e;
@@ -69,6 +84,196 @@ a { color: var(--ed-fg); text-decoration: none; }
 a:hover { color: var(--ed-muted); }
 
 :focus-visible { outline: 2px solid var(--ed-fg); outline-offset: 2px; }
+
+/* ── Base element styles ──────────────────────────────────────────
+   Classless element styling for components that render unclassed HTML
+   (ObjectTable sort/pagination buttons, ErrorBoundary, form controls,
+   classless tables in AuditTrail / Ontology / Graph screens).
+   These are deliberately neutral: .ed-* classes carry the editorial
+   visual weight and override where both apply.
+───────────────────────────────── */
+
+/* `main` must NOT carry a max-width — the grid cell is 1fr. */
+main {
+  margin: 0;
+  padding: 0;
+}
+
+/* Plain h1/h2 outside of .ed-main__title / .ed-main__header. */
+h1 {
+  margin: 0 0 16px;
+  font: 450 28px/1.1 var(--ed-sans);
+  letter-spacing: -0.02em;
+}
+
+h2 {
+  margin: 16px 0 12px;
+  font: 500 14px/1.2 var(--ed-sans);
+  letter-spacing: -0.01em;
+}
+
+/* Base button — transparent chrome. Sort buttons and pagination links
+   inherit this and override individual properties via .ed-* classes. */
+button {
+  font: inherit;
+  padding: 0.3rem 0.7rem;
+  border: 1px solid var(--ed-rule);
+  border-radius: 4px;
+  background: var(--ed-bg);
+  color: var(--ed-fg);
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  border-color: var(--ed-muted);
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Submit buttons inside forms get the accent treatment. */
+form button[type='submit'] {
+  background: var(--ed-accent);
+  color: var(--ed-accent-fg);
+  border-color: transparent;
+  font-weight: 500;
+}
+
+form button[type='submit']:hover:not(:disabled) {
+  border-color: var(--ed-accent);
+}
+
+input, select {
+  font: inherit;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--ed-rule);
+  border-radius: 4px;
+  background: var(--ed-bg);
+  color: var(--ed-fg);
+  max-width: 100%;
+}
+
+input:focus-visible, select:focus-visible {
+  border-color: var(--ed-fg);
+}
+
+label {
+  display: block;
+  margin-bottom: 0.5rem;
+  color: var(--ed-muted);
+  font: 400 11px var(--ed-mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+label input,
+label select {
+  display: block;
+  margin-top: 0.25rem;
+  min-width: 14rem;
+  font-size: 0.9rem;
+}
+
+/* Classless table — ObjectTable and screens that don't use .ed-table.
+   Provides the same reading geometry; .ed-table overrides where used. */
+table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.85rem;
+}
+
+caption {
+  text-align: left;
+  font-weight: 600;
+  padding-bottom: 0.5rem;
+}
+
+th, td {
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--ed-rule);
+}
+
+th {
+  color: var(--ed-muted);
+  font-weight: 600;
+  font-size: 0.8125rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+tbody tr:hover {
+  background: var(--ed-row-hover);
+}
+
+/* Alert / status messages — same grammar as .ed-error. */
+[role='alert'] {
+  color: var(--ed-disrupted);
+  border-left: 3px solid var(--ed-disrupted);
+  padding: 0.5rem 0.75rem;
+  margin: 0.5rem 0;
+  font-size: 0.9rem;
+}
+
+[role='status'] {
+  color: var(--ed-muted);
+}
+
+nav {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  margin-top: 0.75rem;
+}
+
+ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+pre {
+  font-family: var(--ed-mono);
+  font-size: 0.85rem;
+  margin: 0;
+  overflow-x: auto;
+}
+
+code {
+  font-family: var(--ed-mono);
+  font-size: 0.9em;
+}
+
+abbr {
+  border-bottom: none;
+  cursor: help;
+}
+
+/* Sort button rendered inside .ed-table / classless <th>. */
+table th button,
+.ed-table th button {
+  font: 400 9.5px var(--ed-mono);
+  letter-spacing: 0.13em;
+  color: var(--ed-muted);
+  text-align: left;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+}
+
+table th button:hover,
+.ed-table th button:hover {
+  color: var(--ed-fg);
+}
+
+table th button:disabled,
+.ed-table th button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 
 /* ── Shell grid ─────────────────────────────────────────────── */
 
@@ -300,15 +505,15 @@ a:hover { color: var(--ed-muted); }
 }
 
 .ed-main__title {
-  margin: 0 0 16px;
-  font: 450 40px/1 var(--ed-sans);
-  letter-spacing: -0.03em;
+  margin: 8px 0;
+  font: 400 40px/1.1 var(--ed-sans);
+  letter-spacing: -0.01em;
 }
 
 .ed-main__lede {
-  margin: 0 0 28px;
+  margin: 0 0 12px;
   max-width: 56ch;
-  font: 400 14.5px/1.6 var(--ed-sans);
+  font: 400 11.5px/1.55 var(--ed-sans);
   color: #4b4b44;
   text-wrap: pretty;
 }
@@ -316,6 +521,94 @@ a:hover { color: var(--ed-muted); }
 .ed-main__lede code {
   font-family: var(--ed-mono);
   font-size: 13px;
+}
+
+/* Section subheadings in main content area. */
+.ed-subhead {
+  margin: 16px 0 12px;
+  font: 600 14px/1.2 var(--ed-sans);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ed-muted);
+}
+
+.ed-list-item {
+  padding: 4px 0;
+}
+
+/* Type-list button in OntologyExplorer / PackManager. */
+.ed-type-btn {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 6px 12px;
+  border: none;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+  border-left: 2px solid transparent;
+}
+
+.ed-type-btn--selected {
+  background: var(--ed-surface-raised);
+  border-left-color: var(--ed-fg);
+  font-weight: 500;
+}
+
+.ed-type-btn:hover:not(.ed-type-btn--selected) {
+  background: var(--ed-row-hover);
+}
+
+.ed-muted {
+  color: var(--ed-muted);
+}
+
+/* Form row — labels and inputs laid out horizontally. */
+.ed-form-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 14rem;
+}
+
+.ed-form-row--inline {
+  display: flex;
+  align-items: end;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.ed-form-row--inline > * {
+  flex: 0 0 auto;
+}
+
+/* Tool card — used in MCP activity and similar list views. */
+.ed-tool-card {
+  border: 1px solid var(--ed-rule);
+  border-radius: 4px;
+  padding: 16px;
+  background: var(--ed-bg);
+}
+
+.ed-tool-card__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.ed-tool-card__title {
+  margin: 0;
+  font: 500 13px var(--ed-mono);
+}
+
+.ed-tool-card__meta {
+  display: flex;
+  gap: 12px;
+  font-size: 0.85em;
+  color: var(--ed-muted);
+  margin: 4px 0;
 }
 
 /* ── Stat strip ─────────────────────────────────────────────── */
@@ -569,20 +862,20 @@ a:hover { color: var(--ed-muted); }
 
 .ed-pagination__btn {
   font: 450 12px var(--ed-mono);
+  border: none;
   border-bottom: 1px solid var(--ed-rule-strong);
+  border-radius: 0;
   background: none;
-  border-top: none;
-  border-left: none;
-  border-right: none;
   color: inherit;
   cursor: pointer;
   padding: 0;
+  white-space: nowrap;
 }
 
 .ed-pagination__btn--disabled {
   font-weight: 400;
-  color: #cfcec6;
-  border-bottom: none;
+  color: var(--ed-faint);
+  border-bottom-color: transparent;
   cursor: default;
 }
 
@@ -776,15 +1069,24 @@ a:hover { color: var(--ed-muted); }
 /* ── Loading / error states ─────────────────────────────────── */
 
 .ed-loading {
-  padding: 44px;
-  font: 400 14px var(--ed-sans);
+  padding: 24px;
+  font: 400 13px var(--ed-sans);
   color: var(--ed-muted);
+  text-align: center;
 }
 
 .ed-error {
   padding: 44px;
   font: 400 14px var(--ed-sans);
   color: var(--ed-disrupted);
+}
+
+.ed-error--inline {
+  padding: 0.75rem 1rem;
+  font: 400 13px var(--ed-sans);
+  background: rgba(168, 69, 44, 0.03);
+  border-left: 3px solid var(--ed-disrupted);
+  margin: 0.5rem 0;
 }
 
 /* ── Responsive: collapse governance rail under 1200px ───────── */

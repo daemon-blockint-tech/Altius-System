@@ -114,7 +114,7 @@ export function OntologyExplorerScreen({ endpoint, getToken }: OntologyExplorerS
           <span className="ed-main__eyebrow">MODEL · ONTOLOGY</span>
           <h1 className="ed-main__title">Ontology explorer</h1>
         </header>
-        <div role="alert">
+                <div role="alert" className="ed-error">
           <p>Could not load schema.</p>
           <p>{error}</p>
           <button type="button" onClick={() => void fetchSchema()}>Retry</button>
@@ -155,25 +155,16 @@ export function OntologyExplorerScreen({ endpoint, getToken }: OntologyExplorerS
       <div style={{ padding: '0 44px 40px', display: 'grid', gridTemplateColumns: '300px 1fr', gap: 24 }}>
         {/* Type list */}
         <div>
-          <h2 style={{ fontSize: '0.875rem', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
+                    <h2 className="ed-subhead">
             Object types ({filteredObjects.length})
           </h2>
-          <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+          <ul>
             {filteredObjects.map((t) => (
               <li key={t.name}>
                 <button
                   type="button"
                   onClick={() => setSelectedType(t)}
-                  style={{
-                    display: 'block',
-                    width: '100%',
-                    textAlign: 'left',
-                    padding: '6px 12px',
-                    background: selectedType?.name === t.name ? 'var(--ed-surface-raised, #e8e8e8)' : 'transparent',
-                    border: 'none',
-                    cursor: 'pointer',
-                    font: 'inherit',
-                  }}
+                  className={`ed-type-btn${selectedType?.name === t.name ? ' ed-type-btn--selected' : ''}`}
                 >
                   {t.name}
                 </button>
@@ -183,25 +174,16 @@ export function OntologyExplorerScreen({ endpoint, getToken }: OntologyExplorerS
 
           {enums.length > 0 && (
             <>
-              <h2 style={{ fontSize: '0.875rem', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '16px 0 8px' }}>
+                            <h2 className="ed-subhead">
                 Enums ({enums.length})
               </h2>
-              <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+              <ul>
                 {enums.map((t) => (
                   <li key={t.name}>
                     <button
                       type="button"
                       onClick={() => setSelectedType(t)}
-                      style={{
-                        display: 'block',
-                        width: '100%',
-                        textAlign: 'left',
-                        padding: '6px 12px',
-                        background: selectedType?.name === t.name ? 'var(--ed-surface-raised, #e8e8e8)' : 'transparent',
-                        border: 'none',
-                        cursor: 'pointer',
-                        font: 'inherit',
-                      }}
+                      className={`ed-type-btn${selectedType?.name === t.name ? ' ed-type-btn--selected' : ''}`}
                     >
                       {t.name}
                     </button>
@@ -213,25 +195,16 @@ export function OntologyExplorerScreen({ endpoint, getToken }: OntologyExplorerS
 
           {interfaces.length > 0 && (
             <>
-              <h2 style={{ fontSize: '0.875rem', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '16px 0 8px' }}>
+                            <h2 className="ed-subhead">
                 Interfaces ({interfaces.length})
               </h2>
-              <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+              <ul>
                 {interfaces.map((t) => (
                   <li key={t.name}>
                     <button
                       type="button"
                       onClick={() => setSelectedType(t)}
-                      style={{
-                        display: 'block',
-                        width: '100%',
-                        textAlign: 'left',
-                        padding: '6px 12px',
-                        background: selectedType?.name === t.name ? 'var(--ed-surface-raised, #e8e8e8)' : 'transparent',
-                        border: 'none',
-                        cursor: 'pointer',
-                        font: 'inherit',
-                      }}
+                      className={`ed-type-btn${selectedType?.name === t.name ? ' ed-type-btn--selected' : ''}`}
                     >
                       {t.name}
                     </button>
@@ -246,15 +219,13 @@ export function OntologyExplorerScreen({ endpoint, getToken }: OntologyExplorerS
         <div>
           {selectedType ? (
             <div>
-              <h2 style={{ marginBottom: 4 }}>{selectedType.name}</h2>
-              <span className="ed-main__eyebrow" style={{ display: 'block', marginBottom: 16 }}>
-                {selectedType.kind}
-              </span>
+                            <h2 style={{ margin: '4px 0 0' }}>{selectedType.name}</h2>
+              <span className="ed-main__eyebrow">{selectedType.kind}</span>
               {selectedType.description && (
-                <p style={{ opacity: 0.7, marginBottom: 16 }}>{selectedType.description}</p>
+                <p className="ed-muted">{selectedType.description}</p>
               )}
               {selectedType.fields && selectedType.fields.length > 0 ? (
-                <table>
+                                <table className="ed-table">
                   <thead>
                     <tr>
                       <th scope="col">Field</th>
@@ -279,7 +250,7 @@ export function OntologyExplorerScreen({ endpoint, getToken }: OntologyExplorerS
               )}
             </div>
           ) : (
-            <p style={{ opacity: 0.5 }}>Select a type to see its fields.</p>
+                        <p className="ed-muted">Select a type to see its fields.</p>
           )}
         </div>
       </div>

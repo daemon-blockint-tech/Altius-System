@@ -123,20 +123,20 @@ export function ConsentPermissionsScreen({ endpoint, getToken }: ConsentPermissi
         </p>
       </header>
 
-      <div style={{ padding: '0 44px 40px' }}>
-        <h2 style={{ fontSize: '0.875rem', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 12 }}>
+                  <div className="ed-table-wrap">
+        <h2 className="ed-subhead">
           Grant relationship
         </h2>
-        <div className="ed-filter-bar" style={{ display: 'flex', gap: 12, alignItems: 'end', flexWrap: 'wrap', marginBottom: 16 }}>
-          <label>
+        <div className="ed-form-row--inline">
+          <label className="ed-form-row">
             Subject (user ID)
             <input type="text" value={grantSubject} onChange={(e) => setGrantSubject(e.target.value)} placeholder="user:alice" />
           </label>
-          <label>
+          <label className="ed-form-row">
             Relation
             <input type="text" value={grantRelation} onChange={(e) => setGrantRelation(e.target.value)} placeholder="viewer" />
           </label>
-          <label>
+          <label className="ed-form-row">
             Target (object)
             <input type="text" value={grantTarget} onChange={(e) => setGrantTarget(e.target.value)} placeholder="Patient:123" />
           </label>
@@ -144,12 +144,12 @@ export function ConsentPermissionsScreen({ endpoint, getToken }: ConsentPermissi
         </div>
         {grantResult && <p aria-live="polite">{grantResult}</p>}
 
-        <h2 style={{ fontSize: '0.875rem', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '24px 0 12px' }}>
+                        <h2 className="ed-subhead">
           Consent decisions ({records.length})
         </h2>
         {status === 'loading' && <p aria-live="polite">Loading…</p>}
         {records.length > 0 && (
-          <table>
+          <table className="ed-table">
             <thead>
               <tr>
                 <th scope="col">Subject</th>
@@ -170,7 +170,7 @@ export function ConsentPermissionsScreen({ endpoint, getToken }: ConsentPermissi
             </tbody>
           </table>
         )}
-        {status === 'ready' && records.length === 0 && <p style={{ opacity: 0.5 }}>No consent records found.</p>}
+                {status === 'ready' && records.length === 0 && <p className="ed-muted">No consent records found.</p>}
       </div>
     </main>
   );

@@ -133,7 +133,7 @@ export function AuditTrailScreen({ endpoint, getToken }: AuditTrailScreenProps):
           <span className="ed-main__eyebrow">GOVERNANCE · AUDIT</span>
           <h1 className="ed-main__title">Audit trail</h1>
         </header>
-        <div role="alert">
+                <div role="alert" className="ed-error">
           <p>Could not load audit records.</p>
           <p>{error}</p>
           <button type="button" onClick={() => void fetchPage(offset)}>Retry</button>
@@ -175,8 +175,8 @@ export function AuditTrailScreen({ endpoint, getToken }: AuditTrailScreenProps):
         <button type="button" onClick={applyFilter}>Apply filter</button>
       </div>
 
-      <div className="ed-table-wrap">
-        <table>
+            <div className="ed-table-wrap">
+        <table className="ed-table">
           <caption>Audit records — {totalCount} total</caption>
           <thead>
             <tr>
@@ -255,9 +255,13 @@ export function AuditTrailScreen({ endpoint, getToken }: AuditTrailScreenProps):
         {status === 'loading' ? 'Loading…' : records.length === 0 ? 'No audit records to show.' : ''}
       </p>
 
-      <nav aria-label="Audit trail pagination" style={{ padding: '0 44px 40px' }}>
+            <nav
+        aria-label="Audit trail pagination"
+        className="ed-pagination"
+      >
         <button
           type="button"
+          className={`ed-pagination__btn${offset === 0 || status === 'loading' ? ' ed-pagination__btn--disabled' : ''}`}
           onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
           disabled={offset === 0 || status === 'loading'}
         >
@@ -265,6 +269,7 @@ export function AuditTrailScreen({ endpoint, getToken }: AuditTrailScreenProps):
         </button>
         <button
           type="button"
+          className={`ed-pagination__btn${!hasMore || status === 'loading' ? ' ed-pagination__btn--disabled' : ''}`}
           onClick={() => setOffset(offset + PAGE_SIZE)}
           disabled={!hasMore || status === 'loading'}
         >

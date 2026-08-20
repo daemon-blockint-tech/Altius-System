@@ -83,33 +83,33 @@ export function PackManagerScreen({ endpoint, getToken }: PackManagerScreenProps
         </p>
       </header>
 
-      <div style={{ padding: '0 44px 40px' }}>
+                  <div className="ed-table-wrap">
         {status === 'loading' && <p aria-live="polite">Loading…</p>}
 
-        {status === 'ready' && (
+                {status === 'ready' && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
             <div>
-              <h2 style={{ fontSize: '0.875rem', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 12 }}>
+              <h2 className="ed-subhead">
                 Object types ({types.objectTypes.length})
               </h2>
-              <ul style={{ listStyle: 'none', padding: 0 }}>
-                {types.objectTypes.map(t => <li key={t} style={{ padding: '4px 0' }}><code>{t}</code></li>)}
+              <ul>
+                {types.objectTypes.map(t => <li key={t} className="ed-list-item"><code>{t}</code></li>)}
               </ul>
             </div>
 
             <div>
-              <h2 style={{ fontSize: '0.875rem', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 12 }}>
+              <h2 className="ed-subhead">
                 Enums ({types.enumTypes.length})
               </h2>
-              <ul style={{ listStyle: 'none', padding: 0 }}>
-                {types.enumTypes.map(t => <li key={t} style={{ padding: '4px 0' }}><code>{t}</code></li>)}
+              <ul>
+                {types.enumTypes.map(t => <li key={t} className="ed-list-item"><code>{t}</code></li>)}
               </ul>
 
-              <h2 style={{ fontSize: '0.875rem', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '16px 0 12px' }}>
+              <h2 className="ed-subhead">
                 Link types ({types.linkTypes.length})
               </h2>
-              <ul style={{ listStyle: 'none', padding: 0 }}>
-                {types.linkTypes.map(t => <li key={t} style={{ padding: '4px 0' }}><code>{t}</code></li>)}
+              <ul>
+                {types.linkTypes.map(t => <li key={t} className="ed-list-item"><code>{t}</code></li>)}
               </ul>
             </div>
           </div>
