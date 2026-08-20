@@ -383,6 +383,10 @@ export {
   datasetBranchNotFoundError,
 } from './dataset-contract.js';
 export type { CodedError } from './dataset-contract.js';
+// Whether an event breaches its threshold is written onto the event, so the two
+// providers must not disagree about it — decided once, here.
+export { evaluateEventThreshold } from './event-thresholds.js';
+export type { EventThreshold, EventThresholdBreach } from './event-thresholds.js';
 
 // Enterprise connector catalog
 export type {

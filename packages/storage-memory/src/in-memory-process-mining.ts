@@ -3,6 +3,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { evaluateEventThreshold } from '@altius/spi';
 import type {
   EventObjectService,
   ProcessMiningService,
@@ -51,21 +52,13 @@ export class InMemoryEventObjectService implements EventObjectService {
       createdAt: now,
     };
 
-    // Check threshold
-    const threshold = this.thresholds.get(ctx.tenantId)?.get(input.eventType);
-    if (threshold && durationMs !== undefined) {
-      const breached = threshold.direction === 'above'
-        ? durationMs > threshold.threshold
-        : durationMs < threshold.threshold;
-      if (breached) {
-        event.thresholdBreached = true;
-        event.thresholdDetails = {
-          metric: threshold.metric,
-          value: durationMs,
-          threshold: threshold.threshold,
-          direction: threshold.direction,
-        };
-      }
+    // Whether this breaches is shared with the Postgres provider: the answer is
+    // written onto the event, so two providers disagreeing would store
+    // different flags for the same event and the same threshold.
+    const breach = evaluateEventThreshold(this.thresholds.get(ctx.tenantId)?.get(input.eventType), durationMs);
+    if (breach) {
+      event.thresholdBreached = true;
+      event.thresholdDetails = breach;
     }
 
     this.getMap(ctx.tenantId).set(id, event);
@@ -85,7 +78,17 @@ export class InMemoryEventObjectService implements EventObjectService {
     if (query?.objectId) results = results.filter(e => e.objectId === query.objectId);
     if (query?.objectType) results = results.filter(e => e.objectType === query.objectType);
     if (query?.actorId) results = results.filter(e => e.actorId === query.actorId);
-    if (query?.thresholdBreached !== undefined) results = results.filter(e => e.thresholdBreached === query.thresholdBreached);
+    if (query?.thresholdBreached !== undefined) {
+      // `=== query.thresholdBreached` would be wrong for the false case: a
+      // non-breaching event carries no flag at all rather than `false`, so
+      // `undefined === false` is false and the filter could only ever return an
+      // empty list. Comparing truthiness instead makes `thresholdBreached:
+      // false` mean "did not breach", which is the only thing it could have
+      // meant. Narrowed in the Postgres provider the same way (`IS NOT TRUE`),
+      // so the two cannot disagree.
+      const want = query.thresholdBreached;
+      results = results.filter(e => (e.thresholdBreached === true) === want);
+    }
     if (query?.startTimeFrom) results = results.filter(e => e.startTime >= query.startTimeFrom!);
     if (query?.startTimeTo) results = results.filter(e => e.startTime <= query.startTimeTo!);
     if (query?.badges?.length) results = results.filter(e => query.badges!.some(b => e.badges.includes(b)));
