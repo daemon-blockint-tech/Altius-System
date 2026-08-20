@@ -241,7 +241,16 @@ export class InMemoryPipelineBuildService implements PipelineBuildService {
     if (!tenantBuilds) return [];
     let results = Array.from(tenantBuilds.values());
     if (pipelineName) results = results.filter(b => b.pipelineName === pipelineName);
-    return results.sort((a, b) => b.startedAt.localeCompare(a.startedAt)).slice(0, limit);
+    // Newest first, with insertion order breaking ties. `startedAt` alone is
+    // not a total order: two builds started in the same millisecond compare
+    // equal, the sort becomes a no-op for them, and the pair comes back
+    // oldest-first — the opposite of what this method promises. The Postgres
+    // provider orders by a sequence, so without this the two disagree.
+    return results
+      .map((b, i) => ({ b, i }))
+      .sort((x, y) => y.b.startedAt.localeCompare(x.b.startedAt) || y.i - x.i)
+      .map(e => e.b)
+      .slice(0, limit);
   }
 
   async abortBuild(ctx: RequestContext, buildId: string): Promise<void> {
@@ -293,7 +302,13 @@ export class InMemoryPipelineBuildService implements PipelineBuildService {
   async listSchedules(ctx: RequestContext): Promise<PipelineSchedule[]> {
     const tenantSchedules = this.schedules.get(ctx.tenantId);
     if (!tenantSchedules) return [];
-    return Array.from(tenantSchedules.values()).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    // Same tie-break as listBuilds, for the same reason: `createdAt` is a
+    // millisecond timestamp, and two schedules created in the same one would
+    // otherwise come back oldest-first while Postgres returns them newest-first.
+    return Array.from(tenantSchedules.values())
+      .map((s, i) => ({ s, i }))
+      .sort((x, y) => y.s.createdAt.localeCompare(x.s.createdAt) || y.i - x.i)
+      .map(e => e.s);
   }
 
   async updateSchedule(ctx: RequestContext, scheduleId: string, updates: Partial<CreateScheduleInput>): Promise<PipelineSchedule> {

@@ -293,6 +293,61 @@ export function generatePlatformDDL(): string[] {
 );`);
   statements.push(`CREATE INDEX IF NOT EXISTS "idx_expectations_tenant_target" ON "quality"."expectations" ("tenant_id", "target_type");`);
 
+  // ── Pipeline builds, schedules and action triggers ──
+  //
+  // A schedule that silently stops firing, or an action->pipeline registration
+  // that quietly disappears, looks like nothing happening rather than like a
+  // failure. That is what makes these worth persisting.
+  statements.push(`CREATE SCHEMA IF NOT EXISTS "pipeline";`);
+  statements.push(`CREATE TABLE IF NOT EXISTS "pipeline"."builds" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "seq" BIGSERIAL,
+  "tenant_id" TEXT NOT NULL,
+  "pipeline_name" TEXT NOT NULL,
+  "state" TEXT NOT NULL DEFAULT 'pending',
+  "trigger" TEXT NOT NULL DEFAULT 'manual',
+  "started_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "ended_at" TIMESTAMPTZ,
+  "duration_ms" BIGINT,
+  "triggered_by" TEXT NOT NULL DEFAULT '',
+  "retry_count" INTEGER NOT NULL DEFAULT 0,
+  "max_retries" INTEGER NOT NULL DEFAULT 3,
+  "error_message" TEXT,
+  "steps" JSONB NOT NULL DEFAULT '[]',
+  "expectation_gated" BOOLEAN NOT NULL DEFAULT FALSE,
+  "expectation_results" JSONB
+);`);
+  // listBuilds returns newest first; `seq` gives that a total order, since two
+  // builds can start within the same millisecond.
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_pbuilds_tenant_name_seq" ON "pipeline"."builds" ("tenant_id", "pipeline_name", "seq" DESC);`);
+
+  statements.push(`CREATE TABLE IF NOT EXISTS "pipeline"."schedules" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "seq" BIGSERIAL,
+  "tenant_id" TEXT NOT NULL,
+  "pipeline_name" TEXT NOT NULL,
+  "cron_expression" TEXT NOT NULL,
+  "enabled" BOOLEAN NOT NULL DEFAULT TRUE,
+  "max_retries" INTEGER NOT NULL DEFAULT 3,
+  "abort_on_failure" BOOLEAN NOT NULL DEFAULT FALSE,
+  "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "last_run_at" TIMESTAMPTZ,
+  "next_run_at" TIMESTAMPTZ,
+  "created_by" TEXT NOT NULL DEFAULT ''
+);`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_pschedules_tenant_seq" ON "pipeline"."schedules" ("tenant_id", "seq" DESC);`);
+
+  // The in-memory service keeps these in a Set, so registering the same pair
+  // twice is a no-op. The composite primary key plus ON CONFLICT DO NOTHING is
+  // how that stays true here.
+  statements.push(`CREATE TABLE IF NOT EXISTS "pipeline"."action_triggers" (
+  "tenant_id" TEXT NOT NULL,
+  "action_name" TEXT NOT NULL,
+  "pipeline_name" TEXT NOT NULL,
+  "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY ("tenant_id", "action_name", "pipeline_name")
+);`);
+
   // ── Geospatial maps ──
   statements.push(`CREATE SCHEMA IF NOT EXISTS "geospatial";`);
   statements.push(`CREATE TABLE IF NOT EXISTS "geospatial"."layers" (
