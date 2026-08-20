@@ -166,6 +166,130 @@ function mockDeps(schema: ReturnType<typeof parseOdl>): ApiDependencies {
       getView: vi.fn().mockResolvedValue(null),
       listViews: vi.fn().mockResolvedValue([]),
     } as never,
+    // Pipeline Data Ops — required for transform/pipeline/expectation/rules
+    // routes to be generated and match the OpenAPI spec.
+    batchTransformService: {
+      create: vi.fn().mockResolvedValue({}),
+      get: vi.fn().mockResolvedValue(null),
+      list: vi.fn().mockResolvedValue([]),
+      update: vi.fn().mockResolvedValue({}),
+      delete: vi.fn().mockResolvedValue(undefined),
+      registerExecutor: vi.fn().mockResolvedValue(undefined),
+      startBuild: vi.fn().mockResolvedValue({}),
+      getBuild: vi.fn().mockResolvedValue(null),
+      listBuilds: vi.fn().mockResolvedValue([]),
+      abortBuild: vi.fn().mockResolvedValue(undefined),
+      schedule: vi.fn().mockResolvedValue({ scheduleId: '' }),
+      listSchedules: vi.fn().mockResolvedValue([]),
+      deleteSchedule: vi.fn().mockResolvedValue(undefined),
+    } as never,
+    sqlQueryService: {
+      execute: vi.fn().mockResolvedValue({ columns: [], rows: [], totalRowCount: 0, truncated: false, executionTimeMs: 0 }),
+      explain: vi.fn().mockResolvedValue({}),
+      validate: vi.fn().mockResolvedValue({ valid: true, errors: [], warnings: [] }),
+    } as never,
+    pipelineService: {
+      create: vi.fn().mockResolvedValue({}),
+      get: vi.fn().mockResolvedValue(null),
+      list: vi.fn().mockResolvedValue([]),
+      update: vi.fn().mockResolvedValue({}),
+      delete: vi.fn().mockResolvedValue(undefined),
+      run: vi.fn().mockResolvedValue({}),
+      listRuns: vi.fn().mockResolvedValue([]),
+    } as never,
+    dataExpectationsService: {
+      create: vi.fn().mockResolvedValue({}),
+      get: vi.fn().mockResolvedValue(null),
+      list: vi.fn().mockResolvedValue([]),
+      update: vi.fn().mockResolvedValue({}),
+      delete: vi.fn().mockResolvedValue(undefined),
+      run: vi.fn().mockResolvedValue({}),
+    } as never,
+    rulesEngineService: {
+      create: vi.fn().mockResolvedValue({}),
+      get: vi.fn().mockResolvedValue(null),
+      list: vi.fn().mockResolvedValue([]),
+      update: vi.fn().mockResolvedValue({}),
+      delete: vi.fn().mockResolvedValue(undefined),
+      run: vi.fn().mockResolvedValue({}),
+    } as never,
+    variableTransformService: {
+      list: vi.fn().mockResolvedValue([]),
+      apply: vi.fn().mockResolvedValue({}),
+    } as never,
+    sqlAnalyticsService: {
+      query: vi.fn().mockResolvedValue({ rows: [], columns: [], totalRowCount: 0, truncated: false, executionTimeMs: 0 }),
+      listJobs: vi.fn().mockResolvedValue([]),
+      getJob: vi.fn().mockResolvedValue(null),
+      cancelJob: vi.fn().mockResolvedValue(undefined),
+    } as never,
+    syncCdcService: {
+      create: vi.fn().mockResolvedValue({}),
+      list: vi.fn().mockResolvedValue([]),
+      get: vi.fn().mockResolvedValue(null),
+      listCommits: vi.fn().mockResolvedValue([]),
+      apply: vi.fn().mockResolvedValue({}),
+    } as never,
+    datasourceService: {
+      create: vi.fn().mockResolvedValue({}),
+      list: vi.fn().mockResolvedValue([]),
+      get: vi.fn().mockResolvedValue(null),
+      map: vi.fn().mockResolvedValue({}),
+      sync: vi.fn().mockResolvedValue({}),
+    } as never,
+    pipelineBuildService: {
+      listBuilds: vi.fn().mockResolvedValue([]),
+      getBuild: vi.fn().mockResolvedValue(null),
+      runBuild: vi.fn().mockResolvedValue({}),
+    } as never,
+    buildTriggerService: {
+      list: vi.fn().mockResolvedValue([]),
+      create: vi.fn().mockResolvedValue({}),
+      trigger: vi.fn().mockResolvedValue({}),
+    } as never,
+    // AIP LLM — required for agent/llm/eval/embedding/copilot routes to be
+    // generated and match the OpenAPI spec.
+    agentService: {
+      list: vi.fn().mockResolvedValue([]),
+      create: vi.fn().mockResolvedValue({}),
+      get: vi.fn().mockResolvedValue(null),
+      run: vi.fn().mockResolvedValue({}),
+      chat: vi.fn().mockResolvedValue({}),
+    } as never,
+    modelCatalogService: {
+      listModels: vi.fn().mockResolvedValue([]),
+      getModel: vi.fn().mockResolvedValue(null),
+      createApplication: vi.fn().mockResolvedValue({}),
+      listApplications: vi.fn().mockResolvedValue([]),
+      getApplication: vi.fn().mockResolvedValue(null),
+      runPromptPlayground: vi.fn().mockResolvedValue({}),
+    } as never,
+    evalService: {
+      listSuites: vi.fn().mockResolvedValue([]),
+      createSuite: vi.fn().mockResolvedValue({}),
+      getSuite: vi.fn().mockResolvedValue(null),
+      runSuite: vi.fn().mockResolvedValue({}),
+    } as never,
+    humanInTheLoopService: {
+      listProposals: vi.fn().mockResolvedValue([]),
+      createProposal: vi.fn().mockResolvedValue({}),
+      approve: vi.fn().mockResolvedValue({}),
+      reject: vi.fn().mockResolvedValue({}),
+    } as never,
+    vectorSearchService: {
+      listModels: vi.fn().mockResolvedValue([]),
+      embed: vi.fn().mockResolvedValue({}),
+      search: vi.fn().mockResolvedValue({}),
+    } as never,
+    llmGateway: {
+      usageTracker: {
+        getUsageForUser: vi.fn().mockResolvedValue([]),
+      } as never,
+    } as never,
+    copilotService: {
+      suggest: vi.fn().mockResolvedValue({}),
+      apply: vi.fn().mockResolvedValue({}),
+    } as never,
   } as ApiDependencies;
 }
 
