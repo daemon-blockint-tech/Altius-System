@@ -119,6 +119,7 @@ import { PostgresStorageProvider, PostgresLineageStore, PostgresAuditStore, Post
   PostgresGeospatialMapService, PostgresJustificationStore, PostgresOntologySqlService,
   PostgresOntologyUsageMetricsService, PostgresScopedSessionStore,
   PostgresChangeProposalStore,
+  PostgresConflictResolutionService,
   PostgresDatasetService,
 } from '@altius/storage-postgres';
 import {
@@ -1292,7 +1293,6 @@ async function main(): Promise<void> {
       businessRulesService: new InMemoryBusinessRulesService(),
       agentEvaluationService: new InMemoryAgentEvaluationService(),
       agentThreadStore: new InMemoryAgentThreadStore(),
-      conflictResolutionService: new InMemoryConflictResolutionService(),
       connectorCatalogService: new InMemoryConnectorCatalogService(),
       dataExpectationsService: new InMemoryDataExpectationsService(),
       embeddedCopilotService: new InMemoryEmbeddedCopilotService(),
@@ -1432,6 +1432,13 @@ async function main(): Promise<void> {
     // out of `nonDurableServices`, where the gate withheld it under Postgres
     // rather than accept approvals it would lose on restart.
     changeProposalStore: pgPool ? new PostgresChangeProposalStore(pgPool) : new InMemoryChangeProposalStore(),
+    // Conflict resolution — Postgres-backed when available. Both halves fail
+    // silently when lost: an unresolved conflict that disappears means the
+    // datasource and the user edit quietly keep different values, and a lost
+    // default strategy falls back to `user_edits_win` rather than erroring, so
+    // a tenant that chose otherwise gets the other answer on every conflict.
+    // Graduated out of `nonDurableServices`.
+    conflictResolutionService: pgPool ? new PostgresConflictResolutionService(pgPool) : new InMemoryConflictResolutionService(),
     // Usage metrics — Postgres-backed when available. The record() method is
     // an instrumentation hook; query/summary endpoints read from Postgres.
     usageMetricsService: pgPool ? new PostgresOntologyUsageMetricsService(pgPool) : new InMemoryOntologyUsageMetricsService(),
