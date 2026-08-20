@@ -363,6 +363,15 @@ export type {
   CreateTransformPipelineInput,
 } from './datasets.js';
 
+// Dataset row semantics shared by every DatasetService implementation, so the
+// in-memory and Postgres providers cannot drift on key derivation or filtering.
+export {
+  datasetRowKey,
+  datasetRowMatches,
+  datasetSortRows,
+  datasetProjectColumns,
+} from './dataset-rows.js';
+
 // Enterprise connector catalog
 export type {
   ConnectorCatalogService,
