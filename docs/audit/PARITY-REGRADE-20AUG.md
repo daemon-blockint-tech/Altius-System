@@ -131,11 +131,42 @@ Two things that conversion surfaced, neither of them the dataset store's own bug
   (`ci.yml` already notes this for the compose job) — so #20's gate still holds where it
   matters. But a developer running the root command sees "342 passed" having exercised
   no Postgres. Adding `"env": ["PG_TEST_URL", "REQUIRE_PG"]` to the `test` task in
-  `turbo.json` closes it; left out of the dataset change deliberately.
+  `turbo.json` closes it; left out of the dataset change deliberately. **Fixed
+  separately** — with the env declared, the root command goes from 8 files and 136 tests
+  silently skipped to 0, and conformance from 373 tests to 746.
 
 Next candidates, same pattern: `BatchTransformService`, `DatasetProjectionService` and
 `SqlQueryService` are the rest of the dataset/pipeline data plane and now have durable
 datasets to build on.
+
+## Standing rule — a contract changes in every provider or in none
+
+The dataset conversion also produced a rule, which matters more than the row it moved.
+
+Porting a service to Postgres means meeting a contract that until then only one
+implementation had ever expressed, and where that contract is odd there are two bad
+options: copy the oddity, or quietly improve on it. Improving is worse. It makes the
+same call mean different things depending on which provider is wired, so dev is green
+and production is wrong, which is the defect class this whole line of work exists to
+remove.
+
+The concrete case: `create` on an existing dataset **replaced** it, dropping rows and
+transaction log. Against a Map that is a developer annoyance. Against Postgres it is
+irrecoverable data loss. Both providers now **refuse** instead, with a shared
+`ALREADY_EXISTS` error that the REST layer answers as 409 — previously an uncoded
+throw, which the transport categorised as `system` and returned as a 500 with the
+message withheld, making a deliberate refusal indistinguishable from a crash.
+
+What keeps it true is not the fix but the test: a `DatasetService` conformance category
+that runs the same assertions against **both** providers, so the next divergence fails
+in CI rather than in production. Proven non-vacuous — restoring the destructive
+`create` fails exactly the three memory-side cases while the Postgres ones keep passing,
+and that asymmetry is precisely the signature the suite exists to catch.
+
+**Still open, recorded not fixed:** a write to any branch advances the *dataset-wide*
+`latestTransactionId` that `get` and `read` report, rather than the written branch's.
+Both providers agree, so nothing diverges and nothing is being hidden — but the shared
+behaviour is arguably wrong, and per this rule it changes in both or neither.
 
 ## Standing caveat
 
