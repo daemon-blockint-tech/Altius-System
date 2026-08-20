@@ -349,5 +349,38 @@ export function generatePlatformDDL(): string[] {
 );`);
   statements.push(`CREATE INDEX IF NOT EXISTS "idx_scoped_tenant_user" ON "scoped_session"."sessions" ("tenant_id", "user_id");`);
 
+  // ── Change proposals (human-in-the-loop governance) ──
+  //
+  // The record of who approved which AI-proposed change, and when. `tags` is a
+  // real TEXT[] and must be bound as a JS array, never JSON.stringify'd — that
+  // is the #19 defect, which made two stores unwritable on Postgres while
+  // their suites stayed green.
+  statements.push(`CREATE SCHEMA IF NOT EXISTS "governance";`);
+  statements.push(`CREATE TABLE IF NOT EXISTS "governance"."change_proposals" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "tenant_id" TEXT NOT NULL,
+  "title" TEXT NOT NULL,
+  "description" TEXT NOT NULL DEFAULT '',
+  "type" TEXT NOT NULL,
+  "changes" JSONB NOT NULL DEFAULT '[]',
+  "state" TEXT NOT NULL DEFAULT 'draft',
+  "submitted_by" TEXT NOT NULL DEFAULT '',
+  "submitted_by_ai" BOOLEAN NOT NULL DEFAULT FALSE,
+  "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "submitted_at" TIMESTAMPTZ,
+  "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "reviewer_id" TEXT,
+  "reviewer_comments" TEXT,
+  "reviewed_at" TIMESTAMPTZ,
+  "applied_at" TIMESTAMPTZ,
+  "risk_level" TEXT,
+  "hold_id" TEXT,
+  "tags" TEXT[]
+);`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_proposals_tenant_state" ON "governance"."change_proposals" ("tenant_id", "state");`);
+  // list() orders by updated_at DESC within a tenant, which is also the shape
+  // of the pending-review query.
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_proposals_tenant_updated" ON "governance"."change_proposals" ("tenant_id", "updated_at" DESC);`);
+
   return statements;
 }

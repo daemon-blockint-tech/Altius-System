@@ -11,7 +11,8 @@ against real Postgres. Reproduce with `node tools/parity/reachability.mjs`.
 | `ALTIUS-BACKLOG.md` (189 rows) | ~77 | ~110 | **0** | carried-forward prose |
 | External audit (`ebba280`) | 2 | 91 | 96 | read from source |
 | Measured 19 Aug (`f188339`, 58 services) | 8 | 35 | 15 | this tool |
-| **Measured now (`177b628`, 71 services)** | **16** | **55** | **0** | this tool |
+| Measured 20 Aug (`177b628`, 71 services) | 16 | 55 | 0 | this tool |
+| **Measured now (`ChangeProposalStore` branch)** | **17** | **54** | **0** | this tool |
 
 **Durability moved this time, and it was real.** The previous pass recorded reachability
 improving while `full` stayed pinned at 8 — services were being wired to REST without
@@ -19,8 +20,12 @@ gaining a Postgres implementation. That changed: #18 added eight Postgres platfo
 stores and `full` doubled, 8 → 16. This is the first pass where the honest number went
 up for the right reason.
 
-The gap to the tracker is still large (16 vs ~77) but it is now a gap of *degree*
-rather than *kind*: the remaining 55 are genuinely reachable, and each needs a Postgres
+`ChangeProposalStore` then took it to 17, by the same route: a Postgres store, restart
+survival proven, no new surface claimed. One service per pass is the expected rate — the
+count is meant to move slowly and mean something, rather than quickly and not.
+
+The gap to the tracker is still large (17 vs ~77) but it is now a gap of *degree*
+rather than *kind*: the remaining 54 are genuinely reachable, and each needs a Postgres
 implementation rather than a rethink.
 
 ## Verified, not inferred
@@ -39,9 +44,10 @@ mean "works":
 - Two apparent defects investigated and dismissed as harness errors on my side
   (a wrong `create()` arg order, an omitted required `objectId`) rather than filed.
 
-## The 16 that reach a durable implementation
+## The 17 that reach a durable implementation
 
-`AlertingService` · `AuditStore` · `BlobStore` · `BranchStore` · `CommentStore` ·
+`AlertingService` · `AuditStore` · `BlobStore` · `BranchStore` · **`ChangeProposalStore`** ·
+`CommentStore` ·
 `DataFreshnessService` · `DatasetMetadataService` · `EmbeddingStore` ·
 `GeospatialMapService` · `JustificationStore` · `NotificationStore` · `ObjectSetStore` ·
 `OntologySqlService` · `OntologyUsageMetricsService` · `ScopedSessionStore` ·
@@ -51,14 +57,14 @@ mean "works":
 durable implementation, not that the capability is complete. Rows still need demoting
 by hand where behaviour is missing.
 
-## Work queue — reachable but memory-only (55)
+## Work queue — reachable but memory-only (54)
 
 Every one is already wired to REST, so the remaining work is persistence alone. These
 are the honest `partial → full` candidates:
 
 `AccessExplanationService`¹ · `AgentEvaluationService` · `AgentService` ·
 `AgentThreadStore` · `ApprovalWorkflowService` · `BatchTransformService` ·
-`BuildTriggerService` · `BusinessRulesService` · `ChangeProposalStore` ·
+`BuildTriggerService` · `BusinessRulesService` ·
 `CommandExchangeService` · `CommandService` · `ConflictResolutionService` ·
 `ConnectorCatalogService` · `CopilotService` · `DataExpectationsService` ·
 `DatasetProjectionService` · **`DatasetService`** · `DatasourceService` ·
@@ -83,12 +89,37 @@ None of these loses data today — #14's gate withholds them under Postgres, so 
 routes answer 404 rather than accepting a write they would drop. Making one durable is
 what moves it from 404 to working.
 
+## This pass — `ChangeProposalStore`
+
+The audit trail for AI-driven change: an agent proposes rather than executes, and a
+human approves, rejects, or asks for revisions. Who decided what, and when. That record
+lived in a `Map`, so #14's gate withheld the store under Postgres and the routes
+answered 404 rather than accepting approvals they would drop.
+
+Picked over the data-plane candidates because of what losing it costs. A dropped
+dataset row is data loss; a dropped approval is a compliance failure, and the platform's
+whole claim is that changes are governed.
+
+**The state machine is what was actually ported.** Rows are the easy half — the guards
+are the point: an unsubmitted draft cannot be approved, an unapproved proposal cannot be
+applied, an applied or rejected one cannot be withdrawn, and a proposal under review
+cannot be edited. Each is a way an approval could be manufactured or erased if the two
+providers disagreed, so all of them are pinned in a conformance category that runs
+against **both**, per the standing rule below.
+
+Proven non-vacuous with the #19 defect itself: `tags` is a real `TEXT[]`, and binding it
+with `JSON.stringify` — which is exactly what took out comments and notifications while
+their suites stayed green — fails every Postgres case with `malformed array literal:
+"["ontology","ai-proposed"]"` while the memory ones pass untouched. That asymmetry is
+the signature of a provider-specific defect.
+
 ## Next
 
-`DatasetService` first. It is the one platform store #18 deliberately left in memory
-("the DatasetService remains in-memory for row/transaction semantics") while giving its
-metadata sibling Postgres backing, it carries ~15 REST endpoints, and datasets are a
-data-plane primitive rather than UI furniture.
+Same pattern, in rough order of what losing it costs: `ApprovalWorkflowService` (the
+other governance audit trail — but it is **not wired into the API at all**, so it needs
+routes before persistence is worth anything), then `BatchTransformService`,
+`DatasetProjectionService` and `SqlQueryService`, which are the rest of the
+dataset/pipeline data plane.
 
 ## Standing caveat
 

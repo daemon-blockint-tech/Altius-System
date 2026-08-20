@@ -118,6 +118,7 @@ import { PostgresStorageProvider, PostgresLineageStore, PostgresAuditStore, Post
   PostgresAlertingService, PostgresDataFreshnessService, PostgresDatasetMetadataService,
   PostgresGeospatialMapService, PostgresJustificationStore, PostgresOntologySqlService,
   PostgresOntologyUsageMetricsService, PostgresScopedSessionStore,
+  PostgresChangeProposalStore,
 } from '@altius/storage-postgres';
 import {
   ObjectManager, LineageRecorder,
@@ -1291,7 +1292,6 @@ async function main(): Promise<void> {
       graphService: new InMemoryGraphService(),
       // Previously-unreachable services — in-memory only, wired so they have a
       // REST surface when the non-durable gate is open.
-      changeProposalStore: new InMemoryChangeProposalStore(),
       businessRulesService: new InMemoryBusinessRulesService(),
       agentEvaluationService: new InMemoryAgentEvaluationService(),
       agentThreadStore: new InMemoryAgentThreadStore(),
@@ -1425,6 +1425,11 @@ async function main(): Promise<void> {
     // above; the same `datasets` instance is shared so the in-memory metadata
     // fallback reads through it.
     datasetMetadataService: pgPool ? new PostgresDatasetMetadataService(pgPool) : new InMemoryDatasetMetadataService(datasets),
+    // Change proposals — Postgres-backed when available. This is the audit
+    // trail for AI-driven changes: who approved what, and when. It graduated
+    // out of `nonDurableServices`, where the gate withheld it under Postgres
+    // rather than accept approvals it would lose on restart.
+    changeProposalStore: pgPool ? new PostgresChangeProposalStore(pgPool) : new InMemoryChangeProposalStore(),
     // Usage metrics — Postgres-backed when available. The record() method is
     // an instrumentation hook; query/summary endpoints read from Postgres.
     usageMetricsService: pgPool ? new PostgresOntologyUsageMetricsService(pgPool) : new InMemoryOntologyUsageMetricsService(),

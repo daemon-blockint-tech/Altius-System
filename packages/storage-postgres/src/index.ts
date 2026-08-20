@@ -96,6 +96,7 @@ export { PostgresTimeSeriesStore } from './timeseries/postgres-time-series-store
 export { PostgresBranchStore } from './branch/postgres-branch-store.js';
 export { PostgresCommentStore } from './comment/postgres-comment-store.js';
 export { PostgresNotificationStore } from './notification/postgres-notification-store.js';
+export { PostgresChangeProposalStore } from './governance/postgres-change-proposal-store.js';
 export { generatePlatformDDL } from './schema/ddl-platform.js';
 export {
   PostgresAlertingService,
