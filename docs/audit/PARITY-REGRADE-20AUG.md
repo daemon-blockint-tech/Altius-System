@@ -15,6 +15,8 @@ against real Postgres. Reproduce with `node tools/parity/reachability.mjs`.
 | Measured 20 Aug (`DatasetService`, merged) | 17 | 54 | 0 | this tool |
 | Measured 20 Aug (`ChangeProposalStore`) | 18 | 53 | 0 | this tool |
 | **Measured now (`BusinessRulesService` branch, 71 services)** | **19** | **52** | **0** | this tool |
+| Measured 20 Aug (`ChangeProposalStore`, merged) | 18 | 53 | 0 | this tool |
+| **Measured now (`HumanInTheLoopService`, 71 services)** | **19** | **52** | **0** | this tool |
 
 **Durability moved this time, and it was real.** The previous pass recorded reachability
 improving while `full` stayed pinned at 8 — services were being wired to REST without
@@ -26,6 +28,11 @@ up for the right reason.
 `BusinessRulesService` to 19, by the same route each time: a Postgres store, restart
 survival proven, no new surface claimed. One service per pass is the expected rate —
 the count is meant to move slowly and mean something, rather than quickly and not.
+
+`HumanInTheLoopService` takes it to 19 by a different route, and the exception is worth
+naming: it gained no store at all. It holds no state, and it was already reachable — it
+was simply pointed at the wrong store. So this pass is the one case where the number
+moved because a defect was removed rather than because persistence was added.
 
 The gap to the tracker is still large (19 vs ~77) but it is now a gap of *degree*
 rather than *kind*: the remaining 52 are genuinely reachable, and each needs a Postgres
@@ -61,9 +68,9 @@ mean "works":
 `AlertingService` · `AuditStore` · `BlobStore` · `BranchStore` ·
 **`BusinessRulesService`** · **`ChangeProposalStore`** · `CommentStore` · `DataFreshnessService` ·
 `DatasetMetadataService` · **`DatasetService`** · `EmbeddingStore` ·
-`GeospatialMapService` · `JustificationStore` · `NotificationStore` · `ObjectSetStore` ·
-`OntologySqlService` · `OntologyUsageMetricsService` · `ScopedSessionStore` ·
-`TimeSeriesStore`
+`GeospatialMapService` · **`HumanInTheLoopService`** · `JustificationStore` ·
+`NotificationStore` · `ObjectSetStore` · `OntologySqlService` ·
+`OntologyUsageMetricsService` · `ScopedSessionStore` · `TimeSeriesStore`
 
 `full` here stays a **necessary, not sufficient** condition: it says a user can reach a
 durable implementation, not that the capability is complete. Rows still need demoting
@@ -82,7 +89,7 @@ are the honest `partial → full` candidates:
 `DatasetProjectionService` · `DatasourceService` ·
 `DesignSystemService` · `EmbeddedCopilotService` · `EmbeddingService` · `EvalService` ·
 `EventObjectService` · `GraphAnalysisService` · `GraphService` ·
-`HumanInTheLoopService` · `KioskService` · `LayoutDeviceCaptureService` ·
+`KioskService` · `LayoutDeviceCaptureService` ·
 `ModelCatalogService` · `ModelChainService` · `ModelInferenceService` ·
 `ModelRegistryService` · `ModelingObjectiveService` · `MultiOntologyGovernanceService` ·
 `ObjectSetFilterStore` · `OntologyChangeHistoryService` · `OntologyManagerService` ·
@@ -170,6 +177,53 @@ state = $expected` clause, not only checked beforehand. Two concurrent approvals
 one process would otherwise both read `proposed` and both write `approved`, recording
 the second reviewer over the first. A `Map` cannot interleave that way, so the
 in-memory service needs no equivalent.
+## This pass — `HumanInTheLoopService`
+
+The smallest diff of any pass so far, and the only one that fixed a defect rather than
+adding a store. `HumanInTheLoopService` has no state: its five methods are a rename of
+`ChangeProposalStore`'s with `RequestContext` unpacked. What it lacked was a store worth
+reading.
+
+**Two surfaces, two stores, one record.** The in-memory service constructed its own
+private `InMemoryChangeProposalStore`, so on a Postgres deployment:
+
+```
+POST /api/v1/change-proposals          → PostgresChangeProposalStore   (a table)
+POST /api/v1/ai-proposals/:id/approve  → a Map, dead on restart
+```
+
+Neither surface erred. Each answered correctly about a record the other had never heard
+of, and the half that evaporated was the approval. For the record of who signed off on
+an AI-proposed change, a missing approval and an approval you cannot see are the same
+thing to the caller — which is why this ranked above the remaining data-plane stores
+despite being a fraction of their size.
+
+The adapter now lives once in `@altius/spi` and both providers extend it, so the
+`(ctx) → (tenantId, actorId)` unpacking cannot drift. The API builds one store and hands
+it to both slots.
+
+Conformance runs 15 assertions against both providers, five of which are cross-surface:
+a proposal created through one surface is visible through the other, an approval
+recorded on one is visible on the other, and both count one record rather than two.
+Restoring the old private-store behaviour fails exactly those five plus the three that
+route through `store.submit`, on memory alone — Postgres shares by table rather than by
+instance, so the same bug there is a different injection: drifting the tenant unpacking
+in the shared adapter fails the cross-surface cases on **both** providers, which is what
+that injection was for.
+
+Two more injections, because the interesting failure is not in either provider: pointing
+the post-restart half of the durability case at a fresh in-memory service fails it with
+`expected null not to be null`, and reverting the API to hand the HITL surface its own
+store fails a new source-level guard. That guard exists for the same reason #14's does —
+the `deps` literal is not exported, both surfaces work perfectly in isolation, and the
+defect only ever shows up as an approval nobody can find.
+
+**One thing this does not fix, deliberately.** `approve` and `reject` refuse a proposal
+in `draft`, in both providers, and the HITL surface has no submit transition — so a
+proposal created there could never be approved there. That was true before and is
+unchanged; it is only *reachable* now, because `/api/v1/change-proposals/:id/submit`
+finally operates on the same record. Widening the interface to carry its own submit is a
+contract change and belongs in its own change.
 
 ## Previous pass — `ChangeProposalStore`
 
@@ -237,8 +291,7 @@ Two things that conversion surfaced, neither of them the dataset store's own bug
 
 Same pattern, in rough order of what losing it costs: `ApprovalWorkflowService` (the
 other governance audit trail — but it is **not wired into the API at all**, so it needs
-routes before persistence is worth anything), then `BatchTransformService`,
-`DatasetProjectionService` and `SqlQueryService`, which are the rest of the
+routes before persistence is worth anything), then `SqlQueryService` and the rest of the
 dataset/pipeline data plane.
 
 ## Standing rule — a contract changes in every provider or in none
@@ -269,6 +322,11 @@ and that asymmetry is precisely the signature the suite exists to catch.
 `latestTransactionId` that `get` and `read` report, rather than the written branch's.
 Both providers agree, so nothing diverges and nothing is being hidden — but the shared
 behaviour is arguably wrong, and per this rule it changes in both or neither.
+This pass's counts are measured on **this branch's base**, which is `main`. Four
+durability PRs are open and unmerged (`BatchTransformService`, `DataExpectationsService`,
+`PipelineBuildService`, and the analyser co-implementation fix); each moves the same
+counters, so the headline row above will need re-measuring once they land rather than
+being added up.
 
 ## Standing caveat
 

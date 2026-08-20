@@ -383,6 +383,11 @@ export {
   datasetBranchNotFoundError,
 } from './dataset-contract.js';
 export type { CodedError } from './dataset-contract.js';
+// HumanInTheLoopService is a rename of ChangeProposalStore, not a store of its
+// own. Sharing one adapter is what lets the API hand the HITL surface and the
+// change-proposal surface the same store, so an approval recorded through one
+// is visible through the other.
+export { ChangeProposalHumanInTheLoop } from './human-in-the-loop.js';
 
 // Enterprise connector catalog
 export type {
