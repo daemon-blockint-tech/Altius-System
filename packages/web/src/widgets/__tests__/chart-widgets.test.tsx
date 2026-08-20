@@ -35,8 +35,8 @@ function makeWidget(type: string, config: Record<string, unknown>, boundVariable
 
 describe('Phase 2 widget registry', () => {
   // Phase 20 added 6 more widgets (5 extra + 28 stubs replaced) bringing total to 69.
-  it('registers 87 widget types total', () => {
-    expect(listRegisteredWidgets().length).toBe(87);
+  it('registers 111 widget types total', () => {
+    expect(listRegisteredWidgets().length).toBe(111);
   });
 
   it('marks chart widgets as implemented', () => {
