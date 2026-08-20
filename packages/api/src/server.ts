@@ -1250,6 +1250,11 @@ async function main(): Promise<void> {
   // because the in-memory metadata service reads dataset state through this
   // same instance.
   const datasets = new InMemoryDatasetService();
+  // Built above the gate so both copilot surfaces can be handed the same store.
+  // Non-durable either way — there is no Postgres copilot implementation yet —
+  // so it stays inside `nonDurableServices` below rather than graduating.
+  const copilots = new InMemoryEmbeddedCopilotService();
+
   const nonDurableServices = nonDurableServicesEnabled
     ? {
       // Model inference and chain services — in-memory only.
@@ -1295,7 +1300,13 @@ async function main(): Promise<void> {
       conflictResolutionService: new InMemoryConflictResolutionService(),
       connectorCatalogService: new InMemoryConnectorCatalogService(),
       dataExpectationsService: new InMemoryDataExpectationsService(),
-      embeddedCopilotService: new InMemoryEmbeddedCopilotService(),
+      // One copilot store, two surfaces. `embeddedCopilotService` configures
+      // copilots; `copilotService` is the view-facing suggest/apply half, and it
+      // is handed the same instance. They used not to be: the second built its
+      // own private store, so a copilot configured with `canExecuteActions:
+      // false` was never found and suggestions came from a fabricated copilot
+      // with it set true — bypassing the one place the flag is enforced.
+      embeddedCopilotService: copilots,
       eventObjectService: new InMemoryEventObjectService(),
       graphAnalysisService: new InMemoryGraphAnalysisService(),
       multiOntologyGovernanceService: new InMemoryMultiOntologyGovernanceService(),
@@ -1318,7 +1329,7 @@ async function main(): Promise<void> {
       evalService: new InMemoryEvalService(),
       humanInTheLoopService: new InMemoryHumanInTheLoopService(),
       vectorSearchService: new InMemoryVectorSearchService(embeddingStore, llmClient),
-      copilotService: new InMemoryCopilotService(),
+      copilotService: new InMemoryCopilotService(copilots),
       }
     : {};
 
