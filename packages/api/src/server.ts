@@ -36,15 +36,27 @@
  */
 
 import http from 'node:http';
-import { WebSocketServer } from 'ws';
-import { useServer } from 'graphql-ws/lib/use/ws';
+import {
+  WebSocketServer,
+} from 'ws';
+import {
+  useServer,
+} from 'graphql-ws/lib/use/ws';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
-import { GraphQLError } from 'graphql';
-import { expressMiddleware } from '@apollo/server/express4';
-import { ApolloServerPluginDrainHttpServer } from '@apollo/server/plugin/drainHttpServer';
-import { MemoryStorageProvider } from '@altius/storage-memory';
+import {
+  GraphQLError,
+} from 'graphql';
+import {
+  expressMiddleware,
+} from '@apollo/server/express4';
+import {
+  ApolloServerPluginDrainHttpServer,
+} from '@apollo/server/plugin/drainHttpServer';
+import {
+  MemoryStorageProvider,
+} from '@altius/storage-memory';
 import {
   InMemoryBlobStore,
   InMemoryTimeSeriesStore,
@@ -113,26 +125,52 @@ import {
   InMemoryVectorSearchService,
   InMemoryCopilotService,
 } from '@altius/storage-memory';
-import { PostgresStorageProvider, PostgresLineageStore, PostgresAuditStore, PostgresConsentStore, PostgresSchemaRegistry, PostgresObjectSetStore,
-  PostgresLLMUsageTracker, PostgresLLMRateLimiter,
-  PostgresEmbeddingStore, PostgresBlobStore, PostgresTimeSeriesStore,
-  PostgresBranchStore, PostgresCommentStore, PostgresNotificationStore,
-  PostgresAlertingService, PostgresBusinessRulesService, PostgresKioskService, PostgresSavedViewStore, PostgresDataFreshnessService, PostgresDatasetMetadataService,
-  PostgresGeospatialMapService, PostgresJustificationStore, PostgresOntologySqlService,
-  PostgresOntologyUsageMetricsService, PostgresScopedSessionStore,
+import {
+  PostgresStorageProvider,
+  PostgresLineageStore,
+  PostgresAuditStore,
+  PostgresConsentStore,
+  PostgresSchemaRegistry,
+  PostgresObjectSetStore,
+  PostgresLLMUsageTracker,
+  PostgresLLMRateLimiter,
+  PostgresEmbeddingStore,
+  PostgresBlobStore,
+  PostgresTimeSeriesStore,
+  PostgresBranchStore,
+  PostgresCommentStore,
+  PostgresNotificationStore,
+  PostgresAlertingService,
+  PostgresBusinessRulesService,
+  PostgresKioskService,
+  PostgresSavedViewStore,
+  PostgresDataFreshnessService,
+  PostgresDatasetMetadataService,
+  PostgresGeospatialMapService,
+  PostgresJustificationStore,
+  PostgresOntologySqlService,
+  PostgresOntologyUsageMetricsService,
+  PostgresScopedSessionStore,
   PostgresAgentThreadStore,
   PostgresChangeProposalStore,
-  PostgresObjectSetFilterStore, PostgresApprovalWorkflowService, PostgresDataExpectationsService,
-  PostgresDesignSystemService,
-  PostgresModelRegistryService, PostgresModelInferenceService,
-  PostgresModelChainService, PostgresConnectorCatalogService, PostgresCommandService,
+  PostgresObjectSetFilterStore,
+  PostgresApprovalWorkflowService,
+  PostgresDataExpectationsService,
+  PostgresOntologyChangeHistoryService,
   PostgresDatasetService,
-  PostgresBatchTransformService,
   PostgresUserDirectoryService,
+  PostgresDesignSystemService,
+  PostgresModelRegistryService,
+  PostgresModelInferenceService,
+  PostgresModelChainService,
+  PostgresConnectorCatalogService,
+  PostgresCommandService,
+  PostgresBatchTransformService,
   PostgresLayoutDeviceCaptureService,
 } from '@altius/storage-postgres';
 import {
-  ObjectManager, LineageRecorder,
+  ObjectManager,
+  LineageRecorder,
   LinkManager,
   EngineEventEmitter,
   InMemoryObjectSetStore,
@@ -155,49 +193,143 @@ import {
   InMemoryAgentThreadStore,
 } from '@altius/engine';
 import type { ModelCatalogEntry } from '@altius/spi';
-import { ActionExecutor, CelClient, SideEffectExecutor } from '@altius/actions';
+import {
+  ActionExecutor,
+  CelClient,
+  SideEffectExecutor,
+} from '@altius/actions';
 import type { SecurityLayer, CelEvaluator, EventBus as SideEffectEventBus, HttpClient as SideEffectHttpClient, LinkTupleMap } from '@altius/actions';
-import { AuthorizationService, OidcAuthenticator, AuditWriter, MemoryAuditStore, ConsentService, MemoryConsentStore, MarkingPolicy, DefaultAccessExplanationService } from '@altius/security';
+import {
+  AuthorizationService,
+  OidcAuthenticator,
+  AuditWriter,
+  MemoryAuditStore,
+  ConsentService,
+  MemoryConsentStore,
+  MarkingPolicy,
+  DefaultAccessExplanationService,
+} from '@altius/security';
 import type { OpenFgaClientInterface, FgaClientResolver } from '@altius/security';
 import type { StorageProvider, RequestContext } from '@altius/spi';
-import { createGraphQLServer, buildResolverContext } from './graphql/index.js';
-import { guardWsOperation } from './graphql/ws-gate.js';
-import { generateRestRoutes, generateOpenApiSpec, auditRead } from './rest/index.js';
-import { writeReadAuditFor } from './rest/audit-read.js';
-import { isTypeVisible, missingMarkings } from './markings/enforce.js';
-import { invokeFunction } from './functions/invoke-function.js';
-import { generateAuditRoutes } from './rest/audit-routes.js';
-import { generateLlmRoutes, generateWorkflowRoutes } from './rest/index.js';
-import { generateTraverseRoutes } from './rest/traverse-route.js';
-import { recordRestUsage } from './rest/usage-recording.js';
-import { generateSyncStatusRoutes } from './rest/sync-status-routes.js';
-import { registerAttachmentRoutes } from './rest/attachment-routes.js';
-import { registerTimeSeriesRoutes } from './rest/timeseries-routes.js';
-import { registerBranchRoutes } from './rest/branch-routes.js';
-import { registerCommentRoutes } from './rest/comment-routes.js';
-import { registerNotificationRoutes } from './rest/notification-routes.js';
-import { registerEmbeddingRoutes } from './rest/embedding-routes.js';
-import { registerAlertingRoutes } from './rest/alerting-routes.js';
-import { registerGeospatialRoutes } from './rest/geospatial-routes.js';
-import { registerScenarioRoutes } from './rest/scenario-routes.js';
-import { registerWorkshopRoutes } from './rest/workshop-routes.js';
-import { registerLLMGatewayRoutes } from './rest/llm-gateway-routes.js';
-import { registerAppEmbeddingRoutes } from './rest/app-embedding-routes.js';
-import { registerPlatformResourceRoutes } from './rest/platform-resource-routes.js';
-import { registerAbsentServiceRoutes } from './rest/absent-services-routes.js';
-import { registerSavedViewRoutes } from './rest/saved-view-routes.js';
-import { registerUserDirectoryRoutes } from './rest/user-directory-routes.js';
-import { readPlatformVersion } from './version.js';
-import { createFhirRouter } from './fhir/index.js';
-import { createCdmRouter } from './cdm/index.js';
-import { generateRelationshipRoutes, buildGrantAllowlist } from './relationships/router.js';
-import { generateConsentRoutes, assertConsentConfig } from './consent/router.js';
-import { InMemorySubscribableEventBus, SubscriptionManager, SubscriptionRegistry } from './subscriptions/index.js';
+import {
+  createGraphQLServer,
+  buildResolverContext,
+} from './graphql/index.js';
+import {
+  guardWsOperation,
+} from './graphql/ws-gate.js';
+import {
+  generateRestRoutes,
+  generateOpenApiSpec,
+  auditRead,
+} from './rest/index.js';
+import {
+  writeReadAuditFor,
+} from './rest/audit-read.js';
+import {
+  isTypeVisible,
+  missingMarkings,
+} from './markings/enforce.js';
+import {
+  invokeFunction,
+} from './functions/invoke-function.js';
+import {
+  generateAuditRoutes,
+} from './rest/audit-routes.js';
+import {
+  generateLlmRoutes,
+  generateWorkflowRoutes,
+} from './rest/index.js';
+import {
+  generateTraverseRoutes,
+} from './rest/traverse-route.js';
+import {
+  recordRestUsage,
+} from './rest/usage-recording.js';
+import {
+  generateSyncStatusRoutes,
+} from './rest/sync-status-routes.js';
+import {
+  registerAttachmentRoutes,
+} from './rest/attachment-routes.js';
+import {
+  registerTimeSeriesRoutes,
+} from './rest/timeseries-routes.js';
+import {
+  registerBranchRoutes,
+} from './rest/branch-routes.js';
+import {
+  registerCommentRoutes,
+} from './rest/comment-routes.js';
+import {
+  registerNotificationRoutes,
+} from './rest/notification-routes.js';
+import {
+  registerEmbeddingRoutes,
+} from './rest/embedding-routes.js';
+import {
+  registerAlertingRoutes,
+} from './rest/alerting-routes.js';
+import {
+  registerGeospatialRoutes,
+} from './rest/geospatial-routes.js';
+import {
+  registerScenarioRoutes,
+} from './rest/scenario-routes.js';
+import {
+  registerWorkshopRoutes,
+} from './rest/workshop-routes.js';
+import {
+  registerLLMGatewayRoutes,
+} from './rest/llm-gateway-routes.js';
+import {
+  registerAppEmbeddingRoutes,
+} from './rest/app-embedding-routes.js';
+import {
+  registerPlatformResourceRoutes,
+} from './rest/platform-resource-routes.js';
+import {
+  registerAbsentServiceRoutes,
+} from './rest/absent-services-routes.js';
+import {
+  registerSavedViewRoutes,
+} from './rest/saved-view-routes.js';
+import {
+  registerUserDirectoryRoutes,
+} from './rest/user-directory-routes.js';
+import {
+  readPlatformVersion,
+} from './version.js';
+import {
+  createFhirRouter,
+} from './fhir/index.js';
+import {
+  createCdmRouter,
+} from './cdm/index.js';
+import {
+  generateRelationshipRoutes,
+  buildGrantAllowlist,
+} from './relationships/router.js';
+import {
+  generateConsentRoutes,
+  assertConsentConfig,
+} from './consent/router.js';
+import {
+  InMemorySubscribableEventBus,
+  SubscriptionManager,
+  SubscriptionRegistry,
+} from './subscriptions/index.js';
 import type { SubscribableEventBus } from './subscriptions/index.js';
-import { RedpandaEventBus } from './events/index.js';
-import { AutomationRunner } from './automation/index.js';
+import {
+  RedpandaEventBus,
+} from './events/index.js';
+import {
+  AutomationRunner,
+} from './automation/index.js';
 import type { ApiDependencies, ResolverContext } from './graphql/types.js';
-import { DEFAULT_CONSENT_PURPOSE } from './graphql/types.js';
+import {
+  DEFAULT_CONSENT_PURPOSE,
+} from './graphql/types.js';
 import type { RestRequest } from './rest/types.js';
 import {
   parsePostgresUrl,
@@ -211,19 +343,51 @@ import {
   REQUIRED_PROD_VARS,
 } from './config.js';
 import type { ActionAuthzMapping } from './config.js';
-import { createActionEventPublisher } from './events/action-event-publisher.js';
-import { loadDomainPacks } from './schema-loader.js';
-import { generateOpenFGASchema, mergeOpenFGAOverrides, deriveActionAuthzMapping, deriveFunctionAuthzMapping, InMemorySchemaRegistry } from '@altius/odl';
+import {
+  createActionEventPublisher,
+} from './events/action-event-publisher.js';
+import {
+  loadDomainPacks,
+} from './schema-loader.js';
+import {
+  generateOpenFGASchema,
+  mergeOpenFGAOverrides,
+  deriveActionAuthzMapping,
+  deriveFunctionAuthzMapping,
+  InMemorySchemaRegistry,
+} from '@altius/odl';
 import type { SchemaRegistry } from '@altius/odl';
-import { recordSchemaVersion, BreakingSchemaChangeError } from './schema-registry-boot.js';
-import { SlidingWindowRateLimiter, RedisRateLimiter } from './governance/index.js';
+import {
+  recordSchemaVersion,
+  BreakingSchemaChangeError,
+} from './schema-registry-boot.js';
+import {
+  SlidingWindowRateLimiter,
+  RedisRateLimiter,
+} from './governance/index.js';
 import type { RateLimiter, RateLimitIdentity } from './governance/index.js';
-import { toSnakeCase } from './utils.js';
-import { metricsMiddleware, metricsEndpoint, startStorageHealthGauge, startSyncMetricsGauge, syncSchedulerEnabled, packLoaded, podDirectOnly } from './metrics.js';
-import { buildHealthReport } from './health.js';
+import {
+  toSnakeCase,
+} from './utils.js';
+import {
+  metricsMiddleware,
+  metricsEndpoint,
+  startStorageHealthGauge,
+  startSyncMetricsGauge,
+  syncSchedulerEnabled,
+  packLoaded,
+  podDirectOnly,
+} from './metrics.js';
+import {
+  buildHealthReport,
+} from './health.js';
 import type { HealthProbe } from './health.js';
-import { logger } from './logger.js';
-import { pinoSideEffectLogger } from './side-effect-logger.js';
+import {
+  logger,
+} from './logger.js';
+import {
+  pinoSideEffectLogger,
+} from './side-effect-logger.js';
 
 const PORT = parseInt(process.env['PORT'] ?? '4000', 10);
 
@@ -1302,6 +1466,7 @@ async function main(): Promise<void> {
       workshopUxService: new InMemoryWorkshopUxService(),
       valueFormattingService: new InMemoryValueFormattingService(),
       ontologyChangeHistoryService: new InMemoryOntologyChangeHistoryService(),
+      designSystemService: new InMemoryDesignSystemService(),
       // Workshop UI services.
       commandExchangeService: new InMemoryCommandExchangeService(),
       graphService: new InMemoryGraphService(),
@@ -1462,6 +1627,12 @@ async function main(): Promise<void> {
     // whether a rule governs anything, so losing it silently reverts a rule to
     // draft: nothing looks broken, the rule just stops applying.
     businessRulesService: pgPool ? new PostgresBusinessRulesService(pgPool) : new InMemoryBusinessRulesService(),
+    // Ontology change history — Postgres-backed when available. The audit
+    // trail for schema change: who changed it, when, and a snapshot of what it
+    // looked like. Graduated out of `nonDurableServices`. Note `restore` and
+    // `applyChange` still report success without changing any schema, in BOTH
+    // providers — see the store's header.
+    ontologyChangeHistoryService: pgPool ? new PostgresOntologyChangeHistoryService(pgPool) : new InMemoryOntologyChangeHistoryService(),
     // Usage metrics — Postgres-backed when available. The record() method is
     // an instrumentation hook; query/summary endpoints read from Postgres.
     usageMetricsService: pgPool ? new PostgresOntologyUsageMetricsService(pgPool) : new InMemoryOntologyUsageMetricsService(),

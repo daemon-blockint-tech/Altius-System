@@ -15,6 +15,8 @@ against real Postgres. Reproduce with `node tools/parity/reachability.mjs`.
 | Measured 20 Aug (`DatasetService`, merged) | 17 | 54 | 0 | this tool |
 | Measured 20 Aug (`ChangeProposalStore`) | 18 | 53 | 0 | this tool |
 | **Measured now (`BusinessRulesService` branch, 71 services)** | **19** | **52** | **0** | this tool |
+| Measured 20 Aug (`ChangeProposalStore`, merged) | 18 | 53 | 0 | this tool |
+| **Measured now (`OntologyChangeHistoryService`, 71 services)** | **19** | **52** | **0** | this tool |
 
 **Durability moved this time, and it was real.** The previous pass recorded reachability
 improving while `full` stayed pinned at 8 — services were being wired to REST without
@@ -26,6 +28,10 @@ up for the right reason.
 `BusinessRulesService` to 19, by the same route each time: a Postgres store, restart
 survival proven, no new surface claimed. One service per pass is the expected rate —
 the count is meant to move slowly and mean something, rather than quickly and not.
+`OntologyChangeHistoryService` to 19, by the same route each time: a Postgres store,
+restart survival proven, no new surface claimed. One service per pass is the expected
+rate — the count is meant to move slowly and mean something, rather than quickly and
+not.
 
 The gap to the tracker is still large (19 vs ~77) but it is now a gap of *degree*
 rather than *kind*: the remaining 52 are genuinely reachable, and each needs a Postgres
@@ -62,8 +68,8 @@ mean "works":
 **`BusinessRulesService`** · **`ChangeProposalStore`** · `CommentStore` · `DataFreshnessService` ·
 `DatasetMetadataService` · **`DatasetService`** · `EmbeddingStore` ·
 `GeospatialMapService` · `JustificationStore` · `NotificationStore` · `ObjectSetStore` ·
-`OntologySqlService` · `OntologyUsageMetricsService` · `ScopedSessionStore` ·
-`TimeSeriesStore`
+**`OntologyChangeHistoryService`** · `OntologySqlService` ·
+`OntologyUsageMetricsService` · `ScopedSessionStore` · `TimeSeriesStore`
 
 `full` here stays a **necessary, not sufficient** condition: it says a user can reach a
 durable implementation, not that the capability is complete. Rows still need demoting
@@ -85,7 +91,7 @@ are the honest `partial → full` candidates:
 `HumanInTheLoopService` · `KioskService` · `LayoutDeviceCaptureService` ·
 `ModelCatalogService` · `ModelChainService` · `ModelInferenceService` ·
 `ModelRegistryService` · `ModelingObjectiveService` · `MultiOntologyGovernanceService` ·
-`ObjectSetFilterStore` · `OntologyChangeHistoryService` · `OntologyManagerService` ·
+`ObjectSetFilterStore` · `OntologyManagerService` ·
 `PipelineBuildService` · `PipelineService` · `PlatformAssistantService` ·
 `PlatformResourceService` · `ProcessMiningService` · `SavedViewStore` ·
 `ScenarioService` · `SqlAnalyticsService` · `SqlQueryService` · `SyncCdcService` ·
@@ -170,6 +176,57 @@ state = $expected` clause, not only checked beforehand. Two concurrent approvals
 one process would otherwise both read `proposed` and both write `approved`, recording
 the second reviewer over the first. A `Map` cannot interleave that way, so the
 in-memory service needs no equivalent.
+## This pass — `OntologyChangeHistoryService`
+
+The audit trail for schema change: who changed it, when, under which migration class,
+and a full snapshot of what the ontology looked like at that point.
+
+**Two of its six methods do not do what their names say, in both providers.** `restore`
+reads a record, confirms it exists, and returns `restored: true` — no schema is rolled
+back and no object type is touched. `applyChange` validates the record, bumps that
+record's own `version` by one, restamps `appliedAt`, and returns `applied: true` — the
+ontology is untouched. Both are reproduced exactly rather than repaired, per the rule
+that a contract changes in both providers or neither.
+
+Which makes the honest summary of this pass: **persisting these makes the claim durable,
+not the effect.** A stored record saying a change was applied at a given time is evidence
+that the method ran, and nothing more. That is worth saying loudly, because a persisted
+audit trail is more convincing than a transient one, and this one is attesting to work
+that did not happen. Conformance pins both as they stand and says so in the case names —
+including the clearest evidence of all, that `restore` succeeds for an object type the
+snapshot never mentioned.
+
+**One behaviour deliberately narrowed, in both providers, and it could not be deferred.**
+`saveChange` accepts either a new draft or a full record, and the record form carries a
+`tenantId`. The in-memory service wrote it through, insulated only by keying its map on
+`ctx.tenantId` — which left the field free to lie but harmless. In a table the tenant is
+a *column*, so honouring it would be a genuine cross-tenant write. Matching the old
+behaviour verbatim was therefore not an option: it meant either shipping that hole or
+shipping a divergence. `tenantId` now comes from the request in both providers, and a
+conformance case checks a record naming another tenant lands under the caller's. No
+route can reach this today — the REST create path builds an input with no tenant field,
+and the update path re-reads the record under `ctx` first — so this closes a latent
+hazard in the SPI rather than a live one.
+
+The Postgres table keys on `(tenant_id, id)` rather than `id`, unlike its neighbours in
+the `governance` schema. Theirs hold UUIDs this code generates, so a global key is safe;
+here `saveChange` accepts a caller-supplied id, and the in-memory service's per-tenant
+map makes two tenants each holding a record called `v1` perfectly legal. A global key
+would reject a write the other provider accepts.
+
+Ordering needed care for a reason specific to this service: `listChanges` sorts by
+version descending, and *every* record is created at version 1, so ties are the norm
+rather than the edge case. The in-memory sort is stable, which means ties come back
+oldest-first — `ORDER BY "version" DESC, "seq"` is how Postgres says the same thing.
+Dropping that tie-break fails two cases.
+
+Five injections, five caught — though the fourth only after being rewritten. The first
+attempt at breaking the `objectType` snapshot guard replaced it with something that
+happened to answer the same way for both inputs the case tests, so it passed and proved
+nothing. Removing the guard outright is the regression it actually protects against, and
+that fails with `Cannot read properties of undefined (reading 'some')`. Recorded because
+a passing injection is not evidence of a vacuous test — it can equally be evidence of a
+badly chosen injection, and the two need telling apart before either is believed.
 
 ## Previous pass — `ChangeProposalStore`
 
@@ -237,9 +294,28 @@ Two things that conversion surfaced, neither of them the dataset store's own bug
 
 Same pattern, in rough order of what losing it costs: `ApprovalWorkflowService` (the
 other governance audit trail — but it is **not wired into the API at all**, so it needs
-routes before persistence is worth anything), then `BatchTransformService`,
-`DatasetProjectionService` and `SqlQueryService`, which are the rest of the
-dataset/pipeline data plane.
+routes before persistence is worth anything), then `VariableTransformService` and
+`TransformExpressionService`.
+
+**Two candidates are deliberately blocked, and need a decision rather than a PR.**
+`ConnectorCatalogService` and `DatasourceService` both hold credentials in the state
+they would persist: `EnterpriseAuthScheme` carries `clientSecret`, `apiKey`, `password`,
+`token` and `refreshToken` as plain fields, and `Datasource.connection` is an untyped
+bag that in practice holds the same. There is **no encryption-at-rest machinery anywhere
+in this repo** — no `createCipheriv`, no KMS client, no `pgcrypto` in the DDL (checked,
+not assumed). Converting either as-is would move secrets from a `Map` that dies with the
+process into a table that does not, which is a security decision and not one to take as
+a side effect of a durability pass.
+
+**One deliberately skipped for a different reason.** `BuildTriggerService` duplicates
+what `PipelineBuildService` already does with action triggers, and its `trigger()`
+fabricates a `succeeded` build into a `builds` map that **no method on the interface ever
+reads**. Persisting write-only state that shadows another service is not worth a table;
+the two should be reconciled first.
+
+Counts here are measured on **this branch's base**, `main`. Several durability PRs are
+open and unmerged, each moving the same counters, so the headline row will need
+re-measuring once they land rather than being added up.
 
 ## Standing rule — a contract changes in every provider or in none
 
