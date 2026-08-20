@@ -119,6 +119,7 @@ import { PostgresStorageProvider, PostgresLineageStore, PostgresAuditStore, Post
   PostgresGeospatialMapService, PostgresJustificationStore, PostgresOntologySqlService,
   PostgresOntologyUsageMetricsService, PostgresScopedSessionStore,
   PostgresChangeProposalStore,
+  PostgresMultiOntologyGovernanceService,
   PostgresDatasetService,
 } from '@altius/storage-postgres';
 import {
@@ -1298,7 +1299,6 @@ async function main(): Promise<void> {
       embeddedCopilotService: new InMemoryEmbeddedCopilotService(),
       eventObjectService: new InMemoryEventObjectService(),
       graphAnalysisService: new InMemoryGraphAnalysisService(),
-      multiOntologyGovernanceService: new InMemoryMultiOntologyGovernanceService(),
       pipelineBuildService: new InMemoryPipelineBuildService(),
       platformAssistantService: new InMemoryPlatformAssistantService(),
       processMiningService: new InMemoryProcessMiningService(),
@@ -1432,6 +1432,13 @@ async function main(): Promise<void> {
     // out of `nonDurableServices`, where the gate withheld it under Postgres
     // rather than accept approvals it would lose on restart.
     changeProposalStore: pgPool ? new PostgresChangeProposalStore(pgPool) : new InMemoryChangeProposalStore(),
+    // Multi-ontology governance — Postgres-backed when available. The sharing
+    // rules are an access-control surface: which other org may reach which
+    // ontologies, under which markings. It fails closed, so losing them costs
+    // partners their access rather than granting anyone more — but a cross-org
+    // arrangement that evaporates on restart takes its audit trail with it.
+    // Graduated out of `nonDurableServices`.
+    multiOntologyGovernanceService: pgPool ? new PostgresMultiOntologyGovernanceService(pgPool) : new InMemoryMultiOntologyGovernanceService(),
     // Usage metrics — Postgres-backed when available. The record() method is
     // an instrumentation hook; query/summary endpoints read from Postgres.
     usageMetricsService: pgPool ? new PostgresOntologyUsageMetricsService(pgPool) : new InMemoryOntologyUsageMetricsService(),

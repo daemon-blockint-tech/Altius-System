@@ -13,7 +13,8 @@ against real Postgres. Reproduce with `node tools/parity/reachability.mjs`.
 | Measured 19 Aug (`f188339`, 58 services) | 8 | 35 | 15 | this tool |
 | Measured 20 Aug (`177b628`, 71 services) | 16 | 55 | 0 | this tool |
 | Measured 20 Aug (`DatasetService`, merged) | 17 | 54 | 0 | this tool |
-| **Measured now (`ChangeProposalStore` branch, 71 services)** | **18** | **53** | **0** | this tool |
+| Measured 20 Aug (`ChangeProposalStore`, merged) | 18 | 53 | 0 | this tool |
+| **Measured now (`MultiOntologyGovernanceService`, 71 services)** | **19** | **52** | **0** | this tool |
 
 **Durability moved this time, and it was real.** The previous pass recorded reachability
 improving while `full` stayed pinned at 8 — services were being wired to REST without
@@ -21,13 +22,14 @@ gaining a Postgres implementation. That changed: #18 added eight Postgres platfo
 stores and `full` doubled, 8 → 16. This is the first pass where the honest number went
 up for the right reason.
 
-`DatasetService` then took it to 17 and `ChangeProposalStore` to 18, by the same route
-each time: a Postgres store, restart survival proven, no new surface claimed. One
-service per pass is the expected rate — the count is meant to move slowly and mean
-something, rather than quickly and not.
+`DatasetService` then took it to 17, `ChangeProposalStore` to 18 and
+`MultiOntologyGovernanceService` to 19, by the same route each time: a Postgres store,
+restart survival proven, no new surface claimed. One service per pass is the expected
+rate — the count is meant to move slowly and mean something, rather than quickly and
+not.
 
-The gap to the tracker is still large (18 vs ~77) but it is now a gap of *degree*
-rather than *kind*: the remaining 53 are genuinely reachable, and each needs a Postgres
+The gap to the tracker is still large (19 vs ~77) but it is now a gap of *degree*
+rather than *kind*: the remaining 52 are genuinely reachable, and each needs a Postgres
 implementation rather than a rethink.
 
 ## Verified, not inferred
@@ -55,12 +57,13 @@ mean "works":
   makes exactly the two composite-key cases fail with `invalid byte sequence for
   encoding "UTF8": 0x00`, and nothing else — so the cases test what they claim to.
 
-## The 18 that reach a durable implementation
+## The 19 that reach a durable implementation
 
 `AlertingService` · `AuditStore` · `BlobStore` · `BranchStore` ·
 **`ChangeProposalStore`** · `CommentStore` · `DataFreshnessService` ·
 `DatasetMetadataService` · **`DatasetService`** · `EmbeddingStore` ·
-`GeospatialMapService` · `JustificationStore` · `NotificationStore` · `ObjectSetStore` ·
+`GeospatialMapService` · `JustificationStore` ·
+**`MultiOntologyGovernanceService`** · `NotificationStore` · `ObjectSetStore` ·
 `OntologySqlService` · `OntologyUsageMetricsService` · `ScopedSessionStore` ·
 `TimeSeriesStore`
 
@@ -68,7 +71,7 @@ mean "works":
 durable implementation, not that the capability is complete. Rows still need demoting
 by hand where behaviour is missing.
 
-## Work queue — reachable but memory-only (53)
+## Work queue — reachable but memory-only (52)
 
 Every one is already wired to REST, so the remaining work is persistence alone. These
 are the honest `partial → full` candidates:
@@ -83,8 +86,7 @@ are the honest `partial → full` candidates:
 `EventObjectService` · `GraphAnalysisService` · `GraphService` ·
 `HumanInTheLoopService` · `KioskService` · `LayoutDeviceCaptureService` ·
 `ModelCatalogService` · `ModelChainService` · `ModelInferenceService` ·
-`ModelRegistryService` · `ModelingObjectiveService` · `MultiOntologyGovernanceService` ·
-`ObjectSetFilterStore` · `OntologyChangeHistoryService` · `OntologyManagerService` ·
+`ModelRegistryService` · `ModelingObjectiveService` · `ObjectSetFilterStore` · `OntologyChangeHistoryService` · `OntologyManagerService` ·
 `PipelineBuildService` · `PipelineService` · `PlatformAssistantService` ·
 `PlatformResourceService` · `ProcessMiningService` · `SavedViewStore` ·
 `ScenarioService` · `SqlAnalyticsService` · `SqlQueryService` · `SyncCdcService` ·
@@ -100,7 +102,53 @@ None of these loses data today — #14's gate withholds them under Postgres, so 
 routes answer 404 rather than accepting a write they would drop. Making one durable is
 what moves it from 404 to working.
 
-## This pass — `ChangeProposalStore`
+## This pass — `MultiOntologyGovernanceService`
+
+Ontology spaces, the ontologies inside them, and the cross-org sharing rules that
+decide which other org may reach which of them, under which markings. `checkAccess`
+and `resolveAccessibleOntologies` answer from those rules.
+
+**Losing this state is loud, not silent — say so plainly.** The evaluation fails
+closed: with no space, no rule, or no matching rule, the answer is `allowed: false`
+with a reason. A lost sharing rule costs a partner org its access; it does not hand
+anyone more. That makes this the first pass where the argument for persisting is not
+"the failure is invisible" — it is that a cross-org arrangement evaporating on restart
+takes the record of who granted it, and under which markings, with it. Nobody should
+read this as closing a fail-open hole, because there wasn't one.
+
+**The real risk here is drift, and it is the sharpest instance of it so far.** Two
+providers disagreeing about ordering return rows in a surprising order. Two providers
+disagreeing about an access check means one deployment granting a partner org access
+the other denies — and neither side looks wrong from where it stands. So the decision
+moved into `@altius/spi`'s `evaluateOntologyAccess` and both providers call it. Two of
+the five injections break that shared function, and both fail on **both** providers,
+which is the property extracting it was for. Both were chosen to *widen* access —
+dropping the `enabled` check and dropping the markings guard — because that is the
+direction an access check must never move by accident.
+
+A defect surfaced, pinned, and deliberately not fixed: **`bidirectional` does nothing.**
+The clause that reads the flag also requires the caller to be in the space's own org,
+and that case has already returned `allowed: true` on the same-org check above — so by
+the time the flag is consulted its companion condition is always false. Setting
+`bidirectional: true` grants exactly what `false` grants. Repairing it would widen who
+can reach an ontology as a side effect of relocating code, which is the one change an
+access check must not receive silently, so it is reproduced exactly, asserted by a
+conformance case that states the inertness in both directions, and raised as a contract
+question for the lead.
+
+Two more shapes matched rather than tightened. Space names are not unique in either
+provider, so a duplicate name simply means the most recent wins the lookup — pinned as
+what happens rather than papered over with a constraint that would reject writes the
+other provider accepts. And `deleteSpace` does not cascade, so an ontology can outlive
+its space and become uncheckable; a conformance case asserts the resulting throw.
+
+One thing the Postgres side does differently, on purpose: a space's `ontologyIds` is
+derived from the ontologies table rather than stored. The in-memory service maintains
+the array by hand on create and delete, which produces the same set — the difference is
+only that a derived list cannot go stale. Breaking the derivation fails three cases,
+so it is not taken on trust.
+
+## Previous pass — `ChangeProposalStore`
 
 The audit trail for AI-driven change: an agent proposes rather than executes, and a
 human approves, rejects, or asks for revisions. Who decided what, and when. That record
@@ -166,9 +214,24 @@ Two things that conversion surfaced, neither of them the dataset store's own bug
 
 Same pattern, in rough order of what losing it costs: `ApprovalWorkflowService` (the
 other governance audit trail — but it is **not wired into the API at all**, so it needs
-routes before persistence is worth anything), then `BatchTransformService`,
-`DatasetProjectionService` and `SqlQueryService`, which are the rest of the
-dataset/pipeline data plane.
+routes before persistence is worth anything), then `BuildTriggerService` and
+`VariableTransformService`.
+
+**Two candidates are deliberately blocked, and need a decision rather than a PR.**
+`ConnectorCatalogService` and `DatasourceService` both hold credentials in the state
+they would persist: `EnterpriseAuthScheme` carries `clientSecret`, `apiKey`, `password`,
+`token` and `refreshToken` as plain fields, and `Datasource.connection` is an untyped
+bag that in practice holds the same. There is **no encryption-at-rest machinery
+anywhere in this repo** — no `createCipheriv`, no KMS client, no `pgcrypto` in the DDL
+(checked, not assumed). Converting either one as-is would move secrets from a `Map`
+that dies with the process into a table that does not, which is a security decision and
+not one to take as a side effect of a durability pass. It needs one of: envelope
+encryption, env-indirection for `auth` the way `ConnectorConfig` already does for its
+config, or an explicit decision to store them in plaintext.
+
+Counts here are measured on **this branch's base**, `main`. Several durability PRs are
+open and unmerged, each moving the same counters, so the headline row will need
+re-measuring once they land rather than being added up.
 
 ## Standing caveat
 

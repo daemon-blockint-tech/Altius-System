@@ -437,5 +437,65 @@ export function generatePlatformDDL(): string[] {
   // of the pending-review query.
   statements.push(`CREATE INDEX IF NOT EXISTS "idx_proposals_tenant_updated" ON "governance"."change_proposals" ("tenant_id", "updated_at" DESC);`);
 
+  // ── Multi-ontology governance: spaces, ontologies, cross-org sharing rules ──
+  //
+  // The sharing rules are an access-control surface: `checkAccess` fails closed,
+  // so losing them costs partner orgs their access rather than granting anyone
+  // more. Loud in the right direction, and still worth persisting — a cross-org
+  // arrangement that evaporates on restart takes its audit trail with it.
+  statements.push(`CREATE TABLE IF NOT EXISTS "governance"."ontology_spaces" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "seq" BIGSERIAL,
+  "tenant_id" TEXT NOT NULL,
+  "name" TEXT NOT NULL,
+  "description" TEXT NOT NULL DEFAULT '',
+  "org_scope" TEXT NOT NULL,
+  "shared" BOOLEAN NOT NULL DEFAULT FALSE,
+  "shared_with_orgs" JSONB,
+  "default_markings" JSONB NOT NULL DEFAULT '[]',
+  "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "created_by" TEXT NOT NULL DEFAULT ''
+);`);
+  // No UNIQUE on (tenant_id, name): the in-memory service does not enforce it
+  // either — a second space with the same name simply wins the name lookup.
+  // Matched rather than tightened, since adding a constraint here would reject
+  // writes the other provider accepts.
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_ont_spaces_tenant_name" ON "governance"."ontology_spaces" ("tenant_id", "name");`);
+
+  // `markings` and `shared_with_orgs` are JSONB, not TEXT[] — see #19: binding a
+  // JS array into a TEXT[] with JSON.stringify fails at runtime, and JSONB is
+  // the shape JSON.stringify is actually correct for.
+  statements.push(`CREATE TABLE IF NOT EXISTS "governance"."ontology_entities" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "seq" BIGSERIAL,
+  "tenant_id" TEXT NOT NULL,
+  "name" TEXT NOT NULL,
+  "display_name" TEXT NOT NULL DEFAULT '',
+  "space_id" TEXT NOT NULL,
+  "schema_version" INTEGER NOT NULL DEFAULT 1,
+  "markings" JSONB NOT NULL DEFAULT '[]',
+  "read_only" BOOLEAN NOT NULL DEFAULT FALSE,
+  "org_scope" TEXT NOT NULL DEFAULT '',
+  "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "created_by" TEXT NOT NULL DEFAULT ''
+);`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_ont_entities_tenant_space" ON "governance"."ontology_entities" ("tenant_id", "space_id");`);
+
+  statements.push(`CREATE TABLE IF NOT EXISTS "governance"."sharing_rules" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "seq" BIGSERIAL,
+  "tenant_id" TEXT NOT NULL,
+  "source_space_id" TEXT NOT NULL,
+  "target_org_scope" TEXT NOT NULL,
+  "ontology_ids" JSONB NOT NULL DEFAULT '[]',
+  "allowed_markings" JSONB NOT NULL DEFAULT '[]',
+  "bidirectional" BOOLEAN NOT NULL DEFAULT FALSE,
+  "enabled" BOOLEAN NOT NULL DEFAULT TRUE,
+  "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "created_by" TEXT NOT NULL DEFAULT ''
+);`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_sharing_rules_tenant_source" ON "governance"."sharing_rules" ("tenant_id", "source_space_id");`);
+
   return statements;
 }
