@@ -372,6 +372,11 @@ export {
   datasetProjectColumns,
 } from './dataset-rows.js';
 
+// Applying a transform step is pure, and its output is *data* — two providers
+// that disagreed about what `round` or `dateDiff` means would produce different
+// values from the same pipeline with neither erring. So it is defined once.
+export { applyTransformStep } from './variable-transforms.js';
+
 // Enterprise connector catalog
 export type {
   ConnectorCatalogService,
