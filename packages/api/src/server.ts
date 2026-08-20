@@ -118,7 +118,7 @@ import { PostgresStorageProvider, PostgresLineageStore, PostgresAuditStore, Post
   PostgresAlertingService, PostgresDataFreshnessService, PostgresDatasetMetadataService,
   PostgresGeospatialMapService, PostgresJustificationStore, PostgresOntologySqlService,
   PostgresOntologyUsageMetricsService, PostgresScopedSessionStore,
-  PostgresChangeProposalStore,
+  PostgresChangeProposalStore, PostgresBusinessRulesService,
   PostgresDatasetService,
 } from '@altius/storage-postgres';
 import {
@@ -1289,7 +1289,6 @@ async function main(): Promise<void> {
       graphService: new InMemoryGraphService(),
       // Previously-unreachable services — in-memory only, wired so they have a
       // REST surface when the non-durable gate is open.
-      businessRulesService: new InMemoryBusinessRulesService(),
       agentEvaluationService: new InMemoryAgentEvaluationService(),
       agentThreadStore: new InMemoryAgentThreadStore(),
       conflictResolutionService: new InMemoryConflictResolutionService(),
@@ -1432,6 +1431,10 @@ async function main(): Promise<void> {
     // out of `nonDurableServices`, where the gate withheld it under Postgres
     // rather than accept approvals it would lose on restart.
     changeProposalStore: pgPool ? new PostgresChangeProposalStore(pgPool) : new InMemoryChangeProposalStore(),
+    // Business rules — Postgres-backed when available. `state` is what decides
+    // whether a rule governs anything, so losing it silently reverts a rule to
+    // draft: nothing looks broken, the rule just stops applying.
+    businessRulesService: pgPool ? new PostgresBusinessRulesService(pgPool) : new InMemoryBusinessRulesService(),
     // Usage metrics — Postgres-backed when available. The record() method is
     // an instrumentation hook; query/summary endpoints read from Postgres.
     usageMetricsService: pgPool ? new PostgresOntologyUsageMetricsService(pgPool) : new InMemoryOntologyUsageMetricsService(),
