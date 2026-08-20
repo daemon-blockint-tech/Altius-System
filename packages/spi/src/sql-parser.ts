@@ -1,12 +1,13 @@
 /**
- * Shared SQL parser — single implementation for Ontology SQL and Dataset SQL.
+ * Shared SQL parser — one implementation for Ontology SQL and Dataset SQL.
  *
- * Previously there were two separate parseSql() functions:
- *   - in-memory-ontology-sql.ts (ParsedSql)
- *   - in-memory-dataset-services.ts (SqlAst)
- *
- * This module exports one parseSql() that returns a unified AST covering
- * both shapes. Each consumer maps the unified AST to its own needs.
+ * There used to be two separate parseSql() functions, one per consumer; they
+ * were merged into this one. It lives in @altius/spi rather than in a provider
+ * because a parser is pure — the same text has to become the same AST whichever
+ * provider ends up running the query. Two providers that disagreed about what a
+ * WHERE clause meant would return different rows for the same SQL, which is a
+ * worse failure than either of them being wrong on its own: neither would look
+ * broken.
  */
 
 /** A parsed SQL SELECT statement. */

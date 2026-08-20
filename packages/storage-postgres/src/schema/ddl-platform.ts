@@ -272,6 +272,34 @@ export function generatePlatformDDL(): string[] {
 );`);
   statements.push(`CREATE INDEX IF NOT EXISTS "idx_dataset_branches_tenant_name" ON "dataset"."branches" ("tenant_id", "dataset_name");`);
 
+  // ── Interactive SQL query jobs ──
+  //
+  // The job record carries its own result rows in `rows`, which is how
+  // `results()` answers after the process that ran the query is gone. It also
+  // means a SELECT with no LIMIT writes its entire result set into one JSONB
+  // value — matched from the in-memory provider rather than capped here,
+  // because capping is a contract change, but a real limit for a query
+  // service. Noted in the store header too.
+  statements.push(`CREATE TABLE IF NOT EXISTS "dataset"."sql_jobs" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "seq" BIGSERIAL,
+  "tenant_id" TEXT NOT NULL,
+  "sql" TEXT NOT NULL,
+  "state" TEXT NOT NULL DEFAULT 'queued',
+  "submitted_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "started_at" TIMESTAMPTZ,
+  "completed_at" TIMESTAMPTZ,
+  "duration_ms" BIGINT,
+  "submitted_by" TEXT NOT NULL DEFAULT '',
+  "rows" JSONB,
+  "result_columns" JSONB,
+  "row_count" BIGINT,
+  "error_message" TEXT
+);`);
+  // list() returns newest first; `seq` gives that a total order, since two
+  // jobs can be submitted within the same millisecond.
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_sql_jobs_tenant_seq" ON "dataset"."sql_jobs" ("tenant_id", "seq" DESC);`);
+
   // ── Geospatial maps ──
   statements.push(`CREATE SCHEMA IF NOT EXISTS "geospatial";`);
   statements.push(`CREATE TABLE IF NOT EXISTS "geospatial"."layers" (
