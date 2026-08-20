@@ -437,5 +437,28 @@ export function generatePlatformDDL(): string[] {
   // of the pending-review query.
   statements.push(`CREATE INDEX IF NOT EXISTS "idx_proposals_tenant_updated" ON "governance"."change_proposals" ("tenant_id", "updated_at" DESC);`);
 
+  // ── Business rules (no-code rule DAGs, approval-gated) ──
+  //
+  // `state` is what governs runtime behaviour: only an `active` rule applies.
+  // Losing it silently reverts a rule to draft, which looks like nothing
+  // happening rather than like a failure.
+  statements.push(`CREATE TABLE IF NOT EXISTS "governance"."business_rules" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "tenant_id" TEXT NOT NULL,
+  "name" TEXT NOT NULL,
+  "description" TEXT NOT NULL DEFAULT '',
+  "nodes" JSONB NOT NULL DEFAULT '[]',
+  "state" TEXT NOT NULL DEFAULT 'draft',
+  "is_time_series_board" BOOLEAN NOT NULL DEFAULT FALSE,
+  "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "created_by" TEXT NOT NULL DEFAULT '',
+  "review_notes" TEXT,
+  "reviewed_by" TEXT,
+  "reviewed_at" TIMESTAMPTZ
+);`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_rules_tenant_state" ON "governance"."business_rules" ("tenant_id", "state");`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_rules_tenant_created" ON "governance"."business_rules" ("tenant_id", "created_at" DESC);`);
+
   return statements;
 }
