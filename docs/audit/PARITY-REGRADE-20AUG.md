@@ -109,9 +109,22 @@ Two things that conversion surfaced, neither of them the dataset store's own bug
 - **`dataset.metadata` had no writer.** #18 shipped `PostgresDatasetMetadataService`
   reading a table nothing populated, so on every Postgres deployment it answered 200
   with an empty list and a `listTransactions` hardcoded to `[]`. Reachable-and-empty,
-  graded `full`. It reads real rows now, but the lesson generalises: **a store counts
-  as durable only once something writes to it**, and the analyser cannot see that. Worth
-  a pass over the other seven #18 stores for the same shape.
+  graded `full`. It reads real rows now. The lesson generalises — **a store counts as
+  durable only once something writes to it**, which the analyser cannot see, since it
+  measures whether a service is reached, not whether its table is ever filled.
+
+  **The other seven #18 stores were then checked for the same shape, and are clean.**
+  The tell was that `upsert` — the only thing that writes `dataset.metadata` — is not
+  on the `DatasetMetadataService` interface; it is a helper commented "internal", so no
+  route could call it. It is the only such method in `postgres-platform-stores.ts`.
+  Every other store's writes are interface methods with live call sites:
+  `createRule`, `recordSync`, `createLayer` / `createSavedMap` / `createAnnotation`,
+  `create` (justifications), `createSavedQuery` are each called from a REST route;
+  `ScopedSessionStore.create` from `security-governance-routes.ts`; and
+  `OntologyUsageMetricsService.record` via `recordRestUsage`, wired into the REST
+  dispatcher in `server.ts`. So this was an isolated defect, not a systemic one —
+  recorded because "we should check the others" is worth exactly nothing next to
+  having checked them.
 - **`pnpm test` at the root silently skips the Postgres suites** even with `PG_TEST_URL`
   and `REQUIRE_PG` exported, because turbo's strict env mode drops them before the task
   runs. CI is unaffected — it calls `pnpm --filter <pkg> test` directly, bypassing turbo
