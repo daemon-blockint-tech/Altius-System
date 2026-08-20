@@ -116,7 +116,7 @@ import { PostgresStorageProvider, PostgresLineageStore, PostgresAuditStore, Post
   PostgresLLMUsageTracker, PostgresLLMRateLimiter,
   PostgresEmbeddingStore, PostgresBlobStore, PostgresTimeSeriesStore,
   PostgresBranchStore, PostgresCommentStore, PostgresNotificationStore,
-  PostgresAlertingService, PostgresDataFreshnessService, PostgresDatasetMetadataService,
+  PostgresAlertingService, PostgresBusinessRulesService, PostgresDataFreshnessService, PostgresDatasetMetadataService,
   PostgresGeospatialMapService, PostgresJustificationStore, PostgresOntologySqlService,
   PostgresOntologyUsageMetricsService, PostgresScopedSessionStore,
   PostgresChangeProposalStore,
@@ -1294,7 +1294,6 @@ async function main(): Promise<void> {
       graphService: new InMemoryGraphService(),
       // Previously-unreachable services — in-memory only, wired so they have a
       // REST surface when the non-durable gate is open.
-      businessRulesService: new InMemoryBusinessRulesService(),
       agentEvaluationService: new InMemoryAgentEvaluationService(),
       agentThreadStore: new InMemoryAgentThreadStore(),
       conflictResolutionService: new InMemoryConflictResolutionService(),
@@ -1444,6 +1443,9 @@ async function main(): Promise<void> {
     // submission tables are tenant-scoped and the same state machine as the
     // in-memory service.
     approvalWorkflowService,
+    // Business rules — Postgres-backed when available. Rules and DAG
+    // execution are persisted; execution runs in-process over supplied data.
+    businessRulesService: pgPool ? new PostgresBusinessRulesService(pgPool) : new InMemoryBusinessRulesService(),
 
     // Non-durable platform services — withheld under Postgres unless opted in.
     // Built and explained above.

@@ -98,6 +98,7 @@ export { PostgresCommentStore } from './comment/postgres-comment-store.js';
 export { PostgresNotificationStore } from './notification/postgres-notification-store.js';
 export { PostgresChangeProposalStore } from './governance/postgres-change-proposal-store.js';
 export { PostgresApprovalWorkflowService } from './governance/postgres-approval-workflow-service.js';
+export { PostgresBusinessRulesService } from './governance/postgres-business-rules-service.js';
 export { PostgresDatasetService } from './dataset/postgres-dataset-service.js';
 export { generatePlatformDDL } from './schema/ddl-platform.js';
 export {

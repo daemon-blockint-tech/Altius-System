@@ -479,5 +479,25 @@ export function generatePlatformDDL(): string[] {
   statements.push(`CREATE INDEX IF NOT EXISTS "idx_approval_submissions_tenant_state" ON "governance"."approval_submissions" ("tenant_id", "state");`);
   statements.push(`CREATE INDEX IF NOT EXISTS "idx_approval_submissions_tenant_workflow" ON "governance"."approval_submissions" ("tenant_id", "workflow_id");`);
 
+  // ── Business rules engine ──
+  statements.push(`CREATE TABLE IF NOT EXISTS "governance"."business_rules" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "tenant_id" TEXT NOT NULL,
+  "name" TEXT,
+  "description" TEXT,
+  "state" TEXT,
+  "nodes" JSONB NOT NULL DEFAULT '[]',
+  "is_time_series_board" BOOLEAN NOT NULL DEFAULT FALSE,
+  "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "created_by" TEXT,
+  "reviewed_by" TEXT,
+  "review_notes" TEXT,
+  "reviewed_at" TIMESTAMPTZ
+);`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_business_rules_tenant" ON "governance"."business_rules" ("tenant_id");`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_business_rules_tenant_state" ON "governance"."business_rules" ("tenant_id", "state");`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_business_rules_tenant_created" ON "governance"."business_rules" ("tenant_id", "created_at" DESC);`);
+
   return statements;
 }
