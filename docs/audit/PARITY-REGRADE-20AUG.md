@@ -14,6 +14,9 @@ against real Postgres. Reproduce with `node tools/parity/reachability.mjs`.
 | Measured 20 Aug (`177b628`, 71 services) | 16 | 55 | 0 | this tool |
 | Measured 20 Aug (`DatasetService`, merged) | 17 | 54 | 0 | this tool |
 | **Measured now (`ChangeProposalStore` branch, 71 services)** | **18** | **53** | **0** | this tool |
+| Measured 20 Aug (`ChangeProposalStore`) | 18 | 53 | 0 | this tool |
+| Measured 20 Aug (`BusinessRulesService`) | 19 | 52 | 0 | this tool |
+| **Measured now (`BatchTransformService` branch, 71 services)** | **20** | **51** | **0** | this tool |
 
 **Durability moved this time, and it was real.** The previous pass recorded reachability
 improving while `full` stayed pinned at 8 — services were being wired to REST without
@@ -28,6 +31,14 @@ something, rather than quickly and not.
 
 The gap to the tracker is still large (18 vs ~77) but it is now a gap of *degree*
 rather than *kind*: the remaining 53 are genuinely reachable, and each needs a Postgres
+`DatasetService` then took it to 17, `ChangeProposalStore` to 18,
+`BusinessRulesService` to 19 and `BatchTransformService` to 20, by the same route each
+time: a Postgres store, restart survival proven, no new surface claimed. One service
+per pass is the expected rate — the count is meant to move slowly and mean something,
+rather than quickly and not.
+
+The gap to the tracker is still large (20 vs ~77) but it is now a gap of *degree*
+rather than *kind*: the remaining 51 are genuinely reachable, and each needs a Postgres
 implementation rather than a rethink.
 
 ## Verified, not inferred
@@ -59,6 +70,10 @@ mean "works":
 
 `AlertingService` · `AuditStore` · `BlobStore` · `BranchStore` ·
 **`ChangeProposalStore`** · `CommentStore` · `DataFreshnessService` ·
+## The 20 that reach a durable implementation
+
+`AlertingService` · `AuditStore` · **`BatchTransformService`** · `BlobStore` ·
+`BranchStore` · **`BusinessRulesService`** · **`ChangeProposalStore`** · `CommentStore` · `DataFreshnessService` ·
 `DatasetMetadataService` · **`DatasetService`** · `EmbeddingStore` ·
 `GeospatialMapService` · `JustificationStore` · `NotificationStore` · `ObjectSetStore` ·
 `OntologySqlService` · `OntologyUsageMetricsService` · `ScopedSessionStore` ·
@@ -69,6 +84,7 @@ durable implementation, not that the capability is complete. Rows still need dem
 by hand where behaviour is missing.
 
 ## Work queue — reachable but memory-only (53)
+## Work queue — reachable but memory-only (51)
 
 Every one is already wired to REST, so the remaining work is persistence alone. These
 are the honest `partial → full` candidates:
@@ -76,6 +92,8 @@ are the honest `partial → full` candidates:
 `AccessExplanationService`¹ · `AgentEvaluationService` · `AgentService` ·
 `AgentThreadStore` · `ApprovalWorkflowService` · `BatchTransformService` ·
 `BuildTriggerService` · `BusinessRulesService` ·
+`AgentThreadStore` · `ApprovalWorkflowService` ·
+`BuildTriggerService` ·
 `CommandExchangeService` · `CommandService` · `ConflictResolutionService` ·
 `ConnectorCatalogService` · `CopilotService` · `DataExpectationsService` ·
 `DatasetProjectionService` · `DatasourceService` ·
@@ -101,6 +119,69 @@ routes answer 404 rather than accepting a write they would drop. Making one dura
 what moves it from 404 to working.
 
 ## This pass — `ChangeProposalStore`
+## This pass — `BatchTransformService`
+
+Transforms, build history and schedules. The schedule matters most: a cron registration
+that silently stops firing looks like nothing happening rather than like a failure — the
+same shape as a rule losing its `active` state. Datasets became durable two passes ago,
+so a build now reads and writes durable data on both sides.
+
+**The conformance suite earned its keep on its first run**, before any regression was
+injected: it caught a real ordering bug in the *in-memory* provider. `listBuilds`
+promises newest-first and sorted on `startedAt` alone, which is not a total order — two
+builds started in the same millisecond compare equal, the sort becomes a no-op for them,
+and the pair comes back oldest-first. Postgres ordered by a sequence and was right.
+Fixed in memory (insertion order breaks the tie) rather than weakening the assertion,
+because the contract is what both providers owe.
+
+The #19 check applies again and passes: `inputs` is a real `TEXT[]`, and binding it with
+`JSON.stringify` fails every Postgres case with `malformed array literal: "["copy_in"]"`
+while memory passes untouched.
+
+**Known limitation, recorded as a test rather than only a comment.** `registerExecutor`
+takes a live object with an `execute` method, so the executor registry is per-process in
+*every* provider — a function cannot be written to a table. On a second replica a build
+silently falls back to the built-in pass-through instead of failing. A durability case
+asserts exactly that fallback, so nobody can later come to believe executors are
+durable. Making it honest is a contract change (named executors resolved from a
+registry, or transform `source` actually interpreted), not a storage one.
+
+Two in-memory quirks matched rather than fixed, per the standing rule: `durationMs` is
+hardcoded to 100 rather than measured, and a build that throws part-way leaves its row
+in `running` forever with no failure path. The second is harmless in a Map that dies
+with the process and considerably less so in a table — the more urgent of the two.
+
+## Previous pass — `BusinessRulesService`
+
+The second governance primitive, and a sharper case than the first. A rule is a DAG of
+logic nodes that only applies once it has been proposed, approved and **activated**, so
+`state` is not metadata — it decides whether the rule governs anything at all.
+
+That makes the failure mode worse than ordinary data loss. A rule whose state is lost
+silently reverts to draft and simply stops applying: nothing errors, nothing 500s, the
+governance just quietly isn't there any more. Losing a row at least looks like losing a
+row.
+
+**The execution engine was extracted rather than reimplemented.** Running a rule is a
+pure function of the rule and its input data, so the ~290-line DAG evaluator moved into
+`@altius/spi` and both providers call it. Duplicating it would have been the larger
+defect: two providers that stored the same rule and then disagreed about what it
+*produced* would look completely healthy from the outside. The in-memory service lost
+290 lines and gained a delegation; its own 15 tests still pass unchanged.
+
+The state machine is pinned in a conformance category running against both providers —
+each guard is a way an unreviewed rule could go live. Proven non-vacuous by dropping the
+guard from the Postgres side: exactly 6 Postgres cases fail (5 guards plus durability's
+closing guard assertion) while the memory side passes untouched.
+
+One Postgres-only hardening, flagged because it is a real divergence in *mechanism*
+rather than behaviour: the transition's guard is repeated in the `UPDATE ... WHERE
+state = $expected` clause, not only checked beforehand. Two concurrent approvals against
+one process would otherwise both read `proposed` and both write `approved`, recording
+the second reviewer over the first. A `Map` cannot interleave that way, so the
+in-memory service needs no equivalent.
+
+## Previous pass — `ChangeProposalStore`
 
 The audit trail for AI-driven change: an agent proposes rather than executes, and a
 human approves, rejects, or asks for revisions. Who decided what, and when. That record
