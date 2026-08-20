@@ -67,7 +67,9 @@ function ctxFor(deps: ResolverContext['deps']): ResolverContext {
 
 function actionRoute(deps: ResolverContext['deps']): RestRoute {
   const routes = generateRestRoutes(schema, deps);
-  const route = routes.find(r => r.method === 'POST' && r.pattern.includes('/actions/'));
+  // Match the action execution route, not the form-metadata route
+  // (/api/v1/actions/{name}/form) which also matches /actions/.
+  const route = routes.find(r => r.method === 'POST' && r.pattern.includes('/actions/') && !r.pattern.endsWith('/form'));
   if (!route) throw new Error('no action route generated');
   return route;
 }
