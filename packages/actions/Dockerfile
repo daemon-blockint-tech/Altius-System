@@ -30,7 +30,6 @@ COPY --from=builder /app/domain-packs/ domain-packs/
 
 RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile --prod && \
-    pnpm store prune && \
     rm -rf /root/.cache/node/corepack /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 
 USER node
