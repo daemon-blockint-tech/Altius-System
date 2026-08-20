@@ -84,6 +84,7 @@ describeWithPg('platform stores with TEXT[] columns (integration)', () => {
       body: 'no mentions here',
       authorId: 'u1',
       authorName: 'U One',
+      parentCommentId: null,
     });
     const read = await comments.getComment(TENANT, created.id);
     expect(read).not.toBeNull();
@@ -98,6 +99,7 @@ describeWithPg('platform stores with TEXT[] columns (integration)', () => {
       body: 'ping @bob and @carol',
       authorId: 'u1',
       authorName: 'U One',
+      parentCommentId: null,
     });
     const read = await comments.getComment(TENANT, created.id);
     // The bug inserted a single element `["bob","carol"]` when it inserted at
@@ -113,6 +115,7 @@ describeWithPg('platform stores with TEXT[] columns (integration)', () => {
       body: 'first @bob',
       authorId: 'u1',
       authorName: 'U One',
+      parentCommentId: null,
     });
     await comments.updateComment(TENANT, created.id, 'now @dave instead');
     const read = await comments.getComment(TENANT, created.id);
@@ -128,11 +131,11 @@ describeWithPg('platform stores with TEXT[] columns (integration)', () => {
       title: 'You were mentioned',
       body: 'in a comment',
       severity: 'info',
-      channels: ['email', 'in_app'],
+      channels: ['email', 'platform'],
     });
     const read = await notifications.get(TENANT, created.id);
     expect(read).not.toBeNull();
-    expect(read!.channels).toEqual(['email', 'in_app']);
+    expect(read!.channels).toEqual(['email', 'platform']);
   });
 
   it('defaults an absent channel list to the empty array rather than violating NOT NULL', async () => {
