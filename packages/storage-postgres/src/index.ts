@@ -97,6 +97,7 @@ export { PostgresBranchStore } from './branch/postgres-branch-store.js';
 export { PostgresCommentStore } from './comment/postgres-comment-store.js';
 export { PostgresNotificationStore } from './notification/postgres-notification-store.js';
 export { PostgresChangeProposalStore } from './governance/postgres-change-proposal-store.js';
+export { PostgresAgentThreadStore } from './agent/postgres-agent-thread-store.js';
 export { PostgresDatasetService } from './dataset/postgres-dataset-service.js';
 export { generatePlatformDDL } from './schema/ddl-platform.js';
 export {

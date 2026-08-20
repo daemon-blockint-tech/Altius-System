@@ -39,11 +39,19 @@ export class InMemoryAgentThreadStore implements AgentThreadStore {
   }
 
   async listThreads(ctx: RequestContext, userId?: string): Promise<AgentThread[]> {
+    // Most recently updated first, with insertion order breaking ties —
+    // newest-created wins a tie, which is what "most recent" has to mean.
+    // `updatedAt` alone is not a total order and ties are the COMMON case here,
+    // not the edge one: a thread's createdAt and updatedAt are the same reading
+    // of the clock until someone writes to it, so a list of fresh threads is
+    // entirely ties. Without this the sort is a no-op for them and they come
+    // back oldest-first, the opposite of what this method promises.
     return [...this.threads.values()]
       .filter((t) => t.tenantId === ctx.tenantId)
       .filter((t) => !userId || t.userId === userId)
-      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-      .map((t) => ({ ...t }));
+      .map((t, i) => ({ t, i }))
+      .sort((x, y) => y.t.updatedAt.localeCompare(x.t.updatedAt) || y.i - x.i)
+      .map((e) => ({ ...e.t }));
   }
 
   async updateThread(

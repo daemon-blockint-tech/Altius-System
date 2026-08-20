@@ -437,5 +437,49 @@ export function generatePlatformDDL(): string[] {
   // of the pending-review query.
   statements.push(`CREATE INDEX IF NOT EXISTS "idx_proposals_tenant_updated" ON "governance"."change_proposals" ("tenant_id", "updated_at" DESC);`);
 
+  // ── Agent conversation threads and their messages ──
+  //
+  // The SPI's own docstring says this interface "replaces the in-process
+  // MemorySaver with a storage-backed implementation that survives process
+  // restarts". Until now the only implementation was a Map, so the sentence
+  // described an intention rather than a fact. These tables are the fact.
+  //
+  // Losing a thread is quiet in the way that matters to a user: the agent does
+  // not error, it simply has no memory of the conversation and starts again.
+  statements.push(`CREATE SCHEMA IF NOT EXISTS "agent";`);
+  statements.push(`CREATE TABLE IF NOT EXISTS "agent"."threads" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "seq" BIGSERIAL,
+  "tenant_id" TEXT NOT NULL,
+  "name" TEXT NOT NULL,
+  "user_id" TEXT NOT NULL DEFAULT 'unknown',
+  "model" TEXT,
+  "created_at" TEXT NOT NULL,
+  "updated_at" TEXT NOT NULL
+);`);
+  // listThreads returns most-recently-updated first; `seq` DESC breaks the ties
+  // so the newest-created thread wins one. Ties are the common case rather than
+  // the edge case, because a fresh thread's createdAt and updatedAt are the same
+  // reading of the clock until something writes to it.
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_agent_threads_tenant_updated" ON "agent"."threads" ("tenant_id", "updated_at" DESC, "seq" DESC);`);
+
+  // Messages carry a sequence rather than relying on their timestamp: a
+  // conversation is an ordered transcript, and several messages in one turn can
+  // share a millisecond. `tool_calls` and `tool_result` are JSONB because they
+  // are declared `unknown` on the interface — anything JSON-serialisable.
+  statements.push(`CREATE TABLE IF NOT EXISTS "agent"."messages" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "seq" BIGSERIAL,
+  "tenant_id" TEXT NOT NULL,
+  "thread_id" TEXT NOT NULL,
+  "role" TEXT NOT NULL,
+  "content" TEXT,
+  "tool_calls" JSONB,
+  "tool_result" JSONB,
+  "model" TEXT,
+  "created_at" TEXT NOT NULL
+);`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_agent_messages_thread_seq" ON "agent"."messages" ("tenant_id", "thread_id", "seq");`);
+
   return statements;
 }

@@ -119,6 +119,7 @@ import { PostgresStorageProvider, PostgresLineageStore, PostgresAuditStore, Post
   PostgresGeospatialMapService, PostgresJustificationStore, PostgresOntologySqlService,
   PostgresOntologyUsageMetricsService, PostgresScopedSessionStore,
   PostgresChangeProposalStore,
+  PostgresAgentThreadStore,
   PostgresDatasetService,
 } from '@altius/storage-postgres';
 import {
@@ -1291,7 +1292,6 @@ async function main(): Promise<void> {
       // REST surface when the non-durable gate is open.
       businessRulesService: new InMemoryBusinessRulesService(),
       agentEvaluationService: new InMemoryAgentEvaluationService(),
-      agentThreadStore: new InMemoryAgentThreadStore(),
       conflictResolutionService: new InMemoryConflictResolutionService(),
       connectorCatalogService: new InMemoryConnectorCatalogService(),
       dataExpectationsService: new InMemoryDataExpectationsService(),
@@ -1432,6 +1432,12 @@ async function main(): Promise<void> {
     // out of `nonDurableServices`, where the gate withheld it under Postgres
     // rather than accept approvals it would lose on restart.
     changeProposalStore: pgPool ? new PostgresChangeProposalStore(pgPool) : new InMemoryChangeProposalStore(),
+    // Agent threads — Postgres-backed when available. The SPI docstring for
+    // this interface has always said it "survives process restarts"; until
+    // there was a store behind it, that described an intention. Losing a
+    // thread is not an error — the agent simply has no memory of the
+    // conversation and starts again. Graduated out of `nonDurableServices`.
+    agentThreadStore: pgPool ? new PostgresAgentThreadStore(pgPool) : new InMemoryAgentThreadStore(),
     // Usage metrics — Postgres-backed when available. The record() method is
     // an instrumentation hook; query/summary endpoints read from Postgres.
     usageMetricsService: pgPool ? new PostgresOntologyUsageMetricsService(pgPool) : new InMemoryOntologyUsageMetricsService(),
