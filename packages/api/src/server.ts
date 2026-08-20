@@ -118,6 +118,7 @@ import { PostgresStorageProvider, PostgresLineageStore, PostgresAuditStore, Post
   PostgresAlertingService, PostgresDataFreshnessService, PostgresDatasetMetadataService,
   PostgresGeospatialMapService, PostgresJustificationStore, PostgresOntologySqlService,
   PostgresOntologyUsageMetricsService, PostgresScopedSessionStore,
+  PostgresDatasetService,
 } from '@altius/storage-postgres';
 import {
   ObjectManager, LineageRecorder,
@@ -1243,10 +1244,10 @@ async function main(): Promise<void> {
   // object — they are durable and belong on the always-registered path. This
   // object holds only what is still memory-only.
   //
-  // The DatasetService keeps row/transaction state in memory — the metadata
-  // service gets a Postgres implementation in the deps literal, but the row
-  // store does not. The same instance is shared so the in-memory metadata
-  // fallback reads through it.
+  // The in-memory DatasetService is now only the non-Postgres fallback (see
+  // the `datasetService` entry in the deps literal). It is still built here
+  // because the in-memory metadata service reads dataset state through this
+  // same instance.
   const datasets = new InMemoryDatasetService();
   const nonDurableServices = nonDurableServicesEnabled
     ? {
@@ -1273,10 +1274,6 @@ async function main(): Promise<void> {
       savedViewStore: new InMemorySavedViewStore(),
       // User directory — in-memory, seeded from authenticated users.
       userDirectoryService: new InMemoryUserDirectoryService(),
-      // Datasets — row/transaction state is in-memory only (no Postgres
-      // implementation yet). The metadata service is Postgres-backed when
-      // available (see deps literal below) so metadata/schema survives restarts.
-      datasetService: datasets,
       // API Tooling services — in-memory only (no Postgres implementations yet).
       kioskService: new InMemoryKioskService(),
       layoutDeviceCaptureService: new InMemoryLayoutDeviceCaptureService(),
@@ -1419,11 +1416,16 @@ async function main(): Promise<void> {
         properties: obj,
       }));
     }),
-    // Dataset metadata — Postgres-backed when available so dataset
-    // metadata/schema survives restarts. The DatasetService itself (row/
-    // transaction state) remains in-memory only and lives in nonDurableServices
-    // above; the same `datasets` instance is shared so the in-memory metadata
-    // fallback reads through it.
+    // Datasets — Postgres-backed when available, so rows, the transaction log
+    // and branches survive a restart and are shared across replicas. This
+    // graduated out of `nonDurableServices`: the dataset routes answered 404 on
+    // a Postgres deployment until there was somewhere durable to put the rows.
+    datasetService: pgPool ? new PostgresDatasetService(pgPool) : datasets,
+    // Dataset metadata — Postgres-backed when available. It reads the same
+    // `dataset.metadata` table PostgresDatasetService writes; before that store
+    // existed nothing populated it, so this answered 200 with an empty list on
+    // every Postgres deployment. The in-memory fallback shares the `datasets`
+    // instance above for the same reason.
     datasetMetadataService: pgPool ? new PostgresDatasetMetadataService(pgPool) : new InMemoryDatasetMetadataService(datasets),
     // Usage metrics — Postgres-backed when available. The record() method is
     // an instrumentation hook; query/summary endpoints read from Postgres.

@@ -307,8 +307,35 @@ export class PostgresDatasetMetadataService implements DatasetMetadataService {
     return r.rows.map((row: any) => row.branch);
   }
 
-  async listTransactions(_ctx: RequestContext, _name: string, _branch?: string, _limit?: number): Promise<DatasetTransaction[]> {
-    return [];
+  /**
+   * Read the dataset transaction log.
+   *
+   * This returned a hardcoded `[]` when the store landed, because nothing wrote
+   * a transaction log on Postgres yet — an empty answer was at least not a
+   * wrong one. PostgresDatasetService now maintains `dataset.transactions`, so
+   * an empty array here would report "no history" for a dataset that has some.
+   */
+  async listTransactions(ctx: RequestContext, name: string, branch?: string, limit = 100): Promise<DatasetTransaction[]> {
+    const r = await this.pool.query(
+      `SELECT * FROM "dataset"."transactions"
+        WHERE "tenant_id"=$1 AND "dataset_name"=$2 AND "branch"=$3
+        ORDER BY "seq" DESC LIMIT $4`,
+      [ctx.tenantId, name, branch ?? 'main', limit],
+    );
+    return r.rows.map((row: any) => ({
+      id: row.id,
+      tenantId: ctx.tenantId,
+      datasetId: row.dataset_id ?? '',
+      type: row.type,
+      rows: typeof row.rows === 'string' ? JSON.parse(row.rows) : (row.rows ?? []),
+      schemaVersion: Number(row.schema_version ?? 0),
+      ...(row.schema_snapshot ? { schemaSnapshot: typeof row.schema_snapshot === 'string' ? JSON.parse(row.schema_snapshot) : row.schema_snapshot } : {}),
+      ...(row.previous_schema_snapshot ? { previousSchemaSnapshot: typeof row.previous_schema_snapshot === 'string' ? JSON.parse(row.previous_schema_snapshot) : row.previous_schema_snapshot } : {}),
+      timestamp: row.timestamp instanceof Date ? row.timestamp.toISOString() : String(row.timestamp),
+      actorId: row.actor_id ?? '',
+      branch: row.branch,
+      ...(row.message === null || row.message === undefined ? {} : { message: String(row.message) }),
+    }));
   }
 
   // Internal helper for creating/updating metadata
