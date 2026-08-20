@@ -9,13 +9,16 @@
  * sees versions written by a previous one.
  */
 
-import { describe, it, expect, beforeEach, afterAll } from 'vitest';
+import { it, expect, beforeEach, afterAll } from 'vitest';
 import { Pool } from 'pg';
 import type { ParsedSchema } from '@altius/odl';
 import { PostgresSchemaRegistry } from '../schema-registry/postgres-schema-registry.js';
+import { describeWithPg as pgGate } from './pg-gate.js';
 
 const PG_TEST_URL = process.env['PG_TEST_URL'];
-const describeWithPg = PG_TEST_URL ? describe : describe.skip;
+// Gate shared with the other Postgres suites so CI can turn a skip into a
+// failure (REQUIRE_PG) instead of a silent pass. See pg-gate.ts.
+const describeWithPg = pgGate;
 
 // ─── Fixtures (match odl registry.test.ts) ───
 

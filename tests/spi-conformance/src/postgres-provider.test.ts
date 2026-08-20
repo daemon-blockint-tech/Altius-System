@@ -12,8 +12,10 @@
 import { describe, afterAll } from 'vitest';
 import { PostgresStorageProvider } from '@altius/storage-postgres';
 import { runConformanceSuite } from './suite.js';
+import { pgTestUrl } from './pg-gate.js';
 
-const PG_TEST_URL = process.env['PG_TEST_URL'];
+// Read through pg-gate so REQUIRE_PG can turn a skip into a failure.
+const PG_TEST_URL = pgTestUrl;
 
 if (PG_TEST_URL) {
   const url = new URL(PG_TEST_URL);

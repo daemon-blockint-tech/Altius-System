@@ -24,10 +24,13 @@ import {
 } from '../links/link-crud.js';
 import { traverse } from '../links/traversal.js';
 import { getObjectAtVersion, getObjectAtTime } from '../temporal/temporal-queries.js';
+import { describeWithPg as pgGate } from './pg-gate.js';
 
 const PG_TEST_URL = process.env['PG_TEST_URL'];
 
-const describeWithPg = PG_TEST_URL ? describe : describe.skip;
+// Gate shared with the other Postgres suites so CI can turn a skip into a
+// failure (REQUIRE_PG) instead of a silent pass. See pg-gate.ts.
+const describeWithPg = pgGate;
 
 describeWithPg('Link CRUD, Traversal, Temporal (PostgreSQL integration)', () => {
   let pool: Pool;
