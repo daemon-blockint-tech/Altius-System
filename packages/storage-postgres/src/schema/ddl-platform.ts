@@ -479,6 +479,27 @@ export function generatePlatformDDL(): string[] {
   statements.push(`CREATE INDEX IF NOT EXISTS "idx_approval_submissions_tenant_state" ON "governance"."approval_submissions" ("tenant_id", "state");`);
   statements.push(`CREATE INDEX IF NOT EXISTS "idx_approval_submissions_tenant_workflow" ON "governance"."approval_submissions" ("tenant_id", "workflow_id");`);
 
+  // ── Kiosk sessions ──
+  statements.push(`CREATE TABLE IF NOT EXISTS "governance"."kiosk_sessions" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "tenant_id" TEXT NOT NULL,
+  "name" TEXT NOT NULL,
+  "location" TEXT NOT NULL,
+  "kiosk_user_id" TEXT NOT NULL,
+  "permissions" JSONB NOT NULL DEFAULT '{}',
+  "state" TEXT NOT NULL DEFAULT 'active',
+  "started_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "expires_at" TIMESTAMPTZ NOT NULL,
+  "last_activity_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "admin_allowlisted" BOOLEAN NOT NULL DEFAULT TRUE,
+  "launch_history" JSONB NOT NULL DEFAULT '[]',
+  "allowed_origins" TEXT[] NOT NULL DEFAULT '{}',
+  "created_by" TEXT
+);`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_kiosk_sessions_tenant" ON "governance"."kiosk_sessions" ("tenant_id");`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_kiosk_sessions_tenant_state" ON "governance"."kiosk_sessions" ("tenant_id", "state");`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_kiosk_sessions_tenant_started" ON "governance"."kiosk_sessions" ("tenant_id", "started_at" DESC);`);
+
   // ── Business rules engine ──
   statements.push(`CREATE TABLE IF NOT EXISTS "governance"."business_rules" (
   "id" TEXT NOT NULL PRIMARY KEY,
