@@ -4,7 +4,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { parseSql } from './sql-parser.js';
+import { executeSqlQuery } from '@altius/spi';
 import type {
   BatchTransformService,
   BatchTransform,
@@ -446,49 +446,17 @@ export class InMemorySqlQueryService implements SqlQueryService {
       submittedAt: now, submittedBy: ctx.actorId ?? 'system',
     };
     this.getMap(ctx.tenantId).set(id, job);
-    // Execute synchronously (in-memory)
+    // "Async" in name only: the job is written queued, then running, then
+    // terminal, all before submit() returns. Matched in the Postgres provider
+    // rather than fixed, since a caller polling get() is what the states are
+    // for and nothing here ever leaves one pending.
     const running: SqlQueryJob = { ...job, state: 'running', startedAt: new Date().toISOString() };
     this.getMap(ctx.tenantId).set(id, running);
     try {
-      const ast = parseSql(input.sql);
-      const readOpts: ReadOptions = {};
-      if (ast.where) {
-        const filter: Record<string, unknown> = {};
-        for (const w of ast.where) filter[w.field] = { [w.op]: w.value };
-        readOpts.filter = filter;
-      }
-      if (ast.orderBy) readOpts.orderBy = ast.orderBy;
-      if (ast.limit !== undefined) readOpts.limit = ast.limit;
-      else if (input.limit !== undefined) readOpts.limit = input.limit;
-      if (ast.columns !== '*') readOpts.columns = ast.columns;
-      let result = await this.datasets.read(ctx, ast.from, readOpts, input.branch);
-      let rows = result.rows;
-      if (ast.joins.length > 0) {
-        const join = ast.joins[0]!;
-        // Parse "leftTable.leftKey = rightTable.rightKey"
-        const onParts = join.on.match(/(\w+)\.(\w+)\s*=\s*(\w+)\.(\w+)/);
-        if (onParts) {
-          const leftKey = onParts[2]!;
-          const rightKey = onParts[4]!;
-          const rightResult = await this.datasets.read(ctx, join.table, undefined, input.branch);
-          const rightMap = new Map<string, Record<string, unknown>>();
-          for (const r of rightResult.rows) rightMap.set(String(r[rightKey]), r);
-          const joined: Record<string, unknown>[] = [];
-          for (const l of rows) {
-            const r = rightMap.get(String(l[leftKey]));
-            if (r) joined.push({ ...l, ...r });
-            else if (join.type === 'left' || join.type === 'outer') joined.push(l);
-          }
-          if (join.type === 'right' || join.type === 'outer') {
-            const leftKeys = new Set(rows.map(l => String(l[leftKey])));
-            for (const r of rightResult.rows) {
-              if (!leftKeys.has(String(r[rightKey]))) joined.push(r);
-            }
-          }
-          rows = joined;
-        }
-      }
-      const resultColumns = ast.columns === '*' ? (rows[0] ? Object.keys(rows[0]!) : []) : ast.columns;
+      // Execution is shared with the Postgres provider: parsing, filter
+      // pushdown, the join and projection all live in @altius/spi, so the two
+      // cannot disagree about what a query means.
+      const { rows, resultColumns } = await executeSqlQuery(ctx, this.datasets, input);
       const completed: SqlQueryJob = {
         ...running, state: 'succeeded',
         completedAt: new Date().toISOString(),
@@ -516,7 +484,16 @@ export class InMemorySqlQueryService implements SqlQueryService {
   async list(ctx: RequestContext, limit = 100): Promise<SqlQueryJob[]> {
     const m = this.jobs.get(ctx.tenantId);
     if (!m) return [];
-    return Array.from(m.values()).sort((a, b) => b.submittedAt.localeCompare(a.submittedAt)).slice(0, limit);
+    // Newest first, with insertion order breaking ties. `submittedAt` alone is
+    // not a total order: two jobs submitted in the same millisecond compare
+    // equal, the sort becomes a no-op for them, and the pair comes back
+    // oldest-first — the opposite of what this method promises. The Postgres
+    // provider orders by a sequence, so without this the two disagree.
+    return Array.from(m.values())
+      .map((j, i) => ({ j, i }))
+      .sort((x, y) => y.j.submittedAt.localeCompare(x.j.submittedAt) || y.i - x.i)
+      .map(e => e.j)
+      .slice(0, limit);
   }
 
   async cancel(ctx: RequestContext, jobId: string): Promise<void> {

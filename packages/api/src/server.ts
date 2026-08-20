@@ -120,6 +120,7 @@ import { PostgresStorageProvider, PostgresLineageStore, PostgresAuditStore, Post
   PostgresOntologyUsageMetricsService, PostgresScopedSessionStore,
   PostgresChangeProposalStore,
   PostgresDatasetService,
+  PostgresSqlQueryService,
 } from '@altius/storage-postgres';
 import {
   ObjectManager, LineageRecorder,
@@ -1304,7 +1305,6 @@ async function main(): Promise<void> {
       processMiningService: new InMemoryProcessMiningService(),
       // Pipeline Data Ops — Pipeline & Data Ops.
       batchTransformService: new InMemoryBatchTransformService(datasets),
-      sqlQueryService: new InMemorySqlQueryService(datasets),
       variableTransformService: new InMemoryVariableTransformService(),
       rulesEngineService: new InMemoryRulesEngineService(),
       pipelineService: new InMemoryPipelineService(),
@@ -1427,6 +1427,13 @@ async function main(): Promise<void> {
     // every Postgres deployment. The in-memory fallback shares the `datasets`
     // instance above for the same reason.
     datasetMetadataService: pgPool ? new PostgresDatasetMetadataService(pgPool) : new InMemoryDatasetMetadataService(datasets),
+    // Interactive SQL over datasets — Postgres-backed when available. The job
+    // record is what becomes durable: which query ran, who ran it, and what it
+    // returned, so `results` still answers after the process that ran it is
+    // gone. Execution itself is shared code in @altius/spi, and the rows it
+    // reads have been durable since datasets were. This graduated out of
+    // `nonDurableServices`, where the gate withheld it under Postgres.
+    sqlQueryService: pgPool ? new PostgresSqlQueryService(pgPool) : new InMemorySqlQueryService(datasets),
     // Change proposals — Postgres-backed when available. This is the audit
     // trail for AI-driven changes: who approved what, and when. It graduated
     // out of `nonDurableServices`, where the gate withheld it under Postgres

@@ -372,6 +372,15 @@ export {
   datasetProjectColumns,
 } from './dataset-rows.js';
 
+// The SQL parser and the query engine over datasets: both pure, so both live
+// here rather than in a provider. Two providers that disagreed about what a
+// WHERE clause meant would return different rows for the same SQL — a worse
+// failure than either being wrong alone, since neither would look broken.
+export { parseSql } from './sql-parser.js';
+export type { ParsedSqlAst } from './sql-parser.js';
+export { executeSqlQuery } from './sql-query-engine.js';
+export type { SqlQueryResult } from './sql-query-engine.js';
+
 // Enterprise connector catalog
 export type {
   ConnectorCatalogService,
