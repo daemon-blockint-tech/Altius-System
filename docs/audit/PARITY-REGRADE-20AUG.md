@@ -12,7 +12,8 @@ against real Postgres. Reproduce with `node tools/parity/reachability.mjs`.
 | External audit (`ebba280`) | 2 | 91 | 96 | read from source |
 | Measured 19 Aug (`f188339`, 58 services) | 8 | 35 | 15 | this tool |
 | Measured 20 Aug (`177b628`, 71 services) | 16 | 55 | 0 | this tool |
-| **Measured now (`DatasetService` branch, 71 services)** | **17** | **54** | **0** | this tool |
+| Measured 20 Aug (`DatasetService`, merged) | 17 | 54 | 0 | this tool |
+| **Measured now (`ChangeProposalStore` branch, 71 services)** | **18** | **53** | **0** | this tool |
 
 **Durability moved this time, and it was real.** The previous pass recorded reachability
 improving while `full` stayed pinned at 8 — services were being wired to REST without
@@ -20,12 +21,13 @@ gaining a Postgres implementation. That changed: #18 added eight Postgres platfo
 stores and `full` doubled, 8 → 16. This is the first pass where the honest number went
 up for the right reason.
 
-`DatasetService` then took it to 17, by the same route: a Postgres store, restart
-survival proven, no new surface claimed. One service per pass is the expected rate —
-the count is meant to move slowly and mean something, rather than quickly and not.
+`DatasetService` then took it to 17 and `ChangeProposalStore` to 18, by the same route
+each time: a Postgres store, restart survival proven, no new surface claimed. One
+service per pass is the expected rate — the count is meant to move slowly and mean
+something, rather than quickly and not.
 
-The gap to the tracker is still large (17 vs ~77) but it is now a gap of *degree*
-rather than *kind*: the remaining 54 are genuinely reachable, and each needs a Postgres
+The gap to the tracker is still large (18 vs ~77) but it is now a gap of *degree*
+rather than *kind*: the remaining 53 are genuinely reachable, and each needs a Postgres
 implementation rather than a rethink.
 
 ## Verified, not inferred
@@ -53,26 +55,27 @@ mean "works":
   makes exactly the two composite-key cases fail with `invalid byte sequence for
   encoding "UTF8": 0x00`, and nothing else — so the cases test what they claim to.
 
-## The 17 that reach a durable implementation
+## The 18 that reach a durable implementation
 
-`AlertingService` · `AuditStore` · `BlobStore` · `BranchStore` · `CommentStore` ·
-`DataFreshnessService` · `DatasetMetadataService` · **`DatasetService`** ·
-`EmbeddingStore` · `GeospatialMapService` · `JustificationStore` ·
-`NotificationStore` · `ObjectSetStore` · `OntologySqlService` ·
-`OntologyUsageMetricsService` · `ScopedSessionStore` · `TimeSeriesStore`
+`AlertingService` · `AuditStore` · `BlobStore` · `BranchStore` ·
+**`ChangeProposalStore`** · `CommentStore` · `DataFreshnessService` ·
+`DatasetMetadataService` · **`DatasetService`** · `EmbeddingStore` ·
+`GeospatialMapService` · `JustificationStore` · `NotificationStore` · `ObjectSetStore` ·
+`OntologySqlService` · `OntologyUsageMetricsService` · `ScopedSessionStore` ·
+`TimeSeriesStore`
 
 `full` here stays a **necessary, not sufficient** condition: it says a user can reach a
 durable implementation, not that the capability is complete. Rows still need demoting
 by hand where behaviour is missing.
 
-## Work queue — reachable but memory-only (54)
+## Work queue — reachable but memory-only (53)
 
 Every one is already wired to REST, so the remaining work is persistence alone. These
 are the honest `partial → full` candidates:
 
 `AccessExplanationService`¹ · `AgentEvaluationService` · `AgentService` ·
 `AgentThreadStore` · `ApprovalWorkflowService` · `BatchTransformService` ·
-`BuildTriggerService` · `BusinessRulesService` · `ChangeProposalStore` ·
+`BuildTriggerService` · `BusinessRulesService` ·
 `CommandExchangeService` · `CommandService` · `ConflictResolutionService` ·
 `ConnectorCatalogService` · `CopilotService` · `DataExpectationsService` ·
 `DatasetProjectionService` · `DatasourceService` ·
@@ -97,9 +100,33 @@ None of these loses data today — #14's gate withholds them under Postgres, so 
 routes answer 404 rather than accepting a write they would drop. Making one durable is
 what moves it from 404 to working.
 
-## Next
+## This pass — `ChangeProposalStore`
 
-`DatasetService` is **done** — the one platform store #18 deliberately left in memory
+The audit trail for AI-driven change: an agent proposes rather than executes, and a
+human approves, rejects, or asks for revisions. Who decided what, and when. That record
+lived in a `Map`, so #14's gate withheld the store under Postgres and the routes
+answered 404 rather than accepting approvals they would drop.
+
+Picked over the data-plane candidates because of what losing it costs. A dropped
+dataset row is data loss; a dropped approval is a compliance failure, and the platform's
+whole claim is that changes are governed.
+
+**The state machine is what was actually ported.** Rows are the easy half — the guards
+are the point: an unsubmitted draft cannot be approved, an unapproved proposal cannot be
+applied, an applied or rejected one cannot be withdrawn, and a proposal under review
+cannot be edited. Each is a way an approval could be manufactured or erased if the two
+providers disagreed, so all of them are pinned in a conformance category that runs
+against **both**, per the standing rule below.
+
+Proven non-vacuous with the #19 defect itself: `tags` is a real `TEXT[]`, and binding it
+with `JSON.stringify` — which is exactly what took out comments and notifications while
+their suites stayed green — fails every Postgres case with `malformed array literal:
+"["ontology","ai-proposed"]"` while the memory ones pass untouched. That asymmetry is
+the signature of a provider-specific defect.
+
+## Previous pass — `DatasetService`
+
+`DatasetService` is **done and merged** — the one platform store #18 deliberately left in memory
 ("the DatasetService remains in-memory for row/transaction semantics"). It now has
 `dataset.metadata` / `.rows` / `.transactions` / `.branches` behind it, and the routes
 that answered 404 on a Postgres deployment work.
@@ -131,11 +158,17 @@ Two things that conversion surfaced, neither of them the dataset store's own bug
   (`ci.yml` already notes this for the compose job) — so #20's gate still holds where it
   matters. But a developer running the root command sees "342 passed" having exercised
   no Postgres. Adding `"env": ["PG_TEST_URL", "REQUIRE_PG"]` to the `test` task in
-  `turbo.json` closes it; left out of the dataset change deliberately.
+  `turbo.json` closes it; left out of the dataset change deliberately. **Fixed
+  separately and merged** — with the env declared, the root command goes from 8 files
+  and 136 tests silently skipped to 0, and conformance from 373 tests to 746.
 
-Next candidates, same pattern: `BatchTransformService`, `DatasetProjectionService` and
-`SqlQueryService` are the rest of the dataset/pipeline data plane and now have durable
-datasets to build on.
+## Next
+
+Same pattern, in rough order of what losing it costs: `ApprovalWorkflowService` (the
+other governance audit trail — but it is **not wired into the API at all**, so it needs
+routes before persistence is worth anything), then `BatchTransformService`,
+`DatasetProjectionService` and `SqlQueryService`, which are the rest of the
+dataset/pipeline data plane.
 
 ## Standing caveat
 
