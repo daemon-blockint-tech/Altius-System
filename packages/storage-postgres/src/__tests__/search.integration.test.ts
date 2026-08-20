@@ -9,9 +9,10 @@
  * these tests will be skipped.
  */
 
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { it, expect, beforeAll, afterAll } from 'vitest';
 import type { RequestContext, OntologySchema } from '@altius/spi';
 import { PostgresStorageProvider } from '../postgres-storage-provider.js';
+import { describeWithPg as pgGate } from './pg-gate.js';
 
 const PG_TEST_URL = process.env['PG_TEST_URL'];
 
@@ -26,7 +27,9 @@ function parseUrl(url: string) {
   };
 }
 
-const describeWithPg = PG_TEST_URL ? describe : describe.skip;
+// Gate shared with the other Postgres suites so CI can turn a skip into a
+// failure (REQUIRE_PG) instead of a silent pass. See pg-gate.ts.
+const describeWithPg = pgGate;
 
 describeWithPg('searchObjects with FULLTEXT trigram index (integration)', () => {
   let provider: PostgresStorageProvider;

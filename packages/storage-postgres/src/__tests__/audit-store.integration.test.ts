@@ -5,12 +5,13 @@
  * these tests will be skipped.
  */
 
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { it, expect, beforeAll, afterAll } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import type { AuditRecord } from '@altius/spi';
 import { PostgresAuditStore } from '../audit/postgres-audit-store.js';
 import { generateAuditDDL } from '../schema/ddl-audit.js';
+import { describeWithPg as pgGate } from './pg-gate.js';
 
 const PG_TEST_URL = process.env['PG_TEST_URL'];
 
@@ -25,7 +26,9 @@ function parseUrl(url: string) {
   };
 }
 
-const describeWithPg = PG_TEST_URL ? describe : describe.skip;
+// Gate shared with the other Postgres suites so CI can turn a skip into a
+// failure (REQUIRE_PG) instead of a silent pass. See pg-gate.ts.
+const describeWithPg = pgGate;
 
 describeWithPg('PostgresAuditStore (integration)', () => {
   let pool: Pool;

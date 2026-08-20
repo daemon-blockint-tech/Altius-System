@@ -17,6 +17,7 @@ jobs:
   build-test:
     name: Build + unit tests
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -39,6 +40,7 @@ jobs:
   postgres-integration:
     name: Postgres integration
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     services:
       postgres:
         # Plain Postgres 17. The AGE image was pinned here when the provider
@@ -82,6 +84,10 @@ jobs:
       - name: Storage-postgres integration tests
         env:
           PG_TEST_URL: postgresql://postgres:postgres@localhost:5432/altius_test
+          # A skipped Postgres suite is indistinguishable from a passing one in
+          # the job summary, which is how three defects shipped green. With this
+          # set, a missing PG_TEST_URL raises instead of skipping.
+          REQUIRE_PG: '1'
         run: pnpm --filter @altius/storage-postgres test
       # The shared SPI conformance suite runs against the memory provider in the
       # unit job. Without PG_TEST_URL it skips the Postgres half entirely, so any
@@ -90,6 +96,10 @@ jobs:
       - name: SPI conformance against Postgres
         env:
           PG_TEST_URL: postgresql://postgres:postgres@localhost:5432/altius_test
+          # A skipped Postgres suite is indistinguishable from a passing one in
+          # the job summary, which is how three defects shipped green. With this
+          # set, a missing PG_TEST_URL raises instead of skipping.
+          REQUIRE_PG: '1'
         run: pnpm --filter @altius/spi-conformance test
       # A stack that fails to come up leaves no trace in the job output: the
       # `up --wait` step reports only "container X exited (1)", and the reason
@@ -116,6 +126,7 @@ jobs:
   docker-stack-integration:
     name: Docker-stack integration
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     # docker-compose.yaml has two intentionally-required vars (no defaults —
     # fail loud in prod): POSTGRES_PASSWORD and KEYCLOAK_ADMIN_PASSWORD. Supply
     # throwaway values for the CI stack; they stay consistent across containers.
@@ -214,6 +225,7 @@ jobs:
   enforcement-e2e:
     name: Enforcement E2E (prod security, capability gating, consent vocab)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     # The high-value enforcement specs are env-gated + DESTRUCTIVE: each tears the
     # stack down and boots it in a NON-default mode (NODE_ENV=production / a
     # distinct DOMAIN_PACKS set / a custom consent vocabulary) on the shared
@@ -309,6 +321,7 @@ jobs:
   helm-lint:
     name: Helm lint
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: azure/setup-helm@v4
@@ -324,6 +337,7 @@ jobs:
   image-scan:
     name: Trivy image scan (HIGH/CRITICAL)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     # bake does not interpolate the compose file, so the two required vars
     # (POSTGRES_PASSWORD, KEYCLOAK_ADMIN_PASSWORD) are not needed here —
     # only the built image layers are scanned, nothing runs.
