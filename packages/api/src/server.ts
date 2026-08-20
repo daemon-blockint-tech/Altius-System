@@ -119,6 +119,7 @@ import { PostgresStorageProvider, PostgresLineageStore, PostgresAuditStore, Post
   PostgresGeospatialMapService, PostgresJustificationStore, PostgresOntologySqlService,
   PostgresOntologyUsageMetricsService, PostgresScopedSessionStore,
   PostgresChangeProposalStore,
+  PostgresOntologyChangeHistoryService,
   PostgresDatasetService,
 } from '@altius/storage-postgres';
 import {
@@ -1282,7 +1283,6 @@ async function main(): Promise<void> {
       workshopUxService: new InMemoryWorkshopUxService(),
       valueFormattingService: new InMemoryValueFormattingService(),
       designSystemService: new InMemoryDesignSystemService(),
-      ontologyChangeHistoryService: new InMemoryOntologyChangeHistoryService(),
       // Workshop UI services.
       commandExchangeService: new InMemoryCommandExchangeService(),
       objectSetFilterStore: new InMemoryObjectSetFilterStore(),
@@ -1432,6 +1432,12 @@ async function main(): Promise<void> {
     // out of `nonDurableServices`, where the gate withheld it under Postgres
     // rather than accept approvals it would lose on restart.
     changeProposalStore: pgPool ? new PostgresChangeProposalStore(pgPool) : new InMemoryChangeProposalStore(),
+    // Ontology change history — Postgres-backed when available. The audit
+    // trail for schema change: who changed it, when, and a snapshot of what it
+    // looked like. Graduated out of `nonDurableServices`. Note `restore` and
+    // `applyChange` still report success without changing any schema, in BOTH
+    // providers — see the store's header.
+    ontologyChangeHistoryService: pgPool ? new PostgresOntologyChangeHistoryService(pgPool) : new InMemoryOntologyChangeHistoryService(),
     // Usage metrics — Postgres-backed when available. The record() method is
     // an instrumentation hook; query/summary endpoints read from Postgres.
     usageMetricsService: pgPool ? new PostgresOntologyUsageMetricsService(pgPool) : new InMemoryOntologyUsageMetricsService(),
