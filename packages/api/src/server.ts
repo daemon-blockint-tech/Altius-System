@@ -119,6 +119,7 @@ import { PostgresStorageProvider, PostgresLineageStore, PostgresAuditStore, Post
   PostgresGeospatialMapService, PostgresJustificationStore, PostgresOntologySqlService,
   PostgresOntologyUsageMetricsService, PostgresScopedSessionStore,
   PostgresChangeProposalStore,
+  PostgresHumanInTheLoopService,
   PostgresDatasetService,
 } from '@altius/storage-postgres';
 import {
@@ -1316,7 +1317,6 @@ async function main(): Promise<void> {
       agentService: new InMemoryAgentService(llmClient),
       modelCatalogService: new InMemoryModelCatalogService(llmClient),
       evalService: new InMemoryEvalService(),
-      humanInTheLoopService: new InMemoryHumanInTheLoopService(),
       vectorSearchService: new InMemoryVectorSearchService(embeddingStore, llmClient),
       copilotService: new InMemoryCopilotService(),
       }
@@ -1336,6 +1336,15 @@ async function main(): Promise<void> {
       );
     }
   }
+
+  // One change-proposal store, two surfaces. `changeProposalStore` and
+  // `humanInTheLoopService` are the same records under two names —
+  // /api/v1/change-proposals and /api/v1/ai-proposals — so they are handed the
+  // same instance. They used not to be: the human-in-the-loop service built its
+  // own private Map, and an approval recorded on one surface was invisible on
+  // the other with neither erring. The pgPool ternary stays on this line so the
+  // #14 invariant is still visible where the choice is made.
+  const changeProposals = pgPool ? new PostgresChangeProposalStore(pgPool) : new InMemoryChangeProposalStore();
 
   const deps: ApiDependencies = {
     schema,
@@ -1431,7 +1440,12 @@ async function main(): Promise<void> {
     // trail for AI-driven changes: who approved what, and when. It graduated
     // out of `nonDurableServices`, where the gate withheld it under Postgres
     // rather than accept approvals it would lose on restart.
-    changeProposalStore: pgPool ? new PostgresChangeProposalStore(pgPool) : new InMemoryChangeProposalStore(),
+    changeProposalStore: changeProposals,
+    // Human-in-the-loop — the same proposals, reached through the AI-facing
+    // routes. It holds no state of its own: the five methods are a rename of
+    // the store's, so the adapter lives once in @altius/spi and the store above
+    // decides both durability and *which* record is being approved.
+    humanInTheLoopService: pgPool ? new PostgresHumanInTheLoopService(pgPool) : new InMemoryHumanInTheLoopService(changeProposals),
     // Usage metrics — Postgres-backed when available. The record() method is
     // an instrumentation hook; query/summary endpoints read from Postgres.
     usageMetricsService: pgPool ? new PostgresOntologyUsageMetricsService(pgPool) : new InMemoryOntologyUsageMetricsService(),
