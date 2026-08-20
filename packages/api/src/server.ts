@@ -119,6 +119,7 @@ import { PostgresStorageProvider, PostgresLineageStore, PostgresAuditStore, Post
   PostgresGeospatialMapService, PostgresJustificationStore, PostgresOntologySqlService,
   PostgresOntologyUsageMetricsService, PostgresScopedSessionStore,
   PostgresChangeProposalStore,
+  PostgresEventObjectService,
   PostgresDatasetService,
 } from '@altius/storage-postgres';
 import {
@@ -1296,7 +1297,6 @@ async function main(): Promise<void> {
       connectorCatalogService: new InMemoryConnectorCatalogService(),
       dataExpectationsService: new InMemoryDataExpectationsService(),
       embeddedCopilotService: new InMemoryEmbeddedCopilotService(),
-      eventObjectService: new InMemoryEventObjectService(),
       graphAnalysisService: new InMemoryGraphAnalysisService(),
       multiOntologyGovernanceService: new InMemoryMultiOntologyGovernanceService(),
       pipelineBuildService: new InMemoryPipelineBuildService(),
@@ -1432,6 +1432,12 @@ async function main(): Promise<void> {
     // out of `nonDurableServices`, where the gate withheld it under Postgres
     // rather than accept approvals it would lose on restart.
     changeProposalStore: pgPool ? new PostgresChangeProposalStore(pgPool) : new InMemoryChangeProposalStore(),
+    // Event objects — Postgres-backed when available. The events are the
+    // process-mining log, so losing them yields a smaller model rather than an
+    // error; the thresholds mark breaches at creation time, so losing one just
+    // stops new events being flagged. Both quiet. Graduated out of
+    // `nonDurableServices`.
+    eventObjectService: pgPool ? new PostgresEventObjectService(pgPool) : new InMemoryEventObjectService(),
     // Usage metrics — Postgres-backed when available. The record() method is
     // an instrumentation hook; query/summary endpoints read from Postgres.
     usageMetricsService: pgPool ? new PostgresOntologyUsageMetricsService(pgPool) : new InMemoryOntologyUsageMetricsService(),
