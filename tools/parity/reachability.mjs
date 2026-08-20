@@ -31,7 +31,13 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
-const ROOT = new URL('../..', import.meta.url).pathname.replace(/^\//, '').replace(/\/$/, '');
+// `new URL(...).pathname` yields `/home/...` on POSIX and `/C:/...` on Windows.
+// Stripping the leading slash unconditionally fixes Windows and breaks POSIX,
+// leaving a relative path that resolves against the cwd — so only strip it when
+// it precedes a drive letter.
+const ROOT = decodeURIComponent(new URL('../..', import.meta.url).pathname)
+  .replace(/^\/(?=[A-Za-z]:)/, '')
+  .replace(/\/$/, '');
 const PKGS = join(ROOT, 'packages');
 
 const isTest = (p) =>
