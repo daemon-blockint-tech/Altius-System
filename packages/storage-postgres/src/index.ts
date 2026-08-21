@@ -107,3 +107,17 @@ export {
   PostgresOntologyUsageMetricsService,
   PostgresScopedSessionStore,
 } from './postgres-platform-stores.js';
+export {
+  PostgresAgentThreadStore,
+  PostgresChangeProposalStore,
+  PostgresSavedViewStore,
+  PostgresObjectSetFilterStore,
+  PostgresApprovalWorkflowService,
+  PostgresDataExpectationsService,
+  PostgresDesignSystemService,
+  PostgresModelRegistryService,
+  PostgresModelInferenceService,
+  PostgresModelChainService,
+  PostgresConnectorCatalogService,
+  PostgresCommandService,
+} from './postgres-platform-stores-batch2.js';

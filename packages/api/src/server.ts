@@ -85,6 +85,8 @@ import {
   InMemoryChangeProposalStore,
   InMemoryBusinessRulesService,
   InMemoryAgentEvaluationService,
+  InMemoryApprovalWorkflowService,
+  InMemoryCommandService,
   InMemoryDataExpectationsService,
   InMemoryConflictResolutionService,
   InMemoryPipelineBuildService,
@@ -118,6 +120,10 @@ import { PostgresStorageProvider, PostgresLineageStore, PostgresAuditStore, Post
   PostgresAlertingService, PostgresDataFreshnessService, PostgresDatasetMetadataService,
   PostgresGeospatialMapService, PostgresJustificationStore, PostgresOntologySqlService,
   PostgresOntologyUsageMetricsService, PostgresScopedSessionStore,
+  PostgresAgentThreadStore, PostgresChangeProposalStore, PostgresSavedViewStore,
+  PostgresObjectSetFilterStore, PostgresApprovalWorkflowService, PostgresDataExpectationsService,
+  PostgresDesignSystemService, PostgresModelRegistryService, PostgresModelInferenceService,
+  PostgresModelChainService, PostgresConnectorCatalogService, PostgresCommandService,
 } from '@altius/storage-postgres';
 import {
   ObjectManager, LineageRecorder,
@@ -1251,17 +1257,21 @@ async function main(): Promise<void> {
   const nonDurableServices = nonDurableServicesEnabled
     ? {
       // Model inference and chain services — in-memory only.
-      // Scenario service — in-memory, wired to the model services.
+      // Model services — Postgres-backed when available; scenario service
+      // wires to the inference/chain services regardless of backing.
       ...(() => {
+        if (pgPool) {
+          const registry = new PostgresModelRegistryService(pgPool);
+          const inference = new PostgresModelInferenceService(pgPool);
+          const chain = new PostgresModelChainService(pgPool);
+          const scenarios = new InMemoryScenarioService({ inferenceService: inference, chainService: chain });
+          return { modelRegistryService: registry, modelInferenceService: inference, modelChainService: chain, scenarioService: scenarios };
+        }
         const registry = new InMemoryModelRegistryService();
         const inference = new InMemoryModelInferenceService(registry);
         const chain = new InMemoryModelChainService(inference);
         const scenarios = new InMemoryScenarioService({ inferenceService: inference, chainService: chain });
-        return {
-          modelInferenceService: inference,
-          modelChainService: chain,
-          scenarioService: scenarios,
-        };
+        return { modelRegistryService: registry, modelInferenceService: inference, modelChainService: chain, scenarioService: scenarios };
       })(),
       // Workshop platform service — in-memory app definition persistence.
       workshopPlatformService: new InMemoryWorkshopPlatformService(),
@@ -1269,8 +1279,8 @@ async function main(): Promise<void> {
       embeddingService: new InMemoryEmbeddingService(),
       // Platform resources — in-memory resource catalog and object linking.
       platformResourceService: new InMemoryPlatformResourceService(),
-      // Saved views — in-memory per-user widget view persistence.
-      savedViewStore: new InMemorySavedViewStore(),
+      // Saved views — Postgres-backed when available.
+      savedViewStore: pgPool ? new PostgresSavedViewStore(pgPool) : new InMemorySavedViewStore(),
       // User directory — in-memory, seeded from authenticated users.
       userDirectoryService: new InMemoryUserDirectoryService(),
       // Datasets — row/transaction state is in-memory only (no Postgres
@@ -1283,21 +1293,23 @@ async function main(): Promise<void> {
       ontologyManagerService: new InMemoryOntologyManagerService(),
       workshopUxService: new InMemoryWorkshopUxService(),
       valueFormattingService: new InMemoryValueFormattingService(),
-      designSystemService: new InMemoryDesignSystemService(),
+      designSystemService: pgPool ? new PostgresDesignSystemService(pgPool) : new InMemoryDesignSystemService(),
       ontologyChangeHistoryService: new InMemoryOntologyChangeHistoryService(),
       // Workshop UI services.
       commandExchangeService: new InMemoryCommandExchangeService(),
-      objectSetFilterStore: new InMemoryObjectSetFilterStore(),
+      objectSetFilterStore: pgPool ? new PostgresObjectSetFilterStore(pgPool) : new InMemoryObjectSetFilterStore(),
       graphService: new InMemoryGraphService(),
       // Previously-unreachable services — in-memory only, wired so they have a
       // REST surface when the non-durable gate is open.
-      changeProposalStore: new InMemoryChangeProposalStore(),
+      changeProposalStore: pgPool ? new PostgresChangeProposalStore(pgPool) : new InMemoryChangeProposalStore(),
       businessRulesService: new InMemoryBusinessRulesService(),
       agentEvaluationService: new InMemoryAgentEvaluationService(),
-      agentThreadStore: new InMemoryAgentThreadStore(),
+      agentThreadStore: pgPool ? new PostgresAgentThreadStore(pgPool) : new InMemoryAgentThreadStore(),
+      approvalWorkflowService: pgPool ? new PostgresApprovalWorkflowService(pgPool) : new InMemoryApprovalWorkflowService(),
+      commandService: pgPool ? new PostgresCommandService(pgPool) : new InMemoryCommandService(),
       conflictResolutionService: new InMemoryConflictResolutionService(),
-      connectorCatalogService: new InMemoryConnectorCatalogService(),
-      dataExpectationsService: new InMemoryDataExpectationsService(),
+      connectorCatalogService: pgPool ? new PostgresConnectorCatalogService(pgPool) : new InMemoryConnectorCatalogService(),
+      dataExpectationsService: pgPool ? new PostgresDataExpectationsService(pgPool) : new InMemoryDataExpectationsService(),
       embeddedCopilotService: new InMemoryEmbeddedCopilotService(),
       eventObjectService: new InMemoryEventObjectService(),
       graphAnalysisService: new InMemoryGraphAnalysisService(),
