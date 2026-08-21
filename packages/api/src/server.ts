@@ -1679,18 +1679,14 @@ async function main(): Promise<void> {
     variableTransformService: pgPool ? new PostgresVariableTransformService(pgPool) : new InMemoryVariableTransformService(),
     // Multi-ontology governance — Postgres-backed when available.
     multiOntologyGovernanceService: pgPool ? new PostgresMultiOntologyGovernanceService(pgPool) : new InMemoryMultiOntologyGovernanceService(),
+    // Ontology change history — Postgres-backed when available.
+    ontologyChangeHistoryService: pgPool ? new PostgresOntologyChangeHistoryService(pgPool) : new InMemoryOntologyChangeHistoryService(),
     // Event objects — Postgres-backed when available.
     eventObjectService: pgPool ? new PostgresEventObjectService(pgPool) : new InMemoryEventObjectService(),
     // Business rules â€” Postgres-backed when available. `state` is what decides
     // whether a rule governs anything, so losing it silently reverts a rule to
     // draft: nothing looks broken, the rule just stops applying.
     businessRulesService: pgPool ? new PostgresBusinessRulesService(pgPool) : new InMemoryBusinessRulesService(),
-    // Ontology change history — Postgres-backed when available. The audit
-    // trail for schema change: who changed it, when, and a snapshot of what it
-    // looked like. Graduated out of `nonDurableServices`. Note `restore` and
-    // `applyChange` still report success without changing any schema, in BOTH
-    // providers — see the store's header.
-    ontologyChangeHistoryService: pgPool ? new PostgresOntologyChangeHistoryService(pgPool) : new InMemoryOntologyChangeHistoryService(),
     // Conflict resolution — Postgres-backed when available. Both halves fail
     // silently when lost: an unresolved conflict that disappears means the
     // datasource and the user edit quietly keep different values, and a lost
