@@ -378,6 +378,12 @@ export {
   datasetProjectColumns,
 } from './dataset-rows.js';
 
+// HumanInTheLoopService is a rename of ChangeProposalStore, not a store of its
+// own. Sharing one adapter is what lets the API hand the HITL surface and the
+// change-proposal surface the same store, so an approval recorded through one
+// is visible through the other.
+export { ChangeProposalHumanInTheLoop } from './human-in-the-loop.js';
+
 // Shared DatasetService refusals, so a create/not-found means the same thing
 // and carries the same status whichever provider is wired.
 export {

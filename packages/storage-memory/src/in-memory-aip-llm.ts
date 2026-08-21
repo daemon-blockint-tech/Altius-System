@@ -8,9 +8,6 @@ import type {
   RequestContext,
   LLMClient,
   EmbeddingStore,
-  ChangeProposal,
-  CreateProposalInput,
-  ProposalQuery,
   EvalSuite,
   EvalRunResult,
   EvalMetric,
@@ -19,7 +16,9 @@ import type {
   CopilotActionSuggestion,
   EmbeddingSearchResult,
 } from '@altius/spi';
+import { ChangeProposalHumanInTheLoop } from '@altius/spi';
 import type {
+  ChangeProposalStore,
   AgentService,
   AgentDefinition,
   CreateAgentInput,
@@ -36,7 +35,6 @@ import type {
   PromptPlaygroundResult,
   EvalService,
   EvalSuiteInput,
-  HumanInTheLoopService,
   VectorSearchService,
   EmbeddingModel,
   GenerateEmbeddingInput,
@@ -465,27 +463,20 @@ export class InMemoryEvalService implements EvalService {
 // Human-in-the-loop
 // ===========================================================================
 
-export class InMemoryHumanInTheLoopService implements HumanInTheLoopService {
-  private readonly inner = new InMemoryChangeProposalStore();
-
-  async listProposals(ctx: RequestContext, query?: ProposalQuery): Promise<{ proposals: ChangeProposal[]; totalCount: number }> {
-    return this.inner.list(ctx.tenantId, query);
-  }
-
-  async getProposal(ctx: RequestContext, id: string): Promise<ChangeProposal | null> {
-    return this.inner.get(ctx.tenantId, id);
-  }
-
-  async createProposal(ctx: RequestContext, input: CreateProposalInput): Promise<ChangeProposal> {
-    return this.inner.create(ctx.tenantId, ctx.actorId ?? 'system', input);
-  }
-
-  async approve(ctx: RequestContext, id: string, comments?: string): Promise<ChangeProposal> {
-    return this.inner.approve(ctx.tenantId, id, ctx.actorId ?? 'system', comments);
-  }
-
-  async reject(ctx: RequestContext, id: string, comments?: string): Promise<ChangeProposal> {
-    return this.inner.reject(ctx.tenantId, id, ctx.actorId ?? 'system', comments);
+/**
+ * The five methods are a rename of ChangeProposalStore's, so they live once in
+ * @altius/spi and both providers extend the same adapter.
+ *
+ * The store is a constructor argument, defaulted rather than required so the
+ * existing call sites keep working. Passing one in is the point: this class
+ * used to build its own private store, which meant the /api/v1/ai-proposals
+ * surface and the /api/v1/change-proposals surface answered about different
+ * records without either of them erring. The API now hands both the same
+ * instance.
+ */
+export class InMemoryHumanInTheLoopService extends ChangeProposalHumanInTheLoop {
+  constructor(store: ChangeProposalStore = new InMemoryChangeProposalStore()) {
+    super(store);
   }
 }
 
