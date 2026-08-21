@@ -92,6 +92,8 @@ Graded `partial` as capabilities, but each Gap describes an enforcement hole in 
 
 **Status:** `partial`
 
+> 🔒 CLAIMED: loop-0821-a7c3 2026-08-21T15:07+07:00
+
 > ✅ **UPDATED 21 Aug 2026 (loop-0821-9c4e, commit `bacf52c`, pushed in `96eb062` lineage).** Object-less action default-allow CLOSED. `ActionManifest.requiredRoles` is the declarative role gate (parsed + validated in packages/actions/src/parser; mirrors @function requiredRoles `34f540f`). `createSecurityLayer` (config.ts) now DENIES unmapped actions unless the caller holds one of the manifest's requiredRoles — absent/empty means nobody, reason names the fix. `assertActionAuthzCoverage` is exact (declared field, substring heuristic deleted) and fatal in production. The three shipped object-less actions (RegisterPatient, OpenCase, StartConversation) declare requiredRoles mirroring their hasRole preconditions. Two-sided proof: `packages/api/src/__tests__/objectless-action-roles.test.ts` (3/5 fail without, all pass with) + updated `action-authz-coverage.test.ts` + `packages/actions/src/parser/__tests__/required-roles.test.ts`.
 
 > ✅ **RE-VERIFIED against source, 15 Aug 2026.** Evidence below is current, not inherited.
