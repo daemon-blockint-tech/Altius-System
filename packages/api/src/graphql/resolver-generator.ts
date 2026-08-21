@@ -838,7 +838,7 @@ export function generateResolvers(
       args: { notificationId: string },
       ctx: ResolverContext,
     ) => {
-      await deps.notificationStore!.markRead(ctx.user.tenantId, args.notificationId);
+      await deps.notificationStore!.markRead(ctx.user.tenantId, ctx.user.id, args.notificationId);
       return true;
     };
 

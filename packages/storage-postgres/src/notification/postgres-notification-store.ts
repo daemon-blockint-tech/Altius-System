@@ -112,11 +112,11 @@ export class PostgresNotificationStore implements NotificationStore {
     return { notifications: result.rows.map(r => mapNotification(r)), totalCount };
   }
 
-  async markRead(tenantId: string, notificationId: string): Promise<void> {
+  async markRead(tenantId: string, userId: string, notificationId: string): Promise<void> {
     await this.pool.query(
       `UPDATE "notification"."notifications" SET "read" = TRUE
-       WHERE "id" = $1 AND "tenant_id" = $2`,
-      [notificationId, tenantId],
+       WHERE "id" = $1 AND "tenant_id" = $2 AND "user_id" = $3`,
+      [notificationId, tenantId, userId],
     );
   }
 
@@ -128,10 +128,10 @@ export class PostgresNotificationStore implements NotificationStore {
     );
   }
 
-  async delete(tenantId: string, notificationId: string): Promise<void> {
+  async delete(tenantId: string, userId: string, notificationId: string): Promise<void> {
     await this.pool.query(
-      `DELETE FROM "notification"."notifications" WHERE "id" = $1 AND "tenant_id" = $2`,
-      [notificationId, tenantId],
+      `DELETE FROM "notification"."notifications" WHERE "id" = $1 AND "tenant_id" = $2 AND "user_id" = $3`,
+      [notificationId, tenantId, userId],
     );
   }
 

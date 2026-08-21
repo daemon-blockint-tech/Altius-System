@@ -91,13 +91,13 @@ export interface NotificationStore {
   list(tenantId: string, userId: string, query?: NotificationQuery): Promise<{ notifications: PlatformNotification[]; totalCount: number }>;
 
   /** Mark a notification as read. */
-  markRead(tenantId: string, notificationId: string): Promise<void>;
+  markRead(tenantId: string, userId: string, notificationId: string): Promise<void>;
 
   /** Mark all notifications as read for a user. */
   markAllRead(tenantId: string, userId: string): Promise<void>;
 
   /** Delete a notification. */
-  delete(tenantId: string, notificationId: string): Promise<void>;
+  delete(tenantId: string, userId: string, notificationId: string): Promise<void>;
 
   /** Get user preferences. */
   getPreferences(tenantId: string, userId: string): Promise<NotificationPreferences>;

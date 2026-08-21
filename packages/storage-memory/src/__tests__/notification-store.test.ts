@@ -41,7 +41,11 @@ describe('InMemoryNotificationStore', () => {
   it('filters by unreadOnly', async () => {
     const n1 = await store.create({ tenantId: 't1', userId: 'u1', type: 'mention', title: 'A', body: 'a', severity: 'info', channels: ['platform'] });
     await store.create({ tenantId: 't1', userId: 'u1', type: 'alert', title: 'B', body: 'b', severity: 'warning', channels: ['platform'] });
-    await store.markRead('t1', n1.id);
+    // Another user cannot mark u1's notification read.
+    await store.markRead('t1', 'u2', n1.id);
+    expect((await store.list('t1', 'u1', { unreadOnly: true })).notifications).toHaveLength(2);
+    // The recipient can.
+    await store.markRead('t1', 'u1', n1.id);
 
     const result = await store.list('t1', 'u1', { unreadOnly: true });
     expect(result.notifications).toHaveLength(1);
@@ -68,7 +72,11 @@ describe('InMemoryNotificationStore', () => {
 
   it('deletes a notification', async () => {
     const n = await store.create({ tenantId: 't1', userId: 'u1', type: 'mention', title: 'A', body: 'a', severity: 'info', channels: ['platform'] });
-    await store.delete('t1', n.id);
+    // Another user cannot delete u1's notification.
+    await store.delete('t1', 'u2', n.id);
+    expect(await store.get('t1', n.id)).not.toBeNull();
+    // The recipient can.
+    await store.delete('t1', 'u1', n.id);
     const fetched = await store.get('t1', n.id);
     expect(fetched).toBeNull();
   });

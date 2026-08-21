@@ -105,8 +105,13 @@ export interface CommentStore {
   /** Get notifications for a user. */
   getNotifications(tenantId: string, userId: string, unreadOnly?: boolean): Promise<CommentNotification[]>;
 
-  /** Mark a notification as read. */
-  markNotificationRead(tenantId: string, notificationId: string): Promise<void>;
+  /**
+   * Mark a notification as read. Scoped to `userId`: a notification belongs to
+   * one recipient, and only that recipient may mark it read — passing another
+   * user's id (or a guessed notification id) must be a no-op, not a cross-user
+   * write.
+   */
+  markNotificationRead(tenantId: string, userId: string, notificationId: string): Promise<void>;
 }
 
 /**

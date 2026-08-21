@@ -161,7 +161,7 @@ export function registerCommentRoutes(
   app.post('/api/v1/notifications/:id/read', async (req, res) => {
     try {
       const user = await extractUser(req, authenticator, isDev);
-      await store.markNotificationRead(user.tenantId, req.params['id']!);
+      await store.markNotificationRead(user.tenantId, user.id, req.params['id']!);
       res.status(200).json({ read: true });
     } catch (err) {
       res.status(500).json({ error: 'INTERNAL', message: err instanceof Error ? err.message : 'Failed' });
