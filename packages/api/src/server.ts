@@ -219,6 +219,7 @@ import {
   MemoryConsentStore,
   MarkingPolicy,
   DefaultAccessExplanationService,
+  devAuthBypassEnabled,
 } from '@altius/security';
 import type { OpenFgaClientInterface, FgaClientResolver } from '@altius/security';
 import type { StorageProvider, RequestContext, ScopedSessionStore } from '@altius/spi';
@@ -764,10 +765,19 @@ async function main(): Promise<void> {
   if (!isDev || process.env['CEL_EVALUATOR_URL']) {
     cel = new CelClient({ address: celAddress });
     logger.info(`CEL evaluator: gRPC @ ${celAddress}`);
-  } else {
-    // Dev stub: always evaluate to true
+  } else if (devAuthBypassEnabled('ALTIUS_CEL_DEV_ALLOW_FAIL_OPEN')) {
+    // Explicit opt-in: allow-all stub for development only. The flag must
+    // be the exact string 'true' AND NODE_ENV must not be 'production'.
+    // Without this flag, the stub below fails closed.
     cel = { async evaluate() { return { value: true }; } };
-    logger.warn('CEL evaluator: allow-all stub (development mode)');
+    logger.warn('CEL evaluator: allow-all stub (development mode, explicit opt-in via ALTIUS_CEL_DEV_ALLOW_FAIL_OPEN)');
+  } else {
+    // Fail-closed stub: deny every precondition and constraint when no CEL
+    // evaluator is available and the dev opt-in is not set. The prior
+    // behavior (allow-all whenever isDev) silently passed every rule in
+    // dev, staging, and demo — a fail-open security hole.
+    cel = { async evaluate() { return { value: false }; } };
+    logger.warn('CEL evaluator: fail-closed stub (no CEL_EVALUATOR_URL and ALTIUS_CEL_DEV_ALLOW_FAIL_OPEN not set — preconditions and constraints will deny)');
   }
 
   // â”€â”€ Function Executor â”€â”€

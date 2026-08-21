@@ -240,14 +240,38 @@ describe('CEL-backed constraint evaluation', () => {
       });
     });
 
-    it('emits a warning for regex constraints it cannot evaluate inline', async () => {
+    it('rejects regex constraints it cannot evaluate inline (fail-closed)', async () => {
       const manager = setup();
-      // Should succeed (warning, not error) because the inline evaluator
-      // cannot handle value.matches(...) and records a warning instead.
-      const obj = await manager.create('Patient', {
-        nhsNumber: '123', name: 'Jane', email: 'not-an-email', status: 'ACTIVE',
-      }, ctx);
-      expect(obj).toBeDefined();
+      // Should FAIL because the inline evaluator cannot handle
+      // value.matches(...) and the constraint is now an error, not a warning.
+      // A constraint that cannot be evaluated must block the write, not pass.
+      await expect(
+        manager.create('Patient', {
+          nhsNumber: '123', name: 'Jane', email: 'not-an-email', status: 'ACTIVE',
+        }, ctx),
+      ).rejects.toMatchObject({
+        code: 'VALIDATION_ERROR',
+        details: { failures: expect.arrayContaining([
+          expect.objectContaining({ step: 'constraint', field: 'email' }),
+        ]) },
+      });
+    });
+
+    it('rejects type-level cross-field constraints it cannot evaluate inline (fail-closed)', async () => {
+      const manager = setup();
+      // The inline evaluator cannot handle cross-field references like
+      // `this.balance <= this.creditLimit`. Fail-closed: the write must be
+      // blocked, not silently allowed.
+      await expect(
+        manager.create('Account', {
+          holder: 'Alice', balance: 200, creditLimit: 100,
+        }, ctx),
+      ).rejects.toMatchObject({
+        code: 'VALIDATION_ERROR',
+        details: { failures: expect.arrayContaining([
+          expect.objectContaining({ step: 'constraint' }),
+        ]) },
+      });
     });
   });
 

@@ -51,8 +51,8 @@ export interface ValidationResult {
  *
  * When omitted, the validation pipeline falls back to a small inline
  * evaluator that handles only the most common comparison/size patterns
- * (see `evaluateCelExpr`). Anything else is recorded as a warning so
- * callers know the constraint was NOT enforced.
+ * (see `evaluateCelExpr`). Anything else is recorded as an error
+ * (fail-closed): a constraint that cannot be evaluated blocks the write.
  */
 export interface CelEvaluator {
   evaluate(
@@ -521,8 +521,8 @@ function validateStructValue(
  *
  * Without a `CelEvaluator` (test/dev mode), a small inline evaluator
  * handles the most common comparison/size patterns. Anything else is
- * recorded as a warning so callers know the constraint was NOT enforced
- * rather than silently passing.
+ * recorded as an error (fail-closed): a constraint that cannot be
+ * evaluated blocks the write, rather than silently passing.
  */
 async function evaluateConstraints(
   objectType: ObjectType,
@@ -574,13 +574,17 @@ async function evaluateConstraints(
             message: `Constraint violated on field '${field.name}': ${constraint.expr}`,
           });
         } else if (result === null) {
-          // Expression requires CEL sidecar — record as a warning so callers
-          // know the constraint was NOT evaluated, rather than silently passing.
+          // Expression requires CEL sidecar — fail CLOSED: a constraint that
+          // cannot be evaluated must block the write, not silently pass. The
+          // caller sees the message and knows to start the CEL sidecar. The
+          // prior behavior (severity: 'warning') was a fail-open hole: every
+          // constraint the inline evaluator couldn't handle was silently
+          // dropped, so a dev deployment without the CEL sidecar accepted
+          // every write regardless of its constraints.
           failures.push({
             step: 'constraint',
             field: field.name,
             message: `Constraint on field '${field.name}' could not be evaluated inline (requires CEL sidecar): ${constraint.expr}`,
-            severity: 'warning',
           });
         }
       }
@@ -750,10 +754,11 @@ async function evaluateTypeConstraints(
           message: `Type constraint violated on '${objectType.name}': ${constraint.expr}`,
         });
       } else if (result === null) {
+        // Fail CLOSED — same rationale as field-level: a constraint that
+        // cannot be evaluated must block the write.
         failures.push({
           step: 'constraint',
           message: `Type constraint on '${objectType.name}' could not be evaluated inline (requires CEL sidecar): ${constraint.expr}`,
-          severity: 'warning',
         });
       }
     }
