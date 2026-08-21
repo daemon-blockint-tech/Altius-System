@@ -185,6 +185,14 @@ export interface McpServerConfig {
    */
   allowedUsers?: string[];
   allowedGroups?: string[];
+  /**
+   * Absolute URL of this deployment's RFC 9728 protected-resource metadata
+   * (served by the host at /.well-known/oauth-protected-resource). When set,
+   * 401 responses carry `WWW-Authenticate: Bearer resource_metadata="<url>"`
+   * so OAuth-capable MCP clients can discover the authorization server
+   * instead of requiring manual token configuration.
+   */
+  resourceMetadataUrl?: string;
 }
 
 /**

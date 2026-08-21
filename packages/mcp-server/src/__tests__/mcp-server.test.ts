@@ -732,6 +732,31 @@ describe('MCP uniform governance', () => {
   });
 });
 
+describe('OAuth discovery challenge (RFC 9728)', () => {
+  const listReq = { jsonrpc: '2.0', id: 3, method: 'tools/list', params: {} };
+
+  it('points an unauthenticated caller at the protected-resource metadata', async () => {
+    const { deps } = createMockDeps();
+    const handler = createMcpServer({
+      deps, isDev: false,
+      resourceMetadataUrl: 'https://altius.example/.well-known/oauth-protected-resource',
+    });
+    const res = await handler({ method: 'POST', headers: {}, body: listReq });
+    expect(res.status).toBe(401);
+    expect(res.headers?.['WWW-Authenticate']).toBe(
+      'Bearer resource_metadata="https://altius.example/.well-known/oauth-protected-resource"',
+    );
+  });
+
+  it('falls back to a bare Bearer challenge when no metadata URL is configured', async () => {
+    const { deps } = createMockDeps();
+    const handler = createMcpServer({ deps, isDev: false });
+    const res = await handler({ method: 'POST', headers: {}, body: listReq });
+    expect(res.status).toBe(401);
+    expect(res.headers?.['WWW-Authenticate']).toBe('Bearer');
+  });
+});
+
 describe('high-risk action holds (human-in-the-loop)', () => {
   const validHeaders = { authorization: 'Bearer valid-token' };
 

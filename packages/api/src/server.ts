@@ -2358,6 +2358,11 @@ async function main(): Promise<void> {
     // set = only listed user ids / group-or-role names, everyone else 403.
     const mcpAllowedUsers = parseRoles(process.env['MCP_ALLOWED_USERS']);
     const mcpAllowedGroups = parseRoles(process.env['MCP_ALLOWED_GROUPS']);
+    // Externally routable base URL for OAuth discovery (mirrors FHIR_BASE_URL).
+    const apiPublicUrl = process.env['API_PUBLIC_URL'] ?? `http://localhost:${PORT}`;
+    if (!isDev && !process.env['API_PUBLIC_URL']) {
+      logger.warn('WARNING: API_PUBLIC_URL not set — OAuth resource metadata will advertise http://localhost. Set API_PUBLIC_URL to the externally routable address.');
+    }
     if (mcpAllowedUsers || mcpAllowedGroups) {
       logger.info(`MCP access allowlist active (users=${mcpAllowedUsers?.length ?? 0}, groups=${mcpAllowedGroups?.length ?? 0})`);
     }
@@ -2418,6 +2423,7 @@ async function main(): Promise<void> {
       isDev,
       ...(mcpAllowedUsers ? { allowedUsers: mcpAllowedUsers } : {}),
       ...(mcpAllowedGroups ? { allowedGroups: mcpAllowedGroups } : {}),
+      resourceMetadataUrl: `${apiPublicUrl}/.well-known/oauth-protected-resource`,
     });
     app.post('/mcp', async (req, res) => {
       const out = await mcpHandler({
@@ -2425,11 +2431,23 @@ async function main(): Promise<void> {
         headers: req.headers as Record<string, string | undefined>,
         body: req.body,
       });
+      if (out.headers) res.set(out.headers);
       if (out.body === undefined) {
         res.status(out.status).end();
       } else {
         res.status(out.status).json(out.body);
       }
+    });
+    // RFC 9728 protected-resource metadata: how an OAuth-capable MCP client
+    // discovers the authorization server from the WWW-Authenticate challenge.
+    // Unauthenticated by design — discovery metadata is public by the RFC
+    // (same class as OIDC discovery) and reveals only the issuer URL.
+    app.get('/.well-known/oauth-protected-resource', (_req, res) => {
+      res.json({
+        resource: `${apiPublicUrl}/mcp`,
+        authorization_servers: [oidcIssuer],
+        bearer_methods_supported: ['header'],
+      });
     });
     app.delete('/mcp', async (req, res) => {
       const out = await mcpHandler({
