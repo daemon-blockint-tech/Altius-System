@@ -66,7 +66,7 @@ if (PG_TEST_URL) {
   afterAll(async () => {
     for (const table of AGENT_TABLES) {
       await provider.pool
-        .query(`DELETE FROM "agent"."${table}" WHERE "tenant_id" LIKE 't_thr_%'`)
+        .query(`DELETE FROM "agent_threads"."${table}" WHERE "tenant_id" LIKE 't_thr_%'`)
         .catch(() => {});
     }
     await provider.close();
@@ -90,7 +90,7 @@ if (PG_TEST_URL) describe('PostgresAgentThreadStore storage invariants', () => {
       await store.addMessage(ctx, thread.id, { role: 'assistant', content: 'two' });
 
       const before = await provider.pool.query(
-        `SELECT COUNT(*)::int AS n FROM "agent"."messages" WHERE "tenant_id"=$1 AND "thread_id"=$2`,
+        `SELECT COUNT(*)::int AS n FROM "agent_threads"."messages" WHERE "tenant_id"=$1 AND "thread_id"=$2`,
         [TENANT, thread.id],
       );
       expect(before.rows[0].n).toBe(2);
@@ -98,14 +98,14 @@ if (PG_TEST_URL) describe('PostgresAgentThreadStore storage invariants', () => {
       await store.deleteThread(ctx, thread.id);
 
       const after = await provider.pool.query(
-        `SELECT COUNT(*)::int AS n FROM "agent"."messages" WHERE "tenant_id"=$1 AND "thread_id"=$2`,
+        `SELECT COUNT(*)::int AS n FROM "agent_threads"."messages" WHERE "tenant_id"=$1 AND "thread_id"=$2`,
         [TENANT, thread.id],
       );
       expect(after.rows[0].n).toBe(0);
     } finally {
       for (const table of AGENT_TABLES) {
         await provider.pool
-          .query(`DELETE FROM "agent"."${table}" WHERE "tenant_id" = $1`, [TENANT])
+          .query(`DELETE FROM "agent_threads"."${table}" WHERE "tenant_id" = $1`, [TENANT])
           .catch(() => {});
       }
       await provider.close();
@@ -196,7 +196,7 @@ if (PG_TEST_URL) describe('PostgresAgentThreadStore durability', () => {
     } finally {
       for (const table of AGENT_TABLES) {
         await second.pool
-          .query(`DELETE FROM "agent"."${table}" WHERE "tenant_id" = $1`, [TENANT])
+          .query(`DELETE FROM "agent_threads"."${table}" WHERE "tenant_id" = $1`, [TENANT])
           .catch(() => {});
       }
       await second.close();

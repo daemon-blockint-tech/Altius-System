@@ -2298,6 +2298,14 @@ async function main(): Promise<void> {
   // calling the same 8-stage action pipeline. Stateless: no session storage.
   if (mcpEnabled) {
     const { createMcpServer } = await import('@altius/mcp-server');
+    // Per-user/group enablement (Foundry Control-Panel parity). Unset = every
+    // authenticated principal of an mcp-enabled pack (pre-gate behavior);
+    // set = only listed user ids / group-or-role names, everyone else 403.
+    const mcpAllowedUsers = parseRoles(process.env['MCP_ALLOWED_USERS']);
+    const mcpAllowedGroups = parseRoles(process.env['MCP_ALLOWED_GROUPS']);
+    if (mcpAllowedUsers || mcpAllowedGroups) {
+      logger.info(`MCP access allowlist active (users=${mcpAllowedUsers?.length ?? 0}, groups=${mcpAllowedGroups?.length ?? 0})`);
+    }
     const mcpHandler = createMcpServer({
       deps: {
         schema,
@@ -2350,6 +2358,8 @@ async function main(): Promise<void> {
           : {}),
       },
       isDev,
+      ...(mcpAllowedUsers ? { allowedUsers: mcpAllowedUsers } : {}),
+      ...(mcpAllowedGroups ? { allowedGroups: mcpAllowedGroups } : {}),
     });
     app.post('/mcp', async (req, res) => {
       const out = await mcpHandler({

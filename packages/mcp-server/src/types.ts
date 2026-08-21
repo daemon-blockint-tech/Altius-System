@@ -146,6 +146,17 @@ export interface McpServerConfig {
   serverVersion?: string;
   /** Whether dev-mode auth bypass is allowed (no bearer token → dev-user). */
   isDev?: boolean;
+  /**
+   * Per-user/group enablement (Foundry parity: MCP is admin-enabled per
+   * user/group in Control Panel). When either list is set, only a caller
+   * whose id is in `allowedUsers` or whose OIDC groups/roles intersect
+   * `allowedGroups` may use the surface; every other authenticated caller
+   * gets 403. An explicitly empty list matches nobody. Both unset = the
+   * surface stays open to every authenticated principal, with the per-pack
+   * `mcp` capability as the outer switch (pre-gate behavior).
+   */
+  allowedUsers?: string[];
+  allowedGroups?: string[];
 }
 
 /**

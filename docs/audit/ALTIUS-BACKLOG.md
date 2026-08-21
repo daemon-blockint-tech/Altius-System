@@ -68,6 +68,8 @@ Graded `partial` as capabilities, but each Gap describes an enforcement hole in 
 
 **Status:** `partial`
 
+> 🔒 CLAIMED: loop-0821-e7d1 2026-08-21T14:40+07:00 (scope: enforce active scoped session on requests — restrict effective markings at the auth funnel)
+
 > ⚠️ **EVIDENCE UPDATED 19 Aug (PR #13, §3.2).** REST endpoints were wired. The grade stays `partial` — not wired into the auth/authorization pipeline, no OIDC claim integration, no admin allowlisting.
 
 **Evidence (updated 19 Aug, §3.2):** `ScopedSessionStore` SPI with create/get/getActiveForUser/list/revoke/isMarkingAllowed (packages/spi/src/security-governance.ts). `ScopedSession` carries allowedMarkings, excludedMarkings, label, expiry, revocation state, and creator. `InMemoryScopedSessionStore` implements full session lifecycle with expiry checking, revocation, marking-allowed checks, and tenant isolation (packages/storage-memory/src/in-memory-security-governance.ts). REST endpoints wired in §3.2 (commit `7bbae51`): `GET/POST /api/v1/scoped-sessions`, `DELETE /api/v1/scoped-sessions/:id`, `POST /api/v1/scoped-sessions/:id/check-marking`. 7 scoped session tests + 13 security-governance route tests.
@@ -87,6 +89,8 @@ Graded `partial` as capabilities, but each Gap describes an enforcement hole in 
 ### `security-gov/layered-permission-separation-app-module-vs-` — Layered permission separation (app/module vs data vs action vs function)
 
 **Status:** `partial`
+
+> 🔒 CLAIMED: loop-0821-9c4e 2026-08-21T14:36+07:00 (scope: close the object-less action default-allow at the ReBAC layer, fail-closed)
 
 > ✅ **RE-VERIFIED against source, 15 Aug 2026.** Evidence below is current, not inherited.
 
@@ -116,11 +120,11 @@ Graded `partial` as capabilities, but each Gap describes an enforcement hole in 
 
 **Status:** `partial`
 
-> 🔒 CLAIMED: loop-0821-e7d1 2026-08-21T15:05+07:00 (scope: permission-scoped tool discovery — sub-gap b)
+> ✅ **RE-VERIFIED against source, 21 Aug 2026 (loop-0821-e7d1).** Two of three sub-gaps now closed.
 
-**Evidence (read 14 Aug):** One of three sub-gaps closed. Closed: the protocol server exists and reads run under the caller's token — packages/mcp-server/src/tools.ts:263-267 scopes every search to authorizationService.listObjects(`user:${user.id}`, 'viewer', ...), fails closed to an empty page when nothing is authorized (tools.ts:280-285), and redacts per-role fields (tools.ts:304-309). Still open: (a) admin gating is per-PACK, not per-user/group — packages/api/src/server.ts:542 (`packCapabilities.has('mcp')`) and domain-packs/nhs-acute/pack.yaml:14-17 are the only switch; there is no per-user or per-group enablement anywhere; (b) tool discovery is not permission-scoped — packages/mcp-server/src/server.ts:74 builds the list once at server construction and server.ts:161-164 returns every action and every search tool to every authenticated caller, so an agent for a read-only user still sees every mutating action tool (execution is denied later at ActionExecutor step 2, but discovery leaks the full action catalogue and its parameter schemas); (c) no packaged IDE integration — no .mcp.json/manifest, no OAuth discovery endpoint (repo-wide grep: no /.well-known/oauth-protected-resource), so IDE setup is manual bearer-token configuration.
+**Evidence (read 21 Aug):** Sub-gap (a) per-user/group enablement CLOSED (`ff74c77`): createMcpServer gains allowedUsers/allowedGroups (packages/mcp-server/src/server.ts:110-132) — when configured, a caller must match by user id or group/role name or gets 403 before rate limiting; explicitly empty list = nobody; both unset = pre-gate behavior (per-pack `mcp` capability stays the outer switch — a deliberate back-compat default, tighten by decision if desired). API wires MCP_ALLOWED_USERS / MCP_ALLOWED_GROUPS env vars (packages/api/src/server.ts:2304-2305) and logs when active. Tests: mcp-server.test.ts 'MCP access allowlist' (4 cases, deny proven failing-then-passing). Sub-gap (b) permission-scoped discovery CLOSED by concurrent work: tools/list now calls scopeToolList per caller (server.ts:255; tools.ts:187-268) — hides marking-hidden types' search/traverse tools, function tools without a matching requiredRole, and action tools via the same deriveActionAuthzMapping + listObjects derivation the executor checks (fail-open on FGA outage for discovery only, with warn log; execution still refuses). Tests: agent-tooling.test.ts, marking-tools.test.ts. Action tools also now advertise dryRun. Reads still run under the caller's token with FGA scoping and per-role redaction (tools.ts). STILL OPEN: (c) no packaged IDE integration — no .mcp.json/manifest, no OAuth discovery endpoint (grep: only /.well-known/apollo/server-health exists, api/server.ts:1947), so IDE setup is manual bearer-token configuration.
 
-**Gap:** MCP access is enabled per-pack, never per-user or per-group; tools/list returns the full action catalogue to every authenticated caller; no IDE package or OAuth discovery, so setup is manual token pasting.
+**Gap:** No IDE package or OAuth discovery (`/.well-known/oauth-protected-resource`), so agent/IDE setup is manual token pasting. Per-user/group enablement and permission-scoped tool discovery are now closed.
 
 ### `ai-agent-surface/uniform-governance-of-ai-actors-agents-under` — Uniform governance of AI actors (agents under same security/audit as humans)
 
@@ -136,13 +140,12 @@ Graded `partial` as capabilities, but each Gap describes an enforcement hole in 
 
 **Status:** `partial`
 
-> 🔒 CLAIMED: loop-0821-9c4e 2026-08-21T14:21+07:00 (scope: consent + audit on direct update/delete mutation paths)
-
 > ✅ **RE-VERIFIED against source, 16 Aug 2026.** Evidence below is current, not inherited.
+> ✅ **UPDATED 21 Aug 2026 (loop-0821-9c4e, commit `cf67078`).** Sub-gap (c) CLOSED: direct update/delete mutations now run the consent gate and write audit records. One shared guard `packages/api/src/consent-write-guard.ts` (reuses `ConsentService.guardAction`, subject id = object primary id, same convention as read paths) called from REST PUT/DELETE (route-generator.ts) and GraphQL update/delete resolvers (resolver-generator.ts); consent denial → 403 CONSENT_DENIED + denied audit record. REST PUT/DELETE also audit authz-denied and successful writes (field names only, no values — audit is an egress; delete records `mode=` incl. hard deletes). GraphQL mutation audit already existed (pre-16 Aug evidence was stale on that point). Two-sided proof: `packages/api/src/__tests__/direct-write-consent-audit.test.ts` (9/11 fail without, 11/11 pass with).
 
 **Evidence (read 16 Aug):** Re-verified against commit 0b263e6 + restoreObject SPI op (working tree clean). Three prior gaps are now CLOSED: (1) `updateLink` effect exists — parser/index.ts:247 VALID_EFFECT_TYPES includes 'updateLink', parser/index.ts:301-305 dispatches to parseUpdateLinkEffect, parser/index.ts:514-578 builds the UpdateLinkEffect (linkType, filter, set). Test: packages/actions/src/parser/__tests__/update-link-effect.test.ts. (2) Write-side field permissions exist on both REST and GraphQL update mutations — REST PUT checks writableFields (route-generator.ts:908-931, blocks fields not in getVisibleFields with 403 FORBIDDEN "Cannot write redacted fields"), GraphQL updateFoo does the same (resolver-generator.ts:1086-1104). Test: packages/api/src/__tests__/write-side-field-permissions.test.ts. (3) ROLLBACK_ALL now restores deleted objects — the `restoreObject` SPI op is implemented in both providers and wired into the compensating transaction (action-executor.ts:541-546). Test: action-executor.test.ts "restores a soft-deleted object during ROLLBACK_ALL compensation". The direct update/delete mutations still exist on GraphQL (resolver-generator.ts:976, :1044) and REST (PUT/DELETE /api/v1/{plural}/:id at route-generator.ts:864-865, :951-952) with expectedVersion / If-Match optimistic concurrency, governed by FGA 'editor' check. STILL OPEN: (a) Source-system writeback is entirely unimplemented — no writeback effect or side-effect type exists. (b) Generic link mutation outside the action path remains absent — REST/GraphQL expose links read-only; link editing is action-only via createLink/updateLink/deleteLink effects. (c) Direct update/delete mutations run no consent check and write no audit record (consentService and auditWriter are not invoked on the update/delete paths in resolver-generator.ts or route-generator.ts).
 
-**Gap:** Source-system writeback is entirely unimplemented; generic link mutation outside the action path remains absent; direct update/delete mutations run no consent check and write no audit record. updateLink, write-side field permissions, and ROLLBACK_ALL delete restoration are now closed.
+**Gap:** Source-system writeback is entirely unimplemented; generic link mutation outside the action path remains absent. Direct-mutation consent + audit (21 Aug, `cf67078`), updateLink, write-side field permissions, and ROLLBACK_ALL delete restoration are now closed.
 
 ## Active work items
 
