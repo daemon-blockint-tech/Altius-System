@@ -21,6 +21,7 @@ import type {
   CreateObjectEffect,
   DeleteObjectEffect,
   RecordConsentEffect,
+  InvokeFunctionEffect,
   Precondition,
   SideEffect,
   RollbackConfig,
@@ -285,7 +286,7 @@ function parseRequiredRoles(
 
 // ─── Effects ───
 
-const VALID_EFFECT_TYPES = new Set(['updateObject', 'createLink', 'updateLink', 'deleteLink', 'createObject', 'deleteObject', 'recordConsent']);
+const VALID_EFFECT_TYPES = new Set(['updateObject', 'createLink', 'updateLink', 'deleteLink', 'createObject', 'deleteObject', 'recordConsent', 'invokeFunction']);
 
 function parseEffects(
   raw: unknown,
@@ -364,6 +365,11 @@ function parseEffects(
         if (effect) result.push(effect);
         break;
       }
+      case 'invokeFunction': {
+        const effect = parseInvokeFunction(item, path, errors);
+        if (effect) result.push(effect);
+        break;
+      }
     }
   }
 
@@ -392,6 +398,42 @@ function parseRecordConsent(
   if (typeof item['decision'] === 'string') effect.decision = item['decision'];
   if (typeof item['evidence'] === 'string') effect.evidence = item['evidence'];
   if (typeof item['condition'] === 'string') effect.condition = item['condition'];
+  return effect;
+}
+
+function parseInvokeFunction(
+  item: Record<string, unknown>,
+  path: string,
+  errors: ManifestIssue[],
+): InvokeFunctionEffect | undefined {
+  if (typeof item['function'] !== 'string' || !item['function']) {
+    errors.push({
+      severity: 'error',
+      code: 'MISSING_FIELD',
+      message: `${path}.function is required for invokeFunction effect.`,
+      path: `${path}.function`,
+    });
+    return undefined;
+  }
+
+  const rawInputs = item['inputs'];
+  if (!rawInputs || typeof rawInputs !== 'object' || Array.isArray(rawInputs)) {
+    errors.push({
+      severity: 'error',
+      code: 'MISSING_FIELD',
+      message: `${path}.inputs is required and must be an object mapping function param names to CEL expressions or values.`,
+      path: `${path}.inputs`,
+    });
+    return undefined;
+  }
+
+  const effect: InvokeFunctionEffect = {
+    type: 'invokeFunction',
+    function: item['function'],
+    inputs: rawInputs as Record<string, EffectValue>,
+  };
+  if (typeof item['condition'] === 'string') effect.condition = item['condition'];
+  if (typeof item['resultKey'] === 'string' && item['resultKey']) effect.resultKey = item['resultKey'];
   return effect;
 }
 
@@ -1218,6 +1260,7 @@ export type {
   CreateObjectEffect,
   DeleteObjectEffect,
   RecordConsentEffect,
+  InvokeFunctionEffect,
   Precondition,
   SideEffect,
   RollbackConfig,

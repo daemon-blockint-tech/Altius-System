@@ -249,6 +249,25 @@ export interface ActionExecutorConfig {
    * writes is not a control at all.
    */
   markingPolicy?: ActionMarkingPolicy;
+  /**
+   * Function executor for `invokeFunction` effects. Structural interface so
+   * @altius/actions does not depend on @altius/engine — the API layer wires
+   * the real FunctionExecutor. Absent → an invokeFunction effect throws at
+   * execution time with a clear message.
+   */
+  functionExecutor?: ActionFunctionExecutor;
+}
+
+/**
+ * The function-execution surface the action executor needs. Mirrors the
+ * subset of FunctionExecutor.execute that an invokeFunction effect calls.
+ */
+export interface ActionFunctionExecutor {
+  execute(
+    name: string,
+    inputs: Record<string, unknown>,
+    opts?: { ontology?: unknown },
+  ): Promise<{ result: unknown }>;
 }
 
 /**

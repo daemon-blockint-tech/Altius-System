@@ -14,6 +14,7 @@ export type {
   AffectedObject,
   ChangeType,
   ActionExecutorConfig,
+  ActionFunctionExecutor,
   SecurityLayer,
   PermissionResult,
   CelEvaluator,

@@ -32,6 +32,7 @@ import type {
   CreateObjectEffect,
   DeleteObjectEffect,
   RecordConsentEffect,
+  InvokeFunctionEffect,
 } from '../parser/types.js';
 import type {
   ActionActor,
@@ -1325,6 +1326,9 @@ export class ActionExecutor {
       case 'recordConsent':
         await this.executeRecordConsent(effect, context, reqCtx);
         break;
+      case 'invokeFunction':
+        await this.executeInvokeFunction(effect, context);
+        break;
     }
   }
 
@@ -1358,6 +1362,40 @@ export class ActionExecutor {
       effect.evidence,
       reqCtx.tenantId,
     );
+  }
+
+  /**
+   * Invoke a FunctionType as an action effect. Resolves each input expression
+   * against the action context, calls the governed FunctionExecutor, and
+   * optionally binds the result under `resultKey` for a later effect.
+   *
+   * Unlike storage effects, this runs outside the SPI transaction — a function
+   * is arbitrary code (node/cel/python/llm) and cannot be rolled back. Place it
+   * after storage effects if the storage changes must commit first, or use a
+   * condition to gate it.
+   */
+  private async executeInvokeFunction(
+    effect: InvokeFunctionEffect,
+    context: Record<string, unknown>,
+  ): Promise<void> {
+    if (!this.config.functionExecutor) {
+      throw new Error(
+        `invokeFunction: function "${effect.function}" cannot execute — no functionExecutor wired. ` +
+          'Wire FunctionExecutor into ActionExecutorConfig to use invokeFunction effects.',
+      );
+    }
+    if (effect.condition) {
+      const cond = await this.config.cel.evaluate(effect.condition, context);
+      if (cond.value !== true) return;
+    }
+    const inputs: Record<string, unknown> = {};
+    for (const [key, expr] of Object.entries(effect.inputs)) {
+      inputs[key] = this.resolveExpression(String(expr), context);
+    }
+    const result = await this.config.functionExecutor.execute(effect.function, inputs);
+    if (effect.resultKey) {
+      context[effect.resultKey] = result.result;
+    }
   }
 
   private async executeUpdateObject(

@@ -1325,6 +1325,10 @@ async function main(): Promise<void> {
     eventPublisher: actionEventPublisher,
     consentManager: consentService,
     sideEffectHandler,
+    // Function-backed action effects: an action manifest can declare an
+    // invokeFunction effect that calls a FunctionType through the same
+    // governed path (authz, audit, sandbox) as REST/GraphQL/MCP.
+    functionExecutor,
     // Mint graph-derived ReBAC tuples from link effects (prod only; map is
     // built from the merged OpenFGA model above).
     relationshipWriter: authorizationService,

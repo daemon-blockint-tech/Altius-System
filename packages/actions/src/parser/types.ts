@@ -99,6 +99,40 @@ export interface RecordConsentEffect {
   condition?: string;
 }
 
+/**
+ * Invoke a FunctionType by name as an action effect. The function's `@param`
+ * inputs are resolved from the action context — either action params
+ * (`params.<name>`) or objects loaded by earlier effects (`<bindingKey>.<field>`).
+ * A `condition` (CEL) gates whether the function runs.
+ *
+ * The function executes through the same governed FunctionExecutor path the
+ * REST/GraphQL/MCP surfaces use (authz, audit, sandbox). The result is
+ * available to later effects via the `resultKey` binding in the context.
+ *
+ * Parity: Foundry Automate "Function effects" — an automation/action step
+ * that calls a Functions-on-Objects (FOO) function.
+ */
+export interface InvokeFunctionEffect {
+  type: 'invokeFunction';
+  /** FunctionType name to invoke. */
+  function: string;
+  /**
+   * Map of function @param name → CEL expression resolving to the input value.
+   * Expressions evaluate against the action context (params + effect bindings).
+   */
+  inputs: Record<string, EffectValue>;
+  /**
+   * Optional CEL condition — if it evaluates to false, the function is skipped.
+   */
+  condition?: string;
+  /**
+   * Optional context key to bind the function result under, so a later effect
+   * can reference it (e.g. `triageResult.score`). If omitted, the result is
+   * discarded (the function ran for its side effects / audit trail).
+   */
+  resultKey?: string;
+}
+
 export type ActionEffect =
   | UpdateObjectEffect
   | CreateLinkEffect
@@ -106,7 +140,8 @@ export type ActionEffect =
   | DeleteLinkEffect
   | CreateObjectEffect
   | DeleteObjectEffect
-  | RecordConsentEffect;
+  | RecordConsentEffect
+  | InvokeFunctionEffect;
 
 // ─── Precondition ───
 
