@@ -931,5 +931,33 @@ export function generatePlatformDDL(): string[] {
 );`);
   statements.push(`CREATE INDEX IF NOT EXISTS "idx_sharing_rules_tenant_source" ON "governance"."sharing_rules" ("tenant_id", "source_space_id");`);
 
+  // ── Ontology change history ──
+  //
+  // The record of who changed the schema, when, and what it looked like before.
+  // `seq` is not decoration: listChanges orders by version descending, and every
+  // record is created at version 1, so ties are the common case rather than the
+  // edge case. The in-memory sort is stable, which means ties come back in
+  // insertion order — `seq ASC` is how Postgres says the same thing.
+  //
+  // The primary key is composite, unlike the other governance tables. Their ids
+  // are UUIDs this code generates, so a global key is safe; here `saveChange`
+  // accepts a caller-supplied id, and the in-memory service keys its map per
+  // tenant — so two tenants each holding a record called "v1" is legal there. A
+  // global key would make it a conflict here and reject a write the other
+  // provider accepts.
+  statements.push(`CREATE TABLE IF NOT EXISTS "governance"."ontology_change_history" (
+  "id" TEXT NOT NULL,
+  "seq" BIGSERIAL,
+  "tenant_id" TEXT NOT NULL,
+  "version" INTEGER NOT NULL DEFAULT 1,
+  "applied_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "applied_by" TEXT NOT NULL DEFAULT '',
+  "migration_class" TEXT NOT NULL DEFAULT '',
+  "diff_summary" TEXT NOT NULL DEFAULT '',
+  "snapshot" JSONB NOT NULL DEFAULT '{}',
+  PRIMARY KEY ("tenant_id", "id")
+);`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_ont_change_tenant_version" ON "governance"."ontology_change_history" ("tenant_id", "version" DESC, "seq");`);
+
   return statements;
 }
