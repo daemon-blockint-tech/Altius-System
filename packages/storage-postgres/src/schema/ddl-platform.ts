@@ -849,6 +849,8 @@ export function generatePlatformDDL(): string[] {
   "direction" TEXT NOT NULL,
   "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   PRIMARY KEY ("tenant_id", "event_type")
+);`);
+
   // ── Ontology change history ──
   //
   // The record of who changed the schema, when, and what it looked like before.
