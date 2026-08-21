@@ -2341,6 +2341,27 @@ async function main(): Promise<void> {
     res.json(openApiSpec);
   });
 
+  // ── Loaded domain packs (deployment metadata; authenticated) ──
+  // Lets a client (e.g. the web console) list the actually-loaded packs rather
+  // than hardcode them. Pack metadata is deployment-wide config, not tenant data
+  // — so this authenticates but is not per-tenant or per-object gated.
+  const packSummaries = packInfos.map(p => ({
+    name: p.manifest.name,
+    version: p.manifest.version,
+    namespace: p.manifest.namespace,
+    capabilities: p.manifest.capabilities ?? [],
+    objectTypes: p.typeCounts.objectTypes,
+    external: p.external,
+  }));
+  app.get('/api/v1/packs', async (req, res) => {
+    try {
+      await extractUser(req, authenticator, isDev);
+      res.json({ data: packSummaries });
+    } catch {
+      res.status(401).json({ error: { code: 'UNAUTHENTICATED', message: 'Authentication required' } });
+    }
+  });
+
   // â”€â”€ FDP/CDM projection at /api/v1/cdm/* (S1.0) â€” mounted only with `cdm`.
   // cdmEnabled/fhirEnabled were resolved above (before GraphQL schema build) so
   // the REST mount, GraphQL SDL, and GraphQL resolvers all gate identically. â”€â”€

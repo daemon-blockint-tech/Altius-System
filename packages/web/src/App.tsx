@@ -11,6 +11,7 @@ import { beginLogin, completeLogin } from './auth/pkce.js';
 import { isAuthFailure } from './auth/auth-failure.js';
 import { decodeJwtClaims, principalFromClaims } from './auth/claims.js';
 import type { Principal } from './auth/claims.js';
+import { fetchPacks } from './packs.js';
 import { EditorialShell } from './components/EditorialShell.js';
 import type { JobKey, JobGroup, PackOption, RoleOption } from './components/EditorialShell.js';
 import { FacilitiesScreen } from './components/FacilitiesScreen.js';
@@ -164,6 +165,19 @@ export function App({ config }: { config: WebConfig }): ReactNode {
     return () => { live = false; };
   }, [authState, session]);
 
+  // The actually-loaded packs, from the gateway — replaces the hardcoded list.
+  // Falls back to the built-in list only while loading or if the call fails.
+  const [packs, setPacks] = useState<PackOption[]>(PACKS);
+  useEffect(() => {
+    if (authState !== 'signed-in') return;
+    const getToken = session && authState === 'signed-in' ? session.getAccessToken : null;
+    let live = true;
+    fetchPacks(getToken)
+      .then(p => { if (live && p.length > 0) setPacks(p); })
+      .catch(() => { /* keep the fallback list */ });
+    return () => { live = false; };
+  }, [authState, session]);
+
   const guardAuth = <R,>(p: Promise<R>): Promise<R> =>
     p.catch((err: unknown) => {
       if (isAuthFailure(err)) setAuthState('anonymous');
@@ -269,18 +283,24 @@ export function App({ config }: { config: WebConfig }): ReactNode {
 
   // ── Render the active screen inside the shell ────────────────
 
+  // The role selector reflects the roles the identity token actually grants —
+  // roles are server-enforced, so this shows reality rather than a fixed list.
+  const roleOptions = principal && principal.roles.length > 0
+    ? principal.roles.map(r => ({ id: r, label: r }))
+    : ROLES;
+
   return (
     <>
     <EditorialShell
-      packs={PACKS}
+      packs={packs}
       activePack={activePack}
       onPackChange={setActivePack}
       jobs={JOBS}
       activeJob={activeJob}
       activeScreen={activeScreen}
       onScreenSelect={handleScreenSelect}
-      roles={ROLES}
-      activeRole={activeRole}
+      roles={roleOptions}
+      activeRole={roleOptions.some(r => r.id === activeRole) ? activeRole : (roleOptions[0]?.id ?? activeRole)}
       onRoleChange={setActiveRole}
       brand="AL"
       userInitials={initialsOf(principal?.name)}
