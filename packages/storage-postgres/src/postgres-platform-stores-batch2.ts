@@ -1,9 +1,11 @@
 /**
  * PostgreSQL implementations for Batch 2 of memory-only SPI services.
  *
- * AgentThreadStore, ChangeProposalStore, SavedViewStore, ObjectSetFilterStore,
- * ApprovalWorkflowService, DataExpectationsService, DesignSystemService,
- * ModelRegistryService, ConnectorCatalogService, CommandService.
+ * Services already implemented upstream (ChangeProposalStore, SavedViewStore,
+ * ApprovalWorkflowService, DesignSystemService) are excluded here to avoid
+ * duplicate exports. This file covers: AgentThreadStore, ObjectSetFilterStore,
+ * DataExpectationsService, ModelRegistryService, ModelInferenceService,
+ * ModelChainService, ConnectorCatalogService, CommandService.
  */
 
 import type { Pool } from 'pg';
@@ -13,22 +15,10 @@ import type {
   AgentThreadStore, AgentThread, ThreadMessage, MessageRole,
 } from '@altius/spi';
 import type {
-  ChangeProposalStore, ChangeProposal, CreateProposalInput, UpdateProposalInput, ProposalQuery,
-} from '@altius/spi';
-import type {
-  SavedViewStore, SavedView, CreateSavedViewInput,
-} from '@altius/spi';
-import type {
   ObjectSetFilterStore, FilterState, SaveFilterStateInput, FilterChip, FilterSetOp,
 } from '@altius/spi';
 import type {
-  ApprovalWorkflowService, ApprovalWorkflow, ApprovalSubmission,
-} from '@altius/spi';
-import type {
   DataExpectationsService, DataExpectation, CreateExpectationInput, ExpectationResult,
-} from '@altius/spi';
-import type {
-  DesignSystemService, DesignSystemTheme, CreateThemeInput, SetModulePaletteInput,
 } from '@altius/spi';
 import type {
   ModelRegistryService, ModelArtifact, CreateModelInput, ModelQuery,
@@ -118,165 +108,6 @@ function mapMessage(r: any): ThreadMessage {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ChangeProposalStore
-// ─────────────────────────────────────────────────────────────────────────────
-
-export class PostgresChangeProposalStore implements ChangeProposalStore {
-  constructor(private readonly pool: Pool) {}
-
-  async create(tenantId: string, submittedBy: string, input: CreateProposalInput): Promise<ChangeProposal> {
-    const id = randomUUID();
-    const now = new Date().toISOString();
-    await this.pool.query(
-      `INSERT INTO "change_proposals"."proposals" ("id","tenant_id","title","description","type","changes","state","submitted_by","submitted_by_ai","created_at","updated_at","risk_level","hold_id","tags")
-       VALUES ($1,$2,$3,$4,$5,$6,'draft',$7,$8,$9,$9,$10,$11,$12)`,
-      [id, tenantId, input.title, input.description, input.type, JSON.stringify(input.changes), submittedBy, input.submittedByAI ?? false, now, input.riskLevel ?? null, input.holdId ?? null, input.tags ?? []],
-    );
-    return { id, tenantId, title: input.title, description: input.description, type: input.type, changes: input.changes, state: 'draft', submittedBy, submittedByAI: input.submittedByAI ?? false, createdAt: now, updatedAt: now, riskLevel: input.riskLevel, holdId: input.holdId, tags: input.tags };
-  }
-
-  async get(tenantId: string, proposalId: string): Promise<ChangeProposal | null> {
-    const r = await this.pool.query(`SELECT * FROM "change_proposals"."proposals" WHERE "id"=$1 AND "tenant_id"=$2`, [proposalId, tenantId]);
-    return r.rows[0] ? mapProposal(r.rows[0]!) : null;
-  }
-
-  async list(tenantId: string, query?: ProposalQuery): Promise<{ proposals: ChangeProposal[]; totalCount: number }> {
-    let sql = `SELECT * FROM "change_proposals"."proposals" WHERE "tenant_id"=$1`;
-    const params: unknown[] = [tenantId];
-    if (query?.state) { params.push(query.state); sql += ` AND "state"=$${params.length}`; }
-    if (query?.type) { params.push(query.type); sql += ` AND "type"=$${params.length}`; }
-    if (query?.submittedBy) { params.push(query.submittedBy); sql += ` AND "submitted_by"=$${params.length}`; }
-    if (query?.reviewerId) { params.push(query.reviewerId); sql += ` AND "reviewer_id"=$${params.length}`; }
-    if (query?.submittedByAI != null) { params.push(query.submittedByAI); sql += ` AND "submitted_by_ai"=$${params.length}`; }
-    if (query?.startTime) { params.push(query.startTime); sql += ` AND "created_at" >= $${params.length}`; }
-    if (query?.endTime) { params.push(query.endTime); sql += ` AND "created_at" <= $${params.length}`; }
-    sql += ` ORDER BY "created_at" DESC`;
-    if (query?.limit) { params.push(query.limit); sql += ` LIMIT $${params.length}`; }
-    const r = await this.pool.query(sql, params);
-    const countR = await this.pool.query(`SELECT COUNT(*)::int AS c FROM "change_proposals"."proposals" WHERE "tenant_id"=$1`, [tenantId]);
-    return { proposals: r.rows.map(mapProposal), totalCount: countR.rows[0]?.c ?? 0 };
-  }
-
-  async update(tenantId: string, proposalId: string, input: UpdateProposalInput): Promise<ChangeProposal> {
-    const sets: string[] = [];
-    const params: unknown[] = [];
-    if (input.title !== undefined) { params.push(input.title); sets.push(`"title"=$${params.length}`); }
-    if (input.description !== undefined) { params.push(input.description); sets.push(`"description"=$${params.length}`); }
-    if (input.changes !== undefined) { params.push(JSON.stringify(input.changes)); sets.push(`"changes"=$${params.length}`); }
-    if (input.tags !== undefined) { params.push(input.tags); sets.push(`"tags"=$${params.length}`); }
-    params.push(new Date().toISOString());
-    sets.push(`"updated_at"=$${params.length}`);
-    params.push(proposalId, tenantId);
-    const r = await this.pool.query(`UPDATE "change_proposals"."proposals" SET ${sets.join(', ')} WHERE "id"=$${params.length - 1} AND "tenant_id"=$${params.length} RETURNING *`, params);
-    return mapProposal(r.rows[0]!);
-  }
-
-  private async transition(tenantId: string, proposalId: string, state: string, extra?: Record<string, unknown>): Promise<ChangeProposal> {
-    const sets: string[] = [`"state"=$1`];
-    const params: unknown[] = [state];
-    for (const [k, v] of Object.entries(extra ?? {})) {
-      params.push(v);
-      sets.push(`"${k}"=$${params.length}`);
-    }
-    params.push(new Date().toISOString());
-    sets.push(`"updated_at"=$${params.length}`);
-    params.push(proposalId, tenantId);
-    const r = await this.pool.query(`UPDATE "change_proposals"."proposals" SET ${sets.join(', ')} WHERE "id"=$${params.length - 1} AND "tenant_id"=$${params.length} RETURNING *`, params);
-    return mapProposal(r.rows[0]!);
-  }
-
-  async submit(tenantId: string, proposalId: string): Promise<ChangeProposal> {
-    return this.transition(tenantId, proposalId, 'submitted', { submitted_at: new Date().toISOString() });
-  }
-  async claimForReview(tenantId: string, proposalId: string, reviewerId: string): Promise<ChangeProposal> {
-    return this.transition(tenantId, proposalId, 'under_review', { reviewer_id: reviewerId });
-  }
-  async approve(tenantId: string, proposalId: string, reviewerId: string, comments?: string): Promise<ChangeProposal> {
-    return this.transition(tenantId, proposalId, 'approved', { reviewer_id: reviewerId, reviewer_comments: comments ?? null, reviewed_at: new Date().toISOString() });
-  }
-  async reject(tenantId: string, proposalId: string, reviewerId: string, comments?: string): Promise<ChangeProposal> {
-    return this.transition(tenantId, proposalId, 'rejected', { reviewer_id: reviewerId, reviewer_comments: comments ?? null, reviewed_at: new Date().toISOString() });
-  }
-  async requestChanges(tenantId: string, proposalId: string, reviewerId: string, comments: string): Promise<ChangeProposal> {
-    return this.transition(tenantId, proposalId, 'changes_requested', { reviewer_id: reviewerId, reviewer_comments: comments, reviewed_at: new Date().toISOString() });
-  }
-  async markApplied(tenantId: string, proposalId: string): Promise<ChangeProposal> {
-    return this.transition(tenantId, proposalId, 'applied', { applied_at: new Date().toISOString() });
-  }
-  async withdraw(tenantId: string, proposalId: string): Promise<ChangeProposal> {
-    return this.transition(tenantId, proposalId, 'withdrawn');
-  }
-  async getPendingReview(tenantId: string, _reviewerId: string): Promise<ChangeProposal[]> {
-    const r = await this.pool.query(`SELECT * FROM "change_proposals"."proposals" WHERE "tenant_id"=$1 AND "state"='submitted' ORDER BY "created_at" ASC`, [tenantId]);
-    return r.rows.map(mapProposal);
-  }
-}
-
-function mapProposal(r: any): ChangeProposal {
-  return { id: r.id, tenantId: r.tenant_id, title: r.title, description: r.description, type: r.type, changes: typeof r.changes === 'string' ? JSON.parse(r.changes) : r.changes, state: r.state, submittedBy: r.submitted_by, submittedByAI: r.submitted_by_ai, createdAt: r.created_at, submittedAt: r.submitted_at ?? undefined, updatedAt: r.updated_at, reviewerId: r.reviewer_id ?? undefined, reviewerComments: r.reviewer_comments ?? undefined, reviewedAt: r.reviewed_at ?? undefined, appliedAt: r.applied_at ?? undefined, riskLevel: r.risk_level ?? undefined, holdId: r.hold_id ?? undefined, tags: r.tags ?? [] };
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// SavedViewStore
-// ─────────────────────────────────────────────────────────────────────────────
-
-export class PostgresSavedViewStore implements SavedViewStore {
-  constructor(private readonly pool: Pool) {}
-
-  async create(ctx: RequestContext, input: CreateSavedViewInput): Promise<SavedView> {
-    const id = randomUUID();
-    const now = new Date().toISOString();
-    await this.pool.query(
-      `INSERT INTO "saved_views"."views" ("id","tenant_id","name","description","object_type","widget_type","app_id","columns","filter","order_by","density","page_size","widget_config","is_public","created_by","created_at","updated_at")
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$16)`,
-      [id, ctx.tenantId, input.name, input.description ?? null, input.objectType ?? null, input.widgetType ?? null, input.appId ?? null, input.columns ? JSON.stringify(input.columns) : null, input.filter ? JSON.stringify(input.filter) : null, input.orderBy ? JSON.stringify(input.orderBy) : null, input.density ?? null, input.pageSize ?? null, input.widgetConfig ? JSON.stringify(input.widgetConfig) : null, input.isPublic ?? false, ctx.actorId ?? '', now],
-    );
-    return { id, tenantId: ctx.tenantId, name: input.name, description: input.description, objectType: input.objectType, widgetType: input.widgetType, appId: input.appId, columns: input.columns, filter: input.filter, orderBy: input.orderBy, density: input.density, pageSize: input.pageSize, widgetConfig: input.widgetConfig, isPublic: input.isPublic ?? false, createdBy: ctx.actorId ?? '', createdAt: now, updatedAt: now };
-  }
-
-  async get(ctx: RequestContext, id: string): Promise<SavedView | null> {
-    const r = await this.pool.query(`SELECT * FROM "saved_views"."views" WHERE "id"=$1 AND "tenant_id"=$2 AND ("is_public"=TRUE OR "created_by"=$3)`, [id, ctx.tenantId, ctx.actorId ?? '']);
-    return r.rows[0] ? mapSavedView(r.rows[0]!) : null;
-  }
-
-  async list(ctx: RequestContext, filter?: { objectType?: string; widgetType?: string; appId?: string }): Promise<SavedView[]> {
-    let sql = `SELECT * FROM "saved_views"."views" WHERE "tenant_id"=$1 AND ("is_public"=TRUE OR "created_by"=$2)`;
-    const params: unknown[] = [ctx.tenantId, ctx.actorId ?? ''];
-    if (filter?.objectType) { params.push(filter.objectType); sql += ` AND "object_type"=$${params.length}`; }
-    if (filter?.widgetType) { params.push(filter.widgetType); sql += ` AND "widget_type"=$${params.length}`; }
-    if (filter?.appId) { params.push(filter.appId); sql += ` AND "app_id"=$${params.length}`; }
-    sql += ` ORDER BY "updated_at" DESC`;
-    const r = await this.pool.query(sql, params);
-    return r.rows.map(mapSavedView);
-  }
-
-  async update(ctx: RequestContext, id: string, updates: Partial<CreateSavedViewInput>): Promise<SavedView> {
-    const sets: string[] = [];
-    const params: unknown[] = [];
-    for (const [k, v] of Object.entries(updates)) {
-      if (v === undefined) continue;
-      const col = k === 'widgetConfig' ? 'widget_config' : k === 'isPublic' ? 'is_public' : k === 'pageSize' ? 'page_size' : k === 'objectType' ? 'object_type' : k === 'widgetType' ? 'widget_type' : k === 'appId' ? 'app_id' : k;
-      params.push(typeof v === 'object' ? JSON.stringify(v) : v);
-      sets.push(`"${col}"=$${params.length}`);
-    }
-    params.push(new Date().toISOString());
-    sets.push(`"updated_at"=$${params.length}`);
-    params.push(id, ctx.tenantId);
-    const r = await this.pool.query(`UPDATE "saved_views"."views" SET ${sets.join(', ')} WHERE "id"=$${params.length - 1} AND "tenant_id"=$${params.length} RETURNING *`, params);
-    return mapSavedView(r.rows[0]!);
-  }
-
-  async delete(ctx: RequestContext, id: string): Promise<void> {
-    await this.pool.query(`DELETE FROM "saved_views"."views" WHERE "id"=$1 AND "tenant_id"=$2 AND "created_by"=$3`, [id, ctx.tenantId, ctx.actorId ?? '']);
-  }
-}
-
-function mapSavedView(r: any): SavedView {
-  const parse = (v: any) => v ? (typeof v === 'string' ? JSON.parse(v) : v) : undefined;
-  return { id: r.id, tenantId: r.tenant_id, name: r.name, description: r.description ?? undefined, objectType: r.object_type ?? undefined, widgetType: r.widget_type ?? undefined, appId: r.app_id ?? undefined, columns: parse(r.columns), filter: parse(r.filter), orderBy: parse(r.order_by), density: r.density ?? undefined, pageSize: r.page_size ?? undefined, widgetConfig: parse(r.widget_config), isPublic: r.is_public, createdBy: r.created_by, createdAt: r.created_at, updatedAt: r.updated_at };
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // ObjectSetFilterStore
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -337,107 +168,6 @@ export class PostgresObjectSetFilterStore implements ObjectSetFilterStore {
 
 function mapFilterState(r: any): FilterState {
   return { id: r.id, tenantId: r.tenant_id, objectSetId: r.object_set_id, name: r.name, chips: typeof r.chips === 'string' ? JSON.parse(r.chips) : r.chips, variables: typeof r.variables === 'string' ? JSON.parse(r.variables) : r.variables, createdAt: r.created_at, updatedAt: r.updated_at };
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// ApprovalWorkflowService
-// ─────────────────────────────────────────────────────────────────────────────
-
-export class PostgresApprovalWorkflowService implements ApprovalWorkflowService {
-  constructor(private readonly pool: Pool) {}
-
-  async createWorkflow(ctx: RequestContext, input: Omit<ApprovalWorkflow, 'id' | 'tenantId' | 'createdAt' | 'updatedAt' | 'createdBy'>): Promise<ApprovalWorkflow> {
-    const id = randomUUID();
-    const now = new Date().toISOString();
-    await this.pool.query(
-      `INSERT INTO "approval_workflows"."workflows" ("id","tenant_id","name","description","action_type","criteria","approver_attributes","multi_step","created_at","updated_at","created_by","enabled")
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$9,$10,$11)`,
-      [id, ctx.tenantId, input.name, input.description, input.actionType, JSON.stringify(input.criteria), JSON.stringify(input.approverAttributes), input.multiStep, now, ctx.actorId ?? '', input.enabled],
-    );
-    return { id, tenantId: ctx.tenantId, name: input.name, description: input.description, actionType: input.actionType, criteria: input.criteria, approverAttributes: input.approverAttributes, multiStep: input.multiStep, createdAt: now, updatedAt: now, createdBy: ctx.actorId ?? '', enabled: input.enabled };
-  }
-
-  async getWorkflow(ctx: RequestContext, workflowId: string): Promise<ApprovalWorkflow | null> {
-    const r = await this.pool.query(`SELECT * FROM "approval_workflows"."workflows" WHERE "id"=$1 AND "tenant_id"=$2`, [workflowId, ctx.tenantId]);
-    return r.rows[0] ? mapWorkflow(r.rows[0]!) : null;
-  }
-
-  async listWorkflows(ctx: RequestContext, actionType?: string): Promise<ApprovalWorkflow[]> {
-    let sql = `SELECT * FROM "approval_workflows"."workflows" WHERE "tenant_id"=$1`;
-    const params: unknown[] = [ctx.tenantId];
-    if (actionType) { params.push(actionType); sql += ` AND "action_type"=$${params.length}`; }
-    const r = await this.pool.query(sql, params);
-    return r.rows.map(mapWorkflow);
-  }
-
-  async updateWorkflow(ctx: RequestContext, workflowId: string, updates: Partial<ApprovalWorkflow>): Promise<ApprovalWorkflow> {
-    const sets: string[] = [];
-    const params: unknown[] = [];
-    for (const [k, v] of Object.entries(updates)) {
-      if (v === undefined || k === 'id' || k === 'tenantId' || k === 'createdAt') continue;
-      const col = k === 'updatedAt' ? 'updated_at' : k === 'createdBy' ? 'created_by' : k === 'actionType' ? 'action_type' : k === 'approverAttributes' ? 'approver_attributes' : k === 'multiStep' ? 'multi_step' : k;
-      params.push(typeof v === 'object' ? JSON.stringify(v) : v);
-      sets.push(`"${col}"=$${params.length}`);
-    }
-    params.push(new Date().toISOString());
-    sets.push(`"updated_at"=$${params.length}`);
-    params.push(workflowId, ctx.tenantId);
-    const r = await this.pool.query(`UPDATE "approval_workflows"."workflows" SET ${sets.join(', ')} WHERE "id"=$${params.length - 1} AND "tenant_id"=$${params.length} RETURNING *`, params);
-    return mapWorkflow(r.rows[0]!);
-  }
-
-  async deleteWorkflow(ctx: RequestContext, workflowId: string): Promise<void> {
-    await this.pool.query(`DELETE FROM "approval_workflows"."workflows" WHERE "id"=$1 AND "tenant_id"=$2`, [workflowId, ctx.tenantId]);
-  }
-
-  async submit(ctx: RequestContext, workflowId: string, params: { parameters: Record<string, unknown>; submitterAttributes: Record<string, unknown>; resourceAttributes: Record<string, unknown>; riskLevel: 'low' | 'medium' | 'high' | 'critical' }): Promise<ApprovalSubmission> {
-    const wf = await this.getWorkflow(ctx, workflowId);
-    const id = randomUUID();
-    const now = new Date().toISOString();
-    const criteriaPassed = wf?.enabled ?? false;
-    await this.pool.query(
-      `INSERT INTO "approval_workflows"."submissions" ("id","tenant_id","workflow_id","action_type","parameters","submitter_attributes","resource_attributes","risk_level","state","submitted_at","submitted_by","criteria_passed","criteria_details")
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'pending',$9,$10,$11,$12)`,
-      [id, ctx.tenantId, workflowId, wf?.actionType ?? '', JSON.stringify(params.parameters), JSON.stringify(params.submitterAttributes), JSON.stringify(params.resourceAttributes), params.riskLevel, now, ctx.actorId ?? '', criteriaPassed, JSON.stringify([])],
-    );
-    return { id, tenantId: ctx.tenantId, workflowId, actionType: wf?.actionType ?? '', parameters: params.parameters, submitterAttributes: params.submitterAttributes, resourceAttributes: params.resourceAttributes, riskLevel: params.riskLevel, state: 'pending', submittedAt: now, submittedBy: ctx.actorId ?? '', criteriaPassed, criteriaDetails: [] };
-  }
-
-  async approve(ctx: RequestContext, submissionId: string, notes?: string): Promise<ApprovalSubmission> {
-    const r = await this.pool.query(`UPDATE "approval_workflows"."submissions" SET "state"='approved',"decided_at"=NOW(),"decided_by"=$3,"decision_notes"=$4 WHERE "id"=$1 AND "tenant_id"=$2 RETURNING *`, [submissionId, ctx.tenantId, ctx.actorId ?? '', notes ?? null]);
-    return mapSubmission(r.rows[0]!);
-  }
-
-  async reject(ctx: RequestContext, submissionId: string, notes: string): Promise<ApprovalSubmission> {
-    const r = await this.pool.query(`UPDATE "approval_workflows"."submissions" SET "state"='rejected',"decided_at"=NOW(),"decided_by"=$3,"decision_notes"=$4 WHERE "id"=$1 AND "tenant_id"=$2 RETURNING *`, [submissionId, ctx.tenantId, ctx.actorId ?? '', notes]);
-    return mapSubmission(r.rows[0]!);
-  }
-
-  async withdraw(ctx: RequestContext, submissionId: string): Promise<ApprovalSubmission> {
-    const r = await this.pool.query(`UPDATE "approval_workflows"."submissions" SET "state"='withdrawn',"decided_at"=NOW() WHERE "id"=$1 AND "tenant_id"=$2 RETURNING *`, [submissionId, ctx.tenantId]);
-    return mapSubmission(r.rows[0]!);
-  }
-
-  async listSubmissions(ctx: RequestContext, state?: ApprovalSubmission['state']): Promise<ApprovalSubmission[]> {
-    let sql = `SELECT * FROM "approval_workflows"."submissions" WHERE "tenant_id"=$1`;
-    const params: unknown[] = [ctx.tenantId];
-    if (state) { params.push(state); sql += ` AND "state"=$${params.length}`; }
-    sql += ` ORDER BY "submitted_at" DESC`;
-    const r = await this.pool.query(sql, params);
-    return r.rows.map(mapSubmission);
-  }
-
-  async getSubmission(ctx: RequestContext, submissionId: string): Promise<ApprovalSubmission | null> {
-    const r = await this.pool.query(`SELECT * FROM "approval_workflows"."submissions" WHERE "id"=$1 AND "tenant_id"=$2`, [submissionId, ctx.tenantId]);
-    return r.rows[0] ? mapSubmission(r.rows[0]!) : null;
-  }
-}
-
-function mapWorkflow(r: any): ApprovalWorkflow {
-  return { id: r.id, tenantId: r.tenant_id, name: r.name, description: r.description, actionType: r.action_type, criteria: typeof r.criteria === 'string' ? JSON.parse(r.criteria) : r.criteria, approverAttributes: typeof r.approver_attributes === 'string' ? JSON.parse(r.approver_attributes) : r.approver_attributes, multiStep: r.multi_step, createdAt: r.created_at, updatedAt: r.updated_at, createdBy: r.created_by, enabled: r.enabled };
-}
-function mapSubmission(r: any): ApprovalSubmission {
-  return { id: r.id, tenantId: r.tenant_id, workflowId: r.workflow_id, actionType: r.action_type, parameters: typeof r.parameters === 'string' ? JSON.parse(r.parameters) : r.parameters, submitterAttributes: typeof r.submitter_attributes === 'string' ? JSON.parse(r.submitter_attributes) : r.submitter_attributes, resourceAttributes: typeof r.resource_attributes === 'string' ? JSON.parse(r.resource_attributes) : r.resource_attributes, riskLevel: r.risk_level, state: r.state, submittedAt: r.submitted_at, decidedAt: r.decided_at ?? undefined, submittedBy: r.submitted_by, decidedBy: r.decided_by ?? undefined, decisionNotes: r.decision_notes ?? undefined, criteriaPassed: r.criteria_passed, criteriaDetails: typeof r.criteria_details === 'string' ? JSON.parse(r.criteria_details) : r.criteria_details };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -523,86 +253,6 @@ export class PostgresDataExpectationsService implements DataExpectationsService 
 
 function mapExpectation(r: any): DataExpectation {
   return { id: r.id, tenantId: r.tenant_id, name: r.name, description: r.description, targetType: r.target_type, field: r.field ?? undefined, type: r.type, params: typeof r.params === 'string' ? JSON.parse(r.params) : r.params, blocking: r.blocking, createdAt: r.created_at, enabled: r.enabled };
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// DesignSystemService
-// ─────────────────────────────────────────────────────────────────────────────
-
-export class PostgresDesignSystemService implements DesignSystemService {
-  constructor(private readonly pool: Pool) {}
-
-  async createTheme(ctx: RequestContext, input: CreateThemeInput): Promise<DesignSystemTheme> {
-    const id = randomUUID();
-    const now = new Date().toISOString();
-    if (input.isDefault) {
-      await this.pool.query(`UPDATE "design_system"."themes" SET "is_default"=FALSE WHERE "tenant_id"=$1`, [ctx.tenantId]);
-    }
-    await this.pool.query(
-      `INSERT INTO "design_system"."themes" ("id","tenant_id","name","description","is_default","dark_mode","density","palette","typography","module_palettes","created_at","updated_at","created_by")
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$11,$12)`,
-      [id, ctx.tenantId, input.name, input.description ?? null, input.isDefault ?? false, input.darkMode ?? false, input.density ?? 'comfortable', JSON.stringify(input.palette ?? {}), JSON.stringify(input.typography ?? {}), input.modulePalettes ? JSON.stringify(input.modulePalettes) : null, now, ctx.actorId ?? ''],
-    );
-    return { id, tenantId: ctx.tenantId, name: input.name, description: input.description, isDefault: input.isDefault ?? false, darkMode: input.darkMode ?? false, density: input.density ?? 'comfortable', palette: input.palette ?? {} as any, typography: input.typography ?? {}, modulePalettes: input.modulePalettes, createdAt: now, updatedAt: now, createdBy: ctx.actorId ?? '' };
-  }
-
-  async getTheme(ctx: RequestContext, id: string): Promise<DesignSystemTheme | null> {
-    const r = await this.pool.query(`SELECT * FROM "design_system"."themes" WHERE "id"=$1 AND "tenant_id"=$2`, [id, ctx.tenantId]);
-    return r.rows[0] ? mapTheme(r.rows[0]!) : null;
-  }
-
-  async listThemes(ctx: RequestContext): Promise<DesignSystemTheme[]> {
-    const r = await this.pool.query(`SELECT * FROM "design_system"."themes" WHERE "tenant_id"=$1 ORDER BY "created_at" DESC`, [ctx.tenantId]);
-    return r.rows.map(mapTheme);
-  }
-
-  async getDefaultTheme(ctx: RequestContext): Promise<DesignSystemTheme | null> {
-    const r = await this.pool.query(`SELECT * FROM "design_system"."themes" WHERE "tenant_id"=$1 AND "is_default"=TRUE LIMIT 1`, [ctx.tenantId]);
-    return r.rows[0] ? mapTheme(r.rows[0]!) : null;
-  }
-
-  async updateTheme(ctx: RequestContext, id: string, input: Partial<CreateThemeInput>): Promise<DesignSystemTheme> {
-    if (input.isDefault) {
-      await this.pool.query(`UPDATE "design_system"."themes" SET "is_default"=FALSE WHERE "tenant_id"=$1`, [ctx.tenantId]);
-    }
-    const sets: string[] = [];
-    const params: unknown[] = [];
-    for (const [k, v] of Object.entries(input)) {
-      if (v === undefined) continue;
-      const col = k === 'isDefault' ? 'is_default' : k === 'darkMode' ? 'dark_mode' : k === 'modulePalettes' ? 'module_palettes' : k;
-      params.push(typeof v === 'object' ? JSON.stringify(v) : v);
-      sets.push(`"${col}"=$${params.length}`);
-    }
-    params.push(new Date().toISOString());
-    sets.push(`"updated_at"=$${params.length}`);
-    params.push(id, ctx.tenantId);
-    const r = await this.pool.query(`UPDATE "design_system"."themes" SET ${sets.join(', ')} WHERE "id"=$${params.length - 1} AND "tenant_id"=$${params.length} RETURNING *`, params);
-    return mapTheme(r.rows[0]!);
-  }
-
-  async deleteTheme(ctx: RequestContext, id: string): Promise<void> {
-    await this.pool.query(`DELETE FROM "design_system"."themes" WHERE "id"=$1 AND "tenant_id"=$2`, [id, ctx.tenantId]);
-  }
-
-  async setModulePalette(ctx: RequestContext, input: SetModulePaletteInput): Promise<DesignSystemTheme> {
-    const theme = await this.getTheme(ctx, input.themeId);
-    if (!theme) throw new Error('Theme not found');
-    const modulePalettes = { ...(theme.modulePalettes ?? {}), [input.moduleId]: input.palette };
-    return this.updateTheme(ctx, input.themeId, { modulePalettes });
-  }
-
-  async getModuleTheme(ctx: RequestContext, moduleId: string): Promise<DesignSystemTheme | null> {
-    const themes = await this.listThemes(ctx);
-    for (const t of themes) {
-      if (t.modulePalettes?.[moduleId]) return t;
-    }
-    return this.getDefaultTheme(ctx);
-  }
-}
-
-function mapTheme(r: any): DesignSystemTheme {
-  const parse = (v: any) => v ? (typeof v === 'string' ? JSON.parse(v) : v) : undefined;
-  return { id: r.id, tenantId: r.tenant_id, name: r.name, description: r.description ?? undefined, isDefault: r.is_default, darkMode: r.dark_mode, density: r.density, palette: parse(r.palette) ?? {}, typography: parse(r.typography) ?? {}, modulePalettes: parse(r.module_palettes), createdAt: r.created_at, updatedAt: r.updated_at, createdBy: r.created_by };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -99,7 +99,7 @@ export function SyncHealthScreen({ getToken }: SyncHealthScreenProps): ReactNode
         </p>
       </header>
 
-      <div style={{ padding: '0 44px 40px' }}>
+                  <div className="ed-table-wrap">
         {health && (
           <div style={{ marginBottom: 24, display: 'flex', gap: 24, flexWrap: 'wrap' }}>
             <div>
@@ -113,7 +113,7 @@ export function SyncHealthScreen({ getToken }: SyncHealthScreenProps): ReactNode
           </div>
         )}
 
-        <h2 style={{ fontSize: '0.875rem', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 12 }}>
+                <h2 className="ed-subhead">
           Domain packs ({packs.length}) — {totalConnectors} connectors
         </h2>
 

@@ -239,10 +239,10 @@ export function ObjectDetailScreen({
           {status === 'loading' && <p aria-live="polite">Loading…</p>}
 
           {activeTab === 'properties' && obj && (
-            <table>
+                        <table className="ed-table">
               <thead>
                 <tr>
-                  <th scope="col">Property</th>
+                                    <th scope="col">Property</th>
                   <th scope="col">Value</th>
                 </tr>
               </thead>
@@ -260,7 +260,7 @@ export function ObjectDetailScreen({
                         ) : value === null || value === undefined ? (
                           <span data-empty="true">—</span>
                         ) : typeof value === 'object' ? (
-                          <pre style={{ fontSize: '0.85em', margin: 0 }}>
+                                                    <pre>
                             {JSON.stringify(value, null, 2)}
                           </pre>
                         ) : (
@@ -279,13 +279,13 @@ export function ObjectDetailScreen({
               {linksLoading && <p aria-live="polite">Loading links…</p>}
               {!linksLoading && Object.entries(links).map(([lt, records]) => (
                 <div key={lt}>
-                  <h3 style={{ fontSize: '0.875rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  <h3 className="ed-subhead">
                     {lt} ({records.length})
                   </h3>
                   {records.length === 0 ? (
-                    <p style={{ opacity: 0.5 }}>No {lt} links.</p>
+                                        <p className="ed-muted">No {lt} links.</p>
                   ) : (
-                    <table>
+                                                            <table className="ed-table">
                       <thead>
                         <tr>
                           <th scope="col">From</th>
@@ -300,7 +300,7 @@ export function ObjectDetailScreen({
                             <td>{link.toObjectType} {link.toObjectId}</td>
                             <td>
                               {Object.keys(link.properties).length > 0 ? (
-                                <pre style={{ fontSize: '0.85em', margin: 0 }}>
+                                                               <pre>
                                   {JSON.stringify(link.properties, null, 2)}
                                 </pre>
                               ) : (
@@ -321,7 +321,7 @@ export function ObjectDetailScreen({
             <div>
               {historyLoading && <p aria-live="polite">Loading history…</p>}
               {!historyLoading && history.length === 0 && (
-                <p style={{ opacity: 0.5 }}>No version history available.</p>
+                <p className="ed-muted">No version history available.</p>
               )}
               {!historyLoading && history.length > 0 && (
                 <ol className="ed-history-timeline">
@@ -332,7 +332,7 @@ export function ObjectDetailScreen({
                       <span className="ed-history-actor">{rec._actorId}</span>
                       <details>
                         <summary>Properties</summary>
-                        <pre style={{ fontSize: '0.85em' }}>
+                                                <pre>
                           {JSON.stringify(rec.properties, null, 2)}
                         </pre>
                       </details>

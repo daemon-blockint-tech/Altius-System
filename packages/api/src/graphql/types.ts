@@ -274,11 +274,6 @@ export interface ApiDependencies {
    */
   modelRegistryService?: ModelRegistryService;
   /**
-   * Approval workflow service — manages approval workflows and submissions
-   * for governed actions. Postgres-backed when available.
-   */
-  approvalWorkflowService?: ApprovalWorkflowService;
-  /**
    * Command service — manages registered application commands and command
    * chains. Postgres-backed when available.
    */
@@ -420,6 +415,11 @@ export interface ApiDependencies {
    *   POST   /api/v1/usage/rules/evaluate      (evaluate monitoring rules)
    */
   usageMetricsService?: OntologyUsageMetricsService;
+  /**
+   * Approval workflow service — manages ABAC-governed approval workflows
+   * and their submissions.
+   */
+  approvalWorkflowService?: ApprovalWorkflowService;
   /**
    * App embedding & cross-app service — app registry, embedding manifests,
    * cross-app commands, and app pairing. When present, REST endpoints

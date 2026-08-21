@@ -85,7 +85,7 @@ export function McpActivityScreen({ endpoint, getToken }: McpActivityScreenProps
         </p>
       </header>
 
-      <div style={{ padding: '0 44px 40px' }}>
+                        <div className="ed-table-wrap">
         <div style={{ marginBottom: 24 }}>
           <strong>MCP endpoint: </strong>
           <span className="ed-status-badge" data-tone={mcpStatus === 'available' ? 'delivered' : mcpStatus === 'unavailable' ? 'lost' : 'pending'}>
@@ -94,36 +94,36 @@ export function McpActivityScreen({ endpoint, getToken }: McpActivityScreenProps
           {mcpStatus === 'available' && <code style={{ marginLeft: 12 }}>POST /mcp</code>}
         </div>
 
-        {status === 'error' && <div role="alert"><p>{error}</p><button type="button" onClick={() => void fetchTools()}>Retry</button></div>}
+        {status === 'error' && <div role="alert" className="ed-error"><p>{error}</p><button type="button" onClick={() => void fetchTools()}>Retry</button></div>}
 
-        <h2 style={{ fontSize: '0.875rem', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 12 }}>
+        <h2 className="ed-subhead">
           Available tools ({tools.length})
         </h2>
 
         {status === 'loading' && <p aria-live="polite">Loading…</p>}
 
-        {tools.length > 0 && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                {tools.length > 0 && (
+          <div className="ed-form-row--inline">
             {tools.map((tool) => (
-              <div key={tool.name} style={{ border: '1px solid var(--ed-rule, #e0e0e0)', borderRadius: 8, padding: 16 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                  <h3 style={{ margin: 0 }}><code>{tool.name}</code></h3>
+              <div key={tool.name} className="ed-tool-card">
+                <div className="ed-tool-card__header">
+                  <h3 className="ed-tool-card__title"><code>{tool.name}</code></h3>
                   <span className="ed-status-badge" data-tone="default">{tool.kind}</span>
                 </div>
-                {tool.description && <p style={{ opacity: 0.7, margin: '8px 0' }}>{tool.description}</p>}
+                {tool.description && <p className="ed-muted">{tool.description}</p>}
                 {tool.requiredPermissions.length > 0 && (
-                  <p style={{ fontSize: '0.85em', margin: '4px 0' }}>
+                  <p className="ed-tool-card__meta">
                     <strong>Permissions:</strong> {tool.requiredPermissions.join(', ')}
                   </p>
                 )}
                 {tool.tags.length > 0 && (
-                  <p style={{ fontSize: '0.85em', margin: '4px 0' }}>
+                  <p className="ed-tool-card__meta">
                     <strong>Tags:</strong> {tool.tags.join(', ')}
                   </p>
                 )}
                 <details>
                   <summary>Parameters</summary>
-                  <pre style={{ fontSize: '0.85em', marginTop: 8 }}>
+                  <pre style={{ marginTop: 8 }}>
                     {JSON.stringify(tool.parameters, null, 2)}
                   </pre>
                 </details>
@@ -132,7 +132,7 @@ export function McpActivityScreen({ endpoint, getToken }: McpActivityScreenProps
           </div>
         )}
 
-        {status === 'ready' && tools.length === 0 && <p style={{ opacity: 0.5 }}>No tools available.</p>}
+        {status === 'ready' && tools.length === 0 && <p className="ed-muted">No tools available.</p>}
       </div>
     </main>
   );
