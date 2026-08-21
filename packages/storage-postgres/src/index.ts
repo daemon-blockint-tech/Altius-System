@@ -115,7 +115,6 @@ export { PostgresBatchTransformService } from './dataset/postgres-batch-transfor
 export { PostgresVariableTransformService } from './dataset/postgres-variable-transform-service.js';
 export { PostgresSqlQueryService } from './dataset/postgres-sql-query-service.js';
 export { PostgresDataExpectationsService } from './quality/postgres-data-expectations-service.js';
-export { PostgresVariableTransformService } from './dataset/postgres-variable-transform-service.js';
 // Restored: #32 landed this service *and* its conformance suite, then the #34
 // merge dropped the export (c08f0cd), leaving the suite unable to construct the
 // class it tests. The missing export also degraded that suite's `svc` binding

@@ -115,7 +115,6 @@ import {
   InMemorySqlQueryService,
   InMemoryBatchTransformService,
   InMemoryVariableTransformService,
-  InMemoryBatchTransformService,
   InMemoryRulesEngineService,
   InMemoryPipelineService,
   InMemorySyncCdcService,
@@ -1680,6 +1679,8 @@ async function main(): Promise<void> {
     variableTransformService: pgPool ? new PostgresVariableTransformService(pgPool) : new InMemoryVariableTransformService(),
     // Multi-ontology governance — Postgres-backed when available.
     multiOntologyGovernanceService: pgPool ? new PostgresMultiOntologyGovernanceService(pgPool) : new InMemoryMultiOntologyGovernanceService(),
+    // Ontology change history — Postgres-backed when available.
+    ontologyChangeHistoryService: pgPool ? new PostgresOntologyChangeHistoryService(pgPool) : new InMemoryOntologyChangeHistoryService(),
     // Event objects — Postgres-backed when available.
     eventObjectService: pgPool ? new PostgresEventObjectService(pgPool) : new InMemoryEventObjectService(),
     // Business rules â€” Postgres-backed when available. `state` is what decides
