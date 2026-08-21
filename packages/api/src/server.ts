@@ -1308,10 +1308,6 @@ async function main(): Promise<void> {
       // Previously-unreachable services — in-memory only, wired so they have a
       // REST surface when the non-durable gate is open.
       agentEvaluationService: new InMemoryAgentEvaluationService(),
-<<<<<<< HEAD
-      embeddedCopilotService: new InMemoryEmbeddedCopilotService(),
-=======
-      agentThreadStore: new InMemoryAgentThreadStore(),
       conflictResolutionService: new InMemoryConflictResolutionService(),
       connectorCatalogService: new InMemoryConnectorCatalogService(),
       dataExpectationsService: new InMemoryDataExpectationsService(),
@@ -1322,7 +1318,6 @@ async function main(): Promise<void> {
       // false` was never found and suggestions came from a fabricated copilot
       // with it set true — bypassing the one place the flag is enforced.
       embeddedCopilotService: copilots,
->>>>>>> upstream/main
       eventObjectService: new InMemoryEventObjectService(),
       graphAnalysisService: new InMemoryGraphAnalysisService(),
       multiOntologyGovernanceService: new InMemoryMultiOntologyGovernanceService(),
@@ -1466,6 +1461,10 @@ async function main(): Promise<void> {
     // a tenant that chose otherwise gets the other answer on every conflict.
     // Graduated out of `nonDurableServices`.
     conflictResolutionService: pgPool ? new PostgresConflictResolutionService(pgPool) : new InMemoryConflictResolutionService(),
+    // Business rules — Postgres-backed when available. `state` is what decides
+    // whether a rule governs anything, so losing it silently reverts a rule to
+    // draft: nothing looks broken, the rule just stops applying.
+    businessRulesService: pgPool ? new PostgresBusinessRulesService(pgPool) : new InMemoryBusinessRulesService(),
     // Usage metrics — Postgres-backed when available. The record() method is
     // an instrumentation hook; query/summary endpoints read from Postgres.
     usageMetricsService: pgPool ? new PostgresOntologyUsageMetricsService(pgPool) : new InMemoryOntologyUsageMetricsService(),
@@ -1473,9 +1472,6 @@ async function main(): Promise<void> {
     // submission tables are tenant-scoped and the same state machine as the
     // in-memory service.
     approvalWorkflowService,
-    // Business rules — Postgres-backed when available. Rules and DAG
-    // execution are persisted; execution runs in-process over supplied data.
-    businessRulesService: pgPool ? new PostgresBusinessRulesService(pgPool) : new InMemoryBusinessRulesService(),
     // Kiosk sessions — Postgres-backed when available. Long-lived read-only
     // display sessions are durable and shared across replicas.
     kioskService: pgPool ? new PostgresKioskService(pgPool) : new InMemoryKioskService(),
