@@ -378,6 +378,17 @@ export {
   datasetProjectColumns,
 } from './dataset-rows.js';
 
+// Applying a transform step is pure, and its output is *data* — two providers
+// that disagreed about what `round` or `dateDiff` means would produce different
+// values from the same pipeline with neither erring. So it is defined once.
+export { applyTransformStep } from './variable-transforms.js';
+
+// Which value wins a conflict is a pure function of the conflict and the
+// strategy, and its output is *data* — two providers that disagreed would write
+// different values into the same field and neither would error. So it is
+// decided once, here.
+export { resolveConflictValue, DEFAULT_CONFLICT_STRATEGY } from './conflict-resolution.js';
+
 // Cross-org ontology access is an authorization decision, so it is evaluated by
 // one shared function rather than once per provider. Two providers that
 // disagreed would mean one deployment granting access the other denies, with
