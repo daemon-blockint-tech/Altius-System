@@ -134,6 +134,7 @@ import { PostgresStorageProvider, PostgresLineageStore, PostgresAuditStore, Post
   PostgresModelChainService, PostgresConnectorCatalogService, PostgresCommandService,
   PostgresDatasetService,
   PostgresSqlQueryService,
+  PostgresVariableTransformService,
   PostgresUserDirectoryService,
   PostgresLayoutDeviceCaptureService,
   PostgresWorkshopUxService,
@@ -1498,6 +1499,8 @@ async function main(): Promise<void> {
     humanInTheLoopService: pgPool ? new PostgresHumanInTheLoopService(pgPool) : new InMemoryHumanInTheLoopService(changeProposals),
     // SQL query — Postgres-backed when available.
     sqlQueryService: pgPool ? new PostgresSqlQueryService(pgPool) : new InMemorySqlQueryService(datasets),
+    // Variable transforms — Postgres-backed when available.
+    variableTransformService: pgPool ? new PostgresVariableTransformService(pgPool) : new InMemoryVariableTransformService(),
     // Multi-ontology governance — Postgres-backed when available.
     multiOntologyGovernanceService: pgPool ? new PostgresMultiOntologyGovernanceService(pgPool) : new InMemoryMultiOntologyGovernanceService(),
     // Ontology change history — Postgres-backed when available.

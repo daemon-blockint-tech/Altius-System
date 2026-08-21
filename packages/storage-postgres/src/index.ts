@@ -110,6 +110,7 @@ export { PostgresDesignSystemService } from './governance/postgres-design-system
 export { PostgresLayoutDeviceCaptureService } from './governance/postgres-layout-device-capture-service.js';
 export { PostgresWorkshopUxService } from './governance/postgres-workshop-ux-service.js';
 export { PostgresDatasetService } from './dataset/postgres-dataset-service.js';
+export { PostgresVariableTransformService } from './dataset/postgres-variable-transform-service.js';
 export { PostgresSqlQueryService } from './dataset/postgres-sql-query-service.js';
 export { generatePlatformDDL } from './schema/ddl-platform.js';
 export {

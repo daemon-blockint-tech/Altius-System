@@ -272,6 +272,42 @@ export function generatePlatformDDL(): string[] {
 );`);
   statements.push(`CREATE INDEX IF NOT EXISTS "idx_dataset_branches_tenant_name" ON "dataset"."branches" ("tenant_id", "dataset_name");`);
 
+  // ── No-code variable transform pipelines ──
+  //
+  // A pipeline is a named, ordered list of declarative steps applied to a value.
+  // Losing one is loud — `execute` throws "Transform pipeline not found" — but
+  // the definition is user-authored configuration, so it is exactly the kind of
+  // thing a restart should not eat.
+  //
+  // Keyed on (tenant_id, lookup_key) rather than id, because that is how the
+  // in-memory service keys its map: `create` with an existing name REPLACES it
+  // rather than erroring, and every read is by name. A surrogate primary key
+  // would let two pipelines share a name here while the other provider allows
+  // only one.
+  //
+  // `lookup_key` and `name` are separate columns, and the difference is not
+  // cosmetic. The in-memory service writes an updated record back under the
+  // OLD map key, so changing a pipeline's `name` through `update` renames the
+  // record without moving it: it stays reachable under the old name while
+  // reporting the new one. Modelling the map key as its own column is the only
+  // way to reproduce that faithfully — a single `name` column would move the
+  // row and diverge. The quirk is matched, pinned by a conformance case, and
+  // raised as a contract question rather than fixed here, since fixing it would
+  // change which name an existing caller has to use.
+  statements.push(`CREATE TABLE IF NOT EXISTS "dataset"."transform_pipelines" (
+  "tenant_id" TEXT NOT NULL,
+  "lookup_key" TEXT NOT NULL,
+  "name" TEXT NOT NULL,
+  "id" TEXT NOT NULL,
+  "seq" BIGSERIAL,
+  "description" TEXT NOT NULL DEFAULT '',
+  "steps" JSONB NOT NULL DEFAULT '[]',
+  "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "created_by" TEXT NOT NULL DEFAULT '',
+  PRIMARY KEY ("tenant_id", "lookup_key")
+);`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_transform_pipelines_tenant_seq" ON "dataset"."transform_pipelines" ("tenant_id", "seq");`);
+
   // ── Interactive SQL query jobs ──
   //
   // The job record carries its own result rows in `rows`, which is how
