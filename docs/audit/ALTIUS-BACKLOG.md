@@ -997,6 +997,8 @@ Use the indexed code graph before grepping: `search_graph`, `query_graph`. On a 
 
 **Gap:** None for this row. All filter widget types render and bind to variables. Histogram, facet, and user-directory APIs provide the backing substrate. REST list filtering remains equality-only for the list endpoint itself, but the histogram/facet endpoints and GraphQL filtering provide the rich operator set — the widgets use these endpoints.
 
+> ✅ **EVIDENCE UPDATED (Fase 26).** `PostgresUserDirectoryService` (`packages/storage-postgres/src/governance/postgres-user-directory-service.ts`) persists `user_directory` in the `governance` schema and survives restarts when `PG_TEST_URL` is available.
+
 ### `widgets/function-backed-widget-data-function-backed-` — Function-backed widget data (function-backed columns, function aggregation layers, prompt functions, derived display properties)
 
 **Status:** `full`
@@ -1044,6 +1046,8 @@ Use the indexed code graph before grepping: `search_graph`, `query_graph`. On a 
 **Evidence (updated 19 Aug, Phase 20):** Saved views are now fully persisted with column configuration, filter state, and per-user scoping. NEW SavedViewStore SPI (packages/spi/src/saved-views.ts) defines SavedView with: name, objectType, widgetType, appId, columns (ordered list with field/label/visible/width/frozen/order), filter (FilterExpression), orderBy, density (compact/comfortable/spacious), pageSize, widgetConfig (arbitrary), isPublic, createdBy, timestamps. InMemorySavedViewStore (packages/storage-memory/src/in-memory-saved-views.ts) implements create/get/list/update/delete with tenant scoping and owner-only update/delete. NEW REST routes: POST/GET/PATCH/DELETE /api/v1/saved-views (packages/api/src/rest/saved-view-routes.ts). NEW SavedViewsWidget (packages/web/src/widgets/components/Phase20ExtraWidgets.tsx) — lists saved views, creates new views from current widget config, deletes views, applies a view to a bound variable, default selection. Object sets remain fully functional with REST CRUD + execute + aggregate, Postgres + in-memory stores, per-user visibility (isPublic OR createdBy). 362 web tests, 866 API tests. All pass.
 
 **Gap:** None for this row. Saved views with column config, filter state, and per-user scoping are persisted and rendered by the SavedViewsWidget. Object-set variables are usable as widget inputs via the existing object-set REST API. Set algebra (union/intersect/subtract) is a backend enhancement — the SetAlgebraInput type exists in the SPI but is not yet wired to a REST endpoint; this doesn't prevent saved views from working.
+
+> ✅ **EVIDENCE UPDATED (Fase 26).** `PostgresSavedViewStore` (`packages/storage-postgres/src/governance/postgres-saved-view-store.ts`) persists `saved_views` in the `governance` schema and survives restarts when `PG_TEST_URL` is available.
 
 ### `widgets/time-series-widgets-time-series-columns-in-o` — Time series widgets (time series columns in Object Table, Metric Card sparklines, Time Series Analysis widget)
 
@@ -1389,6 +1393,8 @@ Model catalog is env-driven (LLM_DAEMON_MODEL, LLM_OPENROUTER_MODEL, LLM_EXTRA_M
 
 **Gap:** No saved module colour palettes, no typography controls, no theme editor, no per-module palette persistence. The design system is a hardcoded stylesheet — a user cannot customise colours, fonts, or spacing without editing `editorial.css`.
 
+> ✅ **EVIDENCE UPDATED (Fase 26).** `PostgresDesignSystemService` (`packages/storage-postgres/src/governance/postgres-design-system-service.ts`) persists `design_system_themes` in the `governance` schema and survives restarts when `PG_TEST_URL` is available.
+
 ### `workshop-ui/interactive-graph-visualization-embedding-ve` — Interactive graph visualization & embedding (Vertex graph widget: layouts, layer styling, grouping, saved selections, time panels)
 
 **Status:** `full`
@@ -1536,6 +1542,8 @@ Model catalog is env-driven (LLM_DAEMON_MODEL, LLM_OPENROUTER_MODEL, LLM_EXTRA_M
 
 **Gap:** No REST/GraphQL routes for kiosk session management. No integration with the API authentication middleware. No persistent storage. No UI for kiosk administration. No MDM/VPN/network-access guidance.
 
+> ✅ **EVIDENCE UPDATED (Fase 26).** `PostgresKioskService` (`packages/storage-postgres/src/governance/postgres-kiosk-service.ts`) persists `kiosk_sessions` in the `governance` schema and survives restarts when `PG_TEST_URL` is available.
+
 ### `misc-2/mobile-application-delivery-workshop-mobile-` — Mobile application delivery (Workshop mobile modules, mobile-optimized widgets, dedicated mobile app launcher, MDM/VPN/network-access and SSO guidance)
 
 **Status:** `partial`
@@ -1557,6 +1565,8 @@ Model catalog is env-driven (LLM_DAEMON_MODEL, LLM_OPENROUTER_MODEL, LLM_EXTRA_M
 **Status:** `partial`
 
 **Evidence (Phase 6):** `BusinessRulesService` SPI (packages/spi/src/business-rules.ts) defines rules as DAGs of logic nodes: source, filter, select, expression (arithmetic/string), aggregate (count/sum/avg/min/max/first/last), join (inner/left/right/full), union, window (tumbling/sliding), sort, limit, output. Rules have proposal/approval workflow (draft→proposed→approved→active). `InMemoryBusinessRulesService` (packages/storage-memory/src/in-memory-business-rules.ts) implements full DAG execution with topological ordering. Tests verify all node types, joins, unions, aggregates, and approval workflow (15 tests pass).
+
+> ✅ **EVIDENCE UPDATED (Fase 26).** `PostgresBusinessRulesService` (`packages/storage-postgres/src/governance/postgres-business-rules-service.ts`) persists `business_rules` in the `governance` schema and survives restarts when `PG_TEST_URL` is available. The remaining non-persistence gaps (time series boards, Contour import, deployable rule pipelines, REST/GraphQL routes, rule-authoring UI) remain.
 
 **Gap:** No time series boards (window node exists but no TS store integration). No Contour import. No deployable rule pipelines. No REST/GraphQL routes. No persistent storage. No UI for rule authoring.
 
@@ -1616,6 +1626,8 @@ Model catalog is env-driven (LLM_DAEMON_MODEL, LLM_OPENROUTER_MODEL, LLM_EXTRA_M
 **Status:** `partial`
 
 **Evidence (read 15 Aug):** Declarative rules authored outside platform code do execute. @constraint CEL expressions are evaluated during writes — evaluateConstraints runs in the validation pipeline for field- and type-level constraints (packages/engine/src/objects/validation.ts:137-151,288) with the CEL evaluator injected into ObjectManager (packages/engine/src/objects/object-manager.ts:52,77,361). Action manifests are business-readable YAML with CEL preconditions, effects, side effects and rollback policy, shipped per pack (domain-packs/aml/actions/assign-alert-to-case.yaml; parser at packages/actions/src/parser/index.ts). Evaluation is the canonical Go CEL sidecar over gRPC (packages/actions/src/cel/client.ts:1-9; wired at packages/api/src/server.ts:302-306).
+
+> ✅ **EVIDENCE UPDATED (Fase 26).** `PostgresBusinessRulesService` (`packages/storage-postgres/src/governance/postgres-business-rules-service.ts`) now backs the business-rules SPI on `business_rules` in the `governance` schema, surviving restarts when `PG_TEST_URL` is available. The remaining non-persistence gaps (no event/scheduled rule pipeline, no proposal/review queue, YAML-in-pack authoring, CEL dev stub) remain.
 
 **Gap:** No rules engine as such: rules are only evaluated inline on a user-triggered write, never as a scheduled or event-triggered pipeline over a dataset, and there is no proposal/review queue — effects commit directly. Grep for rule/trigger/automation finds no rule registry or trigger dispatcher. Authoring is YAML-in-a-pack requiring redeploy, not a business-user editor. In dev mode without CEL_EVALUATOR_URL the evaluator is replaced by an allow-all stub, so every rule passes (packages/api/src/server.ts:308-310).
 
@@ -1798,6 +1810,8 @@ Model catalog is env-driven (LLM_DAEMON_MODEL, LLM_OPENROUTER_MODEL, LLM_EXTRA_M
 
 **Evidence (Phase 6):** `BusinessRulesService` SPI (packages/spi/src/business-rules.ts) provides the rule authoring and execution substrate. Rules produce output rows that can be written to target types via output nodes. The proposal/approval workflow provides governed rule outputs. See also the `misc-2/no-code-business-rules-engine-foundry-rules-` row for full evidence.
 
+> ✅ **EVIDENCE UPDATED (Fase 26).** `PostgresBusinessRulesService` (`packages/storage-postgres/src/governance/postgres-business-rules-service.ts`) now persists to `governance`.`business_rules` and survives restarts when `PG_TEST_URL` is available.
+
 **Gap:** No generated rules pipeline (rules execute in-memory, not as deployable pipelines). No integration with dataset/transaction primitives. No REST/GraphQL routes. No persistent storage. No UI.
 
 ### `pipelines-data/interactive-sql-query-service-spark-sql-rest` — Interactive SQL query service (Spark SQL REST API with async job lifecycle)
@@ -1897,6 +1911,8 @@ Model catalog is env-driven (LLM_DAEMON_MODEL, LLM_OPENROUTER_MODEL, LLM_EXTRA_M
 **Status:** `partial`
 
 **Evidence (Phase 6):** `ApprovalWorkflowService` SPI (packages/spi/src/platform-governance.ts) defines approval workflows with ABAC submission criteria (user/resource/environment attributes, matchMode all/any, risk level thresholds, second reviewer requirement). `InMemoryApprovalWorkflowService` (packages/storage-memory/src/in-memory-platform-governance.ts) implements submission with ABAC evaluation, approve/reject/withdraw, and submission listing. Tests verify ABAC criteria evaluation, workflow lifecycle, and tenant isolation.
+
+> ✅ **EVIDENCE UPDATED (Fase 26).** `PostgresApprovalWorkflowService` (`packages/storage-postgres/src/governance/postgres-approval-workflow-service.ts`) persists `approval_workflows` and `approval_submissions` in the `governance` schema and survives restarts when `PG_TEST_URL` is available. The remaining non-persistence gaps (AuthorizationService integration, REST/GraphQL routes, workflow UI, multi-step execution) remain.
 
 **Gap:** No integration with the existing AuthorizationService for runtime ABAC enforcement. No REST/GraphQL routes. No persistent storage. No UI for workflow management. No multi-step approval execution.
 
@@ -2030,6 +2046,8 @@ Model catalog is env-driven (LLM_DAEMON_MODEL, LLM_OPENROUTER_MODEL, LLM_EXTRA_M
 **Status:** `partial`
 
 **Evidence (Phase 6):** `BusinessRulesService` SPI (packages/spi/src/business-rules.ts) provides rule authoring with proposal/approval workflow (draft→proposed→approved→active→inactive). Rules can be submitted, approved, rejected, activated, and deactivated. See also the `misc-2/no-code-business-rules-engine-foundry-rules-` row for full evidence.
+
+> ✅ **EVIDENCE UPDATED (Fase 26).** `PostgresBusinessRulesService` (`packages/storage-postgres/src/governance/postgres-business-rules-service.ts`) persists `business_rules` in the `governance` schema and survives restarts when `PG_TEST_URL` is available. The remaining non-persistence gaps (generated execution pipeline, REST/GraphQL routes, proposal/approval UI) remain.
 
 **Gap:** No generated execution pipeline from approved rules (rules execute in-memory). No REST/GraphQL routes. No persistent storage. No UI for proposal/approval management.
 
@@ -2274,6 +2292,8 @@ Model catalog is env-driven (LLM_DAEMON_MODEL, LLM_OPENROUTER_MODEL, LLM_EXTRA_M
 
 **Evidence (Phase 6):** `BusinessRulesService` SPI (packages/spi/src/business-rules.ts) provides end-user rule authoring with proposal/approval change management. Rules transition through draft→proposed→approved→active with reviewer identity and notes. See also the `misc-2/no-code-business-rules-engine-foundry-rules-` row for full evidence.
 
+> ✅ **EVIDENCE UPDATED (Fase 26).** `PostgresBusinessRulesService` (`packages/storage-postgres/src/governance/postgres-business-rules-service.ts`) persists `business_rules` in the `governance` schema and survives restarts when `PG_TEST_URL` is available. The remaining non-persistence gaps (ontology-level rule type, REST/GraphQL routes, rule authoring/approval UI) remain.
+
 **Gap:** No ontology-level rule type (rules are not ODL objects). No REST/GraphQL routes. No persistent storage. No UI for rule authoring or approval.
 
 ### `ontology-core/geospatial-and-geotime-geo-property-types-ge` — Geospatial and geotime (geo property types, geo queries, time series)
@@ -2342,6 +2362,8 @@ All package suites green: 377 ODL + 367 engine + 138 memory + 800 API + 99 web.
 **Status:** `partial`
 
 **Evidence (read 15 Aug):** Real and production-wired, but text-authored and quietly fail-open in places. Rules are declared in YAML manifests (preconditions: blocks in domain-packs/nhs-acute/actions/*.yaml — admit-patient.yaml:6, clean-bed.yaml:15, register-patient.yaml:13, transfer-ward.yaml:6, discharge-patient.yaml:6) and as @constraint CEL directives in ODL (packages/odl/src/parser/types.ts:62,140). Both are evaluated at runtime: packages/actions/src/executor/action-executor.ts:279 evaluates preconditions, and lines 735, 765, 822, 942 evaluate per-effect CEL conditions; packages/engine/src/objects/validation.ts:142 and 151-156 evaluate field-level then type-level constraints, with only non-warning failures blocking the write (validation.ts:175-176). The evaluator is a real Go CEL gRPC sidecar (packages/cel-evaluator/main.go, Dockerfile) wired at packages/api/src/server.ts:301-306 and shared by both the validation pipeline and the action executor.
+
+> ✅ **EVIDENCE UPDATED (Fase 26).** `PostgresBusinessRulesService` (`packages/storage-postgres/src/governance/postgres-business-rules-service.ts`) persists `business_rules` in the `governance` schema and survives restarts when `PG_TEST_URL` is available. The remaining non-persistence gaps (no-code authoring UI, rule versioning, test/simulate surface, rule set editing, CEL dev stub) remain.
 
 **Gap:** Not no-code: rules live in ODL/YAML files inside a domain pack and need a redeploy to change — there is no rule-authoring UI, no rule versioning, no test/simulate surface, and no rule set editable independently of the schema. Two fail-open holes: server.ts:307-310 substitutes an allow-all stub (`async evaluate() { return { value: true } }`) whenever isDev is set and CEL_EVALUATOR_URL is unset, so every precondition and constraint silently passes in dev; and validation.ts:53-54,297 downgrade any constraint the evaluator cannot handle to a warning that is explicitly NOT enforced. No rule-hit metrics beyond the generic COMPUTED_EVALUATIONS counter.
 
