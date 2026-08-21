@@ -752,6 +752,8 @@ Moved back from §out-of-scope after the client roster was named: multi-sector �
 
 **Status:** `absent`
 
+> 🔒 CLAIMED: loop-0821-pii1 2026-08-21T16:05+07:00
+
 > 🎯 **Client driver (21 Aug 2026):** Medical records + AML/compliance — sensitive values must not reach external LLM providers raw. Foundry parity: AIP "Moderation: PII Obfuscation, Content Detection".
 
 **Evidence (21 Aug):** Not in the original 187 rows. LLM gateway exists (usage attribution, rate limiting) but forwards payloads untouched; @sensitive is enforced on read paths, not on the LLM egress path.
