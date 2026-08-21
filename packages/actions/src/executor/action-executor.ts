@@ -279,6 +279,57 @@ function stripSystemFields(obj: Record<string, unknown>): Record<string, unknown
 /** @internal Exported for tests — the rollback path it guards needs Postgres to observe. */
 export const __stripSystemFieldsForTest = stripSystemFields;
 
+/**
+ * Copy the effect context with @sensitive fields nulled on every
+ * storage-loaded object (identified by `_type`), listing them in
+ * `_redactedFields` — the same shape read-path redaction uses.
+ *
+ * Side effects are an EGRESS: a webhook with no configured body POSTs the
+ * whole context to an external URL. Redacted-by-default; the explicit
+ * re-exposure path is the side-effect's own config, which interpolates
+ * against the raw context because an author naming a sensitive field there
+ * is a reviewable decision.
+ */
+function redactSensitiveForEgress(
+  context: Record<string, unknown>,
+  schema: ParsedSchema,
+): Record<string, unknown> {
+  const sensitiveByType = new Map<string, string[]>();
+  for (const ot of schema.objectTypes) {
+    const names = ot.fields
+      .filter((f) => f.directives.some((d) => d.kind === 'sensitive'))
+      .map((f) => f.name);
+    if (names.length > 0) sensitiveByType.set(ot.name, names);
+  }
+  if (sensitiveByType.size === 0) return context;
+
+  const redactValue = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(redactValue);
+    if (value && typeof value === 'object') {
+      const obj = value as Record<string, unknown>;
+      const sensitive = typeof obj['_type'] === 'string'
+        ? sensitiveByType.get(obj['_type'] as string)
+        : undefined;
+      if (!sensitive) return value;
+      const copy: Record<string, unknown> = { ...obj };
+      const redacted: string[] = [];
+      for (const field of sensitive) {
+        if (field in copy) {
+          copy[field] = null;
+          redacted.push(field);
+        }
+      }
+      if (redacted.length > 0) copy['_redactedFields'] = redacted;
+      return copy;
+    }
+    return value;
+  };
+
+  return Object.fromEntries(
+    Object.entries(context).map(([k, v]) => [k, redactValue(v)]),
+  );
+}
+
 // ---------------------------------------------------------------------------
 // ActionExecutor
 // ---------------------------------------------------------------------------
@@ -638,17 +689,21 @@ export class ActionExecutor {
     // Step 6: SIDE-EFFECTS — execute inline with retry
     // ------------------------------------------------------------------
     if (this.config.sideEffectHandler && manifest.sideEffects.length > 0) {
+      // Side effects leave the platform (webhooks POST the context when no
+      // body is configured), so they get a copy with @sensitive nulled.
+      const egressContext = redactSensitiveForEgress(effectContext, schema);
       for (const se of manifest.sideEffects) {
-        // Interpolate event `data` values against the action context so
+        // Interpolate event `data` values against the RAW action context so
         // payloads carry resolved IDs/values (e.g. "bed.id" → the bed's id),
         // not the literal expression strings. Link paths (e.g. "bed.ward.id")
-        // were pre-resolved into the context by preResolveLinkPaths.
+        // were pre-resolved into the context by preResolveLinkPaths. Raw is
+        // deliberate: naming a field in config is the explicit re-exposure path.
         const seConfig = this.resolveSideEffectConfig(se.type, se.config, effectContext);
         const seResult = await this.config.sideEffectHandler.execute(
           se.name,
           se.type,
           seConfig,
-          effectContext,
+          egressContext,
           se.retries,
         );
 
