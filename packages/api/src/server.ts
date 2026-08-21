@@ -1571,37 +1571,32 @@ async function main(): Promise<void> {
       // graduated to durable services (see deps literal below).
       // User directory â€” graduated to durable service above.
       // Layout/device-capture â€” graduated to durable service above.
-      // API Tooling services â€” in-memory only (no Postgres implementations yet).
+      // Genuinely non-durable services (no durable Postgres twin wired). Services
+      // that DO have one — ontology-change-history, design-system, conflict-resolution,
+      // agent-threads, connector-catalog, data-expectations, event-objects,
+      // multi-ontology, sql-query, variable-transform — are intentionally absent:
+      // the deps literal wires them durably and this object spreads last, so an
+      // in-memory copy here would shadow the durable one on Postgres with the gate open.
       ontologyManagerService: new InMemoryOntologyManagerService(),
       valueFormattingService: new InMemoryValueFormattingService(),
-      ontologyChangeHistoryService: new InMemoryOntologyChangeHistoryService(),
-      designSystemService: new InMemoryDesignSystemService(),
       // Workshop UI services.
       commandExchangeService: new InMemoryCommandExchangeService(),
       graphService: new InMemoryGraphService(),
       // Previously-unreachable services â€” in-memory only, wired so they have a
       // REST surface when the non-durable gate is open.
       agentEvaluationService: new InMemoryAgentEvaluationService(),
-      conflictResolutionService: new InMemoryConflictResolutionService(),
-      agentThreadStore: new InMemoryAgentThreadStore(),
-      connectorCatalogService: new InMemoryConnectorCatalogService(),
-      dataExpectationsService: new InMemoryDataExpectationsService(),
       // One copilot store, two surfaces. `embeddedCopilotService` configures
       // copilots; `copilotService` is the view-facing suggest/apply half, and it
       // is handed the same instance. They used not to be: the second built its
       // own private store, so a copilot configured with `canExecuteActions:`n      // false` was never found and suggestions came from a fabricated copilot
       // with it set true â€” bypassing the one place the flag is enforced.
       embeddedCopilotService: copilots,
-      eventObjectService: new InMemoryEventObjectService(),
       graphAnalysisService: new InMemoryGraphAnalysisService(),
-      multiOntologyGovernanceService: new InMemoryMultiOntologyGovernanceService(),
       pipelineBuildService: new InMemoryPipelineBuildService(),
       platformAssistantService: new InMemoryPlatformAssistantService(),
       processMiningService: new InMemoryProcessMiningService(),
       // Pipeline Data Ops â€” Pipeline & Data Ops.
-      sqlQueryService: new InMemorySqlQueryService(datasets),
       batchTransformService: new InMemoryBatchTransformService(datasets),
-      variableTransformService: new InMemoryVariableTransformService(),
       rulesEngineService: new InMemoryRulesEngineService(),
       pipelineService: new InMemoryPipelineService(),
       syncCdcService: new InMemorySyncCdcService(),
