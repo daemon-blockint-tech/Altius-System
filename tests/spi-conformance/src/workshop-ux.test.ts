@@ -34,7 +34,10 @@ function runTests(name: string, factory: () => Promise<WorkshopUxService>): void
       const t = tenant('state_lifecycle');
       const s1 = await svc.saveState(CTX(t), { appId: 'app1', name: 's1', state: { a: 1 } });
       const s2 = await svc.saveState(CTX(t), { appId: 'app1', name: 's2', state: { b: 2 } });
-      const other = await svc.saveState(CTX(t), { appId: 'app2', name: 'other', state: {} });
+      // Under a different appId on purpose: this is the negative case for the
+      // listStates filter below, which is why the call stays and only the
+      // unused binding goes.
+      await svc.saveState(CTX(t), { appId: 'app2', name: 'other', state: {} });
 
       const list = await svc.listStates(CTX(t), 'app1');
       expect(list).toHaveLength(2);

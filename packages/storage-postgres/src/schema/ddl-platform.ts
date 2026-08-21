@@ -271,6 +271,97 @@ export function generatePlatformDDL(): string[] {
   UNIQUE ("tenant_id", "dataset_name", "name")
 );`);
   statements.push(`CREATE INDEX IF NOT EXISTS "idx_dataset_branches_tenant_name" ON "dataset"."branches" ("tenant_id", "dataset_name");`);
+  // ── Batch transforms, builds and schedules ──
+  //
+  // `inputs` is a real TEXT[] and must be bound as a JS array, never
+  // JSON.stringify'd — the #19 defect, which made two stores unwritable on
+  // Postgres while their suites stayed green.
+  //
+  // A schedule that silently stops firing looks like nothing happening rather
+  // than like a failure, which is why these are worth persisting at all.
+  statements.push(`CREATE TABLE IF NOT EXISTS "dataset"."transforms" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "tenant_id" TEXT NOT NULL,
+  "name" TEXT NOT NULL,
+  "description" TEXT NOT NULL DEFAULT '',
+  "inputs" TEXT[] NOT NULL DEFAULT '{}',
+  "output" TEXT NOT NULL,
+  "kind" TEXT NOT NULL,
+  "source" TEXT NOT NULL DEFAULT '',
+  "incremental" BOOLEAN NOT NULL DEFAULT FALSE,
+  "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "created_by" TEXT NOT NULL DEFAULT '',
+  "last_build_state" TEXT,
+  "last_build_id" TEXT,
+  UNIQUE ("tenant_id", "name")
+);`);
+  statements.push(`CREATE TABLE IF NOT EXISTS "dataset"."transform_builds" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "seq" BIGSERIAL,
+  "tenant_id" TEXT NOT NULL,
+  "transform_id" TEXT NOT NULL DEFAULT '',
+  "transform_name" TEXT NOT NULL,
+  "state" TEXT NOT NULL DEFAULT 'pending',
+  "trigger" TEXT NOT NULL DEFAULT 'manual',
+  "started_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "ended_at" TIMESTAMPTZ,
+  "duration_ms" BIGINT,
+  "triggered_by" TEXT NOT NULL DEFAULT '',
+  "rows_read" BIGINT NOT NULL DEFAULT 0,
+  "rows_written" BIGINT NOT NULL DEFAULT 0,
+  "error_message" TEXT,
+  "incremental" BOOLEAN NOT NULL DEFAULT FALSE,
+  "checkpoint" TEXT
+);`);
+  // listBuilds returns newest first within a transform; `seq` gives that a
+  // total order, since two builds can start in the same millisecond.
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_builds_tenant_name_seq" ON "dataset"."transform_builds" ("tenant_id", "transform_name", "seq" DESC);`);
+  statements.push(`CREATE TABLE IF NOT EXISTS "dataset"."transform_schedules" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "tenant_id" TEXT NOT NULL,
+  "transform_name" TEXT NOT NULL,
+  "cron_expression" TEXT NOT NULL,
+  "enabled" BOOLEAN NOT NULL DEFAULT TRUE,
+  "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_schedules_tenant" ON "dataset"."transform_schedules" ("tenant_id");`);
+
+  // ── No-code variable transform pipelines ──
+  //
+  // A pipeline is a named, ordered list of declarative steps applied to a value.
+  // Losing one is loud — `execute` throws "Transform pipeline not found" — but
+  // the definition is user-authored configuration, so it is exactly the kind of
+  // thing a restart should not eat.
+  //
+  // Keyed on (tenant_id, lookup_key) rather than id, because that is how the
+  // in-memory service keys its map: `create` with an existing name REPLACES it
+  // rather than erroring, and every read is by name. A surrogate primary key
+  // would let two pipelines share a name here while the other provider allows
+  // only one.
+  //
+  // `lookup_key` and `name` are separate columns, and the difference is not
+  // cosmetic. The in-memory service writes an updated record back under the
+  // OLD map key, so changing a pipeline's `name` through `update` renames the
+  // record without moving it: it stays reachable under the old name while
+  // reporting the new one. Modelling the map key as its own column is the only
+  // way to reproduce that faithfully — a single `name` column would move the
+  // row and diverge. The quirk is matched, pinned by a conformance case, and
+  // raised as a contract question rather than fixed here, since fixing it would
+  // change which name an existing caller has to use.
+  statements.push(`CREATE TABLE IF NOT EXISTS "dataset"."transform_pipelines" (
+  "tenant_id" TEXT NOT NULL,
+  "lookup_key" TEXT NOT NULL,
+  "name" TEXT NOT NULL,
+  "id" TEXT NOT NULL,
+  "seq" BIGSERIAL,
+  "description" TEXT NOT NULL DEFAULT '',
+  "steps" JSONB NOT NULL DEFAULT '[]',
+  "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "created_by" TEXT NOT NULL DEFAULT '',
+  PRIMARY KEY ("tenant_id", "lookup_key")
+);`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_transform_pipelines_tenant_seq" ON "dataset"."transform_pipelines" ("tenant_id", "seq");`);
 
   // ── Interactive SQL query jobs ──
   //
@@ -684,6 +775,47 @@ export function generatePlatformDDL(): string[] {
   PRIMARY KEY ("tenant_id", "id")
 );`);
   statements.push(`CREATE INDEX IF NOT EXISTS "idx_ont_change_tenant_version" ON "governance"."ontology_change_history" ("tenant_id", "version" DESC, "seq");`);
+  // ── Data conflicts and the tenant's default resolution strategy ──
+  //
+  // Two pieces of state, both of which fail silently when lost. An unresolved
+  // conflict is a datasource sync and a user edit disagreeing about a field:
+  // lose it and the discrepancy is never surfaced, so the data quietly diverges
+  // with nothing erroring. And the default strategy falls back to
+  // `user_edits_win` when absent, so a tenant that chose otherwise does not get
+  // an error after a restart — it gets the other answer.
+  //
+  // The three value columns are JSONB rather than TEXT because a conflict can be
+  // over an object — the merge strategy exists precisely for that case — and
+  // because JSONB keeps "no value" distinguishable from "the value null", which
+  // matters since resolving manually without a value is legal.
+  statements.push(`CREATE SCHEMA IF NOT EXISTS "sync";`);
+  statements.push(`CREATE TABLE IF NOT EXISTS "sync"."data_conflicts" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "seq" BIGSERIAL,
+  "tenant_id" TEXT NOT NULL,
+  "object_type" TEXT NOT NULL,
+  "object_id" TEXT NOT NULL,
+  "field" TEXT NOT NULL,
+  "datasource_value" JSONB,
+  "user_value" JSONB,
+  "datasource_timestamp" TEXT NOT NULL DEFAULT '',
+  "user_timestamp" TEXT NOT NULL DEFAULT '',
+  "resolved_value" JSONB,
+  "resolved_by" TEXT,
+  "resolved" BOOLEAN NOT NULL DEFAULT FALSE,
+  "detected_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "resolved_at" TIMESTAMPTZ
+);`);
+  // listUnresolved returns newest first; `seq` gives that a total order, since
+  // two conflicts can be detected within the same millisecond.
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_conflicts_tenant_unresolved" ON "sync"."data_conflicts" ("tenant_id", "resolved", "detected_at" DESC, "seq" DESC);`);
+
+  // One row per tenant: the strategy applied when none is named per call.
+  statements.push(`CREATE TABLE IF NOT EXISTS "sync"."conflict_settings" (
+  "tenant_id" TEXT NOT NULL PRIMARY KEY,
+  "default_strategy" TEXT NOT NULL,
+  "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);`);
 
   // ── Agent threads (Batch 2 — not in upstream) ──
   statements.push(`CREATE SCHEMA IF NOT EXISTS "agent_threads";`);
@@ -957,6 +1089,123 @@ export function generatePlatformDDL(): string[] {
   "created_by" TEXT NOT NULL DEFAULT ''
 );`);
   statements.push(`CREATE INDEX IF NOT EXISTS "idx_sharing_rules_tenant_source" ON "governance"."sharing_rules" ("tenant_id", "source_space_id");`);
+
+  // ── Ontology change history ──
+  //
+  // The record of who changed the schema, when, and what it looked like before.
+  // `seq` is not decoration: listChanges orders by version descending, and every
+  // record is created at version 1, so ties are the common case rather than the
+  // edge case. The in-memory sort is stable, which means ties come back in
+  // insertion order — `seq ASC` is how Postgres says the same thing.
+  //
+  // The primary key is composite, unlike the other governance tables. Their ids
+  // are UUIDs this code generates, so a global key is safe; here `saveChange`
+  // accepts a caller-supplied id, and the in-memory service keys its map per
+  // tenant — so two tenants each holding a record called "v1" is legal there. A
+  // global key would make it a conflict here and reject a write the other
+  // provider accepts.
+  statements.push(`CREATE TABLE IF NOT EXISTS "governance"."ontology_change_history" (
+  "id" TEXT NOT NULL,
+  "seq" BIGSERIAL,
+  "tenant_id" TEXT NOT NULL,
+  "version" INTEGER NOT NULL DEFAULT 1,
+  "applied_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "applied_by" TEXT NOT NULL DEFAULT '',
+  "migration_class" TEXT NOT NULL DEFAULT '',
+  "diff_summary" TEXT NOT NULL DEFAULT '',
+  "snapshot" JSONB NOT NULL DEFAULT '{}',
+  PRIMARY KEY ("tenant_id", "id")
+);`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_ont_change_tenant_version" ON "governance"."ontology_change_history" ("tenant_id", "version" DESC, "seq");`);
+
+  // ── Data conflicts and the tenant's default resolution strategy ──
+  //
+  // Two pieces of state, both of which fail silently when lost. An unresolved
+  // conflict is a datasource sync and a user edit disagreeing about a field:
+  // lose it and the discrepancy is never surfaced, so the data quietly diverges
+  // with nothing erroring. And the default strategy falls back to
+  // `user_edits_win` when absent, so a tenant that chose otherwise does not get
+  // an error after a restart — it gets the other answer.
+  //
+  // The three value columns are JSONB rather than TEXT because a conflict can be
+  // over an object — the merge strategy exists precisely for that case — and
+  // because JSONB keeps "no value" distinguishable from "the value null", which
+  // matters since resolving manually without a value is legal.
+  statements.push(`CREATE SCHEMA IF NOT EXISTS "sync";`);
+  statements.push(`CREATE TABLE IF NOT EXISTS "sync"."data_conflicts" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "seq" BIGSERIAL,
+  "tenant_id" TEXT NOT NULL,
+  "object_type" TEXT NOT NULL,
+  "object_id" TEXT NOT NULL,
+  "field" TEXT NOT NULL,
+  "datasource_value" JSONB,
+  "user_value" JSONB,
+  "datasource_timestamp" TEXT NOT NULL DEFAULT '',
+  "user_timestamp" TEXT NOT NULL DEFAULT '',
+  "resolved_value" JSONB,
+  "resolved_by" TEXT,
+  "resolved" BOOLEAN NOT NULL DEFAULT FALSE,
+  "detected_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "resolved_at" TIMESTAMPTZ
+);`);
+  // listUnresolved returns newest first; `seq` gives that a total order, since
+  // two conflicts can be detected within the same millisecond.
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_conflicts_tenant_unresolved" ON "sync"."data_conflicts" ("tenant_id", "resolved", "detected_at" DESC, "seq" DESC);`);
+
+  // One row per tenant: the strategy applied when none is named per call.
+  statements.push(`CREATE TABLE IF NOT EXISTS "sync"."conflict_settings" (
+  "tenant_id" TEXT NOT NULL PRIMARY KEY,
+  "default_strategy" TEXT NOT NULL,
+  "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);`);
+
+  // ── Process-mining event objects and their breach thresholds ──
+  //
+  // The events are the process-mining input; a model discovered from a log that
+  // lost half its events is not wrong-looking, it is just a smaller model. And a
+  // lost threshold does not error either — new events simply stop being flagged
+  // as breaches, which is the same silent-gate shape as losing a data
+  // expectation.
+  statements.push(`CREATE SCHEMA IF NOT EXISTS "process";`);
+  statements.push(`CREATE TABLE IF NOT EXISTS "process"."events" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "seq" BIGSERIAL,
+  "tenant_id" TEXT NOT NULL,
+  "event_type" TEXT NOT NULL,
+  "case_id" TEXT NOT NULL,
+  "object_id" TEXT,
+  "object_type" TEXT,
+  -- Timestamps are TEXT, not TIMESTAMPTZ: the query filters compare them as
+  -- strings against caller-supplied bounds, and the in-memory provider does a
+  -- lexicographic compare. Storing them as instants would re-order events whose
+  -- strings differ but whose instants match, and the two providers would part
+  -- company on the boundaries.
+  "start_time" TEXT NOT NULL,
+  "end_time" TEXT,
+  "duration_ms" BIGINT,
+  "actor_id" TEXT,
+  "badges" JSONB NOT NULL DEFAULT '[]',
+  "threshold_breached" BOOLEAN,
+  "threshold_details" JSONB,
+  "attributes" JSONB NOT NULL DEFAULT '{}',
+  "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);`);
+  // list() orders by start_time ascending; `seq` breaks the ties, which are
+  // common because events are frequently stamped from the same clock reading.
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_events_tenant_start" ON "process"."events" ("tenant_id", "start_time", "seq");`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_events_tenant_case" ON "process"."events" ("tenant_id", "case_id");`);
+
+  // One threshold per (tenant, event type), replaced rather than accumulated.
+  statements.push(`CREATE TABLE IF NOT EXISTS "process"."event_thresholds" (
+  "tenant_id" TEXT NOT NULL,
+  "event_type" TEXT NOT NULL,
+  "metric" TEXT NOT NULL,
+  "threshold" DOUBLE PRECISION NOT NULL,
+  "direction" TEXT NOT NULL,
+  "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY ("tenant_id", "event_type")
+);`);
 
   return statements;
 }
