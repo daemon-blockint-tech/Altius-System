@@ -80,6 +80,8 @@ Graded `partial` as capabilities, but each Gap describes an enforcement hole in 
 
 **Status:** `partial`
 
+> 🔒 CLAIMED: loop-0821-a7c3 2026-08-21T15:21+07:00
+
 > ✅ **UPDATED 21 Aug 2026 (loop-0821-9c4e, commit `3436974` in `b6dab53` lineage).** Pipeline wiring CLOSED: `ActionManifest.requiresJustification` declares the checkpoint (parser + type, packages/actions/src/parser); the executor's Step 3b refuses execution without a non-empty `ctx.justification` (JUSTIFICATION_REQUIRED, refusal audited), captures to the `JustificationStore` BEFORE effects (capture failure refuses the action), and stamps the text into the success audit record (`AuditDetail.justification`). Transport: reserved `_justification` field on REST body, generated GraphQL input SDL, and MCP tool args (stripped pre-validation) — enforcement lives in the executor so all surfaces are covered. Store instance shared with /api/v1/justifications routes. Two-sided proof: `packages/actions/src/executor/__tests__/justification-checkpoint.test.ts` (6/7 fail without, 9/9 with parser tests pass with).
 
 > ⚠️ **EVIDENCE UPDATED 19 Aug (PR #13, §3.2).** REST endpoints were wired. The grade stays `partial` — not wired into the action execution pipeline, no per-action justification requirement declaration, no audit record integration.
