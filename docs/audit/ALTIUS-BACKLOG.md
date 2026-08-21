@@ -19,7 +19,7 @@ Structure:
 5. **Smallest correct change.** No refactors, no unrelated files, no new dependencies without saying why.
 6. **Never overwrite in-flight work.** If the build is red because another session references a symbol that does not exist yet, report and stop — do not guess their intent. A *committed* broken state (HEAD == working tree) is safe to fix.
 7. **DDL is additive only.** Never generate `DROP COLUMN` or a type change.
-8. **Stop and ask** when an item needs a product or contract decision rather than an implementation. Those are marked below.
+8. **Mark, don’t stall.** If an item needs a product or contract decision rather than an implementation, write `> ⏸ NEEDS-DECISION: <question>` into the row, append the question to [DECISIONS-NEEDED.md](DECISIONS-NEEDED.md), commit, and move to another item — do not implement a guess.
 
 ## Security defects — fix before parity work
 
@@ -28,6 +28,8 @@ Graded `partial` as capabilities, but each Gap describes an enforcement hole in 
 ### `security-consent/sensitive-data-pii-protection-controls` — Sensitive-data (PII) protection controls
 
 **Status:** `partial`
+
+> 🔒 CLAIMED: loop-0821-a7c3 2026-08-21T14:30+07:00
 
 **Evidence (read 15 Aug):** @sensitive now has a real runtime consumer: api/src/schema-loader.ts:560-606 deriveSensitiveFieldDefaults synthesises a deny-by-default FieldPermissionConfig (alwaysVisible = all non-sensitive stored fields, fieldsByRelation:{}) for any ObjectType that declares @sensitive but ships no permissions/field-permissions.yaml; called at schema-loader.ts:963 after merge. Because getVisibleFields returns undefined (= no redaction) for an unconfigured type (authorization-service.ts:240-243), this is the piece that makes the directive enforceable. Verified against the shipped packs: only domain-packs/nhs-acute ships permissions/field-permissions.yaml, so aml Customer.name/dateOfBirth/taxId (domain-packs/aml/schema/customer.odl:11,17,18), aml Account.accountNumber (account.odl:11) and supply-chain Supplier.contactEmail (supplier.odl:14) are now redacted for every caller. schema-loader.ts:539-547 universallyVisibleSensitive warns when an explicit config re-exposes a sensitive field via alwaysVisible or `viewer`.
 

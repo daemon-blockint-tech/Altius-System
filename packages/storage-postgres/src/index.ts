@@ -110,6 +110,7 @@ export { PostgresUserDirectoryService } from './governance/postgres-user-directo
 export { PostgresDesignSystemService } from './governance/postgres-design-system-service.js';
 export { PostgresLayoutDeviceCaptureService } from './governance/postgres-layout-device-capture-service.js';
 export { PostgresEventObjectService } from './process/postgres-event-object-service.js';
+export { PostgresOntologyChangeHistoryService } from './governance/postgres-ontology-change-history-service.js';
 export { PostgresConflictResolutionService } from './sync/postgres-conflict-resolution-service.js';
 export { PostgresWorkshopUxService } from './governance/postgres-workshop-ux-service.js';
 export { PostgresDatasetService } from './dataset/postgres-dataset-service.js';

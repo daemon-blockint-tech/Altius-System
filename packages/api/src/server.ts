@@ -159,6 +159,7 @@ import {
   PostgresApprovalWorkflowService,
   PostgresDataExpectationsService,
   PostgresEventObjectService,
+  PostgresOntologyChangeHistoryService,
   PostgresConflictResolutionService,
   PostgresHumanInTheLoopService,
   PostgresMultiOntologyGovernanceService,
@@ -1543,6 +1544,7 @@ async function main(): Promise<void> {
       ontologyManagerService: new InMemoryOntologyManagerService(),
       valueFormattingService: new InMemoryValueFormattingService(),
       ontologyChangeHistoryService: new InMemoryOntologyChangeHistoryService(),
+      designSystemService: new InMemoryDesignSystemService(),
       // Workshop UI services.
       commandExchangeService: new InMemoryCommandExchangeService(),
       graphService: new InMemoryGraphService(),
@@ -1736,6 +1738,12 @@ async function main(): Promise<void> {
     // stops new events being flagged. Both quiet. Graduated out of
     // `nonDurableServices`.
     eventObjectService: pgPool ? new PostgresEventObjectService(pgPool) : new InMemoryEventObjectService(),
+    // Ontology change history — Postgres-backed when available. The audit
+    // trail for schema change: who changed it, when, and a snapshot of what it
+    // looked like. Graduated out of `nonDurableServices`. Note `restore` and
+    // `applyChange` still report success without changing any schema, in BOTH
+    // providers — see the store's header.
+    ontologyChangeHistoryService: pgPool ? new PostgresOntologyChangeHistoryService(pgPool) : new InMemoryOntologyChangeHistoryService(),
     // Conflict resolution — Postgres-backed when available. Both halves fail
     // silently when lost: an unresolved conflict that disappears means the
     // datasource and the user edit quietly keep different values, and a lost

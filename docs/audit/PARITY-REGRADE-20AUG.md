@@ -17,6 +17,7 @@ against real Postgres. Reproduce with `node tools/parity/reachability.mjs`.
 | **Measured now (`BusinessRulesService` branch, 71 services)** | **19** | **52** | **0** | this tool |
 | Measured 20 Aug (`ChangeProposalStore`, merged) | 18 | 53 | 0 | this tool |
 | **Measured now (`EventObjectService`, 71 services)** | **19** | **52** | **0** | this tool |
+| **Measured now (`OntologyChangeHistoryService`, 71 services)** | **19** | **52** | **0** | this tool |
 | **Measured now (`SqlQueryService`, 71 services)** | **19** | **52** | **0** | this tool |
 | **Measured now (`ConflictResolutionService`, 71 services)** | **19** | **52** | **0** | this tool |
 
@@ -33,6 +34,7 @@ the count is meant to move slowly and mean something, rather than quickly and no
 `EventObjectService` to 19, by the same route each time: a Postgres store, restart
 survival proven, no new surface claimed. One service per pass is the expected rate — the
 count is meant to move slowly and mean something, rather than quickly and not.
+`OntologyChangeHistoryService` to 19, by the same route each time: a Postgres store,
 `DatasetService` then took it to 17, `ChangeProposalStore` to 18 and `SqlQueryService`
 to 19, by the same route each time: a Postgres store, restart survival proven, no new
 surface claimed. One service per pass is the expected rate — the count is meant to move
@@ -80,6 +82,8 @@ mean "works":
 `DatasetMetadataService` · **`DatasetService`** · `EmbeddingStore` ·
 **`EventObjectService`** ·
 `GeospatialMapService` · `JustificationStore` · `NotificationStore` · `ObjectSetStore` ·
+**`OntologyChangeHistoryService`** · `OntologySqlService` ·
+`OntologyUsageMetricsService` · `ScopedSessionStore` · `TimeSeriesStore`
 `OntologySqlService` · `OntologyUsageMetricsService` · `ScopedSessionStore` ·
 **`SqlQueryService`** · `TimeSeriesStore`
 
@@ -105,7 +109,7 @@ are the honest `partial → full` candidates:
 `HumanInTheLoopService` · `KioskService` · `LayoutDeviceCaptureService` ·
 `ModelCatalogService` · `ModelChainService` · `ModelInferenceService` ·
 `ModelRegistryService` · `ModelingObjectiveService` · `MultiOntologyGovernanceService` ·
-`ObjectSetFilterStore` · `OntologyChangeHistoryService` · `OntologyManagerService` ·
+`ObjectSetFilterStore` · `OntologyManagerService` ·
 `PipelineBuildService` · `PipelineService` · `PlatformAssistantService` ·
 `PlatformResourceService` · `ProcessMiningService` · `SavedViewStore` ·
 `ScenarioService` · `SqlAnalyticsService` · `SyncCdcService` ·
@@ -228,6 +232,57 @@ TIMESTAMPTZ.** The range filters compare lexicographically in the in-memory prov
 differ but whose instants match, and would move the boundaries of a range query — exactly
 the edge cases a timeline scrubber lands on. `durationMs` is still computed numerically
 from parsed dates.
+## This pass — `OntologyChangeHistoryService`
+
+The audit trail for schema change: who changed it, when, under which migration class,
+and a full snapshot of what the ontology looked like at that point.
+
+**Two of its six methods do not do what their names say, in both providers.** `restore`
+reads a record, confirms it exists, and returns `restored: true` — no schema is rolled
+back and no object type is touched. `applyChange` validates the record, bumps that
+record's own `version` by one, restamps `appliedAt`, and returns `applied: true` — the
+ontology is untouched. Both are reproduced exactly rather than repaired, per the rule
+that a contract changes in both providers or neither.
+
+Which makes the honest summary of this pass: **persisting these makes the claim durable,
+not the effect.** A stored record saying a change was applied at a given time is evidence
+that the method ran, and nothing more. That is worth saying loudly, because a persisted
+audit trail is more convincing than a transient one, and this one is attesting to work
+that did not happen. Conformance pins both as they stand and says so in the case names —
+including the clearest evidence of all, that `restore` succeeds for an object type the
+snapshot never mentioned.
+
+**One behaviour deliberately narrowed, in both providers, and it could not be deferred.**
+`saveChange` accepts either a new draft or a full record, and the record form carries a
+`tenantId`. The in-memory service wrote it through, insulated only by keying its map on
+`ctx.tenantId` — which left the field free to lie but harmless. In a table the tenant is
+a *column*, so honouring it would be a genuine cross-tenant write. Matching the old
+behaviour verbatim was therefore not an option: it meant either shipping that hole or
+shipping a divergence. `tenantId` now comes from the request in both providers, and a
+conformance case checks a record naming another tenant lands under the caller's. No
+route can reach this today — the REST create path builds an input with no tenant field,
+and the update path re-reads the record under `ctx` first — so this closes a latent
+hazard in the SPI rather than a live one.
+
+The Postgres table keys on `(tenant_id, id)` rather than `id`, unlike its neighbours in
+the `governance` schema. Theirs hold UUIDs this code generates, so a global key is safe;
+here `saveChange` accepts a caller-supplied id, and the in-memory service's per-tenant
+map makes two tenants each holding a record called `v1` perfectly legal. A global key
+would reject a write the other provider accepts.
+
+Ordering needed care for a reason specific to this service: `listChanges` sorts by
+version descending, and *every* record is created at version 1, so ties are the norm
+rather than the edge case. The in-memory sort is stable, which means ties come back
+oldest-first — `ORDER BY "version" DESC, "seq"` is how Postgres says the same thing.
+Dropping that tie-break fails two cases.
+
+Five injections, five caught — though the fourth only after being rewritten. The first
+attempt at breaking the `objectType` snapshot guard replaced it with something that
+happened to answer the same way for both inputs the case tests, so it passed and proved
+nothing. Removing the guard outright is the regression it actually protects against, and
+that fails with `Cannot read properties of undefined (reading 'some')`. Recorded because
+a passing injection is not evidence of a vacuous test — it can equally be evidence of a
+badly chosen injection, and the two need telling apart before either is believed.
 ## This pass — `SqlQueryService`
 
 The one a lead prod-testing the headless API actually reaches for: send SQL, get rows
@@ -398,6 +453,8 @@ this repo** — no `createCipheriv`, no KMS client, no `pgcrypto` in the DDL (ch
 assumed). Converting either as-is would move secrets from a `Map` that dies with the
 process into a table that does not, which is a security decision and not one to take as a
 side effect of a durability pass.
+routes before persistence is worth anything), then `VariableTransformService` and
+`TransformExpressionService`.
 routes before persistence is worth anything), then `DatasourceService` and
 `VariableTransformService`, which are what remains of the dataset/pipeline data plane
 once the open PRs land.
@@ -414,6 +471,11 @@ not assumed). Converting either as-is would move secrets from a `Map` that dies 
 process into a table that does not, which is a security decision and not one to take as
 a side effect of a durability pass.
 
+**One deliberately skipped for a different reason.** `BuildTriggerService` duplicates
+what `PipelineBuildService` already does with action triggers, and its `trigger()`
+fabricates a `succeeded` build into a `builds` map that **no method on the interface ever
+reads**. Persisting write-only state that shadows another service is not worth a table;
+the two should be reconciled first.
 **Two more are skipped for reasons that are not about secrets.** `BuildTriggerService`
 duplicates what `PipelineBuildService` already does with action triggers, and its
 `trigger()` fabricates a `succeeded` build into a `builds` map that **no method on the
