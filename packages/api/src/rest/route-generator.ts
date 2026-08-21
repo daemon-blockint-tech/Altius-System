@@ -2811,7 +2811,7 @@ function generateFunctionLifecycleRoutes(deps: ApiDependencies): RestRoute[] {
           return { status: 503, body: { error: { code: 'NOT_CONFIGURED', message: 'Function registry is not configured' } } };
         }
         const body = req.body as Record<string, unknown>;
-        const rev = deps.functionRegistry.createDraft({
+        const rev = await deps.functionRegistry.createDraft({
           functionName: body['functionName'] as string,
           runtime: body['runtime'] as string,
           entry: body['entry'] as string,
@@ -2837,7 +2837,7 @@ function generateFunctionLifecycleRoutes(deps: ApiDependencies): RestRoute[] {
         if (!deps.functionRegistry) {
           return { status: 503, body: { error: { code: 'NOT_CONFIGURED', message: 'Function registry is not configured' } } };
         }
-        const rev = deps.functionRegistry.getRevision(req.params['id']!);
+        const rev = await deps.functionRegistry.getRevision(ctx.requestContext.tenantId, req.params['id']!);
         if (!rev) return { status: 404, body: { error: { code: 'NOT_FOUND', message: 'Revision not found' } } };
         return { status: 200, body: { data: functionRevisionToRest(rev) } };
       } catch (err) {
@@ -2859,7 +2859,7 @@ function generateFunctionLifecycleRoutes(deps: ApiDependencies): RestRoute[] {
         if (!functionName) {
           return { status: 400, body: { error: { code: 'BAD_REQUEST', message: 'functionName query parameter is required' } } };
         }
-        const revs = deps.functionRegistry.listRevisions(functionName);
+        const revs = await deps.functionRegistry.listRevisions(ctx.requestContext.tenantId, functionName);
         return { status: 200, body: { data: revs.map(functionRevisionToRest) } };
       } catch (err) {
         return wrapErrorToRest(err, ctx.requestContext.traceId);
@@ -2876,7 +2876,7 @@ function generateFunctionLifecycleRoutes(deps: ApiDependencies): RestRoute[] {
         if (!deps.functionRegistry) {
           return { status: 503, body: { error: { code: 'NOT_CONFIGURED', message: 'Function registry is not configured' } } };
         }
-        const rev = deps.functionRegistry.publish(req.params['id']!);
+        const rev = await deps.functionRegistry.publish(ctx.requestContext.tenantId, req.params['id']!);
         return { status: 200, body: { data: functionRevisionToRest(rev) } };
       } catch (err) {
         return wrapErrorToRest(err, ctx.requestContext.traceId);
@@ -2893,11 +2893,11 @@ function generateFunctionLifecycleRoutes(deps: ApiDependencies): RestRoute[] {
         if (!deps.functionRegistry || !deps.functionExecutor) {
           return { status: 503, body: { error: { code: 'NOT_CONFIGURED', message: 'Function registry or executor is not configured' } } };
         }
-        const rev = deps.functionRegistry.getRevision(req.params['id']!);
+        const rev = await deps.functionRegistry.getRevision(ctx.requestContext.tenantId, req.params['id']!);
         if (!rev) return { status: 404, body: { error: { code: 'NOT_FOUND', message: 'Revision not found' } } };
         const fnType = deps.schema.functionTypes.find((f) => f.name === rev.functionName);
         if (!fnType) return { status: 404, body: { error: { code: 'NOT_FOUND', message: `FunctionType ${rev.functionName} not found` } } };
-        const result = await deps.functionRegistry.runTests(req.params['id']!, async (input) => {
+        const result = await deps.functionRegistry.runTests(ctx.requestContext.tenantId, req.params['id']!, async (input) => {
           const execResult = await deps.functionExecutor!.execute(
             rev.functionName,
             input,
@@ -2921,7 +2921,8 @@ function generateFunctionLifecycleRoutes(deps: ApiDependencies): RestRoute[] {
           return { status: 503, body: { error: { code: 'NOT_CONFIGURED', message: 'Function registry is not configured' } } };
         }
         const body = req.body as Record<string, unknown>;
-        const rev = deps.functionRegistry.rollback(
+        const rev = await deps.functionRegistry.rollback(
+          ctx.requestContext.tenantId,
           body['functionName'] as string,
           body['toRevisionId'] as string,
         );

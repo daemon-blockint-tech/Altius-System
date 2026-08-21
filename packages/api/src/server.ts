@@ -145,6 +145,7 @@ import {
   PostgresBranchStore,
   PostgresCommentStore,
   PostgresNotificationStore,
+  PostgresFunctionRevisionStore,
   PostgresAlertingService,
   PostgresBusinessRulesService,
   PostgresKioskService,
@@ -191,6 +192,7 @@ import {
   ObjectSetManager,
   FunctionExecutor,
   FunctionRegistry,
+  InMemoryFunctionRevisionStore,
   FunctionPipeline,
   GitFunctionSource,
   WebhookPipelineTrigger,
@@ -853,7 +855,14 @@ async function main(): Promise<void> {
   // Manages draft/publish/test/rollback revisions for user-authored functions.
   // The REST lifecycle routes at /api/v1/functions-lifecycle/* and the GraphQL
   // lifecycle mutations delegate to this registry.
-  const functionRegistry = new FunctionRegistry();
+  // Durable function-revision persistence when Postgres is configured, so draft/
+  // published revisions survive restart and are shared across replicas (the
+  // registry was previously always in-memory — ungated, lost on every restart).
+  const functionRegistry = new FunctionRegistry(
+    storage instanceof PostgresStorageProvider
+      ? new PostgresFunctionRevisionStore(storage.pool)
+      : new InMemoryFunctionRevisionStore(),
+  );
 
   // â”€â”€ Function Pipeline + Webhook Trigger â”€â”€
   // The pipeline orchestrates sourceâ†’draftâ†’testâ†’publish. The webhook trigger

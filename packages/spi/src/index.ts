@@ -419,6 +419,15 @@ export type { SqlQueryResult } from './sql-query-engine.js';
 export { evaluateOntologySql, detectSqlObjectTypes, runOntologySql } from './ontology-sql-engine.js';
 export type { OntologySqlRow, OntologySqlEvalResult } from './ontology-sql-engine.js';
 
+// Function authoring lifecycle — durable revision persistence (FunctionRegistry
+// in @altius/engine holds the transition logic over this store).
+export type {
+  FunctionRevision,
+  FunctionRevisionStatus,
+  CreateFunctionRevisionInput,
+  FunctionRevisionStore,
+} from './function-revisions.js';
+
 // HumanInTheLoopService is a rename of ChangeProposalStore, not a store of its
 // own. Sharing one adapter is what lets the API hand the HITL surface and the
 // change-proposal surface the same store, so an approval recorded through one

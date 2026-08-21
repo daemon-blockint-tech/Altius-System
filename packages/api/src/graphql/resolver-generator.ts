@@ -2866,7 +2866,7 @@ function generateFunctionLifecycleResolvers(
   ) => {
     try {
       if (!deps.functionRegistry) return null;
-      const rev = deps.functionRegistry.getRevision(args.id);
+      const rev = await deps.functionRegistry.getRevision(ctx.requestContext.tenantId, args.id);
       return rev ? functionRevisionToGraphQL(rev) : null;
     } catch (err) {
       throw wrapError(err, ctx.requestContext.traceId);
@@ -2881,7 +2881,7 @@ function generateFunctionLifecycleResolvers(
   ) => {
     try {
       if (!deps.functionRegistry) return [];
-      return deps.functionRegistry.listRevisions(args.functionName).map(functionRevisionToGraphQL);
+      return (await deps.functionRegistry.listRevisions(ctx.requestContext.tenantId, args.functionName)).map(functionRevisionToGraphQL);
     } catch (err) {
       throw wrapError(err, ctx.requestContext.traceId);
     }
@@ -2903,7 +2903,7 @@ function generateFunctionLifecycleResolvers(
           traceId: ctx.requestContext.traceId,
         });
       }
-      const rev = deps.functionRegistry.createDraft({
+      const rev = await deps.functionRegistry.createDraft({
         functionName: args.input['functionName'] as string,
         runtime: args.input['runtime'] as string,
         entry: args.input['entry'] as string,
@@ -2935,7 +2935,7 @@ function generateFunctionLifecycleResolvers(
           traceId: ctx.requestContext.traceId,
         });
       }
-      const rev = deps.functionRegistry.publish(args.id);
+      const rev = await deps.functionRegistry.publish(ctx.requestContext.tenantId, args.id);
       return functionRevisionToGraphQL(rev);
     } catch (err) {
       throw wrapError(err, ctx.requestContext.traceId);
@@ -2958,7 +2958,7 @@ function generateFunctionLifecycleResolvers(
           traceId: ctx.requestContext.traceId,
         });
       }
-      const rev = deps.functionRegistry.getRevision(args.id);
+      const rev = await deps.functionRegistry.getRevision(ctx.requestContext.tenantId, args.id);
       if (!rev) {
         throw createAltiusError({
           code: 'NOT_FOUND',
@@ -2978,7 +2978,7 @@ function generateFunctionLifecycleResolvers(
           traceId: ctx.requestContext.traceId,
         });
       }
-      const result = await deps.functionRegistry.runTests(args.id, async (input) => {
+      const result = await deps.functionRegistry.runTests(ctx.requestContext.tenantId, args.id, async (input) => {
         const execResult = await deps.functionExecutor!.execute(
           rev.functionName,
           input,
@@ -3007,7 +3007,7 @@ function generateFunctionLifecycleResolvers(
           traceId: ctx.requestContext.traceId,
         });
       }
-      const rev = deps.functionRegistry.rollback(args.functionName, args.toRevisionId);
+      const rev = await deps.functionRegistry.rollback(ctx.requestContext.tenantId, args.functionName, args.toRevisionId);
       return functionRevisionToGraphQL(rev);
     } catch (err) {
       throw wrapError(err, ctx.requestContext.traceId);

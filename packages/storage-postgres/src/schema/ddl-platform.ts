@@ -133,6 +133,28 @@ export function generatePlatformDDL(): string[] {
   PRIMARY KEY ("tenant_id", "user_id")
 );`);
 
+  // ── Function authoring lifecycle (draft → published → deprecated revisions) ──
+  statements.push(`CREATE SCHEMA IF NOT EXISTS "function_lifecycle";`);
+  statements.push(`CREATE TABLE IF NOT EXISTS "function_lifecycle"."revisions" (
+  "id" TEXT NOT NULL,
+  "tenant_id" TEXT NOT NULL,
+  "function_name" TEXT NOT NULL,
+  "revision" INTEGER NOT NULL,
+  "status" TEXT NOT NULL,
+  "runtime" TEXT NOT NULL,
+  "entry" TEXT NOT NULL,
+  "source" TEXT,
+  "test_inputs" JSONB,
+  "expected_outputs" JSONB,
+  "created_by" TEXT NOT NULL,
+  "created_at" TEXT NOT NULL,
+  "published_at" TEXT,
+  PRIMARY KEY ("tenant_id", "id")
+);`);
+  statements.push(
+    `CREATE INDEX IF NOT EXISTS "idx_fn_rev_tenant_fn" ON "function_lifecycle"."revisions" ("tenant_id", "function_name", "revision");`,
+  );
+
   // ── Alerting service (threshold rules + alerts) ──
   statements.push(`CREATE SCHEMA IF NOT EXISTS "alerting";`);
   statements.push(`CREATE TABLE IF NOT EXISTS "alerting"."rules" (

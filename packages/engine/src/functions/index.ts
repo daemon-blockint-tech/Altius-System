@@ -19,6 +19,8 @@ export {
 
 export {
   FunctionRegistry,
+  InMemoryFunctionRevisionStore,
+  type FunctionRevisionStore,
   type FunctionRevision,
   type FunctionRevisionStatus,
   type CreateFunctionRevisionInput,

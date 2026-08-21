@@ -132,7 +132,7 @@ describe('FunctionPipeline', () => {
     expect(result.success).toBe(true);
     expect(result.stage).toBe('done');
     // Revision should still be a draft (not published)
-    const rev = registry.getRevision(result.revisionId!);
+    const rev = await registry.getRevision('pipeline', result.revisionId!);
     expect(rev?.status).toBe('draft');
   });
 

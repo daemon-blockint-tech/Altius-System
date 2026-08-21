@@ -1,58 +1,23 @@
 /**
  * FunctionRegistry — manages the lifecycle of user-authored functions.
  *
- * A FunctionRevision is a versioned snapshot of a function's code. The
- * registry tracks:
- *   - Draft → Published status transitions
- *   - Test execution (run against test inputs without deploying)
- *   - Version history (each publish creates a new revision)
- *
- * This sits above the FunctionExecutor, which handles the actual code
- * execution. The registry manages WHICH code runs, not HOW.
+ * A FunctionRevision is a versioned snapshot of a function's code. The registry
+ * owns the transition logic (draft → published → deprecated, revision numbering,
+ * rollback, test execution); persistence is delegated to a FunctionRevisionStore
+ * (durable when Postgres-backed) so revisions survive restart and are shared
+ * across replicas. It sits above the FunctionExecutor, which runs the code —
+ * the registry manages WHICH code is live, not HOW it runs.
  */
 import { randomUUID } from 'node:crypto';
+import type {
+  FunctionRevision,
+  FunctionRevisionStatus,
+  CreateFunctionRevisionInput,
+  FunctionRevisionStore,
+} from '@altius/spi';
 
-/** Status of a function revision. */
-export type FunctionRevisionStatus = 'draft' | 'published' | 'deprecated';
-
-/** A versioned snapshot of a function's code. */
-export interface FunctionRevision {
-  id: string;
-  /** Function name (matches the ODL FunctionType name). */
-  functionName: string;
-  /** Revision number (1-based, increments on each publish). */
-  revision: number;
-  /** Status of this revision. */
-  status: FunctionRevisionStatus;
-  /** Runtime name (e.g. 'node', 'node-isolated', 'cel'). */
-  runtime: string;
-  /** Entry path relative to the pack directory. */
-  entry: string;
-  /** Source code (for node runtimes, the JS/TS source). */
-  source?: string;
-  /** Test inputs for validation. */
-  testInputs?: Record<string, unknown>[];
-  /** Expected test outputs (for regression checks). */
-  expectedOutputs?: unknown[];
-  /** Tenant this function belongs to. */
-  tenantId: string;
-  /** User who created this revision. */
-  createdBy: string;
-  createdAt: string;
-  publishedAt?: string;
-}
-
-/** Input for creating a new function revision. */
-export interface CreateFunctionRevisionInput {
-  functionName: string;
-  runtime: string;
-  entry: string;
-  source?: string;
-  testInputs?: Record<string, unknown>[];
-  expectedOutputs?: unknown[];
-  tenantId: string;
-  createdBy: string;
-}
+// Re-exported for back-compat: consumers imported these from @altius/engine.
+export type { FunctionRevision, FunctionRevisionStatus, CreateFunctionRevisionInput, FunctionRevisionStore };
 
 /** Result of a test run. */
 export interface TestRunResult {
@@ -68,23 +33,57 @@ export interface TestRunResult {
 }
 
 /**
- * In-memory function registry. A production implementation would use
- * a database-backed store.
+ * In-memory FunctionRevisionStore. Tenant-scoped, the default when no durable
+ * store is wired. Kept here (not in storage-memory) so the engine has a working
+ * default without a storage dependency.
  */
-export class FunctionRegistry {
+export class InMemoryFunctionRevisionStore implements FunctionRevisionStore {
+  // key: `${tenantId}:${id}`
   private readonly revisions = new Map<string, FunctionRevision>();
-  private readonly byFunction = new Map<string, FunctionRevision[]>();
-  private readonly activeRevision = new Map<string, string>(); // functionName → revisionId
 
-  /**
-   * Create a new draft revision of a function.
-   */
-  createDraft(input: CreateFunctionRevisionInput): FunctionRevision {
-    const id = randomUUID();
-    const existing = this.byFunction.get(input.functionName) ?? [];
-    const revision = existing.length > 0 ? Math.max(...existing.map((r) => r.revision)) + 1 : 1;
+  private key(tenantId: string, id: string): string {
+    return `${tenantId}:${id}`;
+  }
+
+  async create(revision: FunctionRevision): Promise<void> {
+    this.revisions.set(this.key(revision.tenantId, revision.id), { ...revision });
+  }
+
+  async get(tenantId: string, id: string): Promise<FunctionRevision | null> {
+    const r = this.revisions.get(this.key(tenantId, id));
+    return r ? { ...r } : null;
+  }
+
+  async listByFunction(tenantId: string, functionName: string): Promise<FunctionRevision[]> {
+    return Array.from(this.revisions.values())
+      .filter(r => r.tenantId === tenantId && r.functionName === functionName)
+      .sort((a, b) => a.revision - b.revision)
+      .map(r => ({ ...r }));
+  }
+
+  async getActive(tenantId: string, functionName: string): Promise<FunctionRevision | null> {
+    const published = (await this.listByFunction(tenantId, functionName)).filter(r => r.status === 'published');
+    return published.length > 0 ? published[published.length - 1]! : null;
+  }
+
+  async update(revision: FunctionRevision): Promise<void> {
+    this.revisions.set(this.key(revision.tenantId, revision.id), { ...revision });
+  }
+}
+
+export class FunctionRegistry {
+  private readonly store: FunctionRevisionStore;
+
+  constructor(store: FunctionRevisionStore = new InMemoryFunctionRevisionStore()) {
+    this.store = store;
+  }
+
+  /** Create a new draft revision of a function. */
+  async createDraft(input: CreateFunctionRevisionInput): Promise<FunctionRevision> {
+    const existing = await this.store.listByFunction(input.tenantId, input.functionName);
+    const revision = existing.length > 0 ? Math.max(...existing.map(r => r.revision)) + 1 : 1;
     const draft: FunctionRevision = {
-      id,
+      id: randomUUID(),
       functionName: input.functionName,
       revision,
       status: 'draft',
@@ -97,79 +96,52 @@ export class FunctionRegistry {
       createdBy: input.createdBy,
       createdAt: new Date().toISOString(),
     };
-    this.revisions.set(id, draft);
-    this.byFunction.set(input.functionName, [...existing, draft]);
+    await this.store.create(draft);
     return { ...draft };
   }
 
-  /**
-   * Get a specific revision.
-   */
-  getRevision(id: string): FunctionRevision | null {
-    const r = this.revisions.get(id);
-    return r ? { ...r } : null;
+  /** Get a specific revision. */
+  async getRevision(tenantId: string, id: string): Promise<FunctionRevision | null> {
+    return this.store.get(tenantId, id);
+  }
+
+  /** List all revisions of a function. */
+  async listRevisions(tenantId: string, functionName: string): Promise<FunctionRevision[]> {
+    return this.store.listByFunction(tenantId, functionName);
+  }
+
+  /** Get the currently active (published) revision of a function. */
+  async getActiveRevision(tenantId: string, functionName: string): Promise<FunctionRevision | null> {
+    return this.store.getActive(tenantId, functionName);
   }
 
   /**
-   * List all revisions of a function.
+   * Publish a draft revision, making it the active version. Any previously
+   * published revision is marked deprecated.
    */
-  listRevisions(functionName: string): FunctionRevision[] {
-    return (this.byFunction.get(functionName) ?? []).map((r) => ({ ...r }));
-  }
-
-  /**
-   * Get the currently active (published) revision of a function.
-   */
-  getActiveRevision(functionName: string): FunctionRevision | null {
-    const id = this.activeRevision.get(functionName);
-    if (!id) return null;
-    return this.getRevision(id);
-  }
-
-  /**
-   * Publish a draft revision, making it the active version.
-   * Any previously published revision is marked deprecated.
-   */
-  publish(revisionId: string): FunctionRevision {
-    const draft = this.revisions.get(revisionId);
+  async publish(tenantId: string, revisionId: string): Promise<FunctionRevision> {
+    const draft = await this.store.get(tenantId, revisionId);
     if (!draft) throw new Error(`Revision ${revisionId} not found`);
     if (draft.status !== 'draft') throw new Error(`Revision ${revisionId} is not a draft (status: ${draft.status})`);
 
-    // Deprecate the previous active revision
-    const prevActiveId = this.activeRevision.get(draft.functionName);
-    if (prevActiveId) {
-      const prev = this.revisions.get(prevActiveId);
-      if (prev) {
-        prev.status = 'deprecated';
-        this.revisions.set(prevActiveId, prev);
-      }
+    const prev = await this.store.getActive(tenantId, draft.functionName);
+    if (prev && prev.id !== revisionId) {
+      await this.store.update({ ...prev, status: 'deprecated' });
     }
 
-    draft.status = 'published';
-    draft.publishedAt = new Date().toISOString();
-    this.revisions.set(revisionId, draft);
-    this.activeRevision.set(draft.functionName, revisionId);
-
-    // Update in the byFunction index
-    const all = this.byFunction.get(draft.functionName) ?? [];
-    const idx = all.findIndex((r) => r.id === revisionId);
-    if (idx >= 0) all[idx] = { ...draft };
-    this.byFunction.set(draft.functionName, all);
-
-    return { ...draft };
+    const published: FunctionRevision = { ...draft, status: 'published', publishedAt: new Date().toISOString() };
+    await this.store.update(published);
+    return { ...published };
   }
 
-  /**
-   * Roll back to a previous revision by publishing it again as a new revision.
-   */
-  rollback(functionName: string, toRevisionId: string): FunctionRevision {
-    const target = this.revisions.get(toRevisionId);
+  /** Roll back to a previous revision by publishing it again as a new revision. */
+  async rollback(tenantId: string, functionName: string, toRevisionId: string): Promise<FunctionRevision> {
+    const target = await this.store.get(tenantId, toRevisionId);
     if (!target) throw new Error(`Revision ${toRevisionId} not found`);
     if (target.functionName !== functionName) {
       throw new Error(`Revision ${toRevisionId} does not belong to ${functionName}`);
     }
-    // Create a new draft from the target, then publish it
-    const draft = this.createDraft({
+    const draft = await this.createDraft({
       functionName: target.functionName,
       runtime: target.runtime,
       entry: target.entry,
@@ -179,19 +151,19 @@ export class FunctionRegistry {
       tenantId: target.tenantId,
       createdBy: target.createdBy,
     });
-    return this.publish(draft.id);
+    return this.publish(tenantId, draft.id);
   }
 
   /**
-   * Run test inputs against a revision and compare with expected outputs.
-   * The executor is provided by the caller — the registry does not own
-   * code execution.
+   * Run test inputs against a revision and compare with expected outputs. The
+   * executor is provided by the caller — the registry does not own execution.
    */
   async runTests(
+    tenantId: string,
     revisionId: string,
     executor: (input: Record<string, unknown>) => Promise<unknown>,
   ): Promise<TestRunResult> {
-    const revision = this.revisions.get(revisionId);
+    const revision = await this.store.get(tenantId, revisionId);
     if (!revision) throw new Error(`Revision ${revisionId} not found`);
     if (!revision.testInputs || revision.testInputs.length === 0) {
       return { passed: true, results: [] };
@@ -199,7 +171,6 @@ export class FunctionRegistry {
 
     const results: TestRunResult['results'] = [];
     let allPassed = true;
-
     for (let i = 0; i < revision.testInputs.length; i++) {
       const input = revision.testInputs[i]!;
       const expected = revision.expectedOutputs?.[i];
@@ -212,17 +183,9 @@ export class FunctionRegistry {
         results.push({ input, output, expected, durationMs, passed });
       } catch (err) {
         allPassed = false;
-        results.push({
-          input,
-          output: null,
-          expected,
-          durationMs: Date.now() - start,
-          passed: false,
-          error: err instanceof Error ? err.message : String(err),
-        });
+        results.push({ input, output: null, expected, durationMs: Date.now() - start, passed: false, error: err instanceof Error ? err.message : String(err) });
       }
     }
-
     return { passed: allPassed, results };
   }
 }
