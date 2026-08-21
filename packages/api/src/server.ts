@@ -113,6 +113,7 @@ import {
   InMemoryPlatformAssistantService,
   InMemoryEmbeddedCopilotService,
   InMemorySqlQueryService,
+  InMemoryBatchTransformService,
   InMemoryVariableTransformService,
   InMemoryRulesEngineService,
   InMemoryPipelineService,
@@ -158,23 +159,21 @@ import {
   PostgresObjectSetFilterStore,
   PostgresApprovalWorkflowService,
   PostgresDataExpectationsService,
-  PostgresHumanInTheLoopService,
+  PostgresOntologyChangeHistoryService,
+  PostgresConflictResolutionService,
   PostgresHumanInTheLoopService,
   PostgresMultiOntologyGovernanceService,
-  PostgresObjectSetFilterStore, PostgresApprovalWorkflowService, PostgresDataExpectationsService,
-  PostgresDesignSystemService,
-  PostgresModelRegistryService, PostgresModelInferenceService,
-  PostgresModelChainService, PostgresConnectorCatalogService, PostgresCommandService,
-  PostgresDatasetService,
-  PostgresSqlQueryService,
-  PostgresUserDirectoryService,
+  PostgresEventObjectService,
   PostgresDesignSystemService,
   PostgresModelRegistryService,
   PostgresModelInferenceService,
   PostgresModelChainService,
   PostgresConnectorCatalogService,
   PostgresCommandService,
-  PostgresBatchTransformService,
+  PostgresDatasetService,
+  PostgresSqlQueryService,
+  PostgresVariableTransformService,
+  PostgresUserDirectoryService,
   PostgresLayoutDeviceCaptureService,
   PostgresWorkshopUxService,
 } from '@altius/storage-postgres';
@@ -260,6 +259,9 @@ import {
   generateSyncStatusRoutes,
 } from './rest/sync-status-routes.js';
 import {
+  generateDataConnectionStatusRoutes,
+} from './rest/data-connection-status-routes.js';
+import {
   registerAttachmentRoutes,
 } from './rest/attachment-routes.js';
 import {
@@ -329,40 +331,6 @@ import {
   SubscriptionManager,
   SubscriptionRegistry,
 } from './subscriptions/index.js';
-import { createGraphQLServer, buildResolverContext } from './graphql/index.js';
-import { guardWsOperation } from './graphql/ws-gate.js';
-import { generateRestRoutes, generateOpenApiSpec, auditRead } from './rest/index.js';
-import { writeReadAuditFor } from './rest/audit-read.js';
-import { isTypeVisible, missingMarkings } from './markings/enforce.js';
-import { invokeFunction } from './functions/invoke-function.js';
-import { generateAuditRoutes } from './rest/audit-routes.js';
-import { generateLlmRoutes, generateWorkflowRoutes } from './rest/index.js';
-import { generateTraverseRoutes } from './rest/traverse-route.js';
-import { recordRestUsage } from './rest/usage-recording.js';
-import { generateSyncStatusRoutes } from './rest/sync-status-routes.js';
-import { generateDataConnectionStatusRoutes } from './rest/data-connection-status-routes.js';
-import { registerAttachmentRoutes } from './rest/attachment-routes.js';
-import { registerTimeSeriesRoutes } from './rest/timeseries-routes.js';
-import { registerBranchRoutes } from './rest/branch-routes.js';
-import { registerCommentRoutes } from './rest/comment-routes.js';
-import { registerNotificationRoutes } from './rest/notification-routes.js';
-import { registerEmbeddingRoutes } from './rest/embedding-routes.js';
-import { registerAlertingRoutes } from './rest/alerting-routes.js';
-import { registerGeospatialRoutes } from './rest/geospatial-routes.js';
-import { registerScenarioRoutes } from './rest/scenario-routes.js';
-import { registerWorkshopRoutes } from './rest/workshop-routes.js';
-import { registerLLMGatewayRoutes } from './rest/llm-gateway-routes.js';
-import { registerAppEmbeddingRoutes } from './rest/app-embedding-routes.js';
-import { registerPlatformResourceRoutes } from './rest/platform-resource-routes.js';
-import { registerAbsentServiceRoutes } from './rest/absent-services-routes.js';
-import { registerSavedViewRoutes } from './rest/saved-view-routes.js';
-import { registerUserDirectoryRoutes } from './rest/user-directory-routes.js';
-import { readPlatformVersion } from './version.js';
-import { createFhirRouter } from './fhir/index.js';
-import { createCdmRouter } from './cdm/index.js';
-import { generateRelationshipRoutes, buildGrantAllowlist } from './relationships/router.js';
-import { generateConsentRoutes, assertConsentConfig } from './consent/router.js';
-import { InMemorySubscribableEventBus, SubscriptionManager, SubscriptionRegistry } from './subscriptions/index.js';
 import type { SubscribableEventBus } from './subscriptions/index.js';
 import {
   RedpandaEventBus,
@@ -1533,6 +1501,7 @@ async function main(): Promise<void> {
       ontologyManagerService: new InMemoryOntologyManagerService(),
       valueFormattingService: new InMemoryValueFormattingService(),
       ontologyChangeHistoryService: new InMemoryOntologyChangeHistoryService(),
+      designSystemService: new InMemoryDesignSystemService(),
       // Workshop UI services.
       commandExchangeService: new InMemoryCommandExchangeService(),
       graphService: new InMemoryGraphService(),
@@ -1540,6 +1509,7 @@ async function main(): Promise<void> {
       // REST surface when the non-durable gate is open.
       agentEvaluationService: new InMemoryAgentEvaluationService(),
       conflictResolutionService: new InMemoryConflictResolutionService(),
+      agentThreadStore: new InMemoryAgentThreadStore(),
       connectorCatalogService: new InMemoryConnectorCatalogService(),
       dataExpectationsService: new InMemoryDataExpectationsService(),
       // One copilot store, two surfaces. `embeddedCopilotService` configures
@@ -1556,6 +1526,7 @@ async function main(): Promise<void> {
       processMiningService: new InMemoryProcessMiningService(),
       // Pipeline Data Ops â€” Pipeline & Data Ops.
       sqlQueryService: new InMemorySqlQueryService(datasets),
+      batchTransformService: new InMemoryBatchTransformService(datasets),
       variableTransformService: new InMemoryVariableTransformService(),
       rulesEngineService: new InMemoryRulesEngineService(),
       pipelineService: new InMemoryPipelineService(),
@@ -1588,8 +1559,6 @@ async function main(): Promise<void> {
   }
 
   // One change-proposal store, two surfaces. `changeProposalStore` and
-  // `humanInTheLoopService` are the same records under two names —
-  // /api/v1/change-proposals and /api/v1/ai-proposals — so they are handed the
   // `humanInTheLoopService` are the same records under two names â€”
   // /api/v1/change-proposals and /api/v1/ai-proposals â€” so they are handed the
   // same instance. They used not to be: the human-in-the-loop service built its
@@ -1688,36 +1657,44 @@ async function main(): Promise<void> {
     // every Postgres deployment. The in-memory fallback shares the `datasets`
     // instance above for the same reason.
     datasetMetadataService: pgPool ? new PostgresDatasetMetadataService(pgPool) : new InMemoryDatasetMetadataService(datasets),
+    // Interactive SQL over datasets — Postgres-backed when available. The job
+    // record is what becomes durable: which query ran, who ran it, and what it
+    // returned, so `results` still answers after the process that ran it is
+    // gone. Execution itself is shared code in @altius/spi, and the rows it
+    // reads have been durable since datasets were. This graduated out of
+    // `nonDurableServices`, where the gate withheld it under Postgres.
+    sqlQueryService: pgPool ? new PostgresSqlQueryService(pgPool) : new InMemorySqlQueryService(datasets),
+    // Change proposals — Postgres-backed when available. This is the audit
     // Change proposals â€” Postgres-backed when available. This is the audit
     // trail for AI-driven changes: who approved what, and when. It graduated
     // out of `nonDurableServices`, where the gate withheld it under Postgres
     // rather than accept approvals it would lose on restart.
-    // Batch transforms — Postgres-backed when available, so transforms, build
-    // history and schedules survive a restart. A schedule that silently stops
-    // firing looks like nothing happening rather than like a failure.
-    // The executor registry stays per-process in both providers: a
-    // TransformExecutor is a live object, not something a table can hold.
-    batchTransformService: pgPool ? new PostgresBatchTransformService(pgPool, new PostgresDatasetService(pgPool)) : new InMemoryBatchTransformService(datasets),
-    // Business rules — Postgres-backed when available. `state` is what decides
-    // whether a rule governs anything, so losing it silently reverts a rule to
-    // draft: nothing looks broken, the rule just stops applying.
-    businessRulesService: pgPool ? new PostgresBusinessRulesService(pgPool) : new InMemoryBusinessRulesService(),
     changeProposalStore: changeProposals,
     // Human-in-the-loop — the same proposals, reached through the AI-facing
     // routes. It holds no state of its own: the five methods are a rename of
     // the store's, so the adapter lives once in @altius/spi and the store above
     // decides both durability and *which* record is being approved.
     humanInTheLoopService: pgPool ? new PostgresHumanInTheLoopService(pgPool) : new InMemoryHumanInTheLoopService(changeProposals),
-    // Usage metrics — Postgres-backed when available. The record() method is
-    changeProposalStore: pgPool ? new PostgresChangeProposalStore(pgPool) : new InMemoryChangeProposalStore(),
-    // SQL query — Postgres-backed when available.
-    sqlQueryService: pgPool ? new PostgresSqlQueryService(pgPool) : new InMemorySqlQueryService(datasets),
+    // Variable transforms — Postgres-backed when available.
+    variableTransformService: pgPool ? new PostgresVariableTransformService(pgPool) : new InMemoryVariableTransformService(),
     // Multi-ontology governance — Postgres-backed when available.
     multiOntologyGovernanceService: pgPool ? new PostgresMultiOntologyGovernanceService(pgPool) : new InMemoryMultiOntologyGovernanceService(),
+    // Ontology change history — Postgres-backed when available.
+    ontologyChangeHistoryService: pgPool ? new PostgresOntologyChangeHistoryService(pgPool) : new InMemoryOntologyChangeHistoryService(),
+    // Event objects — Postgres-backed when available.
+    eventObjectService: pgPool ? new PostgresEventObjectService(pgPool) : new InMemoryEventObjectService(),
     // Business rules â€” Postgres-backed when available. `state` is what decides
     // whether a rule governs anything, so losing it silently reverts a rule to
     // draft: nothing looks broken, the rule just stops applying.
     businessRulesService: pgPool ? new PostgresBusinessRulesService(pgPool) : new InMemoryBusinessRulesService(),
+    // Conflict resolution — Postgres-backed when available. Both halves fail
+    // silently when lost: an unresolved conflict that disappears means the
+    // datasource and the user edit quietly keep different values, and a lost
+    // default strategy falls back to `user_edits_win` rather than erroring, so
+    // a tenant that chose otherwise gets the other answer on every conflict.
+    // Graduated out of `nonDurableServices`.
+    conflictResolutionService: pgPool ? new PostgresConflictResolutionService(pgPool) : new InMemoryConflictResolutionService(),
+    // Usage metrics — Postgres-backed when available. The record() method is
     // Usage metrics â€” Postgres-backed when available. The record() method is
     // an instrumentation hook; query/summary endpoints read from Postgres.
     usageMetricsService: pgPool ? new PostgresOntologyUsageMetricsService(pgPool) : new InMemoryOntologyUsageMetricsService(),

@@ -16,7 +16,10 @@ against real Postgres. Reproduce with `node tools/parity/reachability.mjs`.
 | Measured 20 Aug (`ChangeProposalStore`) | 18 | 53 | 0 | this tool |
 | **Measured now (`BusinessRulesService` branch, 71 services)** | **19** | **52** | **0** | this tool |
 | Measured 20 Aug (`ChangeProposalStore`, merged) | 18 | 53 | 0 | this tool |
-| **Measured now (`HumanInTheLoopService`, 71 services)** | **19** | **52** | **0** | this tool |
+| **Measured now (`VariableTransformService`, 71 services)** | **19** | **52** | **0** | this tool |
+| **Measured now (`OntologyChangeHistoryService`, 71 services)** | **19** | **52** | **0** | this tool |
+| **Measured now (`SqlQueryService`, 71 services)** | **19** | **52** | **0** | this tool |
+| **Measured now (`ConflictResolutionService`, 71 services)** | **19** | **52** | **0** | this tool |
 
 **Durability moved this time, and it was real.** The previous pass recorded reachability
 improving while `full` stayed pinned at 8 — services were being wired to REST without
@@ -28,11 +31,16 @@ up for the right reason.
 `BusinessRulesService` to 19, by the same route each time: a Postgres store, restart
 survival proven, no new surface claimed. One service per pass is the expected rate —
 the count is meant to move slowly and mean something, rather than quickly and not.
-
-`HumanInTheLoopService` takes it to 19 by a different route, and the exception is worth
-naming: it gained no store at all. It holds no state, and it was already reachable — it
-was simply pointed at the wrong store. So this pass is the one case where the number
-moved because a defect was removed rather than because persistence was added.
+`VariableTransformService` to 19, by the same route each time: a Postgres store,
+`OntologyChangeHistoryService` to 19, by the same route each time: a Postgres store,
+`DatasetService` then took it to 17, `ChangeProposalStore` to 18 and `SqlQueryService`
+to 19, by the same route each time: a Postgres store, restart survival proven, no new
+surface claimed. One service per pass is the expected rate — the count is meant to move
+slowly and mean something, rather than quickly and not.
+`ConflictResolutionService` to 19, by the same route each time: a Postgres store,
+restart survival proven, no new surface claimed. One service per pass is the expected
+rate — the count is meant to move slowly and mean something, rather than quickly and
+not.
 
 The gap to the tracker is still large (19 vs ~77) but it is now a gap of *degree*
 rather than *kind*: the remaining 52 are genuinely reachable, and each needs a Postgres
@@ -67,10 +75,15 @@ mean "works":
 
 `AlertingService` · `AuditStore` · `BlobStore` · `BranchStore` ·
 **`BusinessRulesService`** · **`ChangeProposalStore`** · `CommentStore` · `DataFreshnessService` ·
+**`ChangeProposalStore`** · `CommentStore` · **`ConflictResolutionService`** ·
+`DataFreshnessService` ·
 `DatasetMetadataService` · **`DatasetService`** · `EmbeddingStore` ·
-`GeospatialMapService` · **`HumanInTheLoopService`** · `JustificationStore` ·
-`NotificationStore` · `ObjectSetStore` · `OntologySqlService` ·
+`GeospatialMapService` · `JustificationStore` · `NotificationStore` · `ObjectSetStore` ·
+**`OntologyChangeHistoryService`** · `OntologySqlService` ·
 `OntologyUsageMetricsService` · `ScopedSessionStore` · `TimeSeriesStore`
+`OntologySqlService` · `OntologyUsageMetricsService` · `ScopedSessionStore` ·
+`TimeSeriesStore` · **`VariableTransformService`**
+**`SqlQueryService`** · `TimeSeriesStore`
 
 `full` here stays a **necessary, not sufficient** condition: it says a user can reach a
 durable implementation, not that the capability is complete. Rows still need demoting
@@ -86,18 +99,20 @@ are the honest `partial → full` candidates:
 `BuildTriggerService` ·
 `CommandExchangeService` · `CommandService` · `ConflictResolutionService` ·
 `ConnectorCatalogService` · `CopilotService` · `DataExpectationsService` ·
+`BuildTriggerService` · `BusinessRulesService` ·
+`CommandExchangeService` · `CommandService` · `ConnectorCatalogService` · `CopilotService` · `DataExpectationsService` ·
 `DatasetProjectionService` · `DatasourceService` ·
 `DesignSystemService` · `EmbeddedCopilotService` · `EmbeddingService` · `EvalService` ·
 `EventObjectService` · `GraphAnalysisService` · `GraphService` ·
-`KioskService` · `LayoutDeviceCaptureService` ·
+`HumanInTheLoopService` · `KioskService` · `LayoutDeviceCaptureService` ·
 `ModelCatalogService` · `ModelChainService` · `ModelInferenceService` ·
 `ModelRegistryService` · `ModelingObjectiveService` · `MultiOntologyGovernanceService` ·
-`ObjectSetFilterStore` · `OntologyChangeHistoryService` · `OntologyManagerService` ·
+`ObjectSetFilterStore` · `OntologyManagerService` ·
 `PipelineBuildService` · `PipelineService` · `PlatformAssistantService` ·
 `PlatformResourceService` · `ProcessMiningService` · `SavedViewStore` ·
-`ScenarioService` · `SqlAnalyticsService` · `SqlQueryService` · `SyncCdcService` ·
+`ScenarioService` · `SqlAnalyticsService` · `SyncCdcService` ·
 `TokenMeteringService` · `TransformExpressionService` · `UserDirectoryService` ·
-`ValueFormattingService` · `VariableTransformService` · `VectorSearchService` ·
+`ValueFormattingService` · `VectorSearchService` ·
 `WorkshopPlatformService` · `WorkshopUxService`
 
 ¹ `AccessExplanationService` is a standing false demotion: it holds no state and
@@ -177,53 +192,191 @@ state = $expected` clause, not only checked beforehand. Two concurrent approvals
 one process would otherwise both read `proposed` and both write `approved`, recording
 the second reviewer over the first. A `Map` cannot interleave that way, so the
 in-memory service needs no equivalent.
-## This pass — `HumanInTheLoopService`
+## This pass — `VariableTransformService`
 
-The smallest diff of any pass so far, and the only one that fixed a defect rather than
-adding a store. `HumanInTheLoopService` has no state: its five methods are a rename of
-`ChangeProposalStore`'s with `RequestContext` unpacked. What it lacked was a store worth
-reading.
+Named pipelines of declarative steps — upper, round, formatDate, pickFields, coalesce —
+reduced over an input value.
 
-**Two surfaces, two stores, one record.** The in-memory service constructed its own
-private `InMemoryChangeProposalStore`, so on a Postgres deployment:
+**Losing a pipeline here is loud**, unlike most of what these passes have covered:
+`execute` throws `Transform pipeline not found`. The reason to persist it anyway is that
+a pipeline is user-authored configuration — someone composed those steps — and a restart
+eating it is not something a caller recovers from by retrying.
 
-```
-POST /api/v1/change-proposals          → PostgresChangeProposalStore   (a table)
-POST /api/v1/ai-proposals/:id/approve  → a Map, dead on restart
-```
+**The drift risk is the real one, and it is the same shape as the conflict resolver's:
+the output is data.** A pipeline runs to produce a value something downstream consumes,
+so two providers disagreeing about what `round` or `dateDiff` means would produce
+different values from the same input with neither erring. `applyStep` moved verbatim
+into `@altius/spi` as `applyTransformStep`, and the in-memory service lost its copy.
+Two of the five injections break that shared function and fail on **both** providers.
 
-Neither surface erred. Each answered correctly about a record the other had never heard
-of, and the half that evaporated was the approval. For the record of who signed off on
-an AI-proposed change, a missing approval and an approval you cannot see are the same
-thing to the caller — which is why this ranked above the remaining data-plane stores
-despite being a fraction of their size.
+Three lenient behaviours are matched rather than tightened, and pinned by cases that say
+so — tightening any of them would change what an existing pipeline produces:
 
-The adapter now lives once in `@altius/spi` and both providers extend it, so the
-`(ctx) → (tenantId, actorId)` unpacking cannot drift. The API builds one store and hands
-it to both slots.
+- an unrecognised `kind` returns the input unchanged, so a typo in a step name is a
+  silent no-op
+- `upper` on `null` is the string `"NULL"`, because the string steps coerce with
+  `String(input)`
+- **`add` on a non-numeric input concatenates.** The `as number` cast is a TypeScript
+  fiction; at runtime `+` sees two strings, so `'abc'` plus 1 is `'abc1'`. A pipeline
+  meant to add can silently build a string. `multiply` on the same input does give NaN.
 
-Conformance runs 15 assertions against both providers, five of which are cross-surface:
-a proposal created through one surface is visible through the other, an approval
-recorded on one is visible on the other, and both count one record rather than two.
-Restoring the old private-store behaviour fails exactly those five plus the three that
-route through `store.submit`, on memory alone — Postgres shares by table rather than by
-instance, so the same bug there is a different injection: drifting the tenant unpacking
-in the shared adapter fails the cross-surface cases on **both** providers, which is what
-that injection was for.
+**A real divergence in the first version of the Postgres store, caught by conformance.**
+The in-memory `update` writes the record back under the OLD map key, so changing a
+pipeline's `name` renames the record without moving it: it stays reachable under the old
+name while reporting the new one. My first table keyed on `(tenant_id, name)`, which
+meant the UPDATE moved the row and the two providers disagreed. The fix is to model the
+map key as its own column — `lookup_key` alongside `name` — which reproduces the quirk
+faithfully. Ugly, and deliberately so: a single `name` column would have been tidier and
+wrong. Pinned, and raised as a contract question rather than fixed, since fixing it
+changes which name an existing caller has to use.
 
-Two more injections, because the interesting failure is not in either provider: pointing
-the post-restart half of the durability case at a fresh in-memory service fails it with
-`expected null not to be null`, and reverting the API to hand the HITL surface its own
-store fails a new source-level guard. That guard exists for the same reason #14's does —
-the `deps` literal is not exported, both surfaces work perfectly in isolation, and the
-defect only ever shows up as an approval nobody can find.
+**Two of my own assertions were wrong, and the suite caught them before any injection.**
+I asserted substring-then-trim on `'  hello  '` gives `''` (it gives `'h'`), and that
+`add` on a non-numeric input gives NaN (it concatenates). Both were corrected against
+what the code actually does rather than what I assumed — which is the whole point of
+running the thing rather than reasoning about it.
+## This pass — `OntologyChangeHistoryService`
 
-**One thing this does not fix, deliberately.** `approve` and `reject` refuse a proposal
-in `draft`, in both providers, and the HITL surface has no submit transition — so a
-proposal created there could never be approved there. That was true before and is
-unchanged; it is only *reachable* now, because `/api/v1/change-proposals/:id/submit`
-finally operates on the same record. Widening the interface to carry its own submit is a
-contract change and belongs in its own change.
+The audit trail for schema change: who changed it, when, under which migration class,
+and a full snapshot of what the ontology looked like at that point.
+
+**Two of its six methods do not do what their names say, in both providers.** `restore`
+reads a record, confirms it exists, and returns `restored: true` — no schema is rolled
+back and no object type is touched. `applyChange` validates the record, bumps that
+record's own `version` by one, restamps `appliedAt`, and returns `applied: true` — the
+ontology is untouched. Both are reproduced exactly rather than repaired, per the rule
+that a contract changes in both providers or neither.
+
+Which makes the honest summary of this pass: **persisting these makes the claim durable,
+not the effect.** A stored record saying a change was applied at a given time is evidence
+that the method ran, and nothing more. That is worth saying loudly, because a persisted
+audit trail is more convincing than a transient one, and this one is attesting to work
+that did not happen. Conformance pins both as they stand and says so in the case names —
+including the clearest evidence of all, that `restore` succeeds for an object type the
+snapshot never mentioned.
+
+**One behaviour deliberately narrowed, in both providers, and it could not be deferred.**
+`saveChange` accepts either a new draft or a full record, and the record form carries a
+`tenantId`. The in-memory service wrote it through, insulated only by keying its map on
+`ctx.tenantId` — which left the field free to lie but harmless. In a table the tenant is
+a *column*, so honouring it would be a genuine cross-tenant write. Matching the old
+behaviour verbatim was therefore not an option: it meant either shipping that hole or
+shipping a divergence. `tenantId` now comes from the request in both providers, and a
+conformance case checks a record naming another tenant lands under the caller's. No
+route can reach this today — the REST create path builds an input with no tenant field,
+and the update path re-reads the record under `ctx` first — so this closes a latent
+hazard in the SPI rather than a live one.
+
+The Postgres table keys on `(tenant_id, id)` rather than `id`, unlike its neighbours in
+the `governance` schema. Theirs hold UUIDs this code generates, so a global key is safe;
+here `saveChange` accepts a caller-supplied id, and the in-memory service's per-tenant
+map makes two tenants each holding a record called `v1` perfectly legal. A global key
+would reject a write the other provider accepts.
+
+Ordering needed care for a reason specific to this service: `listChanges` sorts by
+version descending, and *every* record is created at version 1, so ties are the norm
+rather than the edge case. The in-memory sort is stable, which means ties come back
+oldest-first — `ORDER BY "version" DESC, "seq"` is how Postgres says the same thing.
+Dropping that tie-break fails two cases.
+
+Five injections, five caught — though the fourth only after being rewritten. The first
+attempt at breaking the `objectType` snapshot guard replaced it with something that
+happened to answer the same way for both inputs the case tests, so it passed and proved
+nothing. Removing the guard outright is the regression it actually protects against, and
+that fails with `Cannot read properties of undefined (reading 'some')`. Recorded because
+a passing injection is not evidence of a vacuous test — it can equally be evidence of a
+badly chosen injection, and the two need telling apart before either is believed.
+## This pass — `SqlQueryService`
+
+The one a lead prod-testing the headless API actually reaches for: send SQL, get rows
+back. And unlike most of the queue, it does real work — the statement is parsed, the
+WHERE, ORDER BY, LIMIT and column list are pushed down to the dataset service, and the
+join is evaluated over what comes back. Datasets became durable in #24, so a query on
+this provider now reads rows that survived a restart and writes a job record that does
+the same.
+
+**The risk here is not mainly storage.** A query service that stores its jobs perfectly
+and *evaluates* differently on the two providers is the worse failure: the same
+statement over the same rows would return different answers on dev and prod, and neither
+deployment would look broken. So the parser moved from `storage-memory` into
+`@altius/spi` alongside a new query engine, and both providers call them. The in-memory
+service lost its copy of the execution path entirely; it is now a job store plus a call
+to the shared engine, which is what the Postgres one is too.
+
+The conformance category is weighted accordingly — twenty assertions per provider, most
+of them about what a query *means* rather than about the record round-tripping: filter
+pushdown, comparison operators, projection, ordering, which LIMIT wins when the
+statement and the request both carry one, joins, and the surprising-but-shared rule that
+`SELECT *` over an empty result reports no columns at all.
+
+**Two limits matched rather than fixed**, both stated in the store header. `submit` is
+"async" in name only: it writes the job `queued`, then `running`, then terminal, all
+before returning, so a caller polling `get()` will never catch one in flight and a queue
+that stopped draining is not a state this can represent. And the result rows are stored
+on the job in a single JSONB value — which is what makes `results()` answerable after
+the process that ran the query is gone, and also means a `SELECT` with no LIMIT writes
+its entire result set into one row. For a query service that is a real ceiling.
+
+Five regressions injected, five caught, each failing only its intended cases. The
+strongest is the one that proves the query reads real data rather than inventing it:
+pointing the Postgres service at a fresh in-memory dataset store fails thirteen cases.
+Breaking the *shared* engine (dropping the column projection) fails the same case on
+**both** providers, which is the property extracting it was for.
+
+**And one of my own cases turned out to be vacuous, twice over.** The plain
+"lists jobs newest first" assertion passes on a provider ordering by `submittedAt`
+alone, because two round-trips to Postgres land in two different milliseconds. Freezing
+the clock fixed it for the in-memory provider — but with only two colliding jobs the
+Postgres tie still happened to come back in the right order, so the injection passed
+anyway. Four colliding jobs catches it, deterministically across three runs. Worth
+recording because the first fix looked like it worked: a collision case is only a proof
+once the injection actually fails.
+## This pass — `ConflictResolutionService`
+
+A conflict is a datasource sync and a user edit disagreeing about one field. Two pieces
+of state live behind this service, and **both fail silently when lost**:
+
+- **unresolved conflicts** — the queue of disagreements waiting on a decision. Lose it
+  and the discrepancy is never surfaced: no error, no alert, just two systems quietly
+  holding different values for the same field.
+- **the tenant's default strategy** — `getDefaultStrategy` falls back to
+  `user_edits_win` when none is stored, so a tenant that chose `latest_value_wins` and
+  lost it does not get an error after a restart. It gets the other answer, on every
+  conflict, indefinitely. The durability injection reports exactly that:
+  `expected 'user_edits_win' to be 'latest_value_wins'`.
+
+**Choosing the winner moved into `@altius/spi`, and the reason is stronger here than in
+any previous pass: the output of that function is data.** Two providers disagreeing
+about `latest_value_wins` would write different values into the same field for the same
+conflict, and neither would error — the divergence would surface much later, in the data
+itself, with nothing to say which deployment produced it. So most of the conformance
+cases are about *which value wins* rather than about the record round-tripping, and the
+two injections that break the shared resolver fail on both providers.
+
+Two things the Postgres store had to get right that the `Map` got for free.
+
+**A stored `null` and an absent value are the same thing once they come back.**
+`undefined` binds as SQL NULL, `null` binds as JSON null, and the driver parses both to
+`null`. So every read also asks Postgres `IS NULL` per column, and that boolean decides
+between them. It is not academic: resolving `manual` with no value stores nothing, a
+conflict never resolved stores nothing, and a conflict whose user value genuinely *is*
+null has to round-trip as null rather than vanish.
+
+**The driver already parses JSONB.** The `typeof v === 'string' ? JSON.parse(v) : v`
+idiom the other stores in this repo use is harmless there because those columns only
+ever hold objects — here a column legitimately holds a bare string, and parsing it a
+second time throws `Unexpected token 'C', "Cardiology" is not valid JSON`. Found by the
+conformance suite on its first run, before any injection.
+
+**And an injection taught me a case was weaker than it looked — again.** Dropping the
+null guard from `merge` passed, because the case testing it used a null *datasource*
+value, and spreading `null` in an object literal is a no-op: guard or no guard, the
+answer is the same. The direction that makes the guard load-bearing is a null *user*
+value — without the guard both sides look mergeable and the result is the datasource
+object; with it, the user's null wins and the field is cleared. That case fails the
+injection. Recorded because this is the second pass in a row where a passing injection
+meant a badly aimed test rather than a badly aimed injection, and the two are only
+distinguishable by looking.
 
 ## Previous pass — `ChangeProposalStore`
 
@@ -291,8 +444,45 @@ Two things that conversion surfaced, neither of them the dataset store's own bug
 
 Same pattern, in rough order of what losing it costs: `ApprovalWorkflowService` (the
 other governance audit trail — but it is **not wired into the API at all**, so it needs
-routes before persistence is worth anything), then `SqlQueryService` and the rest of the
-dataset/pipeline data plane.
+routes before persistence is worth anything), then `EventObjectService` and
+`AgentThreadStore`.
+
+**Two candidates are blocked, and need a decision rather than a PR.**
+routes before persistence is worth anything), then `VariableTransformService` and
+`TransformExpressionService`.
+routes before persistence is worth anything), then `DatasourceService` and
+`VariableTransformService`, which are what remains of the dataset/pipeline data plane
+once the open PRs land.
+routes before persistence is worth anything), then `VariableTransformService` and
+`EventObjectService`.
+
+**Two candidates are deliberately blocked, and need a decision rather than a PR.**
+`ConnectorCatalogService` and `DatasourceService` both hold credentials in the state
+they would persist: `EnterpriseAuthScheme` carries `clientSecret`, `apiKey`, `password`,
+`token` and `refreshToken` as plain fields, and `Datasource.connection` is an untyped
+bag that in practice holds the same. There is **no encryption-at-rest machinery anywhere
+in this repo** — no `createCipheriv`, no KMS client, no `pgcrypto` in the DDL (checked,
+not assumed). Converting either as-is would move secrets from a `Map` that dies with the
+process into a table that does not, which is a security decision and not one to take as
+a side effect of a durability pass.
+
+**One deliberately skipped for a different reason.** `BuildTriggerService` duplicates
+what `PipelineBuildService` already does with action triggers, and its `trigger()`
+fabricates a `succeeded` build into a `builds` map that **no method on the interface ever
+reads**. Persisting write-only state that shadows another service is not worth a table;
+the two should be reconciled first.
+**Two more are skipped for reasons that are not about secrets.** `BuildTriggerService`
+duplicates what `PipelineBuildService` already does with action triggers, and its
+`trigger()` fabricates a `succeeded` build into a `builds` map that **no method on the
+interface ever reads** — persisting write-only state that shadows another service is not
+worth a table, and the two should be reconciled first. And `TransformExpressionService`
+holds **no state at all**: it is `listFunctions()` plus a pure `evaluate()`, so it
+belongs beside `AccessExplanationService` as a standing false demotion rather than in
+the work queue.
+
+Counts here are measured on **this branch's base**, `main`. Several durability PRs are
+open and unmerged, each moving the same counters, so the headline row will need
+re-measuring once they land rather than being added up.
 
 ## Standing rule — a contract changes in every provider or in none
 
@@ -322,11 +512,6 @@ and that asymmetry is precisely the signature the suite exists to catch.
 `latestTransactionId` that `get` and `read` report, rather than the written branch's.
 Both providers agree, so nothing diverges and nothing is being hidden — but the shared
 behaviour is arguably wrong, and per this rule it changes in both or neither.
-This pass's counts are measured on **this branch's base**, which is `main`. Four
-durability PRs are open and unmerged (`BatchTransformService`, `DataExpectationsService`,
-`PipelineBuildService`, and the analyser co-implementation fix); each moves the same
-counters, so the headline row above will need re-measuring once they land rather than
-being added up.
 
 ## Standing caveat
 
