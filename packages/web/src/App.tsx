@@ -29,7 +29,6 @@ import { GraphExplorerScreen } from './components/GraphExplorerScreen.js';
 import { McpActivityScreen } from './components/McpActivityScreen.js';
 import { PackManagerScreen } from './components/PackManagerScreen.js';
 import { SyncHealthScreen } from './components/SyncHealthScreen.js';
-import type { TraceState } from './components/TraceBar.js';
 
 type AuthState = 'checking' | 'anonymous' | 'signed-in' | 'error';
 
@@ -212,13 +211,6 @@ export function App({ config }: { config: WebConfig }): ReactNode {
       ? { visible: 38, total: 41, disrupted: 2, meanUtilisation: 67, cdcLagSeconds: 1.8 }
       : null;
 
-  const trace: TraceState = {
-    activeStage: 'emit',
-    durationMs: 41,
-    auditId: '01JQ4Z…7KP',
-    traceId: '4f2a…9c1',
-  };
-
   const handleScreenSelect = (job: JobKey, screenId: string) => {
     setActiveJob(job);
     setActiveScreen(screenId);
@@ -325,41 +317,10 @@ export function App({ config }: { config: WebConfig }): ReactNode {
             <>No roles in the identity token.</>
           ),
       }}
-      hidden={[
-        {
-          title: '3 rows, filtered',
-          detail: (
-            <>
-              No <code>assigned</code> relation. Removed by the ReBAC pre-filter before the page
-              was built.
-            </>
-          ),
-        },
-        {
-          title: '2 fields, redacted',
-          detail: (
-            <>
-              <code>unitCost</code> and <code>currency</code> on linked purchase orders.
-              Commercial terms sit outside your relation.
-            </>
-          ),
-        },
-        {
-          title: 'Consent: not applicable',
-          detail: (
-            <>
-              No consent-gated type on this view. It engages on <code>nhs.acute</code>.
-            </>
-          ),
-        },
-      ]}
-      events={[
-        { time: '14:22:07', text: <>Shipment <code>SHP-8841</code> delayed</> },
-        { time: '14:21:58', text: 'Inventory adjusted at Leipzig' },
-        { time: '14:21:31', text: <>Hamburg Altenwerder set <code>DISRUPTED</code></> },
-      ]}
-      feedLive={true}
-      trace={trace}
+      hidden={[]}
+      events={[]}
+      feedLive={false}
+      trace={null}
     >
       {renderScreen(
         activeScreen,
