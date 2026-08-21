@@ -154,7 +154,31 @@ const reachedVia = new Map(); // service -> Set(surface)
           new RegExp(`class\\s+${t}\\b`).test(src) ||
           new RegExp(`class\\s+[A-Za-z0-9_]+[^{]*implements[^{]*\\b${t}\\b`).test(src);
         if (!isImpl) continue;
-        for (const svc of services) if (svc !== t && new RegExp(`\\b${svc}\\b`).test(src)) queue.push(svc);
+        for (const svc of services) {
+          if (svc === t) continue;
+          if (!new RegExp(`\\b${svc}\\b`).test(src)) continue;
+          // Co-implementation is not a call relationship either.
+          //
+          // The declaration-file rule above exists because the SPI co-declares
+          // many services per file. Implementation files have the same
+          // problem: storage-memory/src/in-memory-dataset-services.ts
+          // implements eight classes in one file, so a single genuinely-wired
+          // service — BatchTransformService — dragged in DatasetProjection,
+          // SqlQuery, TabularSdk and VariableTransform as "reached via rest",
+          // none of which any route touches.
+          //
+          // That is the inflation this tool exists to catch, produced by the
+          // tool itself: a service with no route at all was one Postgres class
+          // away from being graded `full`. So skip a service that this file
+          // *implements* rather than consumes. A real dependency — the way
+          // InMemoryBatchTransformService takes an InMemoryDatasetService —
+          // lives in another file and still resolves.
+          const coImplemented =
+            new RegExp(`class\\s+[A-Za-z0-9_]+[^{]*implements[^{]*\\b${svc}\\b`).test(src) ||
+            new RegExp(`class\\s+(?:Postgres|InMemory|Default)${svc}\\b`).test(src);
+          if (coImplemented) continue;
+          queue.push(svc);
+        }
       }
     }
   }
