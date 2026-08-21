@@ -1,11 +1,11 @@
 # Altius capability backlog
 
-Restructured 21 Aug 2026 from code-verified gradings (last full pass 19 Aug). **187** capabilities graded: **103 full, 84 partial, 0 absent**.
+Restructured 21 Aug 2026 from code-verified gradings (last full pass 19 Aug). **187** capabilities graded: **103 full, 84 partial, 3 absent** (3 added 21 Aug from AIP/interop frame review).
 
 Structure:
 
 - **§Security defects** — 12 rows. Fix before parity work; these are holes, not gaps.
-- **§Active work items** — 51 items (50 rows + 1 merged rules-engine item covering 5 duplicate rows; 7 rows client-committed 21 Aug). Claim per the rules below.
+- **§Active work items** — 54 items (53 rows — incl. 3 new `absent` rows + 1 merged rules-engine item covering 5 duplicate rows; 7 rows client-committed 21 Aug). Claim per the rules below.
 - **§Proposed out-of-scope** — 17 rows parked with named triggers (decision taken 21 Aug vs client roster). Do NOT claim while parked.
 - **`full` rows** (103, with evidence) → [ALTIUS-BACKLOG-DONE.md](ALTIUS-BACKLOG-DONE.md).
 - Narrative re-grading/phase logs removed — git history of this file has every pass.
@@ -19,7 +19,7 @@ Structure:
 5. **Smallest correct change.** No refactors, no unrelated files, no new dependencies without saying why.
 6. **Never overwrite in-flight work.** If the build is red because another session references a symbol that does not exist yet, report and stop — do not guess their intent. A *committed* broken state (HEAD == working tree) is safe to fix.
 7. **DDL is additive only.** Never generate `DROP COLUMN` or a type change.
-8. **Stop and ask** when an item needs a product or contract decision rather than an implementation. Those are marked below.
+8. **Mark, don’t stall.** If an item needs a product or contract decision rather than an implementation, write `> ⏸ NEEDS-DECISION: <question>` into the row, append the question to [DECISIONS-NEEDED.md](DECISIONS-NEEDED.md), commit, and move to another item — do not implement a guess.
 
 ## Security defects — fix before parity work
 
@@ -28,6 +28,8 @@ Graded `partial` as capabilities, but each Gap describes an enforcement hole in 
 ### `security-consent/sensitive-data-pii-protection-controls` — Sensitive-data (PII) protection controls
 
 **Status:** `partial`
+
+> 🔒 CLAIMED: loop-0821-a7c3 2026-08-21T14:30+07:00
 
 **Evidence (read 15 Aug):** @sensitive now has a real runtime consumer: api/src/schema-loader.ts:560-606 deriveSensitiveFieldDefaults synthesises a deny-by-default FieldPermissionConfig (alwaysVisible = all non-sensitive stored fields, fieldsByRelation:{}) for any ObjectType that declares @sensitive but ships no permissions/field-permissions.yaml; called at schema-loader.ts:963 after merge. Because getVisibleFields returns undefined (= no redaction) for an unconfigured type (authorization-service.ts:240-243), this is the piece that makes the directive enforceable. Verified against the shipped packs: only domain-packs/nhs-acute ships permissions/field-permissions.yaml, so aml Customer.name/dateOfBirth/taxId (domain-packs/aml/schema/customer.odl:11,17,18), aml Account.accountNumber (account.odl:11) and supply-chain Supplier.contactEmail (supplier.odl:14) are now redacted for every caller. schema-loader.ts:539-547 universallyVisibleSensitive warns when an explicit config re-exposes a sensitive field via alwaysVisible or `viewer`.
 
@@ -710,6 +712,36 @@ Moved back from §out-of-scope after the client roster was named: multi-sector �
 **Evidence (Phase 8):** `GraphAnalysisService` SPI (packages/spi/src/graph-analysis.ts) defines saved analyses with root object, traversal steps (linkType/direction/maxDepth), filters (predicates + timeFilter), layout config, timeline config (timestampField, start/end, playbackSpeedMs, currentPosition), sharing (sharedWith, isPublic), tags, and versioning. `InMemoryGraphAnalysisService` (packages/storage-memory/src/in-memory-graph-analysis.ts) implements full CRUD, update (creates new version), version history listing, revert (creates new version from old snapshot), share/unshare, duplicate, and timeline comparison interface. 7 tests in phase8-services.test.ts.
 
 **Gap:** No UI/exploration surface. Timeline getTimeline/compare return empty (no integration with temporal-queries.ts). No REST/GraphQL routes. No persistent storage. No playback engine. No graph rendering.
+
+### `data-interop/virtual-tables-federated-query` — Virtual tables / federated query (Snowflake, BigQuery, Delta, Iceberg — query-in-place)
+
+**Status:** `absent`
+
+> 🎯 **Client driver (21 Aug 2026):** Enterprise ERP + regulator — query data where it lives, no copy. Foundry parity: "Virtual Tables framework" (BYO data services).
+
+**Evidence (21 Aug):** Not in the original 187 rows. Repo grep: no federation, no external-catalog reader; all reads go through the two storage providers after sync-based ingest.
+
+**Gap:** Everything. Scope when claimed: SPI for an external table provider + one real connector (pick per first signed client), datasource mapped to ObjectType without ingest.
+
+### `logic/optimization-solver-lp` — Optimization solver (LP/MIP — routing, allocation)
+
+**Status:** `absent`
+
+> 🎯 **Client driver (21 Aug 2026):** Ekspedisi/logistik archipelago — inter-island routing/allocation is the highest-value compute for this sector. Foundry parity: "Optimization (LP) Models", "BYO optimizers".
+
+**Evidence (21 Aug):** Not in the original 187 rows. No solver, no solver SPI anywhere in the repo.
+
+**Gap:** Everything. Scope when claimed: function-type that accepts an objective+constraints over object sets, BYO solver adapter first (don't write a solver).
+
+### `aip-llm/pii-obfuscation-pre-model` — PII obfuscation/moderation before LLM payloads
+
+**Status:** `absent`
+
+> 🎯 **Client driver (21 Aug 2026):** Medical records + AML/compliance — sensitive values must not reach external LLM providers raw. Foundry parity: AIP "Moderation: PII Obfuscation, Content Detection".
+
+**Evidence (21 Aug):** Not in the original 187 rows. LLM gateway exists (usage attribution, rate limiting) but forwards payloads untouched; @sensitive is enforced on read paths, not on the LLM egress path.
+
+**Gap:** Everything on the egress path. Scope when claimed: mask @sensitive-sourced values in prompts at the gateway using the same field policy getVisibleFields reads; log the masking decision.
 
 ## Proposed out-of-scope — parked with named triggers
 
