@@ -40,6 +40,7 @@ interface TimeSeriesQueryInput {
 import { DEFAULT_CONSENT_PURPOSE, DEFAULT_CONSENT_SUBJECT_TYPES, DEFAULT_PAGE_SIZE, isConsentSubjectType } from './types.js';
 import { resolvePagination, buildConnection, decodeCursor } from './pagination.js';
 import { paginateWithConsent } from '../consent-pagination.js';
+import { guardDirectWriteConsent } from '../consent-write-guard.js';
 import { createAltiusError, wrapError } from './errors.js';
 import { DEFAULT_AUDIT_READER_ROLES } from '../rest/audit-routes.js';
 import {
@@ -1297,6 +1298,10 @@ function generateUpdateMutationResolver(
         }
       }
 
+      // Consent gate — the action pipeline checks consent before writing;
+      // the direct path must too, or revocation is meaningless for editors.
+      await guardDirectWriteConsent(deps, 'update', typeName, id, user, requestContext);
+
       const updated = await deps.objectManager.update(
         typeName,
         id,
@@ -1389,6 +1394,9 @@ function generateDeleteMutationResolver(
           traceId: requestContext.traceId,
         });
       }
+
+      // Consent gate — parity with the action pipeline; see guardDirectWriteConsent.
+      await guardDirectWriteConsent(deps, 'delete', typeName, id, user, requestContext);
 
       // Fetch-then-check for expectedVersion (SPI deleteObject has no expectedVersion)
       if (args.expectedVersion !== undefined && args.expectedVersion !== null) {

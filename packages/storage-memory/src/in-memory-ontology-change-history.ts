@@ -71,8 +71,15 @@ export class InMemoryOntologyChangeHistoryService implements OntologyChangeHisto
 
   async saveChange(ctx: RequestContext, input: OntologyChangeInput | OntologyChangeRecord): Promise<OntologyChangeRecord> {
     if ('id' in input) {
-      this.getMap(ctx.tenantId).set(input.id, input);
-      return input;
+      // `tenantId` is taken from the request, never from the record handed in.
+      // The record is stored under ctx.tenantId either way, so honouring the
+      // field would only let a caller mislabel a row — and in a table, where
+      // the tenant is a column rather than a map key, it would be a genuine
+      // cross-tenant write. Narrowed here as well as in Postgres so the two
+      // providers cannot disagree about whose history a record lands in.
+      const record: OntologyChangeRecord = { ...input, tenantId: ctx.tenantId };
+      this.getMap(ctx.tenantId).set(record.id, record);
+      return record;
     }
     const id = randomUUID();
     const record: OntologyChangeRecord = {

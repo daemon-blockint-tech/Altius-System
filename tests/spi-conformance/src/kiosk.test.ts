@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, afterAll } from 'vitest';
-import type { KioskService, KioskSession, RequestContext } from '@altius/spi';
+import type { KioskService, RequestContext } from '@altius/spi';
 import { InMemoryKioskService } from '@altius/storage-memory';
 import { PostgresStorageProvider, PostgresKioskService } from '@altius/storage-postgres';
 import { pgTestUrl } from './pg-gate.js';
