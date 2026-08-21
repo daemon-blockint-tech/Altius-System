@@ -20,7 +20,7 @@ Altius provides the semantic, kinetic, and security layers needed to turn commod
 +------------------------+--------------------------------+
 |   Security Layer       |        Sync Engine             |
 |  (OpenFGA ReBAC,       |  (JDBC connectors, Debezium    |
-|   consent, audit)      |   CDC, conflict resolution)    |
+|   consent, audit)      |   CDC, data-connection agents) |
 +------------------------+--------------------------------+
 |                    Ontology Engine                      |
 |    (schema registry, object store, relationship index)  |
@@ -188,7 +188,7 @@ The monorepo contains 20 packages across four workspace roots:
 | `@altius/security` | OIDC auth, OpenFGA ReBAC, consent manager, audit trail |
 | `@altius/storage-memory` | In-memory SPI implementation (tests and development) |
 | `@altius/storage-postgres` | PostgreSQL 17 SPI implementation |
-| `@altius/sync` | JDBC connectors, Debezium CDC, overlay mode, conflict resolution |
+| `@altius/sync` | JDBC connectors, Debezium CDC, overlay mode, conflict resolution, data-connection agents |
 | `@altius/observability` | OpenTelemetry traces, metrics, and structured logging |
 | `@altius/sdk` | Auto-generated TypeScript client SDK |
 | `cel-evaluator` | Go gRPC sidecar for CEL expression evaluation |
@@ -365,6 +365,7 @@ in the standard suite. `.github/workflows/ci.yml` defines a dedicated
 | [`docs/fdp-plan.md`](docs/fdp-plan.md) | NHS FDP integration plan, conformance boundary, stage roadmap |
 | [`docs/cdm-mapping-profile.md`](docs/cdm-mapping-profile.md) | FDP/CDM compatibility profile (S1.0) and gap register |
 | [`docs/api-spec.md`](docs/api-spec.md) | API contract artifacts (OpenAPI / GraphQL / AsyncAPI) and codegen |
+| [`docs/data-connection.md`](docs/data-connection.md) | Source connectivity: direct connections and egress-only Data Connection Agents |
 | [`docs/external-domain-packs.md`](docs/external-domain-packs.md) | Loading domain packs from outside the monorepo |
 | [`Orion/README.md`](Orion/README.md) | Deployment quickstart, production mode, OIDC/CIS2, action-pipeline footguns |
 

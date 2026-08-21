@@ -131,6 +131,20 @@ describe('startSyncScheduler', () => {
     await result.stop(); // no-op must not throw
   });
 
+  it('skips runtime AGENT datasources — they belong to the data-connection gateway', async () => {
+    const { objectManager } = makeManager();
+    const result = await startSyncScheduler({
+      connectorManifests: [
+        manifest({ ...baseConfig, runtime: 'AGENT', sync: { mode: 'POLLING' } }),
+      ],
+      registry: createDefaultRegistry(),
+      objectManager,
+      tenantId: 'sync-test',
+    });
+    expect(result.scheduler).toBeNull();
+    expect(result.scheduled).toEqual([]);
+  });
+
   it('rejects target:"id" datasources loudly (skipped, not fatal)', async () => {
     const { objectManager } = makeManager();
     const result = await startSyncScheduler({
