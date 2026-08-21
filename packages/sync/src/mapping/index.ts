@@ -25,6 +25,7 @@ export {
 // Mapping parser (Section 6.3)
 export type {
   SyncMode,
+  SyncRuntime,
   ConflictResolution,
   RateLimitConfig,
   SyncConfig,
