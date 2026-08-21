@@ -102,6 +102,7 @@ export { PostgresBusinessRulesService } from './governance/postgres-business-rul
 export { PostgresKioskService } from './governance/postgres-kiosk-service.js';
 export { PostgresSavedViewStore } from './governance/postgres-saved-view-store.js';
 export { PostgresUserDirectoryService } from './governance/postgres-user-directory-service.js';
+export { PostgresDesignSystemService } from './governance/postgres-design-system-service.js';
 export { PostgresDatasetService } from './dataset/postgres-dataset-service.js';
 export { generatePlatformDDL } from './schema/ddl-platform.js';
 export {

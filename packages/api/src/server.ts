@@ -123,6 +123,7 @@ import { PostgresStorageProvider, PostgresLineageStore, PostgresAuditStore, Post
   PostgresApprovalWorkflowService,
   PostgresDatasetService,
   PostgresUserDirectoryService,
+  PostgresDesignSystemService,
 } from '@altius/storage-postgres';
 import {
   ObjectManager, LineageRecorder,
@@ -1283,7 +1284,6 @@ async function main(): Promise<void> {
       ontologyManagerService: new InMemoryOntologyManagerService(),
       workshopUxService: new InMemoryWorkshopUxService(),
       valueFormattingService: new InMemoryValueFormattingService(),
-      designSystemService: new InMemoryDesignSystemService(),
       ontologyChangeHistoryService: new InMemoryOntologyChangeHistoryService(),
       // Workshop UI services.
       commandExchangeService: new InMemoryCommandExchangeService(),
@@ -1451,6 +1451,8 @@ async function main(): Promise<void> {
     // User directory — Postgres-backed when available; read-only SPI plus
     // tenant-isolated administrative group membership.
     userDirectoryService: pgPool ? new PostgresUserDirectoryService(pgPool) : new InMemoryUserDirectoryService(),
+    // Design system themes — Postgres-backed when available.
+    designSystemService: pgPool ? new PostgresDesignSystemService(pgPool) : new InMemoryDesignSystemService(),
 
     // Non-durable platform services — withheld under Postgres unless opted in.
     // Built and explained above.

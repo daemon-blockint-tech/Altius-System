@@ -547,6 +547,26 @@ export function generatePlatformDDL(): string[] {
   statements.push(`CREATE INDEX IF NOT EXISTS "idx_saved_views_tenant_app_id" ON "governance"."saved_views" ("tenant_id", "app_id");`);
   statements.push(`CREATE INDEX IF NOT EXISTS "idx_saved_views_tenant_is_public" ON "governance"."saved_views" ("tenant_id", "is_public");`);
 
+  // ── Design system themes ──
+  statements.push(`CREATE TABLE IF NOT EXISTS "governance"."design_system_themes" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "tenant_id" TEXT NOT NULL,
+  "name" TEXT NOT NULL,
+  "description" TEXT,
+  "is_default" BOOLEAN NOT NULL DEFAULT FALSE,
+  "dark_mode" BOOLEAN NOT NULL DEFAULT FALSE,
+  "density" TEXT NOT NULL DEFAULT 'comfortable',
+  "palette" JSONB NOT NULL DEFAULT '{}',
+  "typography" JSONB NOT NULL DEFAULT '{}',
+  "module_palettes" JSONB NOT NULL DEFAULT '{}',
+  "created_by" TEXT,
+  "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_design_system_themes_tenant" ON "governance"."design_system_themes" ("tenant_id");`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_design_system_themes_tenant_name" ON "governance"."design_system_themes" ("tenant_id", "name");`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_design_system_themes_tenant_default" ON "governance"."design_system_themes" ("tenant_id", "is_default");`);
+
   // ── User directory ──
   statements.push(`CREATE TABLE IF NOT EXISTS "governance"."user_directory" (
   "id" TEXT NOT NULL PRIMARY KEY,
