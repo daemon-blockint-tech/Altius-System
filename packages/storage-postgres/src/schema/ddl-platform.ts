@@ -521,25 +521,28 @@ export function generatePlatformDDL(): string[] {
   statements.push(`CREATE INDEX IF NOT EXISTS "idx_kiosk_sessions_tenant_state" ON "governance"."kiosk_sessions" ("tenant_id", "state");`);
   statements.push(`CREATE INDEX IF NOT EXISTS "idx_kiosk_sessions_tenant_started" ON "governance"."kiosk_sessions" ("tenant_id", "started_at" DESC);`);
 
-  // ── Business rules engine ──
+  // ── Business rules (no-code rule DAGs, approval-gated) ──
+  //
+  // `state` is what governs runtime behaviour: only an `active` rule applies.
+  // Losing it silently reverts a rule to draft, which looks like nothing
+  // happening rather than like a failure.
   statements.push(`CREATE TABLE IF NOT EXISTS "governance"."business_rules" (
   "id" TEXT NOT NULL PRIMARY KEY,
   "tenant_id" TEXT NOT NULL,
-  "name" TEXT,
-  "description" TEXT,
-  "state" TEXT,
+  "name" TEXT NOT NULL,
+  "description" TEXT NOT NULL DEFAULT '',
   "nodes" JSONB NOT NULL DEFAULT '[]',
+  "state" TEXT NOT NULL DEFAULT 'draft',
   "is_time_series_board" BOOLEAN NOT NULL DEFAULT FALSE,
   "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  "created_by" TEXT,
-  "reviewed_by" TEXT,
+  "created_by" TEXT NOT NULL DEFAULT '',
   "review_notes" TEXT,
+  "reviewed_by" TEXT,
   "reviewed_at" TIMESTAMPTZ
 );`);
-  statements.push(`CREATE INDEX IF NOT EXISTS "idx_business_rules_tenant" ON "governance"."business_rules" ("tenant_id");`);
-  statements.push(`CREATE INDEX IF NOT EXISTS "idx_business_rules_tenant_state" ON "governance"."business_rules" ("tenant_id", "state");`);
-  statements.push(`CREATE INDEX IF NOT EXISTS "idx_business_rules_tenant_created" ON "governance"."business_rules" ("tenant_id", "created_at" DESC);`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_rules_tenant_state" ON "governance"."business_rules" ("tenant_id", "state");`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_rules_tenant_created" ON "governance"."business_rules" ("tenant_id", "created_at" DESC);`);
 
   // ── Saved views ──
   statements.push(`CREATE TABLE IF NOT EXISTS "governance"."saved_views" (

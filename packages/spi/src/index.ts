@@ -287,7 +287,9 @@ export type {
   ConformanceResult,
 } from './process-mining.js';
 
-// Business rules engine
+// Business rules engine — the DAG evaluator is shared by every provider, so
+// two of them cannot store the same rule and disagree about what it produces.
+export { executeBusinessRule, validateBusinessRule } from './business-rule-engine.js';
 export type {
   BusinessRulesService,
   BusinessRule,
