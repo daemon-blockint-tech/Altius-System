@@ -98,27 +98,34 @@ export function WorkshopScreen({ client, tenantId, userId }: WorkshopScreenProps
   }, [tenantId, userId]);
 
   if (editing) {
+    // The builder is a full-screen editor; render it over the shell rather than
+    // squeezed into the shell's main column beside the governance rail.
     return (
-      <WorkshopBuilder
-        initialApp={editing}
-        client={client}
-        tenantId={tenantId}
-        userId={userId}
-        persistToBackend
-        onSave={() => { setEditing(null); void reload(); }}
-        onExport={() => { /* export handled inside the builder */ }}
-      />
+      <div style={{ position: 'fixed', inset: 0, zIndex: 100, background: 'var(--ed-bg, #0b0b0f)', overflow: 'auto' }}>
+        <div style={{ padding: '8px 16px' }}>
+          <button type="button" onClick={() => { setEditing(null); void reload(); }}>← Back to apps</button>
+        </div>
+        <WorkshopBuilder
+          initialApp={editing}
+          client={client}
+          tenantId={tenantId}
+          userId={userId}
+          persistToBackend
+          onSave={() => { setEditing(null); void reload(); }}
+          onExport={() => { /* export handled inside the builder */ }}
+        />
+      </div>
     );
   }
 
   return (
     <main className="ed-main">
       <header className="ed-main__header">
-        <span className="ed-main__eyebrow">MODEL · WORKSHOP</span>
-        <h1 className="ed-main__title">Workshop</h1>
+        <span className="ed-main__eyebrow">MODEL · APP BUILDER</span>
+        <h1 className="ed-main__title">App Builder</h1>
         <p className="ed-main__lede">
           Build operational apps over the ontology — pages, sections and widgets,
-          persisted through the governed workshop API.
+          persisted through the governed app-builder API.
         </p>
       </header>
 

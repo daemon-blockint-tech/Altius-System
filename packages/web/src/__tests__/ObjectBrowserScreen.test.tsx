@@ -21,7 +21,7 @@ const INTROSPECTION = {
         fields: [
           { name: 'nhsNumber', type: scalar('String') },
           { name: 'status', type: { name: null, kind: 'NON_NULL', ofType: { name: 'PatientStatus', kind: 'ENUM', ofType: null } } },
-          { name: '_id', type: scalar('ID') },           // system field, skipped
+          { name: 'id', type: scalar('ID') },
           { name: 'ward', type: { name: 'Ward', kind: 'OBJECT', ofType: null } }, // link, skipped from columns
         ],
       },
@@ -37,7 +37,8 @@ describe('deriveBrowsableTypes', () => {
     const patient = derived.find(d => d.typeName === 'Patient')!;
     expect(patient.listField).toBe('patients');
     // Scalars/enums only; system and link fields excluded.
-    expect(patient.scalarFields).toEqual(['nhsNumber', 'status']);
+    expect(patient.scalarFields).toEqual(['nhsNumber', 'status', 'id']);
+    expect(patient.keyField).toBe('id');
   });
 });
 
@@ -58,7 +59,7 @@ describe('ObjectBrowserScreen', () => {
             patients: {
               totalCount: 1,
               pageInfo: { hasNextPage: false, hasPreviousPage: false, startCursor: 'c', endCursor: 'c' },
-              edges: [{ cursor: 'c', node: { _id: 'p1', _redactedFields: null, _consentRestricted: false, nhsNumber: '999', status: 'ADMITTED' } }],
+              edges: [{ cursor: 'c', node: { id: 'p1', _redactedFields: null, _consentRestricted: false, nhsNumber: '999', status: 'ADMITTED' } }],
             },
           },
         }),

@@ -25,6 +25,11 @@ export interface BrowsableType {
   listField: string;
   /** Scalar/enum field names selectable into a table row. */
   scalarFields: string[];
+  /**
+   * The ID-typed field (the @primary alias, usually "id"). The SDL exposes the
+   * primary under its declared name — there is no `_id` field to select.
+   */
+  keyField: string;
 }
 
 type Row = Record<string, unknown> & RowMetadata;
@@ -85,7 +90,8 @@ export function deriveBrowsableTypes(data: IntrospectionData): BrowsableType[] {
         return l.kind === 'SCALAR' || l.kind === 'ENUM';
       })
       .map(f => f.name);
-    out.push({ typeName, listField: q.name, scalarFields });
+    const keyField = t.fields.find(f => leaf(f.type).name === 'ID' && !f.name.startsWith('_'))?.name ?? 'id';
+    out.push({ typeName, listField: q.name, scalarFields, keyField });
   }
   out.sort((a, b) => a.typeName.localeCompare(b.typeName));
   return out;
@@ -148,7 +154,7 @@ export function ObjectBrowserScreen({ endpoint, getToken, onRowClick }: ObjectBr
       // Cap the selection to the first handful of scalar fields for readability;
       // the detail view shows everything.
       const cols = active.scalarFields.slice(0, 6);
-      const selection = ['_id', '_redactedFields', '_consentRestricted', ...cols].join(' ');
+      const selection = [...new Set([active.keyField, '_redactedFields', '_consentRestricted', ...cols])].join(' ');
       const query = `query($first: Int, $after: String) {
         ${active.listField}(first: $first, after: $after) {
           totalCount
@@ -243,7 +249,7 @@ export function ObjectBrowserScreen({ endpoint, getToken, onRowClick }: ObjectBr
                 caption={active.typeName}
                 columns={columns}
                 load={loadPage}
-                rowKey={row => String(row['_id'] ?? '')}
+                rowKey={row => String(row[active.keyField] ?? '')}
                 onRowClick={id => onRowClick(active.typeName, id)}
               />
             </div>

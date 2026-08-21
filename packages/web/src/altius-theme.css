@@ -1,0 +1,403 @@
+/*
+ * Altius design system — the operational console theme.
+ *
+ * Loaded AFTER editorial.css: it retokenizes the design variables and overrides
+ * the chrome so every screen inherits the Altius look without changes:
+ *   · dark navy app sidebar (icon rail + nav column) on the left
+ *   · light workspace content (#F6F7F9) with white cards and light borders
+ *   · Altius accents: blue #2D72D2, green intent, red intent (palette derived
+ *     from the Apache-2.0 Blueprint color system)
+ *   · Source Sans typography, sentence-case UI, compact 2px radii
+ *
+ * The console commits to a single light workspace look, so the dark-scheme
+ * media block re-asserts the same tokens.
+ */
+
+@import url('https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700&display=swap');
+
+:root {
+  color-scheme: light;
+
+  /* Workspace (content) — Altius light workspace */
+  --ed-bg: #f6f7f9;
+  --ed-fg: #1c2127;
+  --ed-ink: #1c2127;
+  --ed-muted: #5f6b7c;
+  --ed-faint: #8f99a8;
+  --ed-rule: #d3d8de;
+  --ed-rule-strong: #1c2127;
+  --ed-row-hover: #f0f3f6;
+  --ed-row-active: #e8edf3;
+  --ed-cell-border: #e5e8eb;
+  --ed-track: #e5e8eb;
+  --ed-surface: #ffffff;
+  --ed-surface-raised: #ffffff;
+
+  /* Altius accents */
+  --ed-accent: #2d72d2;
+  --ed-accent-fg: #ffffff;
+  --al-blue: #2d72d2;
+  --al-blue-dark: #215db0;
+  --al-blue-light: #e7f2ff;
+  --al-green: #238551;
+  --al-green-light: #e8f5ee;
+  --al-red: #cd4246;
+  --al-red-light: #fbeaea;
+  --al-orange: #c87619;
+
+  /* Dark chrome (sidebar) */
+  --al-nav-bg: #1c2127;
+  --al-nav-bg-deep: #14181d;
+  --al-nav-hover: #252a31;
+  --al-nav-active: #2f343c;
+  --al-nav-fg: #c5cbd3;
+  --al-nav-fg-strong: #f6f7f9;
+  --al-nav-faint: #8f99a8;
+  --al-nav-rule: #2f343c;
+
+  /* Data viz intents */
+  --ed-healthy: #238551;
+  --ed-pressure: #c87619;
+  --ed-disrupted: #cd4246;
+
+  /* Typography */
+  --ed-sans: 'Source Sans 3', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+  --ed-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+}
+
+/* The console is a light product; keep the same tokens when the OS is dark. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: light;
+    --ed-bg: #f6f7f9;
+    --ed-fg: #1c2127;
+    --ed-ink: #1c2127;
+    --ed-muted: #5f6b7c;
+    --ed-faint: #8f99a8;
+    --ed-rule: #d3d8de;
+    --ed-rule-strong: #1c2127;
+    --ed-row-hover: #f0f3f6;
+    --ed-row-active: #e8edf3;
+    --ed-cell-border: #e5e8eb;
+    --ed-track: #e5e8eb;
+    --ed-surface: #ffffff;
+    --ed-surface-raised: #ffffff;
+    --ed-accent: #2d72d2;
+    --ed-accent-fg: #ffffff;
+    --ed-healthy: #238551;
+    --ed-pressure: #c87619;
+    --ed-disrupted: #cd4246;
+  }
+}
+
+/* ── Base elements ─────────────────────────────────────────────── */
+
+a { color: var(--al-blue); }
+a:hover { color: var(--al-blue-dark); }
+
+:focus-visible { outline: 2px solid var(--al-blue); outline-offset: 1px; }
+
+h1 { font: 600 22px/1.25 var(--ed-sans); letter-spacing: 0; }
+h2 { font: 600 14px/1.3 var(--ed-sans); letter-spacing: 0; }
+
+/* Altius default button */
+button {
+  font: 600 13px/1 var(--ed-sans);
+  padding: 6px 12px;
+  border: 1px solid rgba(28, 33, 39, 0.2);
+  border-radius: 2px;
+  background: #ffffff;
+  color: var(--ed-fg);
+  box-shadow: 0 1px 1px rgba(28, 33, 39, 0.06);
+  cursor: pointer;
+}
+button:hover { background: #f6f7f9; }
+button:active { background: #edeff2; }
+
+input, select, textarea {
+  font: 400 13px var(--ed-sans);
+  padding: 6px 10px;
+  border: 1px solid var(--ed-rule);
+  border-radius: 2px;
+  background: #ffffff;
+  color: var(--ed-fg);
+}
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: var(--al-blue);
+  box-shadow: 0 0 0 2px rgba(45, 114, 210, 0.25);
+}
+
+code {
+  font: 400 12px var(--ed-mono);
+  background: #eef1f5;
+  border-radius: 2px;
+  padding: 1px 4px;
+  color: #215db0;
+}
+
+/* ── Shell layout ─────────────────────────────────────────────── */
+
+.ed-shell {
+  grid-template-columns: 52px 220px 1fr 300px;
+  grid-template-rows: 1fr 32px;
+  /* A fixed height, not just min-height: with an auto-height container the 1fr
+     row grows to max-content, so a long screen scrolls the whole shell and
+     pushes the trace bar out of view instead of scrolling inside its column. */
+  height: 100dvh;
+}
+
+/*
+ * Pin the main column explicitly. Grid auto-placement positions items with a
+ * definite row (the rails, grid-row: 1 / span 2) BEFORE fully-auto items, so
+ * the governance rail landed in column 3 and pushed the screen content into
+ * the 300px column 4 — the layout rendered swapped. Anchoring both ends it.
+ */
+.ed-shell > main, .ed-main { grid-column: 3; grid-row: 1; }
+.ed-gov-rail { grid-column: 4; }
+
+/* Restate the collapse breakpoints: the retuned column widths above are
+   unconditional and would otherwise win over editorial.css's media rules
+   (same specificity, later file), leaving a 300px rail off-screen on a
+   narrow viewport with the page scrolling sideways. */
+@media (max-width: 1200px) {
+  .ed-shell { grid-template-columns: 52px 220px 1fr; }
+}
+
+@media (max-width: 768px) {
+  .ed-shell { grid-template-columns: 52px 1fr; }
+  .ed-shell > main, .ed-main { grid-column: 2; }
+}
+
+/* The screen column scrolls inside the shell instead of growing it; without
+   this a grid item's auto min-height makes the shell taller than the viewport,
+   so the whole page scrolls and the trace bar drifts off-screen. */
+.ed-shell > main, .ed-main { min-height: 0; }
+
+/* Icon rail — deepest navy strip with the Altius brand mark.
+   margin-top comes from the classless `nav` rule and left a light gap above
+   the rail. */
+.ed-icon-rail {
+  background: var(--al-nav-bg-deep);
+  border-right: 1px solid var(--al-nav-rule);
+  margin-top: 0;
+}
+.ed-icon-rail__brand {
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  background: var(--al-blue);
+  color: #fff;
+  font: 700 12px/28px var(--ed-sans);
+  text-align: center;
+  border: none;
+}
+.ed-icon-rail__item { border: none; background: none; box-shadow: none; padding: 8px 0; }
+.ed-icon-rail__item:hover { background: none; }
+.ed-icon-rail__bar { background: var(--al-blue); }
+.ed-icon-rail__bar--inactive { background: transparent; }
+.ed-icon-rail__label {
+  font: 700 10px var(--ed-sans);
+  letter-spacing: 0.08em;
+  color: var(--al-nav-fg-strong);
+}
+.ed-icon-rail__label--inactive { color: var(--al-nav-faint); }
+.ed-icon-rail__user {
+  background: var(--al-nav-active);
+  color: var(--al-nav-fg-strong);
+  border-radius: 50%;
+  font: 600 10px/24px var(--ed-sans);
+}
+
+/* Sidebar — Altius app nav */
+.ed-sidebar {
+  background: var(--al-nav-bg);
+  border-right: 1px solid var(--ed-rule);
+  color: var(--al-nav-fg);
+}
+.ed-sidebar__section-label {
+  font: 700 10px var(--ed-sans);
+  letter-spacing: 0.08em;
+  color: var(--al-nav-faint);
+}
+.ed-sidebar__pack-name { color: var(--al-nav-fg-strong); font-weight: 600; }
+.ed-sidebar__pack-version { color: var(--al-nav-faint); }
+.ed-sidebar__nav-item {
+  color: var(--al-nav-fg);
+  border-radius: 2px;
+  margin: 0 8px;
+  padding: 6px 10px;
+  border-left: 3px solid transparent;
+}
+.ed-sidebar__nav-item:hover { background: var(--al-nav-hover); color: var(--al-nav-fg-strong); }
+.ed-sidebar__nav-item--active {
+  background: var(--al-nav-active);
+  border-left-color: #4c90f0;
+  color: var(--al-nav-fg-strong);
+}
+.ed-sidebar__nav-label { color: inherit; }
+.ed-sidebar__nav-item--active .ed-sidebar__nav-label { color: var(--al-nav-fg-strong); }
+.ed-sidebar__nav-item:hover .ed-sidebar__nav-label { color: var(--al-nav-fg-strong); }
+.ed-sidebar__nav-count { color: var(--al-nav-faint); font: 400 11px var(--ed-sans); }
+.ed-sidebar__role-label { color: var(--al-nav-fg); }
+.ed-sidebar__role-label--inactive { color: var(--al-nav-faint); }
+.ed-sidebar__role-dot { background: #32a467; }
+.ed-sidebar__role-dot--inactive { background: var(--al-nav-rule); }
+
+/* Sidebar pack dropdown buttons are inline-styled; neutralize their chrome */
+.ed-sidebar button {
+  background: none;
+  border: none;
+  box-shadow: none;
+  color: var(--al-nav-fg);
+  font-weight: 400;
+}
+.ed-sidebar button:hover { background: var(--al-nav-hover); color: var(--al-nav-fg-strong); }
+
+/* ── Main content ─────────────────────────────────────────────── */
+
+.ed-main { background: var(--ed-bg); }
+.ed-main__header { border-bottom: 1px solid var(--ed-cell-border); }
+.ed-main__eyebrow {
+  font: 700 10px var(--ed-sans);
+  letter-spacing: 0.08em;
+  color: var(--ed-faint);
+}
+.ed-main__title { font: 600 22px/1.25 var(--ed-sans); letter-spacing: 0; }
+.ed-main__lede { color: var(--ed-muted); font: 400 13px/1.5 var(--ed-sans); }
+
+.ed-subhead {
+  font: 700 11px var(--ed-sans);
+  letter-spacing: 0.06em;
+  color: var(--ed-muted);
+  text-transform: uppercase;
+}
+
+.ed-muted { color: var(--ed-muted); font: 400 13px/1.5 var(--ed-sans); }
+
+/* Cards & tables — white surfaces on the light workspace */
+.ed-table-wrap {
+  background: var(--ed-surface);
+  border: 1px solid var(--ed-rule);
+  border-radius: 3px;
+  box-shadow: 0 1px 2px rgba(28, 33, 39, 0.05);
+}
+.ed-table { background: var(--ed-surface); }
+.ed-table th {
+  font: 600 12px var(--ed-sans);
+  color: var(--ed-muted);
+  text-transform: none;
+  letter-spacing: 0;
+  border-bottom: 1px solid var(--ed-rule);
+  background: var(--ed-surface);
+}
+.ed-table td { border-bottom: 1px solid var(--ed-cell-border); font: 400 13px var(--ed-sans); }
+.ed-table tbody tr:hover { background: var(--ed-row-hover); }
+
+/* Type / list buttons (object browser, ontology explorer) */
+.ed-type-btn {
+  border: none;
+  background: none;
+  box-shadow: none;
+  width: 100%;
+  text-align: left;
+  padding: 6px 10px;
+  border-radius: 2px;
+  font: 400 13px var(--ed-sans);
+  color: var(--ed-fg);
+}
+.ed-type-btn:hover { background: var(--ed-row-hover); }
+.ed-type-btn--selected {
+  background: var(--al-blue-light);
+  color: var(--al-blue-dark);
+  font-weight: 600;
+}
+
+/* Errors & status */
+.ed-error {
+  background: var(--al-red-light);
+  border: 1px solid rgba(205, 66, 70, 0.4);
+  border-left: 3px solid var(--al-red);
+  border-radius: 3px;
+  padding: 12px 16px;
+  color: #a82a2e;
+}
+.ed-status-badge {
+  font: 600 11px var(--ed-sans);
+  border-radius: 10px;
+  padding: 2px 8px;
+  background: var(--al-green-light);
+  color: var(--al-green);
+}
+
+/* ── Governance rail — light details panel (details panel) ── */
+
+.ed-gov-rail {
+  background: var(--ed-surface);
+  border-left: 1px solid var(--ed-rule);
+  color: var(--ed-fg);
+}
+.ed-gov-rail__label {
+  font: 700 10px var(--ed-sans);
+  letter-spacing: 0.08em;
+  color: var(--ed-faint);
+}
+.ed-gov-rail__user-name { font: 600 14px var(--ed-sans); color: var(--ed-fg); }
+.ed-gov-rail__user-meta { color: var(--ed-muted); font: 400 12px/1.5 var(--ed-sans); }
+.ed-gov-rail__user-relations { color: var(--ed-muted); font: 400 12px/1.5 var(--ed-sans); }
+.ed-gov-rail__divider { border-top: 1px solid var(--ed-cell-border); background: none; }
+.ed-gov-hidden__title { font: 600 12px var(--ed-sans); color: var(--ed-fg); }
+.ed-gov-hidden__detail { color: var(--ed-muted); font: 400 12px/1.5 var(--ed-sans); }
+.ed-gov-feed__live {
+  font: 600 10px var(--ed-sans);
+  letter-spacing: 0.05em;
+  color: var(--al-green);
+  background: var(--al-green-light);
+  border-radius: 8px;
+  padding: 1px 7px;
+}
+.ed-gov-feed__time { color: var(--ed-faint); font: 400 11px var(--ed-mono); }
+.ed-gov-feed__text { color: var(--ed-fg); font: 400 12px var(--ed-sans); }
+
+/* ── Trace bar — light status strip ───────────────────────────── */
+
+.ed-trace {
+  background: var(--ed-surface);
+  border-top: 1px solid var(--ed-rule);
+}
+/* The stage list clips instead of running under the trailing link: its
+   children are white-space: nowrap, so a flex item with min-width: 0 alone
+   still overflows and the two texts render on top of each other. */
+.ed-trace__stages { overflow: hidden; }
+.ed-trace__label { color: var(--ed-faint); }
+.ed-trace__stage { color: var(--ed-muted); }
+.ed-trace__stage--active { color: var(--al-blue-dark); }
+.ed-trace__link { color: var(--al-blue); }
+
+/* ── Widgets & builder (Workshop) ─────────────────────────────── */
+
+.ed-widget {
+  background: var(--ed-surface);
+  border: 1px solid var(--ed-rule);
+  border-radius: 3px;
+  box-shadow: 0 1px 2px rgba(28, 33, 39, 0.05);
+}
+.ed-widget--empty, .ed-widget--loading { color: var(--ed-faint); background: var(--ed-surface); }
+.ed-widget--error { border-color: rgba(205, 66, 70, 0.5); }
+
+.ed-button {
+  font: 600 13px/1 var(--ed-sans);
+  border-radius: 2px;
+  border: 1px solid rgba(28, 33, 39, 0.2);
+  background: #ffffff;
+  color: var(--ed-fg);
+}
+.ed-button:hover { background: #f6f7f9; }
+
+/* Primary CTAs (green intent) — opt-in class + the bare "New app" button */
+.ed-button--primary, button.al-primary {
+  background: #29a634;
+  border-color: #238551;
+  color: #ffffff;
+}
+.ed-button--primary:hover, button.al-primary:hover { background: #238551; }

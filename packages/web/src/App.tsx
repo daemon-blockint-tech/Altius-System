@@ -81,7 +81,7 @@ const JOBS: JobGroup[] = [
     screens: [
       { id: 'ontology-explorer', label: 'Ontology / schema' },
       { id: 'pack-manager', label: 'Domain pack manager' },
-      { id: 'workshop', label: 'Workshop (app builder)' },
+      { id: 'workshop', label: 'App builder' },
     ],
   },
   {
@@ -109,7 +109,12 @@ const ROLES: RoleOption[] = [
  */
 export function App({ config }: { config: WebConfig }): ReactNode {
   const exchanged = useRef(false);
-  const [authState, setAuthState] = useState<AuthState>(config.oidc ? 'checking' : 'anonymous');
+  // Local-dev anonymous mode: only when this is a DEV build AND the flag is set.
+  // A production bundle has import.meta.env.DEV === false, so it can never engage.
+  const devNoAuth = import.meta.env.DEV && config.devNoAuth;
+  const [authState, setAuthState] = useState<AuthState>(
+    config.oidc ? 'checking' : (devNoAuth ? 'signed-in' : 'anonymous'),
+  );
   const session = useMemo(
     () =>
       config.oidc
@@ -164,6 +169,10 @@ export function App({ config }: { config: WebConfig }): ReactNode {
   // the gateway verifies the token and enforces access server-side.
   const [principal, setPrincipal] = useState<Principal | null>(null);
   useEffect(() => {
+    if (devNoAuth) {
+      setPrincipal({ name: 'Dev User', email: 'dev@localhost', tenant: 'default', sub: 'dev', roles: ['admin'] });
+      return;
+    }
     if (authState !== 'signed-in' || !session) { setPrincipal(null); return; }
     let live = true;
     session.getAccessToken()
@@ -242,7 +251,7 @@ export function App({ config }: { config: WebConfig }): ReactNode {
 
   // ── Auth gates (unchanged) ───────────────────────────────────
 
-  if (!config.oidc) {
+  if (!config.oidc && !devNoAuth) {
     return (
       <main>
         <h1>Altius</h1>
