@@ -105,6 +105,10 @@ export function registerCommentRoutes(
         res.status(400).json({ error: 'INVALID_INPUT', message: 'body is required' });
         return;
       }
+      // Only the author may edit their own comment.
+      const existing = await store.getComment(user.tenantId, req.params['commentId']!);
+      if (!existing) { res.status(404).json({ error: 'NOT_FOUND', message: 'Comment not found' }); return; }
+      if (existing.authorId !== user.id) { res.status(403).json({ error: 'FORBIDDEN', message: 'Only the author may edit this comment' }); return; }
       const comment = await store.updateComment(user.tenantId, req.params['commentId']!, body.body);
       res.status(200).json(comment);
     } catch (err) {
@@ -116,6 +120,10 @@ export function registerCommentRoutes(
   app.delete('/api/v1/comments/:commentId', async (req, res) => {
     try {
       const user = await extractUser(req, authenticator, isDev);
+      // Only the author may delete their own comment.
+      const existing = await store.getComment(user.tenantId, req.params['commentId']!);
+      if (!existing) { res.status(404).json({ error: 'NOT_FOUND', message: 'Comment not found' }); return; }
+      if (existing.authorId !== user.id) { res.status(403).json({ error: 'FORBIDDEN', message: 'Only the author may delete this comment' }); return; }
       await store.deleteComment(user.tenantId, req.params['commentId']!);
       res.status(204).send();
     } catch (err) {
@@ -127,6 +135,11 @@ export function registerCommentRoutes(
   app.post('/api/v1/comments/:commentId/resolve', async (req, res) => {
     try {
       const user = await extractUser(req, authenticator, isDev);
+      // Resolving a thread requires being able to read the object it hangs off.
+      const existing = await store.getComment(user.tenantId, req.params['commentId']!);
+      if (!existing) { res.status(404).json({ error: 'NOT_FOUND', message: 'Comment not found' }); return; }
+      const denied = await checkObjectAccess(deps, user, existing.objectType, existing.objectId, 'read');
+      if (denied) { res.status(denied.status).json(denied.body); return; }
       await store.setResolved(user.tenantId, req.params['commentId']!, true);
       res.status(200).json({ resolved: true });
     } catch (err) {
@@ -138,6 +151,10 @@ export function registerCommentRoutes(
   app.post('/api/v1/comments/:commentId/unresolve', async (req, res) => {
     try {
       const user = await extractUser(req, authenticator, isDev);
+      const existing = await store.getComment(user.tenantId, req.params['commentId']!);
+      if (!existing) { res.status(404).json({ error: 'NOT_FOUND', message: 'Comment not found' }); return; }
+      const denied = await checkObjectAccess(deps, user, existing.objectType, existing.objectId, 'read');
+      if (denied) { res.status(denied.status).json(denied.body); return; }
       await store.setResolved(user.tenantId, req.params['commentId']!, false);
       res.status(200).json({ resolved: false });
     } catch (err) {
