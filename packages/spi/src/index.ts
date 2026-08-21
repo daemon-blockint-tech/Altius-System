@@ -378,6 +378,11 @@ export {
   datasetProjectColumns,
 } from './dataset-rows.js';
 
+// Whether an event breaches its threshold is written onto the event, so the two
+// providers must not disagree about it — decided once, here.
+export { evaluateEventThreshold } from './event-thresholds.js';
+export type { EventThreshold, EventThresholdBreach } from './event-thresholds.js';
+
 // Applying a transform step is pure, and its output is *data* — two providers
 // that disagreed about what `round` or `dateDiff` means would produce different
 // values from the same pipeline with neither erring. So it is defined once.
@@ -427,6 +432,11 @@ export { parseSql } from './sql-parser.js';
 export type { ParsedSqlAst } from './sql-parser.js';
 export { executeSqlQuery } from './sql-query-engine.js';
 export type { SqlQueryResult } from './sql-query-engine.js';
+// Which value wins a conflict is a pure function of the conflict and the
+// strategy, and its output is *data* — two providers that disagreed would write
+// different values into the same field and neither would error. So it is
+// decided once, here.
+export { resolveConflictValue, DEFAULT_CONFLICT_STRATEGY } from './conflict-resolution.js';
 
 // Enterprise connector catalog
 export type {
