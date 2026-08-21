@@ -128,7 +128,6 @@ import { PostgresStorageProvider, PostgresLineageStore, PostgresAuditStore, Post
   PostgresModelChainService, PostgresConnectorCatalogService, PostgresCommandService,
   PostgresDatasetService,
   PostgresSqlQueryService,
-  PostgresBatchTransformService,
   PostgresUserDirectoryService,
   PostgresLayoutDeviceCaptureService,
 } from '@altius/storage-postgres';
@@ -1459,6 +1458,8 @@ async function main(): Promise<void> {
     // The executor registry stays per-process in both providers: a
     // TransformExecutor is a live object, not something a table can hold.
     batchTransformService: pgPool ? new PostgresBatchTransformService(pgPool, new PostgresDatasetService(pgPool)) : new InMemoryBatchTransformService(datasets),
+    // SQL query — Postgres-backed when available.
+    sqlQueryService: pgPool ? new PostgresSqlQueryService(pgPool) : new InMemorySqlQueryService(),
     // Business rules â€” Postgres-backed when available. `state` is what decides
     // whether a rule governs anything, so losing it silently reverts a rule to
     // draft: nothing looks broken, the rule just stops applying.
