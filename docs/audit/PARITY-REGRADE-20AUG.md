@@ -13,8 +13,7 @@ against real Postgres. Reproduce with `node tools/parity/reachability.mjs`.
 | Measured 19 Aug (`f188339`, 58 services) | 8 | 35 | 15 | this tool |
 | Measured 20 Aug (`177b628`, 71 services) | 16 | 55 | 0 | this tool |
 | Measured 20 Aug (`DatasetService`, merged) | 17 | 54 | 0 | this tool |
-| Measured 20 Aug (`ChangeProposalStore`, merged) | 18 | 53 | 0 | this tool |
-| **Measured now (`AgentThreadStore`, 71 services)** | **19** | **52** | **0** | this tool |
+| **Measured now (`ChangeProposalStore` branch, 71 services)** | **18** | **53** | **0** | this tool |
 
 **Durability moved this time, and it was real.** The previous pass recorded reachability
 improving while `full` stayed pinned at 8 — services were being wired to REST without
@@ -22,13 +21,13 @@ gaining a Postgres implementation. That changed: #18 added eight Postgres platfo
 stores and `full` doubled, 8 → 16. This is the first pass where the honest number went
 up for the right reason.
 
-`DatasetService` then took it to 17, `ChangeProposalStore` to 18 and `AgentThreadStore`
-to 19, by the same route each time: a Postgres store, restart survival proven, no new
-surface claimed. One service per pass is the expected rate — the count is meant to move
-slowly and mean something, rather than quickly and not.
+`DatasetService` then took it to 17 and `ChangeProposalStore` to 18, by the same route
+each time: a Postgres store, restart survival proven, no new surface claimed. One
+service per pass is the expected rate — the count is meant to move slowly and mean
+something, rather than quickly and not.
 
-The gap to the tracker is still large (19 vs ~77) but it is now a gap of *degree*
-rather than *kind*: the remaining 52 are genuinely reachable, and each needs a Postgres
+The gap to the tracker is still large (18 vs ~77) but it is now a gap of *degree*
+rather than *kind*: the remaining 53 are genuinely reachable, and each needs a Postgres
 implementation rather than a rethink.
 
 ## Verified, not inferred
@@ -56,10 +55,9 @@ mean "works":
   makes exactly the two composite-key cases fail with `invalid byte sequence for
   encoding "UTF8": 0x00`, and nothing else — so the cases test what they claim to.
 
-## The 19 that reach a durable implementation
+## The 18 that reach a durable implementation
 
-**`AgentThreadStore`** · `AlertingService` · `AuditStore` · `BlobStore` ·
-`BranchStore` ·
+`AlertingService` · `AuditStore` · `BlobStore` · `BranchStore` ·
 **`ChangeProposalStore`** · `CommentStore` · `DataFreshnessService` ·
 `DatasetMetadataService` · **`DatasetService`** · `EmbeddingStore` ·
 `GeospatialMapService` · `JustificationStore` · `NotificationStore` · `ObjectSetStore` ·
@@ -70,13 +68,13 @@ mean "works":
 durable implementation, not that the capability is complete. Rows still need demoting
 by hand where behaviour is missing.
 
-## Work queue — reachable but memory-only (52)
+## Work queue — reachable but memory-only (53)
 
 Every one is already wired to REST, so the remaining work is persistence alone. These
 are the honest `partial → full` candidates:
 
 `AccessExplanationService`¹ · `AgentEvaluationService` · `AgentService` ·
-`ApprovalWorkflowService` · `BatchTransformService` ·
+`AgentThreadStore` · `ApprovalWorkflowService` · `BatchTransformService` ·
 `BuildTriggerService` · `BusinessRulesService` ·
 `CommandExchangeService` · `CommandService` · `ConflictResolutionService` ·
 `ConnectorCatalogService` · `CopilotService` · `DataExpectationsService` ·
@@ -102,48 +100,47 @@ None of these loses data today — #14's gate withholds them under Postgres, so 
 routes answer 404 rather than accepting a write they would drop. Making one durable is
 what moves it from 404 to working.
 
-## This pass — `AgentThreadStore`
+## This pass — `CopilotService`: a shared store, and the flag it was bypassing
 
-Multi-turn agent conversations and their message transcripts.
+**No parity movement, and that is correct** — this is a defect fix, not a conversion.
+Neither copilot service has a Postgres implementation, so both stay `partial`. Recorded
+here because the defect is the same shape as the one `HumanInTheLoopService` had, and
+because this one had teeth.
 
-**The SPI's own docstring for this interface says it "replaces the in-process MemorySaver
-with a storage-backed implementation that survives process restarts."** Until this pass
-the only implementation was a `Map`, so that sentence described an intention rather than
-a fact. It is now a checked claim.
+`CopilotService` (the view-facing suggest/apply half) constructed its own private
+`InMemoryEmbeddedCopilotService`, while the API separately wired
+`embeddedCopilotService` — the surface operators configure copilots through. Two stores,
+one concept.
 
-What losing a thread looks like is worth stating precisely: not an error. The agent does
-not report that it has forgotten — it has no memory of the conversation and starts again,
-which from the user's side is indistinguishable from never having spoken to it.
+**The consequence was not just a visibility split.** Copilot ids are generated UUIDs and
+`suggest` is called with an id the caller supplies, so `ensureCopilot`'s lookup in the
+private store never matched. It fell through to creating a fresh copilot with
+`canExecuteActions: true` — on every call.
 
-**The same tie-break bug, for the fifth time — and this time it caught me too.**
-`listThreads` promises most-recently-updated first and sorted on `updatedAt` alone. Here
-ties are not the edge case but the *common* case: a thread's `createdAt` and `updatedAt`
-are the same reading of the clock until something writes to it, so a list of fresh
-threads is entirely ties. Fixed in memory with an insertion-order tiebreak — and the
-failure then showed that my Postgres `ORDER BY updated_at DESC, seq` was wrong in the
-same direction, ordering ties oldest-first. Both now break ties newest-first.
+And `getSuggestedActions` is the **one place** that flag is enforced:
 
-**A limit of the data, not of either provider.** The "a message floats its thread to the
-top" case failed in memory and passed on Postgres, for a reason that has nothing to do
-with the contract: in Postgres the round-trips spread the writes across milliseconds, in
-memory they all land in one. At millisecond resolution a thread touched in the same
-millisecond it was created is indistinguishable from one that was not. Rather than paper
-over that with a sub-millisecond race, the case now advances a fake clock so time has
-genuinely passed — and a second case states the fallback explicitly: on a tie, the
-newest-created thread sorts first, in both providers.
+```ts
+if (!copilot || !copilot.canExecuteActions) return [];
+```
 
-**And an assertion of mine that could not fail.** "Deletes a thread and its messages"
-checked `getMessages` after the delete — but `getMessages` short-circuits on the missing
-thread, so it returns `[]` whether the message rows were deleted or orphaned. Orphans
-would accumulate silently and forever. The injection that removes the message DELETE
-passed. The contract cannot express this invariant, so it is now asserted against the
-table directly in the Postgres suite, where removing that DELETE fails.
+while `createCopilot` defaults it to **false**. So a copilot deliberately configured not
+to suggest actions was never the one consulted, and suggestions were served from a
+fabricated copilot that could. The restriction was inert. Sharing the store makes the
+configured copilot the one that answers, and a test asserts exactly that from both
+directions — restricted copilot yields no actions, permitted one yields some.
 
-That is the third pass running where a passing injection meant a weak test rather than a
-weak regression, and the second where the fix was to add an assertion the shared contract
-could not make.
+Two things deliberately left alone. An unrecognised copilot id still auto-creates a
+permissive copilot, which is the opposite of `createCopilot`'s own default; narrowing it
+would change what `suggest` returns for unknown ids, so it is pinned as-is and raised
+separately. And the leak it caused — a fresh copilot per call — is fixed only as a
+consequence of the store being shared, not by adding cleanup.
 
-## Previous pass — `ChangeProposalStore`
+The tests live in `storage-memory` rather than the conformance suite, because there is no
+second provider: a conformance category with one provider is a unit test wearing a
+costume. A source-level guard in `api` pins the wiring, the same way #37's does for the
+proposal store.
+
+## This pass — `ChangeProposalStore`
 
 The audit trail for AI-driven change: an agent proposes rather than executes, and a
 human approves, rejects, or asks for revisions. Who decided what, and when. That record
