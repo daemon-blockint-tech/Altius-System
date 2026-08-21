@@ -13,8 +13,7 @@ against real Postgres. Reproduce with `node tools/parity/reachability.mjs`.
 | Measured 19 Aug (`f188339`, 58 services) | 8 | 35 | 15 | this tool |
 | Measured 20 Aug (`177b628`, 71 services) | 16 | 55 | 0 | this tool |
 | Measured 20 Aug (`DatasetService`, merged) | 17 | 54 | 0 | this tool |
-| Measured 20 Aug (`ChangeProposalStore`, merged) | 18 | 53 | 0 | this tool |
-| **Measured now (`SqlQueryService`, 71 services)** | **19** | **52** | **0** | this tool |
+| **Measured now (`ChangeProposalStore` branch, 71 services)** | **18** | **53** | **0** | this tool |
 
 **Durability moved this time, and it was real.** The previous pass recorded reachability
 improving while `full` stayed pinned at 8 — services were being wired to REST without
@@ -22,13 +21,13 @@ gaining a Postgres implementation. That changed: #18 added eight Postgres platfo
 stores and `full` doubled, 8 → 16. This is the first pass where the honest number went
 up for the right reason.
 
-`DatasetService` then took it to 17, `ChangeProposalStore` to 18 and `SqlQueryService`
-to 19, by the same route each time: a Postgres store, restart survival proven, no new
-surface claimed. One service per pass is the expected rate — the count is meant to move
-slowly and mean something, rather than quickly and not.
+`DatasetService` then took it to 17 and `ChangeProposalStore` to 18, by the same route
+each time: a Postgres store, restart survival proven, no new surface claimed. One
+service per pass is the expected rate — the count is meant to move slowly and mean
+something, rather than quickly and not.
 
-The gap to the tracker is still large (19 vs ~77) but it is now a gap of *degree*
-rather than *kind*: the remaining 52 are genuinely reachable, and each needs a Postgres
+The gap to the tracker is still large (18 vs ~77) but it is now a gap of *degree*
+rather than *kind*: the remaining 53 are genuinely reachable, and each needs a Postgres
 implementation rather than a rethink.
 
 ## Verified, not inferred
@@ -56,20 +55,20 @@ mean "works":
   makes exactly the two composite-key cases fail with `invalid byte sequence for
   encoding "UTF8": 0x00`, and nothing else — so the cases test what they claim to.
 
-## The 19 that reach a durable implementation
+## The 18 that reach a durable implementation
 
 `AlertingService` · `AuditStore` · `BlobStore` · `BranchStore` ·
 **`ChangeProposalStore`** · `CommentStore` · `DataFreshnessService` ·
 `DatasetMetadataService` · **`DatasetService`** · `EmbeddingStore` ·
 `GeospatialMapService` · `JustificationStore` · `NotificationStore` · `ObjectSetStore` ·
 `OntologySqlService` · `OntologyUsageMetricsService` · `ScopedSessionStore` ·
-**`SqlQueryService`** · `TimeSeriesStore`
+`TimeSeriesStore`
 
 `full` here stays a **necessary, not sufficient** condition: it says a user can reach a
 durable implementation, not that the capability is complete. Rows still need demoting
 by hand where behaviour is missing.
 
-## Work queue — reachable but memory-only (52)
+## Work queue — reachable but memory-only (53)
 
 Every one is already wired to REST, so the remaining work is persistence alone. These
 are the honest `partial → full` candidates:
@@ -88,7 +87,7 @@ are the honest `partial → full` candidates:
 `ObjectSetFilterStore` · `OntologyChangeHistoryService` · `OntologyManagerService` ·
 `PipelineBuildService` · `PipelineService` · `PlatformAssistantService` ·
 `PlatformResourceService` · `ProcessMiningService` · `SavedViewStore` ·
-`ScenarioService` · `SqlAnalyticsService` · `SyncCdcService` ·
+`ScenarioService` · `SqlAnalyticsService` · `SqlQueryService` · `SyncCdcService` ·
 `TokenMeteringService` · `TransformExpressionService` · `UserDirectoryService` ·
 `ValueFormattingService` · `VariableTransformService` · `VectorSearchService` ·
 `WorkshopPlatformService` · `WorkshopUxService`
@@ -101,53 +100,47 @@ None of these loses data today — #14's gate withholds them under Postgres, so 
 routes answer 404 rather than accepting a write they would drop. Making one durable is
 what moves it from 404 to working.
 
-## This pass — `SqlQueryService`
+## This pass — `CopilotService`: a shared store, and the flag it was bypassing
 
-The one a lead prod-testing the headless API actually reaches for: send SQL, get rows
-back. And unlike most of the queue, it does real work — the statement is parsed, the
-WHERE, ORDER BY, LIMIT and column list are pushed down to the dataset service, and the
-join is evaluated over what comes back. Datasets became durable in #24, so a query on
-this provider now reads rows that survived a restart and writes a job record that does
-the same.
+**No parity movement, and that is correct** — this is a defect fix, not a conversion.
+Neither copilot service has a Postgres implementation, so both stay `partial`. Recorded
+here because the defect is the same shape as the one `HumanInTheLoopService` had, and
+because this one had teeth.
 
-**The risk here is not mainly storage.** A query service that stores its jobs perfectly
-and *evaluates* differently on the two providers is the worse failure: the same
-statement over the same rows would return different answers on dev and prod, and neither
-deployment would look broken. So the parser moved from `storage-memory` into
-`@altius/spi` alongside a new query engine, and both providers call them. The in-memory
-service lost its copy of the execution path entirely; it is now a job store plus a call
-to the shared engine, which is what the Postgres one is too.
+`CopilotService` (the view-facing suggest/apply half) constructed its own private
+`InMemoryEmbeddedCopilotService`, while the API separately wired
+`embeddedCopilotService` — the surface operators configure copilots through. Two stores,
+one concept.
 
-The conformance category is weighted accordingly — twenty assertions per provider, most
-of them about what a query *means* rather than about the record round-tripping: filter
-pushdown, comparison operators, projection, ordering, which LIMIT wins when the
-statement and the request both carry one, joins, and the surprising-but-shared rule that
-`SELECT *` over an empty result reports no columns at all.
+**The consequence was not just a visibility split.** Copilot ids are generated UUIDs and
+`suggest` is called with an id the caller supplies, so `ensureCopilot`'s lookup in the
+private store never matched. It fell through to creating a fresh copilot with
+`canExecuteActions: true` — on every call.
 
-**Two limits matched rather than fixed**, both stated in the store header. `submit` is
-"async" in name only: it writes the job `queued`, then `running`, then terminal, all
-before returning, so a caller polling `get()` will never catch one in flight and a queue
-that stopped draining is not a state this can represent. And the result rows are stored
-on the job in a single JSONB value — which is what makes `results()` answerable after
-the process that ran the query is gone, and also means a `SELECT` with no LIMIT writes
-its entire result set into one row. For a query service that is a real ceiling.
+And `getSuggestedActions` is the **one place** that flag is enforced:
 
-Five regressions injected, five caught, each failing only its intended cases. The
-strongest is the one that proves the query reads real data rather than inventing it:
-pointing the Postgres service at a fresh in-memory dataset store fails thirteen cases.
-Breaking the *shared* engine (dropping the column projection) fails the same case on
-**both** providers, which is the property extracting it was for.
+```ts
+if (!copilot || !copilot.canExecuteActions) return [];
+```
 
-**And one of my own cases turned out to be vacuous, twice over.** The plain
-"lists jobs newest first" assertion passes on a provider ordering by `submittedAt`
-alone, because two round-trips to Postgres land in two different milliseconds. Freezing
-the clock fixed it for the in-memory provider — but with only two colliding jobs the
-Postgres tie still happened to come back in the right order, so the injection passed
-anyway. Four colliding jobs catches it, deterministically across three runs. Worth
-recording because the first fix looked like it worked: a collision case is only a proof
-once the injection actually fails.
+while `createCopilot` defaults it to **false**. So a copilot deliberately configured not
+to suggest actions was never the one consulted, and suggestions were served from a
+fabricated copilot that could. The restriction was inert. Sharing the store makes the
+configured copilot the one that answers, and a test asserts exactly that from both
+directions — restricted copilot yields no actions, permitted one yields some.
 
-## Previous pass — `ChangeProposalStore`
+Two things deliberately left alone. An unrecognised copilot id still auto-creates a
+permissive copilot, which is the opposite of `createCopilot`'s own default; narrowing it
+would change what `suggest` returns for unknown ids, so it is pinned as-is and raised
+separately. And the leak it caused — a fresh copilot per call — is fixed only as a
+consequence of the store being shared, not by adding cleanup.
+
+The tests live in `storage-memory` rather than the conformance suite, because there is no
+second provider: a conformance category with one provider is a unit test wearing a
+costume. A source-level guard in `api` pins the wiring, the same way #37's does for the
+proposal store.
+
+## This pass — `ChangeProposalStore`
 
 The audit trail for AI-driven change: an agent proposes rather than executes, and a
 human approves, rejects, or asks for revisions. Who decided what, and when. That record
@@ -213,13 +206,9 @@ Two things that conversion surfaced, neither of them the dataset store's own bug
 
 Same pattern, in rough order of what losing it costs: `ApprovalWorkflowService` (the
 other governance audit trail — but it is **not wired into the API at all**, so it needs
-routes before persistence is worth anything), then `DatasourceService` and
-`VariableTransformService`, which are what remains of the dataset/pipeline data plane
-once the open PRs land.
-
-Counts here are measured on **this branch's base**, `main`. Several durability PRs are
-open and unmerged, each moving the same counters, so the headline row will need
-re-measuring once they land rather than being added up.
+routes before persistence is worth anything), then `BatchTransformService`,
+`DatasetProjectionService` and `SqlQueryService`, which are the rest of the
+dataset/pipeline data plane.
 
 ## Standing rule — a contract changes in every provider or in none
 
