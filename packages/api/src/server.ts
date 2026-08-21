@@ -158,6 +158,7 @@ import {
   PostgresObjectSetFilterStore,
   PostgresApprovalWorkflowService,
   PostgresDataExpectationsService,
+  PostgresOntologyChangeHistoryService,
   PostgresConflictResolutionService,
   PostgresHumanInTheLoopService,
   PostgresMultiOntologyGovernanceService,
@@ -173,6 +174,13 @@ import {
   PostgresSqlQueryService,
   PostgresVariableTransformService,
   PostgresUserDirectoryService,
+  PostgresDesignSystemService,
+  PostgresModelRegistryService,
+  PostgresModelInferenceService,
+  PostgresModelChainService,
+  PostgresConnectorCatalogService,
+  PostgresCommandService,
+  PostgresBatchTransformService,
   PostgresLayoutDeviceCaptureService,
   PostgresSqlQueryService,
   PostgresWorkshopUxService,
@@ -331,6 +339,40 @@ import {
   SubscriptionManager,
   SubscriptionRegistry,
 } from './subscriptions/index.js';
+import { createGraphQLServer, buildResolverContext } from './graphql/index.js';
+import { guardWsOperation } from './graphql/ws-gate.js';
+import { generateRestRoutes, generateOpenApiSpec, auditRead } from './rest/index.js';
+import { writeReadAuditFor } from './rest/audit-read.js';
+import { isTypeVisible, missingMarkings } from './markings/enforce.js';
+import { invokeFunction } from './functions/invoke-function.js';
+import { generateAuditRoutes } from './rest/audit-routes.js';
+import { generateLlmRoutes, generateWorkflowRoutes } from './rest/index.js';
+import { generateTraverseRoutes } from './rest/traverse-route.js';
+import { recordRestUsage } from './rest/usage-recording.js';
+import { generateSyncStatusRoutes } from './rest/sync-status-routes.js';
+import { generateDataConnectionStatusRoutes } from './rest/data-connection-status-routes.js';
+import { registerAttachmentRoutes } from './rest/attachment-routes.js';
+import { registerTimeSeriesRoutes } from './rest/timeseries-routes.js';
+import { registerBranchRoutes } from './rest/branch-routes.js';
+import { registerCommentRoutes } from './rest/comment-routes.js';
+import { registerNotificationRoutes } from './rest/notification-routes.js';
+import { registerEmbeddingRoutes } from './rest/embedding-routes.js';
+import { registerAlertingRoutes } from './rest/alerting-routes.js';
+import { registerGeospatialRoutes } from './rest/geospatial-routes.js';
+import { registerScenarioRoutes } from './rest/scenario-routes.js';
+import { registerWorkshopRoutes } from './rest/workshop-routes.js';
+import { registerLLMGatewayRoutes } from './rest/llm-gateway-routes.js';
+import { registerAppEmbeddingRoutes } from './rest/app-embedding-routes.js';
+import { registerPlatformResourceRoutes } from './rest/platform-resource-routes.js';
+import { registerAbsentServiceRoutes } from './rest/absent-services-routes.js';
+import { registerSavedViewRoutes } from './rest/saved-view-routes.js';
+import { registerUserDirectoryRoutes } from './rest/user-directory-routes.js';
+import { readPlatformVersion } from './version.js';
+import { createFhirRouter } from './fhir/index.js';
+import { createCdmRouter } from './cdm/index.js';
+import { generateRelationshipRoutes, buildGrantAllowlist } from './relationships/router.js';
+import { generateConsentRoutes, assertConsentConfig } from './consent/router.js';
+import { InMemorySubscribableEventBus, SubscriptionManager, SubscriptionRegistry } from './subscriptions/index.js';
 import type { SubscribableEventBus } from './subscriptions/index.js';
 import {
   RedpandaEventBus,
@@ -1501,6 +1543,7 @@ async function main(): Promise<void> {
       ontologyManagerService: new InMemoryOntologyManagerService(),
       valueFormattingService: new InMemoryValueFormattingService(),
       ontologyChangeHistoryService: new InMemoryOntologyChangeHistoryService(),
+      designSystemService: new InMemoryDesignSystemService(),
       // Workshop UI services.
       commandExchangeService: new InMemoryCommandExchangeService(),
       graphService: new InMemoryGraphService(),
@@ -1688,6 +1731,12 @@ async function main(): Promise<void> {
     // whether a rule governs anything, so losing it silently reverts a rule to
     // draft: nothing looks broken, the rule just stops applying.
     businessRulesService: pgPool ? new PostgresBusinessRulesService(pgPool) : new InMemoryBusinessRulesService(),
+    // Ontology change history — Postgres-backed when available. The audit
+    // trail for schema change: who changed it, when, and a snapshot of what it
+    // looked like. Graduated out of `nonDurableServices`. Note `restore` and
+    // `applyChange` still report success without changing any schema, in BOTH
+    // providers — see the store's header.
+    ontologyChangeHistoryService: pgPool ? new PostgresOntologyChangeHistoryService(pgPool) : new InMemoryOntologyChangeHistoryService(),
     // Conflict resolution — Postgres-backed when available. Both halves fail
     // silently when lost: an unresolved conflict that disappears means the
     // datasource and the user edit quietly keep different values, and a lost

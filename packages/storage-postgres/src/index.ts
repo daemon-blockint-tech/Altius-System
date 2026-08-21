@@ -109,6 +109,7 @@ export { PostgresSavedViewStore } from './governance/postgres-saved-view-store.j
 export { PostgresUserDirectoryService } from './governance/postgres-user-directory-service.js';
 export { PostgresDesignSystemService } from './governance/postgres-design-system-service.js';
 export { PostgresLayoutDeviceCaptureService } from './governance/postgres-layout-device-capture-service.js';
+export { PostgresOntologyChangeHistoryService } from './governance/postgres-ontology-change-history-service.js';
 export { PostgresConflictResolutionService } from './sync/postgres-conflict-resolution-service.js';
 export { PostgresWorkshopUxService } from './governance/postgres-workshop-ux-service.js';
 export { PostgresDatasetService } from './dataset/postgres-dataset-service.js';
