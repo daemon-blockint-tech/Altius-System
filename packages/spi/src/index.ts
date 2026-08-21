@@ -160,6 +160,10 @@ export type {
   RateLimitConfig,
   RateLimitResult,
   LLMRateLimiter,
+  SensitiveValueDeclaration,
+  PiiRedactionEvent,
+  FieldVisibilityProvider,
+  PiiObfuscator,
 } from './llm-gateway.js';
 export { DEFAULT_RATE_LIMIT } from './llm-gateway.js';
 

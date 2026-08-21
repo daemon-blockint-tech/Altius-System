@@ -16,8 +16,13 @@ import type { OidcAuthenticator } from '@altius/security';
 import type { RequestContext, ChatCompletionOptions, RateLimitConfig, EmbeddingOptions } from '@altius/spi';
 import { extractUser } from '../config.js';
 
-function ctxFromUser(user: { tenantId: string; id: string }): RequestContext {
-  return { tenantId: user.tenantId, actorId: user.id };
+function ctxFromUser(user: { tenantId: string; id: string; roles: string[]; groups: string[] }): RequestContext {
+  return {
+    tenantId: user.tenantId,
+    actorId: user.id,
+    actorRoles: user.roles,
+    actorGroups: user.groups,
+  };
 }
 
 export function registerLLMGatewayRoutes(

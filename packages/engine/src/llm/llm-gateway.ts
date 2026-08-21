@@ -19,6 +19,7 @@ import type {
   LLMClient,
   LLMUsageTracker,
   LLMRateLimiter,
+  PiiObfuscator,
 } from '@altius/spi';
 
 export interface LLMGatewayOptions {
@@ -30,6 +31,15 @@ export interface LLMGatewayOptions {
   usageTracker: LLMUsageTracker;
   /** Rate limiter. */
   rateLimiter: LLMRateLimiter;
+  /**
+   * Optional PII obfuscator. When present, the gateway masks
+   * @sensitive-sourced values declared in `ChatCompletionOptions.sensitiveValues`
+   * before the payload reaches the LLM client. When absent, the gateway
+   * forwards payloads untouched (the read path is the primary redaction
+   * layer; the obfuscator is the second layer for callers that build prompts
+   * from data they could read under an elevated role).
+   */
+  piiObfuscator?: PiiObfuscator;
 }
 
 export class DefaultLLMGateway implements LLMGateway {
@@ -37,12 +47,14 @@ export class DefaultLLMGateway implements LLMGateway {
   private readonly modelMap: Map<string, ModelCatalogEntry>;
   readonly usageTracker: LLMUsageTracker;
   readonly rateLimiter: LLMRateLimiter;
+  private readonly piiObfuscator?: PiiObfuscator;
 
   constructor(options: LLMGatewayOptions) {
     this.llmClient = options.llmClient;
     this.usageTracker = options.usageTracker;
     this.rateLimiter = options.rateLimiter;
     this.modelMap = new Map(options.models.map(m => [m.rid, m]));
+    this.piiObfuscator = options.piiObfuscator;
   }
 
   async listModels(_ctx: RequestContext): Promise<ModelCatalogEntry[]> {
@@ -72,8 +84,14 @@ export class DefaultLLMGateway implements LLMGateway {
       throw new Error(`Model ${options.model} is not available in region ${requestedRegion}`);
     }
 
+    // PII obfuscation: mask @sensitive-sourced values before token estimation
+    // so the redacted (shorter) text drives both the rate-limit check and the
+    // prompt sent to the provider. Redaction decisions are logged by the
+    // obfuscator via its onRedaction hook.
+    const { messages: safeMessages } = await this.applyPiiObfuscation(ctx, options);
+
     // Estimate tokens (rough: ~4 chars per token)
-    const promptText = options.messages.map(m => m.content).join('\n');
+    const promptText = safeMessages.map(m => m.content).join('\n');
     const estimatedTokens = Math.ceil(promptText.length / 4) + (options.maxTokens ?? 1000);
 
     // Rate limit check
@@ -82,7 +100,7 @@ export class DefaultLLMGateway implements LLMGateway {
       throw new Error(rateLimit.reason ?? 'Rate limit exceeded');
     }
 
-    const { systemPrompt, userPrompt } = this.buildPrompts(options.messages);
+    const { systemPrompt, userPrompt } = this.buildPrompts(safeMessages);
 
     // Delegate to LLMClient
     const result = await this.llmClient.complete(ctx, userPrompt, {
@@ -116,8 +134,10 @@ export class DefaultLLMGateway implements LLMGateway {
     }
     this.enforceGovernance(ctx, model);
 
+    const { messages: safeMessages } = await this.applyPiiObfuscation(ctx, options);
+
     // Estimate tokens for rate limit check
-    const promptText = options.messages.map(m => m.content).join('\n');
+    const promptText = safeMessages.map(m => m.content).join('\n');
     const estimatedTokens = Math.ceil(promptText.length / 4) + (options.maxTokens ?? 1000);
 
     const rateLimit = await this.rateLimiter.check(ctx.tenantId, estimatedTokens);
@@ -125,7 +145,7 @@ export class DefaultLLMGateway implements LLMGateway {
       throw new Error(rateLimit.reason ?? 'Rate limit exceeded');
     }
 
-    const { systemPrompt, userPrompt } = this.buildPrompts(options.messages);
+    const { systemPrompt, userPrompt } = this.buildPrompts(safeMessages);
     const completionId = `chatcmpl_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
     const created = Math.floor(Date.now() / 1000);
 
@@ -184,6 +204,29 @@ export class DefaultLLMGateway implements LLMGateway {
   }
 
   // ── Private helpers ──
+
+  /**
+   * Run the PII obfuscator over the request's messages when one is wired and
+   * the caller declared sensitive values. Returns the (possibly masked)
+   * messages to send downstream. When no obfuscator is configured, returns
+   * the original messages unchanged — the read path remains the primary
+   * redaction layer.
+   */
+  private async applyPiiObfuscation(
+    ctx: RequestContext,
+    options: ChatCompletionOptions,
+  ): Promise<{ messages: ChatMessage[] }> {
+    if (!this.piiObfuscator || !options.sensitiveValues || options.sensitiveValues.length === 0) {
+      return { messages: options.messages };
+    }
+    const { messages } = await this.piiObfuscator.obfuscate(
+      ctx,
+      options.messages,
+      options.sensitiveValues,
+      options.model,
+    );
+    return { messages };
+  }
 
   private resolveModel(rid: string): ModelCatalogEntry {
     const model = this.modelMap.get(rid);
@@ -273,16 +316,18 @@ export class DefaultLLMGateway implements LLMGateway {
       throw new Error(`Model ${options.model} is not available in region ${requestedRegion}`);
     }
 
-    const promptText = options.messages.map(m => m.content).join('\n');
+    const { messages: safeMessages } = await this.applyPiiObfuscation(ctx, options);
+
+    const promptText = safeMessages.map(m => m.content).join('\n');
     const estimatedTokens = Math.ceil(promptText.length / 4) + (options.maxTokens ?? 1000);
     const rateLimit = await this.rateLimiter.check(ctx.tenantId, estimatedTokens);
     if (!rateLimit.allowed) {
       throw new Error(rateLimit.reason ?? 'Rate limit exceeded');
     }
 
-    const systemMessages = options.messages.filter(m => m.role === 'system').map(m => m.content);
+    const systemMessages = safeMessages.filter(m => m.role === 'system').map(m => m.content);
     const systemPrompt = systemMessages.join('\n');
-    const userPrompt = options.messages
+    const userPrompt = safeMessages
       .filter(m => m.role !== 'system')
       .map(m => `${m.role}: ${m.content}`)
       .join('\n');

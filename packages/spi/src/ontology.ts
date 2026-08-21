@@ -198,6 +198,15 @@ export interface RequestContext {
    * ACL must read as "grants nothing" rather than "grants everything".
    */
   actorGroups?: string[];
+  /**
+   * Platform roles the actor holds (e.g. `clinician`, `viewer`). Present so
+   * downstream governance layers (field-level redaction, PII obfuscation on
+   * the LLM egress path) can call `getVisibleFields(actorId, roles, type)`
+   * without a second identity lookup. Absent means "no roles known", which
+   * every field-permission check must read as "no fields granted" (fail
+   * closed), never "all fields granted".
+   */
+  actorRoles?: string[];
 }
 
 // ---------------------------------------------------------------------------

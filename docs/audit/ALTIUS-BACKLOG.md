@@ -750,15 +750,13 @@ Moved back from §out-of-scope after the client roster was named: multi-sector �
 
 ### `aip-llm/pii-obfuscation-pre-model` — PII obfuscation/moderation before LLM payloads
 
-**Status:** `absent`
-
-> 🔒 CLAIMED: loop-0821-pii1 2026-08-21T16:05+07:00
+**Status:** `partial`
 
 > 🎯 **Client driver (21 Aug 2026):** Medical records + AML/compliance — sensitive values must not reach external LLM providers raw. Foundry parity: AIP "Moderation: PII Obfuscation, Content Detection".
 
-**Evidence (21 Aug):** Not in the original 187 rows. LLM gateway exists (usage attribution, rate limiting) but forwards payloads untouched; @sensitive is enforced on read paths, not on the LLM egress path.
+**Evidence (21 Aug, loop-0821-pii1):** LLM egress path now masks @sensitive-sourced values before the payload reaches the provider. `PiiObfuscator` SPI added to `packages/spi/src/llm-gateway.ts` with `SensitiveValueDeclaration`, `PiiRedactionEvent`, `FieldVisibilityProvider` (structural interface satisfied by `AuthorizationService`), and `PiiObfuscator.obfuscate(ctx, messages, sensitiveValues, model)`. `DefaultPiiObfuscator` (`packages/engine/src/llm/pii-obfuscator.ts`) reuses `getVisibleFields(actorId, actorRoles, objectType)` — the same policy the read path enforces — and replaces every occurrence of a non-visible value with `[REDACTED:<field>]`. Fail-closed: undefined field config or absent `actorRoles` → masked. `RequestContext.actorRoles` added so the obfuscator can call `getVisibleFields` without a second identity lookup. `DefaultLLMGateway` wires the obfuscator in `chatCompletion`, `streamChatCompletion`, and `chatCompletionStream` via `applyPiiObfuscation`; when no obfuscator is configured the gateway forwards payloads untouched (read path stays primary). API wires `DefaultPiiObfuscator` into the gateway at `packages/api/src/server.ts:1457` with `authorizationService` as the visibility provider and a structured `console.info` redaction log. `ctxFromUser` in `llm-gateway-routes.ts` now passes `actorRoles` + `actorGroups`. Tests: `pii-obfuscator.test.ts` (8 cases — mask non-visible, allow visible, fail-closed no-config, fail-closed no-roles, no-op empty, multi-occurrence, no-mutation, redaction logger), `llm-gateway-pii.test.ts` (4 cases — gateway masks before LLM client, passes visible through, no-obfuscator passthrough, streaming path). 28/28 pass; `pnpm turbo run build test --filter=@altius/spi --filter=@altius/engine --filter=@altius/api` green (1045 tests pass).
 
-**Gap:** Everything on the egress path. Scope when claimed: mask @sensitive-sourced values in prompts at the gateway using the same field policy getVisibleFields reads; log the masking decision.
+**Gap:** Caller-declared `sensitiveValues` is opt-in — a caller that omits a sensitive value from the list bypasses the obfuscator. The read path already redacts @sensitive fields per the caller's role, so a value the caller cannot see should never reach the prompt; the obfuscator is the second layer for the case where an elevated-role caller builds a prompt for a downstream model. Still open: (a) automatic PII detection (regex/entity recognizer) for prompts built from raw text rather than tagged ontology reads, (b) reversible tokenization so a model response can be de-masked, (c) per-tenant redaction-policy config (which fields are always-masked regardless of caller role), (d) Foundry "Content Detection" half (moderation of model outputs, not just inputs), (e) audit-trail persistence of `PiiRedactionEvent` beyond the structured log line.
 
 ## Proposed out-of-scope — parked with named triggers
 

@@ -86,6 +86,89 @@ export interface ChatCompletionOptions {
   retention?: 'ephemeral' | 'retain';
   /** Requested data residency (EU, US, any). Used for geo routing. */
   dataRegion?: 'EU' | 'US' | 'any';
+  /**
+   * Sensitive values the caller placed into the prompt, tagged with their
+   * source object type and field. The gateway's PII obfuscator checks each
+   * declaration against the caller's field permissions: a value sourced from
+   * a field the caller cannot read is masked in every message before the
+   * payload reaches the LLM provider. Fail-closed: a declaration with no
+   * matching field-permission config is treated as not-visible and masked.
+   *
+   * Callers that build prompts from ontology reads (functions, agents) MUST
+   * declare every @sensitive-sourced value they inject. A caller that omits
+   * a sensitive value from this list bypasses the obfuscator — the read path
+   * already redacts @sensitive fields per the caller's role, so a value the
+   * caller can see is one they are permitted to send; a value they cannot see
+   * should never have reached the prompt in the first place. This field is
+   * the second layer for the case where a function or SDK caller with elevated
+   * read access builds a prompt for a downstream model call.
+   */
+  sensitiveValues?: SensitiveValueDeclaration[];
+}
+
+/**
+ * A value the caller declares as sensitive, with its source field.
+ *
+ * The obfuscator uses `(objectType, field)` to look up the caller's field
+ * visibility via `FieldVisibilityProvider.getVisibleFields`. If the field is
+ * not visible to the caller, every occurrence of `value` in the prompt
+ * messages is replaced with `[REDACTED:<field>]`.
+ */
+export interface SensitiveValueDeclaration {
+  /** Object type the value was read from (e.g. `patient`). */
+  objectType: string;
+  /** Field name the value was read from (e.g. `name`, `nik`). */
+  field: string;
+  /** The literal value as it appears in the prompt text. */
+  value: string;
+}
+
+/**
+ * Structural interface satisfied by `AuthorizationService` — the obfuscator
+ * depends on this minimal contract, not the full service, so the engine layer
+ * stays decoupled from `@altius/security`.
+ */
+export interface FieldVisibilityProvider {
+  /**
+   * @returns Set of visible field names, or `undefined` when no field-permission
+   *          config exists for the object type (the obfuscator treats this as
+   *          fail-closed: not visible).
+   */
+  getVisibleFields(userId: string, roles: string[], objectType: string): Set<string> | undefined;
+}
+
+/** A single PII redaction decision recorded by the obfuscator. */
+export interface PiiRedactionEvent {
+  tenantId: string;
+  actorId: string;
+  /** Model RID the request was targeting. */
+  model: string;
+  objectType: string;
+  field: string;
+  /** `redacted` if the value was masked, `allowed` if the caller may see it. */
+  decision: 'redacted' | 'allowed';
+  /** Number of message-content occurrences that were masked. */
+  occurrences: number;
+  timestamp: string;
+}
+
+/**
+ * PII obfuscator — masks @sensitive-sourced values in prompt messages before
+ * they reach an LLM provider. Reuses the same `getVisibleFields` policy the
+ * read path enforces, so a value the caller cannot read on the read path is
+ * also masked on the LLM egress path.
+ */
+export interface PiiObfuscator {
+  /**
+   * Mask non-visible sensitive values in-place across all messages.
+   * @returns the obfuscated messages and the list of redaction decisions.
+   */
+  obfuscate(
+    ctx: RequestContext,
+    messages: ChatMessage[],
+    sensitiveValues: SensitiveValueDeclaration[] | undefined,
+    model: string,
+  ): Promise<{ messages: ChatMessage[]; redactions: PiiRedactionEvent[] }>;
 }
 
 /** A single chunk of a streaming chat completion. */

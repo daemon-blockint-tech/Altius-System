@@ -111,6 +111,8 @@ export { CompositeLLMClient } from './llm/composite-llm-client.js';
 export type { CompositeLLMClientConfig } from './llm/composite-llm-client.js';
 export { DefaultLLMGateway } from './llm/llm-gateway.js';
 export type { LLMGatewayOptions } from './llm/llm-gateway.js';
+export { DefaultPiiObfuscator } from './llm/pii-obfuscator.js';
+export type { PiiObfuscatorOptions } from './llm/pii-obfuscator.js';
 export { createLLMClient } from './llm/create-llm-client.js';
 export type { LLMEnv } from './llm/create-llm-client.js';
 

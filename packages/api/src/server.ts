@@ -194,6 +194,7 @@ import {
   ComputedFieldEvaluator,
   createLLMClient,
   DefaultLLMGateway,
+  DefaultPiiObfuscator,
   LLMFunctionRuntime,
   WorkflowGraphBuilder,
   WorkflowMonitor,
@@ -1458,6 +1459,27 @@ async function main(): Promise<void> {
       models: llmModels,
       usageTracker,
       rateLimiter,
+      // PII obfuscation on the LLM egress path: mask @sensitive-sourced values
+      // the caller cannot read on the read path, before the payload reaches
+      // the provider. Reuses the same AuthorizationService.getVisibleFields
+      // policy; fail-closed when no field config exists for the declared type.
+      piiObfuscator: new DefaultPiiObfuscator({
+        visibility: authorizationService,
+        onRedaction: (event) => {
+          console.info(
+            JSON.stringify({
+              msg: 'llm pii redaction decision',
+              tenantId: event.tenantId,
+              actorId: event.actorId,
+              model: event.model,
+              objectType: event.objectType,
+              field: event.field,
+              decision: event.decision,
+              occurrences: event.occurrences,
+            }),
+          );
+        },
+      }),
     });
   }
 
