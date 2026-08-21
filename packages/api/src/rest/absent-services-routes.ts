@@ -13,7 +13,8 @@ import { extractUser } from '../config.js';
 
 function sendError(res: any, err: unknown): void {
   const message = err instanceof Error ? err.message : 'Failed';
-  res.status(500).json({ error: 'INTERNAL', message });
+  const status = (err as { statusCode?: number })?.statusCode === 403 ? 403 : 500;
+  res.status(status).json({ error: status === 403 ? 'FORBIDDEN' : 'INTERNAL', message });
 }
 
 export function registerAbsentServiceRoutes(
@@ -21,9 +22,27 @@ export function registerAbsentServiceRoutes(
   deps: ApiDependencies,
   authenticator: OidcAuthenticator,
   isDev: boolean,
+  allowedRoles: readonly string[],
 ): void {
-  const ctx = async (req: any): Promise<RequestContext> => {
+  // Every route funnels through this gate. These services have no per-object
+  // authorization of their own, so access is role-gated as a whole — an
+  // explicitly empty role list means nobody, matching the audit-route reading.
+  const requireUser = async (req: any) => {
     const user = await extractUser(req, authenticator, isDev);
+    if (!allowedRoles.some(role => user.roles.includes(role))) {
+      throw Object.assign(
+        new Error(
+          allowedRoles.length === 0
+            ? 'Platform service routes are disabled: no platform-service role is configured.'
+            : `Platform service routes require one of: ${allowedRoles.join(', ')}`,
+        ),
+        { statusCode: 403 },
+      );
+    }
+    return user;
+  };
+  const ctx = async (req: any): Promise<RequestContext> => {
+    const user = await requireUser(req);
     return { tenantId: user.tenantId, actorId: user.id };
   };
 
@@ -31,25 +50,25 @@ export function registerAbsentServiceRoutes(
   if (deps.changeProposalStore) {
     const store = deps.changeProposalStore;
     app.get('/api/v1/change-proposals', async (req, res) => {
-      try { const user = await extractUser(req, authenticator, isDev); res.status(200).json(await store.list(user.tenantId, { state: req.query['state'] as any, limit: req.query['limit'] ? parseInt(String(req.query['limit']), 10) : undefined })); } catch (err) { sendError(res, err); }
+      try { const user = await requireUser(req); res.status(200).json(await store.list(user.tenantId, { state: req.query['state'] as any, limit: req.query['limit'] ? parseInt(String(req.query['limit']), 10) : undefined })); } catch (err) { sendError(res, err); }
     });
     app.post('/api/v1/change-proposals', async (req, res) => {
-      try { const user = await extractUser(req, authenticator, isDev); res.status(201).json(await store.create(user.tenantId, user.id, req.body)); } catch (err) { sendError(res, err); }
+      try { const user = await requireUser(req); res.status(201).json(await store.create(user.tenantId, user.id, req.body)); } catch (err) { sendError(res, err); }
     });
     app.get('/api/v1/change-proposals/:id', async (req, res) => {
-      try { const user = await extractUser(req, authenticator, isDev); const p = await store.get(user.tenantId, req.params['id']!); if (!p) { res.status(404).json({ error: 'NOT_FOUND' }); return; } res.status(200).json(p); } catch (err) { sendError(res, err); }
+      try { const user = await requireUser(req); const p = await store.get(user.tenantId, req.params['id']!); if (!p) { res.status(404).json({ error: 'NOT_FOUND' }); return; } res.status(200).json(p); } catch (err) { sendError(res, err); }
     });
     app.post('/api/v1/change-proposals/:id/submit', async (req, res) => {
-      try { const user = await extractUser(req, authenticator, isDev); res.status(200).json(await store.submit(user.tenantId, req.params['id']!)); } catch (err) { sendError(res, err); }
+      try { const user = await requireUser(req); res.status(200).json(await store.submit(user.tenantId, req.params['id']!)); } catch (err) { sendError(res, err); }
     });
     app.post('/api/v1/change-proposals/:id/approve', async (req, res) => {
-      try { const user = await extractUser(req, authenticator, isDev); res.status(200).json(await store.approve(user.tenantId, req.params['id']!, user.id, req.body?.comments)); } catch (err) { sendError(res, err); }
+      try { const user = await requireUser(req); res.status(200).json(await store.approve(user.tenantId, req.params['id']!, user.id, req.body?.comments)); } catch (err) { sendError(res, err); }
     });
     app.post('/api/v1/change-proposals/:id/reject', async (req, res) => {
-      try { const user = await extractUser(req, authenticator, isDev); res.status(200).json(await store.reject(user.tenantId, req.params['id']!, user.id, req.body?.comments)); } catch (err) { sendError(res, err); }
+      try { const user = await requireUser(req); res.status(200).json(await store.reject(user.tenantId, req.params['id']!, user.id, req.body?.comments)); } catch (err) { sendError(res, err); }
     });
     app.post('/api/v1/change-proposals/:id/withdraw', async (req, res) => {
-      try { const user = await extractUser(req, authenticator, isDev); res.status(200).json(await store.withdraw(user.tenantId, req.params['id']!)); } catch (err) { sendError(res, err); }
+      try { const user = await requireUser(req); res.status(200).json(await store.withdraw(user.tenantId, req.params['id']!)); } catch (err) { sendError(res, err); }
     });
   }
 
@@ -69,7 +88,7 @@ export function registerAbsentServiceRoutes(
       try { const c = await ctx(req); res.status(200).json(await svc.submitForApproval(c, req.params['id']!)); } catch (err) { sendError(res, err); }
     });
     app.post('/api/v1/business-rules/:id/approve', async (req, res) => {
-      try { const c = await ctx(req); const user = await extractUser(req, authenticator, isDev); res.status(200).json(await svc.approve(c, req.params['id']!, user.id, req.body?.notes)); } catch (err) { sendError(res, err); }
+      try { const c = await ctx(req); const user = await requireUser(req); res.status(200).json(await svc.approve(c, req.params['id']!, user.id, req.body?.notes)); } catch (err) { sendError(res, err); }
     });
     app.post('/api/v1/business-rules/:id/activate', async (req, res) => {
       try { const c = await ctx(req); res.status(200).json(await svc.activate(c, req.params['id']!)); } catch (err) { sendError(res, err); }
@@ -106,7 +125,7 @@ export function registerAbsentServiceRoutes(
   if (deps.agentThreadStore) {
     const store = deps.agentThreadStore;
     app.get('/api/v1/agent-threads', async (req, res) => {
-      try { const c = await ctx(req); const user = await extractUser(req, authenticator, isDev); res.status(200).json(await store.listThreads(c, user.id)); } catch (err) { sendError(res, err); }
+      try { const c = await ctx(req); const user = await requireUser(req); res.status(200).json(await store.listThreads(c, user.id)); } catch (err) { sendError(res, err); }
     });
     app.post('/api/v1/agent-threads', async (req, res) => {
       try { const c = await ctx(req); res.status(201).json(await store.createThread(c, req.body)); } catch (err) { sendError(res, err); }
@@ -204,7 +223,7 @@ export function registerAbsentServiceRoutes(
       try { const c = await ctx(req); res.status(201).json(await svc.sendMessage(c, { ...req.body, conversationId: req.params['convId']! })); } catch (err) { sendError(res, err); }
     });
     app.get('/api/v1/copilots/conversations', async (req, res) => {
-      try { const c = await ctx(req); const user = await extractUser(req, authenticator, isDev); res.status(200).json(await svc.listConversations(c, user.id)); } catch (err) { sendError(res, err); }
+      try { const c = await ctx(req); const user = await requireUser(req); res.status(200).json(await svc.listConversations(c, user.id)); } catch (err) { sendError(res, err); }
     });
   }
 
@@ -298,7 +317,7 @@ export function registerAbsentServiceRoutes(
       try { const c = await ctx(req); res.status(201).json(await svc.startSession(c, req.body)); } catch (err) { sendError(res, err); }
     });
     app.get('/api/v1/platform-assistant/sessions', async (req, res) => {
-      try { const c = await ctx(req); const user = await extractUser(req, authenticator, isDev); res.status(200).json(await svc.listSessions(c, user.id)); } catch (err) { sendError(res, err); }
+      try { const c = await ctx(req); const user = await requireUser(req); res.status(200).json(await svc.listSessions(c, user.id)); } catch (err) { sendError(res, err); }
     });
     app.post('/api/v1/platform-assistant/sessions/:id/messages', async (req, res) => {
       try { const c = await ctx(req); res.status(201).json(await svc.sendMessage(c, { ...req.body, sessionId: req.params['id']! })); } catch (err) { sendError(res, err); }

@@ -13,6 +13,21 @@ import { parseTransformExpression, type TransformFn } from "./transforms.js";
 /** Sync mode for datasource extraction. */
 export type SyncMode = "OVERLAY" | "CDC" | "POLLING" | "BATCH";
 
+/**
+ * Where the connector for this datasource executes.
+ *
+ * DIRECT — inside the platform (the in-process SyncScheduler), for sources
+ * the platform can reach over its own egress: public APIs, cloud object
+ * stores, databases with a network path from the cluster.
+ *
+ * AGENT — on a Data Connection Agent enrolled from inside the customer
+ * network, for sources the platform cannot reach (on-prem databases, HDFS,
+ * shared drives behind a firewall). The agent captures records locally and
+ * uploads them over its outbound-only channel; mapping and ontology writes
+ * stay platform-side.
+ */
+export type SyncRuntime = "DIRECT" | "AGENT";
+
 /** Conflict resolution strategy. */
 export type ConflictResolution = "SOURCE_PRIORITY" | "ACTION_PRIORITY";
 
@@ -82,6 +97,14 @@ export interface ObjectMapping {
 export interface DatasourceMappingConfig {
   datasource: string;
   connector: string;
+  /** Where the connector runs. Default: DIRECT (in-platform). */
+  runtime: SyncRuntime;
+  /**
+   * Name of the enrolled agent this datasource is pinned to. Only meaningful
+   * with runtime AGENT; when absent, any live agent whose local registry has
+   * the connector plugin is eligible.
+   */
+  agent?: string;
   connection: ConnectionConfig;
   mapping: ObjectMapping;
   sync: SyncConfig;
@@ -133,6 +156,8 @@ interface RawSync {
 interface RawConfig {
   datasource: string;
   connector: string;
+  runtime?: string;
+  agent?: string;
   connection: { url: string; table: string; [k: string]: unknown };
   mapping: RawMapping;
   sync: RawSync;
@@ -162,13 +187,35 @@ function buildConfig(raw: RawConfig): DatasourceMappingConfig {
   validateRequired(raw.mapping, ["objectType", "primaryKey", "properties"]);
   validateRequired(raw.sync, ["mode"]);
 
+  const runtime = buildRuntime(raw.runtime);
+  const sync = buildSync(raw.sync);
+  if (runtime === "AGENT" && sync.mode === "OVERLAY") {
+    throw new Error(
+      "runtime AGENT cannot be combined with sync.mode OVERLAY: overlay is a " +
+        "platform-side read-through cache and never runs on an agent",
+    );
+  }
+
   return {
     datasource: raw.datasource,
     connector: raw.connector,
+    runtime,
+    ...(raw.agent ? { agent: raw.agent } : {}),
     connection: buildConnection(raw.connection),
     mapping: buildMapping(raw.mapping),
-    sync: buildSync(raw.sync),
+    sync,
   };
+}
+
+function buildRuntime(raw: string | undefined): SyncRuntime {
+  if (raw === undefined || raw === null) return "DIRECT";
+  const validRuntimes: SyncRuntime[] = ["DIRECT", "AGENT"];
+  if (!validRuntimes.includes(raw as SyncRuntime)) {
+    throw new Error(
+      `Invalid runtime: ${raw}. Must be one of: ${validRuntimes.join(", ")}`,
+    );
+  }
+  return raw as SyncRuntime;
 }
 
 function buildConnection(raw: { url: string; table: string; [k: string]: unknown }): ConnectionConfig {
