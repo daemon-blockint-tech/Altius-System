@@ -26,6 +26,7 @@ import { ObjectBrowserScreen } from './components/ObjectBrowserScreen.js';
 import { ObjectDetailScreen } from './components/ObjectDetailScreen.js';
 import { ConsentPermissionsScreen } from './components/ConsentPermissionsScreen.js';
 import { GraphExplorerScreen } from './components/GraphExplorerScreen.js';
+import { WorkflowGraphScreen } from './components/WorkflowGraphScreen.js';
 import { McpActivityScreen } from './components/McpActivityScreen.js';
 import { PackManagerScreen } from './components/PackManagerScreen.js';
 import { SyncHealthScreen } from './components/SyncHealthScreen.js';
@@ -72,6 +73,7 @@ const JOBS: JobGroup[] = [
       { id: 'audit-trail', label: 'Audit trail' },
       { id: 'consent-permissions', label: 'Consent & permissions' },
       { id: 'graph-explorer', label: 'Graph / link explorer' },
+      { id: 'workflow-graph', label: 'Workflow graph' },
       { id: 'mcp-activity', label: 'MCP activity' },
     ],
   },
@@ -399,6 +401,11 @@ function renderScreen(
   // Workshop app builder — reachable now that its widget clients authenticate.
   if (screenId === 'workshop') {
     return <WorkshopScreen client={client} tenantId={principal?.tenant ?? 'default'} userId={principal?.sub ?? ''} />;
+  }
+
+  // Workflow provenance graph — reads the mounted /api/v1/workflow/graph route.
+  if (screenId === 'workflow-graph') {
+    return <WorkflowGraphScreen />;
   }
 
   // Object browser — generic, ontology-driven worklist for any loaded pack.
