@@ -112,6 +112,9 @@ export { PostgresLayoutDeviceCaptureService } from './governance/postgres-layout
 export { PostgresConflictResolutionService } from './sync/postgres-conflict-resolution-service.js';
 export { PostgresWorkshopUxService } from './governance/postgres-workshop-ux-service.js';
 export { PostgresDatasetService } from './dataset/postgres-dataset-service.js';
+export { PostgresBatchTransformService } from './dataset/postgres-batch-transform-service.js';
+export { PostgresSqlQueryService } from './dataset/postgres-sql-query-service.js';
+export { PostgresDataExpectationsService } from './quality/postgres-data-expectations-service.js';
 export { PostgresVariableTransformService } from './dataset/postgres-variable-transform-service.js';
 export { PostgresDataExpectationsService } from './quality/postgres-data-expectations-service.js';
 // Restored: #32 landed this service *and* its conformance suite, then the #34
