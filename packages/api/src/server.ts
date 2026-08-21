@@ -126,12 +126,15 @@ import { PostgresStorageProvider, PostgresLineageStore, PostgresAuditStore, Post
   PostgresChangeProposalStore,
   PostgresHumanInTheLoopService,
   PostgresMultiOntologyGovernanceService,
+  PostgresOntologyChangeHistoryService,
+  PostgresConflictResolutionService,
   PostgresObjectSetFilterStore, PostgresApprovalWorkflowService, PostgresDataExpectationsService,
   PostgresDesignSystemService,
   PostgresModelRegistryService, PostgresModelInferenceService,
   PostgresModelChainService, PostgresConnectorCatalogService, PostgresCommandService,
   PostgresDatasetService,
   PostgresSqlQueryService,
+  PostgresVariableTransformService,
   PostgresUserDirectoryService,
   PostgresLayoutDeviceCaptureService,
   PostgresSqlQueryService,
@@ -1506,8 +1509,14 @@ async function main(): Promise<void> {
     humanInTheLoopService: pgPool ? new PostgresHumanInTheLoopService(pgPool) : new InMemoryHumanInTheLoopService(changeProposals),
     // SQL query — Postgres-backed when available.
     sqlQueryService: pgPool ? new PostgresSqlQueryService(pgPool) : new InMemorySqlQueryService(datasets),
+    // Variable transforms — Postgres-backed when available.
+    variableTransformService: pgPool ? new PostgresVariableTransformService(pgPool) : new InMemoryVariableTransformService(),
     // Multi-ontology governance — Postgres-backed when available.
     multiOntologyGovernanceService: pgPool ? new PostgresMultiOntologyGovernanceService(pgPool) : new InMemoryMultiOntologyGovernanceService(),
+    // Ontology change history — Postgres-backed when available.
+    ontologyChangeHistoryService: pgPool ? new PostgresOntologyChangeHistoryService(pgPool) : new InMemoryOntologyChangeHistoryService(),
+    // Conflict resolution — Postgres-backed when available.
+    conflictResolutionService: pgPool ? new PostgresConflictResolutionService(pgPool) : new InMemoryConflictResolutionService(),
     // Business rules â€” Postgres-backed when available. `state` is what decides
     // whether a rule governs anything, so losing it silently reverts a rule to
     // draft: nothing looks broken, the rule just stops applying.
