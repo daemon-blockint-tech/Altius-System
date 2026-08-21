@@ -378,6 +378,16 @@ export {
 // neither looking wrong from where it stands.
 export { evaluateOntologyAccess } from './ontology-access.js';
 
+// Shared DatasetService refusals, so a create/not-found means the same thing
+// and carries the same status whichever provider is wired.
+export {
+  datasetAlreadyExistsError,
+  datasetNotFoundError,
+  datasetBranchExistsError,
+  datasetBranchNotFoundError,
+} from './dataset-contract.js';
+export type { CodedError } from './dataset-contract.js';
+
 // Enterprise connector catalog
 export type {
   ConnectorCatalogService,
