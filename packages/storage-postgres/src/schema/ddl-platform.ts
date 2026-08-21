@@ -186,6 +186,18 @@ export function generatePlatformDDL(): string[] {
     `CREATE INDEX IF NOT EXISTS "idx_aip_agents_tenant" ON "aip"."agents" ("tenant_id");`,
   );
 
+  // ── Workshop platform documents (apps, templates, modules, variables, …) ──
+  // One JSONB document table; the shared DocStoreWorkshopPlatformService owns all
+  // semantics, so the provider only stores/retrieves keyed by (tenant, collection).
+  statements.push(`CREATE SCHEMA IF NOT EXISTS "workshop";`);
+  statements.push(`CREATE TABLE IF NOT EXISTS "workshop"."documents" (
+  "tenant_id" TEXT NOT NULL,
+  "collection" TEXT NOT NULL,
+  "key" TEXT NOT NULL,
+  "doc" JSONB NOT NULL,
+  PRIMARY KEY ("tenant_id", "collection", "key")
+);`);
+
   // ── Alerting service (threshold rules + alerts) ──
   statements.push(`CREATE SCHEMA IF NOT EXISTS "alerting";`);
   statements.push(`CREATE TABLE IF NOT EXISTS "alerting"."rules" (

@@ -431,6 +431,11 @@ export type {
 // Shared AIP agent runtime — identical response behaviour across providers.
 export { generateAgentResponse } from './aip-agent-runtime.js';
 
+// Workshop platform over a document store — all 52 methods live once here;
+// providers supply only a four-method WorkshopDocStore.
+export { DocStoreWorkshopPlatformService, DEFAULT_WIDGET_CATALOG } from './workshop-doc-store.js';
+export type { WorkshopDocStore, WorkshopDocStoreOptions, IdGenerator } from './workshop-doc-store.js';
+
 // HumanInTheLoopService is a rename of ChangeProposalStore, not a store of its
 // own. Sharing one adapter is what lets the API hand the HITL surface and the
 // change-proposal surface the same store, so an approval recorded through one

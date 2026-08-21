@@ -147,6 +147,7 @@ import {
   PostgresNotificationStore,
   PostgresFunctionRevisionStore,
   PostgresAgentService,
+  PostgresWorkshopPlatformService,
   PostgresAlertingService,
   PostgresBusinessRulesService,
   PostgresKioskService,
@@ -1577,7 +1578,6 @@ async function main(): Promise<void> {
         return { modelRegistryService: registry, modelInferenceService: inference, modelChainService: chain, scenarioService: scenarios };
       })(),
       // Workshop platform service â€” in-memory app definition persistence.
-      workshopPlatformService: new InMemoryWorkshopPlatformService(),
       // App embedding & cross-app widgets â€” in-memory app registry, commands, pairing.
       embeddingService: new InMemoryEmbeddingService(),
       // Platform resources â€” in-memory resource catalog and object linking.
@@ -1800,6 +1800,12 @@ async function main(): Promise<void> {
     agentService: pgPool
       ? new PostgresAgentService(pgPool, llmClient)
       : new InMemoryAgentService(llmClient),
+    // Workshop platform — durable when Postgres is configured (operator-built
+    // apps/pages/widgets survive restart / shared across replicas). Graduated
+    // out of nonDurableServices.
+    workshopPlatformService: pgPool
+      ? new PostgresWorkshopPlatformService(pgPool)
+      : new InMemoryWorkshopPlatformService(),
     // Dataset metadata â€” Postgres-backed when available. It reads the same
     // `dataset.metadata` table PostgresDatasetService writes; before that store
     // existed nothing populated it, so this answered 200 with an empty list on
