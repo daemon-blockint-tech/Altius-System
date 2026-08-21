@@ -1457,9 +1457,6 @@ async function main(): Promise<void> {
     // submission tables are tenant-scoped and the same state machine as the
     // in-memory service.
     approvalWorkflowService,
-    // Business rules — Postgres-backed when available. Rules and DAG
-    // execution are persisted; execution runs in-process over supplied data.
-    businessRulesService: pgPool ? new PostgresBusinessRulesService(pgPool) : new InMemoryBusinessRulesService(),
     // Kiosk sessions — Postgres-backed when available. Long-lived read-only
     // display sessions are durable and shared across replicas.
     kioskService: pgPool ? new PostgresKioskService(pgPool) : new InMemoryKioskService(),
