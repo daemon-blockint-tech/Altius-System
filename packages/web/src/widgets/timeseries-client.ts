@@ -1,3 +1,4 @@
+import { authedFetch } from './auth-fetch.js';
 /**
  * Time-series client — helpers for fetching and transforming time-series data.
  *
@@ -107,7 +108,7 @@ export async function fetchTimeSeries(
   if (query?.bucketFunction) url.searchParams.set('bucketFunction', query.bucketFunction);
   if (query?.tags) url.searchParams.set('tags', JSON.stringify(query.tags));
 
-  const res = await fetch(url.toString());
+  const res = await authedFetch(url.toString());
   if (!res.ok) {
     throw new Error(`Time-series fetch failed: ${res.status} ${res.statusText}`);
   }
@@ -124,7 +125,7 @@ export async function appendTimeSeriesPoints(
   points: TimeSeriesPoint[],
   baseUrl = '/api/v1',
 ): Promise<{ appended: number }> {
-  const res = await fetch(timeSeriesUrl(objectType, objectId, property, baseUrl), {
+  const res = await authedFetch(timeSeriesUrl(objectType, objectId, property, baseUrl), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ points }),
@@ -149,7 +150,7 @@ export async function transformTimeSeries(
 ): Promise<unknown> {
   const plural = objectType.toLowerCase() + 's';
   const url = `${baseUrl}/${plural}/${encodeURIComponent(objectId)}/series/${encodeURIComponent(property)}/transform`;
-  const res = await fetch(url, {
+  const res = await authedFetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ operation, params, query }),
@@ -168,7 +169,7 @@ export async function detectAnomaliesApi(
   config?: { method?: string; zThreshold?: number; iqrMultiplier?: number; windowSize?: number; sigmaThreshold?: number },
   baseUrl = '/api/v1',
 ): Promise<{ anomalies: AnomalyPoint[] }> {
-  const res = await fetch(`${baseUrl}/alerting/anomalies`, {
+  const res = await authedFetch(`${baseUrl}/alerting/anomalies`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ points, config }),
@@ -186,7 +187,7 @@ export async function detectIntervalApi(
   points: TimeSeriesPoint[],
   baseUrl = '/api/v1',
 ): Promise<{ result: IntervalDetectionResult | null }> {
-  const res = await fetch(`${baseUrl}/alerting/interval`, {
+  const res = await authedFetch(`${baseUrl}/alerting/interval`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ points }),

@@ -19,4 +19,5 @@ export type { SectionRendererProps } from './SectionRenderer.js';
 export { WidgetRenderer } from './WidgetRenderer.js';
 export type { WidgetRendererProps } from './WidgetRenderer.js';
 export { registerWidget, getWidget, isWidgetImplemented, listRegisteredWidgets } from './WidgetRegistry.js';
+export { authedFetch, setWidgetAuthProvider } from './auth-fetch.js';
 export type { WidgetComponent, WidgetProps, WidgetContext, WidgetRegistryEntry, WorkshopWidgetInstance, WorkshopAppSection, WorkshopAppPage, WorkshopAppDefinition, ReactiveVariable } from './types.js';

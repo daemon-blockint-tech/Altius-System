@@ -29,6 +29,8 @@ import { GraphExplorerScreen } from './components/GraphExplorerScreen.js';
 import { McpActivityScreen } from './components/McpActivityScreen.js';
 import { PackManagerScreen } from './components/PackManagerScreen.js';
 import { SyncHealthScreen } from './components/SyncHealthScreen.js';
+import { WorkshopScreen } from './components/WorkshopScreen.js';
+import { setWidgetAuthProvider } from './widgets/auth-fetch.js';
 
 type AuthState = 'checking' | 'anonymous' | 'signed-in' | 'error';
 
@@ -79,6 +81,7 @@ const JOBS: JobGroup[] = [
     screens: [
       { id: 'ontology-explorer', label: 'Ontology / schema' },
       { id: 'pack-manager', label: 'Domain pack manager' },
+      { id: 'workshop', label: 'Workshop (app builder)' },
     ],
   },
   {
@@ -148,6 +151,13 @@ export function App({ config }: { config: WebConfig }): ReactNode {
   );
 
   useEffect(() => () => client.close(), [client]);
+
+  // Register the bearer token for the Workshop widget REST clients, which
+  // otherwise call the gateway unauthenticated. Cleared on sign-out.
+  useEffect(() => {
+    setWidgetAuthProvider(session && authState === 'signed-in' ? session.getAccessToken : null);
+    return () => setWidgetAuthProvider(null);
+  }, [session, authState]);
 
   // Real signed-in principal, decoded from the access token's display claims —
   // replaces the former hardcoded demo identity. Authorization is unaffected:
@@ -331,6 +341,7 @@ export function App({ config }: { config: WebConfig }): ReactNode {
         session,
         authState,
         (type: string, id: string) => setDetailObject({ type, id }),
+        principal,
       )}
     </EditorialShell>
 
@@ -374,7 +385,13 @@ function renderScreen(
   session: AuthSession | null,
   authState: AuthState,
   onRowClick: (type: string, id: string) => void,
+  principal: Principal | null,
 ): ReactNode {
+  // Workshop app builder — reachable now that its widget clients authenticate.
+  if (screenId === 'workshop') {
+    return <WorkshopScreen client={client} tenantId={principal?.tenant ?? 'default'} userId={principal?.sub ?? ''} />;
+  }
+
   // Object browser — generic, ontology-driven worklist for any loaded pack.
   if (screenId === 'objects') {
     const getToken = session && authState === 'signed-in' ? session.getAccessToken : null;

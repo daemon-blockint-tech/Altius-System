@@ -1,3 +1,4 @@
+import { authedFetch } from './auth-fetch.js';
 /**
  * Workshop client — helpers for fetching and managing workshop apps from the backend.
  *
@@ -49,14 +50,14 @@ export interface AppModule {
 // ── Apps ──
 
 export async function listApps(baseUrl = '/api/v1'): Promise<WorkshopAppDefinition[]> {
-  const res = await fetch(`${baseUrl}/workshop/apps`);
+  const res = await authedFetch(`${baseUrl}/workshop/apps`);
   if (!res.ok) throw new Error(`listApps: ${res.status}`);
   const data = await res.json() as { apps: WorkshopAppDefinition[] };
   return data.apps;
 }
 
 export async function getApp(id: string, baseUrl = '/api/v1'): Promise<WorkshopAppDefinition> {
-  const res = await fetch(`${baseUrl}/workshop/apps/${encodeURIComponent(id)}`);
+  const res = await authedFetch(`${baseUrl}/workshop/apps/${encodeURIComponent(id)}`);
   if (!res.ok) throw new Error(`getApp: ${res.status}`);
   return res.json() as Promise<WorkshopAppDefinition>;
 }
@@ -65,7 +66,7 @@ export async function createApp(
   input: { name: string; description?: string },
   baseUrl = '/api/v1',
 ): Promise<WorkshopAppDefinition> {
-  const res = await fetch(`${baseUrl}/workshop/apps`, {
+  const res = await authedFetch(`${baseUrl}/workshop/apps`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
@@ -79,7 +80,7 @@ export async function updateApp(
   updates: Record<string, unknown>,
   baseUrl = '/api/v1',
 ): Promise<WorkshopAppDefinition> {
-  const res = await fetch(`${baseUrl}/workshop/apps/${encodeURIComponent(id)}`, {
+  const res = await authedFetch(`${baseUrl}/workshop/apps/${encodeURIComponent(id)}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(updates),
@@ -89,12 +90,12 @@ export async function updateApp(
 }
 
 export async function deleteApp(id: string, baseUrl = '/api/v1'): Promise<void> {
-  const res = await fetch(`${baseUrl}/workshop/apps/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  const res = await authedFetch(`${baseUrl}/workshop/apps/${encodeURIComponent(id)}`, { method: 'DELETE' });
   if (!res.ok) throw new Error(`deleteApp: ${res.status}`);
 }
 
 export async function shareApp(id: string, userIds: string[], baseUrl = '/api/v1'): Promise<WorkshopAppDefinition> {
-  const res = await fetch(`${baseUrl}/workshop/apps/${encodeURIComponent(id)}/share`, {
+  const res = await authedFetch(`${baseUrl}/workshop/apps/${encodeURIComponent(id)}/share`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ userIds }),
@@ -104,7 +105,7 @@ export async function shareApp(id: string, userIds: string[], baseUrl = '/api/v1
 }
 
 export async function duplicateApp(id: string, newName: string, baseUrl = '/api/v1'): Promise<WorkshopAppDefinition> {
-  const res = await fetch(`${baseUrl}/workshop/apps/${encodeURIComponent(id)}/duplicate`, {
+  const res = await authedFetch(`${baseUrl}/workshop/apps/${encodeURIComponent(id)}/duplicate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ newName }),
@@ -116,7 +117,7 @@ export async function duplicateApp(id: string, newName: string, baseUrl = '/api/
 // ── Variables ──
 
 export async function listVariables(appId: string, baseUrl = '/api/v1'): Promise<ReactiveVariable[]> {
-  const res = await fetch(`${baseUrl}/workshop/apps/${encodeURIComponent(appId)}/variables`);
+  const res = await authedFetch(`${baseUrl}/workshop/apps/${encodeURIComponent(appId)}/variables`);
   if (!res.ok) throw new Error(`listVariables: ${res.status}`);
   const data = await res.json() as { variables: ReactiveVariable[] };
   return data.variables;
@@ -127,7 +128,7 @@ export async function createVariable(
   input: { name: string; type: string; source: { kind: string }; lazy?: boolean },
   baseUrl = '/api/v1',
 ): Promise<ReactiveVariable> {
-  const res = await fetch(`${baseUrl}/workshop/apps/${encodeURIComponent(appId)}/variables`, {
+  const res = await authedFetch(`${baseUrl}/workshop/apps/${encodeURIComponent(appId)}/variables`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
@@ -137,7 +138,7 @@ export async function createVariable(
 }
 
 export async function evaluateVariable(variableId: string, baseUrl = '/api/v1'): Promise<unknown> {
-  const res = await fetch(`${baseUrl}/workshop/variables/${encodeURIComponent(variableId)}/evaluate`, {
+  const res = await authedFetch(`${baseUrl}/workshop/variables/${encodeURIComponent(variableId)}/evaluate`, {
     method: 'POST',
   });
   if (!res.ok) throw new Error(`evaluateVariable: ${res.status}`);
@@ -146,7 +147,7 @@ export async function evaluateVariable(variableId: string, baseUrl = '/api/v1'):
 }
 
 export async function getVariableLineage(appId: string, baseUrl = '/api/v1'): Promise<VariableLineage[]> {
-  const res = await fetch(`${baseUrl}/workshop/apps/${encodeURIComponent(appId)}/lineage`);
+  const res = await authedFetch(`${baseUrl}/workshop/apps/${encodeURIComponent(appId)}/lineage`);
   if (!res.ok) throw new Error(`getVariableLineage: ${res.status}`);
   const data = await res.json() as { lineage: VariableLineage[] };
   return data.lineage;
@@ -155,7 +156,7 @@ export async function getVariableLineage(appId: string, baseUrl = '/api/v1'): Pr
 // ── Modules ──
 
 export async function listModules(baseUrl = '/api/v1'): Promise<AppModule[]> {
-  const res = await fetch(`${baseUrl}/workshop/modules`);
+  const res = await authedFetch(`${baseUrl}/workshop/modules`);
   if (!res.ok) throw new Error(`listModules: ${res.status}`);
   const data = await res.json() as { modules: AppModule[] };
   return data.modules;
@@ -164,7 +165,7 @@ export async function listModules(baseUrl = '/api/v1'): Promise<AppModule[]> {
 // ── URL state ──
 
 export async function encodeState(appId: string, variables: Record<string, unknown>, baseUrl = '/api/v1'): Promise<string> {
-  const res = await fetch(`${baseUrl}/workshop/state/encode`, {
+  const res = await authedFetch(`${baseUrl}/workshop/state/encode`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ appId, variables }),
@@ -175,7 +176,7 @@ export async function encodeState(appId: string, variables: Record<string, unkno
 }
 
 export async function decodeState(encoded: string, baseUrl = '/api/v1'): Promise<Record<string, unknown>> {
-  const res = await fetch(`${baseUrl}/workshop/state/decode`, {
+  const res = await authedFetch(`${baseUrl}/workshop/state/decode`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ encoded }),

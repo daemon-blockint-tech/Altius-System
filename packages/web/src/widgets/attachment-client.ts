@@ -1,3 +1,4 @@
+import { authedFetch } from './auth-fetch.js';
 /**
  * Attachment client — helpers for uploading and downloading attachments.
  *
@@ -37,7 +38,7 @@ export async function uploadAttachment(
   if (file instanceof File) {
     headers['x-filename'] = file.name;
   }
-  const res = await fetch(`${baseUrl}/attachments`, {
+  const res = await authedFetch(`${baseUrl}/attachments`, {
     method: 'POST',
     body: file,
     headers,
@@ -77,7 +78,7 @@ export async function getAttachmentMetadata(
   blobId: string,
   baseUrl = '/api/v1',
 ): Promise<AttachmentRef | null> {
-  const res = await fetch(attachmentMetadataUrl(blobId, baseUrl));
+  const res = await authedFetch(attachmentMetadataUrl(blobId, baseUrl));
   if (!res.ok) return null;
   return res.json() as Promise<AttachmentRef>;
 }
@@ -91,7 +92,7 @@ export async function deleteAttachment(
   blobId: string,
   baseUrl = '/api/v1',
 ): Promise<void> {
-  const res = await fetch(`${baseUrl}/attachments/${encodeURIComponent(blobId)}`, {
+  const res = await authedFetch(`${baseUrl}/attachments/${encodeURIComponent(blobId)}`, {
     method: 'DELETE',
   });
   if (!res.ok) {
