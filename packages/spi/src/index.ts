@@ -378,6 +378,11 @@ export {
   datasetProjectColumns,
 } from './dataset-rows.js';
 
+// Whether an event breaches its threshold is written onto the event, so the two
+// providers must not disagree about it — decided once, here.
+export { evaluateEventThreshold } from './event-thresholds.js';
+export type { EventThreshold, EventThresholdBreach } from './event-thresholds.js';
+
 // Applying a transform step is pure, and its output is *data* — two providers
 // that disagreed about what `round` or `dateDiff` means would produce different
 // values from the same pipeline with neither erring. So it is defined once.
