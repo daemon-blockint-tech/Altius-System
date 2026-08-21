@@ -10,6 +10,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { parseOdl } from '@altius/odl';
 import { InMemoryJustificationStore, InMemoryScopedSessionStore } from '@altius/storage-memory';
 import { DefaultAccessExplanationService } from '@altius/security';
+import { HoldApprovePolicyGuard } from '@altius/actions';
 import { generateRestRoutes } from '../rest/route-generator.js';
 import type { ApiDependencies, AuthenticatedUserInfo, ResolverContext } from '../graphql/types.js';
 import type { RestRequest } from '../rest/types.js';
@@ -33,6 +34,7 @@ function createDeps(
     justificationStore?: InMemoryJustificationStore;
     accessExplanationService?: DefaultAccessExplanationService;
     scopedSessionStore?: InMemoryScopedSessionStore;
+    agentHoldGuard?: HoldApprovePolicyGuard;
   },
 ): ApiDependencies {
   return {
@@ -53,6 +55,7 @@ function createDeps(
     ...(opts?.justificationStore ? { justificationStore: opts.justificationStore } : {}),
     ...(opts?.accessExplanationService ? { accessExplanationService: opts.accessExplanationService } : {}),
     ...(opts?.scopedSessionStore ? { scopedSessionStore: opts.scopedSessionStore } : {}),
+    ...(opts?.agentHoldGuard ? { agentHoldGuard: opts.agentHoldGuard } : {}),
   } as ApiDependencies;
 }
 
@@ -383,6 +386,64 @@ describe('Security governance REST routes', () => {
   });
 
   // ── Absence ──
+
+  describe('agent holds (human-in-the-loop approvals)', () => {
+    async function setupHolds() {
+      const guard = new HoldApprovePolicyGuard();
+      const deps = createDeps(parsed, { agentHoldGuard: guard });
+      const routes = generateRestRoutes(parsed, deps);
+      const pending = await guard.evaluate('DischargePatient', 'high', { agentId: 'agent-1', dryRun: false, tenantId: 'tenant-1' });
+      const foreign = await guard.evaluate('DischargePatient', 'high', { agentId: 'agent-2', dryRun: false, tenantId: 'tenant-OTHER' });
+      return { guard, deps, routes, holdId: pending.holdId!, foreignHoldId: foreign.holdId! };
+    }
+
+    it('gates list and approve behind approver roles', async () => {
+      const { routes, deps, holdId } = await setupHolds();
+      const nonAdmin: AuthenticatedUserInfo = { id: 'peon', name: 'P', email: 'p@t.uk', roles: ['clinician'], groups: [], tenantId: 'tenant-1' };
+      const ctx: ResolverContext = { requestContext: { tenantId: 'tenant-1', actorId: 'peon', traceId: 'trace-test' }, user: nonAdmin, deps };
+
+      const listRoute = findRoute(routes, 'GET', '/api/v1/agent-holds');
+      const listRes = await listRoute.handler({ ...restReq('GET', '/api/v1/agent-holds'), user: nonAdmin }, ctx);
+      expect(listRes.status).toBe(403);
+
+      const approveRoute = findRoute(routes, 'POST', '/api/v1/agent-holds/:id/approve');
+      const apprRes = await approveRoute.handler({ ...restReq('POST', `/api/v1/agent-holds/${holdId}/approve`, {}, { id: holdId }), user: nonAdmin }, ctx);
+      expect(apprRes.status).toBe(403);
+    });
+
+    it('lists only own-tenant holds and approves one so the agent can retry', async () => {
+      const { guard, routes, deps, holdId, foreignHoldId } = await setupHolds();
+      const ctx = createCtx(deps, 'tenant-1');
+
+      const listRoute = findRoute(routes, 'GET', '/api/v1/agent-holds');
+      const listRes = await listRoute.handler(restReq('GET', '/api/v1/agent-holds'), ctx);
+      expect(listRes.status).toBe(200);
+      const ids = ((listRes.body as Record<string, unknown>)['data'] as { id: string }[]).map(h => h.id);
+      expect(ids).toContain(holdId);
+      expect(ids).not.toContain(foreignHoldId);
+
+      const approveRoute = findRoute(routes, 'POST', '/api/v1/agent-holds/:id/approve');
+      const apprRes = await approveRoute.handler(restReq('POST', `/api/v1/agent-holds/${holdId}/approve`, {}, { id: holdId }), ctx);
+      expect(apprRes.status).toBe(200);
+      expect(guard.isApproved(holdId)).toBe(true);
+    });
+
+    it('hides other-tenant holds from approve/reject (404), and reject records the reason', async () => {
+      const { guard, routes, deps, holdId, foreignHoldId } = await setupHolds();
+      const ctx = createCtx(deps, 'tenant-1');
+
+      const approveRoute = findRoute(routes, 'POST', '/api/v1/agent-holds/:id/approve');
+      const crossRes = await approveRoute.handler(restReq('POST', `/api/v1/agent-holds/${foreignHoldId}/approve`, {}, { id: foreignHoldId }), ctx);
+      expect(crossRes.status).toBe(404);
+      expect(guard.isApproved(foreignHoldId)).toBe(false);
+
+      const rejectRoute = findRoute(routes, 'POST', '/api/v1/agent-holds/:id/reject');
+      const rejRes = await rejectRoute.handler(restReq('POST', `/api/v1/agent-holds/${holdId}/reject`, { reason: 'not justified' }, { id: holdId }), ctx);
+      expect(rejRes.status).toBe(200);
+      expect(guard.getHold(holdId)!.status).toBe('rejected');
+      expect(guard.getHold(holdId)!.reason).toBe('not justified');
+    });
+  });
 
   it('returns no security routes when all services are absent', async () => {
     const deps = createDeps(parsed);

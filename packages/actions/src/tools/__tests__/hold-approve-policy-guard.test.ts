@@ -120,6 +120,22 @@ describe('HoldApprovePolicyGuard', () => {
     expect(hold!.status).toBe('pending');
   });
 
+  it('consume is one-shot: an approved hold authorizes exactly one execution', async () => {
+    const result = await guard.evaluate('DeletePatient', 'high', agentCtx);
+    guard.approve(result.holdId!, 'reviewer-1');
+    expect(guard.isApproved(result.holdId!)).toBe(true);
+
+    guard.consume(result.holdId!);
+    expect(guard.isApproved(result.holdId!)).toBe(false);
+    expect(guard.getHold(result.holdId!)!.status).toBe('consumed');
+  });
+
+  it('consume on a non-approved hold is a no-op', async () => {
+    const result = await guard.evaluate('DeletePatient', 'high', agentCtx);
+    guard.consume(result.holdId!);
+    expect(guard.getHold(result.holdId!)!.status).toBe('pending');
+  });
+
   it('integrates with ToolRegistry executeForAgent', async () => {
     // This is verified by the existing tool-registry.test.ts policy guard
     // tests. Here we just verify the guard satisfies the PolicyGuard interface.

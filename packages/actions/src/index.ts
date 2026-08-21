@@ -82,8 +82,8 @@ export type {
   SideEffectLogger,
 } from './sideeffects/index.js';
 
-export { ToolRegistry } from './tools/index.js';
-export type { ToolRegistryConfig } from './tools/index.js';
+export { ToolRegistry, HoldApprovePolicyGuard } from './tools/index.js';
+export type { ToolRegistryConfig, HoldRecord, HoldStatus, HoldApprovePolicyGuardConfig } from './tools/index.js';
 
 export type {
   ToolDescriptor,

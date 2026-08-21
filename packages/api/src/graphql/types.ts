@@ -1,6 +1,6 @@
 import type { ObjectManager, LinkManager, ObjectSetManager, FunctionExecutor, FunctionRegistry, WorkflowGraphBuilder, WorkflowMonitor } from '@altius/engine';
 import type { FunctionAuthzMapping } from '@altius/odl';
-import type { ActionExecutor, ActionManifest } from '@altius/actions';
+import type { ActionExecutor, ActionManifest, HoldRecord, HoldStatus } from '@altius/actions';
 import type {
   AuthorizationService,
   OidcAuthenticator,
@@ -19,6 +19,18 @@ import { DataPurpose } from '@altius/spi';
  */
 export interface ManifestRegistry {
   get(actionName: string): ActionManifest | undefined;
+}
+
+/**
+ * Structural view of the actions-package HoldApprovePolicyGuard, exposing the
+ * reviewer surface (the MCP server holds the agent-facing half). Structural so
+ * tests can stub it without the concrete class.
+ */
+export interface AgentHoldGuard {
+  listHolds(status?: HoldStatus): HoldRecord[];
+  getHold(holdId: string): HoldRecord | null;
+  approve(holdId: string, approvedBy: string): HoldRecord;
+  reject(holdId: string, rejectedBy: string, reason?: string): HoldRecord;
 }
 
 /**
@@ -100,6 +112,17 @@ export interface ApiDependencies {
    * holds the administrative tier. Env: SCOPED_SESSION_ADMIN_ROLES.
    */
   scopedSessionAdminRoles?: readonly string[];
+  /**
+   * Human-in-the-loop hold guard for high-risk agent writes — the SAME
+   * instance wired into the MCP server, so an approval recorded here is
+   * visible to the agent's retry. Present only when MCP is enabled.
+   */
+  agentHoldGuard?: AgentHoldGuard;
+  /**
+   * Roles allowed to review agent holds (list/approve/reject). Defaults to
+   * ['admin']; empty = nobody. Env: AGENT_HOLD_APPROVER_ROLES.
+   */
+  agentHoldApproverRoles?: readonly string[];
   /**
    * Allowed consent-purpose vocabulary for this deployment (env CONSENT_PURPOSES).
    * `DataPurpose` is an open string type; this is the set accepted when recording

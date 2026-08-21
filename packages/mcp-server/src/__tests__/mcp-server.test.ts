@@ -732,6 +732,72 @@ describe('MCP uniform governance', () => {
   });
 });
 
+describe('high-risk action holds (human-in-the-loop)', () => {
+  const validHeaders = { authorization: 'Bearer valid-token' };
+
+  async function setup() {
+    const { HoldApprovePolicyGuard } = await import('@altius/actions');
+    const guard = new HoldApprovePolicyGuard();
+    const { deps } = createMockDeps();
+    const executeMock = deps.actionExecutor.execute as ReturnType<typeof vi.fn>;
+    deps.policyGuard = guard;
+    deps.highRiskActions = new Set(['AdmitPatient']);
+    const handler = createMcpServer({ deps, isDev: false });
+    const call = (args: Record<string, unknown>) =>
+      handler({
+        method: 'POST',
+        headers: validHeaders,
+        body: { jsonrpc: '2.0', id: 7, method: 'tools/call', params: { name: 'AdmitPatient', arguments: args } },
+      });
+    return { guard, call, executeMock };
+  }
+
+  function toolResult(res: { body: unknown }): { isError?: boolean; text: string } {
+    const body = res.body as { result: { isError?: boolean; content: { text: string }[] } };
+    return { isError: body.result.isError, text: body.result.content[0]!.text };
+  }
+
+  it('holds a high-risk action instead of executing, and returns the hold id', async () => {
+    const { call, executeMock } = await setup();
+    const res = await call({ patient: 'p-1', ward: 'w-1' });
+    const out = toolResult(res);
+    expect(out.isError).toBe(true);
+    expect(out.text).toMatch(/held for human approval/i);
+    expect(executeMock).not.toHaveBeenCalled();
+  });
+
+  it('executes after approval when retried with _holdId, and consumes the hold (no replay)', async () => {
+    const { guard, call, executeMock } = await setup();
+    const first = await call({ patient: 'p-1', ward: 'w-1' });
+    const holdId = (JSON.parse(toolResult(first).text) as { holdId: string }).holdId;
+    guard.approve(holdId, 'reviewer-1');
+
+    const second = await call({ patient: 'p-1', ward: 'w-1', _holdId: holdId });
+    expect(toolResult(second).isError).toBeFalsy();
+    expect(executeMock).toHaveBeenCalledTimes(1);
+
+    const replay = await call({ patient: 'p-1', ward: 'w-1', _holdId: holdId });
+    expect(toolResult(replay).isError).toBe(true);
+    expect(executeMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses a hold approved for a different agent or action', async () => {
+    const { guard, call, executeMock } = await setup();
+    const foreign = await guard.evaluate('AdmitPatient', 'high', { agentId: 'someone-else', dryRun: false, tenantId: 'default' });
+    guard.approve(foreign.holdId!, 'reviewer-1');
+    const res = await call({ patient: 'p-1', ward: 'w-1', _holdId: foreign.holdId });
+    expect(toolResult(res).isError).toBe(true);
+    expect(executeMock).not.toHaveBeenCalled();
+  });
+
+  it('lets a dry-run of a high-risk action through without a hold', async () => {
+    const { call, executeMock } = await setup();
+    const res = await call({ patient: 'p-1', ward: 'w-1', dryRun: true });
+    expect(toolResult(res).isError).toBeFalsy();
+    expect(executeMock).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('MCP access allowlist (per-user/group enablement)', () => {
   const validHeaders = { authorization: 'Bearer valid-token' };
   const listReq = { jsonrpc: '2.0', id: 9, method: 'tools/list', params: {} };

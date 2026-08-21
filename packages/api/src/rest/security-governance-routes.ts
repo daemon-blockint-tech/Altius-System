@@ -13,6 +13,7 @@
  *   GET    /api/v1/security/sessions/:id/check    — check marking allowed
  */
 
+import type { HoldStatus } from '@altius/actions';
 import type { ApiDependencies, ResolverContext } from '../graphql/types.js';
 import type { RestRequest, RestResponse, RestRoute } from './types.js';
 import { createRestErrorResponse, wrapErrorToRest } from './errors.js';
@@ -32,6 +33,13 @@ export const DEFAULT_SIMULATION_ROLES = ['admin'] as const;
  * administrative writes. Mirrors the audit-reader default.
  */
 export const DEFAULT_SCOPED_SESSION_ADMIN_ROLES = ['admin'] as const;
+
+/**
+ * Roles allowed to review agent holds (list/approve/reject). A decision here
+ * releases (or blocks) a high-risk agent write, so it is admin-tier by
+ * default. Env: AGENT_HOLD_APPROVER_ROLES; empty = nobody.
+ */
+export const DEFAULT_AGENT_HOLD_APPROVER_ROLES = ['admin'] as const;
 
 export function generateSecurityGovernanceRoutes(deps: ApiDependencies): RestRoute[] {
   const routes: RestRoute[] = [];
@@ -343,6 +351,75 @@ export function generateSecurityGovernanceRoutes(deps: ApiDependencies): RestRou
         }
       },
     });
+  }
+
+  // ── Agent holds: reviewer surface for human-in-the-loop agent writes ──
+  //
+  // The MCP server creates a hold when an agent calls a high-risk action;
+  // these routes are how a human sees and decides it. Same guard instance —
+  // an approval recorded here is what the agent's _holdId retry checks.
+
+  if (deps.agentHoldGuard) {
+    const guard = deps.agentHoldGuard;
+    const approverRoles = deps.agentHoldApproverRoles ?? DEFAULT_AGENT_HOLD_APPROVER_ROLES;
+    const approverGate = (ctx: ResolverContext): RestResponse | null => {
+      if (approverRoles.some(role => ctx.user.roles.includes(role))) return null;
+      return createRestErrorResponse({
+        code: 'FORBIDDEN',
+        category: 'authorization',
+        message: approverRoles.length === 0
+          ? 'Agent-hold review is disabled: no approver role is configured.'
+          : `Reviewing agent holds requires one of: ${approverRoles.join(', ')}`,
+        retryable: false,
+        traceId: ctx.requestContext.traceId,
+      });
+    };
+    // Holds are tenant-scoped through the agent context stamped at creation.
+    // A hold with no tenant matches no reviewer — fail closed, not shared.
+    const inTenant = (ctx: ResolverContext) => (h: { agentContext: { tenantId?: string } }) =>
+      h.agentContext.tenantId === ctx.requestContext.tenantId;
+
+    routes.push({
+      method: 'GET',
+      pattern: '/api/v1/agent-holds',
+      readOperation: 'query',
+      handler: async (req: RestRequest, ctx: ResolverContext): Promise<RestResponse> => {
+        const denied = approverGate(ctx);
+        if (denied) return denied;
+        const status = typeof req.query['status'] === 'string' ? req.query['status'] as HoldStatus : undefined;
+        const holds = guard.listHolds(status).filter(inTenant(ctx));
+        return { status: 200, body: { data: holds } };
+      },
+    });
+
+    for (const decision of ['approve', 'reject'] as const) {
+      routes.push({
+        method: 'POST',
+        pattern: `/api/v1/agent-holds/:id/${decision}`,
+        handler: async (req: RestRequest, ctx: ResolverContext): Promise<RestResponse> => {
+          const denied = approverGate(ctx);
+          if (denied) return denied;
+          const id = req.params['id'] ?? '';
+          const hold = guard.getHold(id);
+          if (!hold || !inTenant(ctx)(hold)) {
+            return { status: 404, body: { error: 'NOT_FOUND', message: 'Agent hold not found' } };
+          }
+          try {
+            const body = (req.body ?? {}) as Record<string, unknown>;
+            const decided = decision === 'approve'
+              ? guard.approve(id, ctx.user.id)
+              : guard.reject(id, ctx.user.id, typeof body['reason'] === 'string' ? body['reason'] : undefined);
+            return { status: 200, body: { data: decided } };
+          } catch (err) {
+            // Guard throws on non-pending/expired holds: a state conflict, not a 500.
+            return {
+              status: 409,
+              body: { error: 'CONFLICT', message: err instanceof Error ? err.message : 'Hold is not decidable' },
+            };
+          }
+        },
+      });
+    }
   }
 
   return routes;

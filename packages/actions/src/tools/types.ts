@@ -75,6 +75,12 @@ export interface AgentContext {
   dryRun: boolean;
   /** Model identifier for audit. */
   model?: string;
+  /**
+   * Tenant the agent was acting in when the hold was created. Approval
+   * surfaces MUST match this against the reviewer's tenant — a hold without
+   * it is invisible to every tenant-scoped reviewer (fail closed).
+   */
+  tenantId?: string;
 }
 
 /**

@@ -49,6 +49,25 @@ export interface McpRateLimiter {
 }
 
 /**
+ * Structural view of the actions-package HoldApprovePolicyGuard, so the host
+ * can wire the same instance its approval routes manage without this package
+ * pinning the concrete class. evaluate() on a high-risk action creates a
+ * pending hold and returns allowed=false + holdId; a human approves it out of
+ * band; the agent retries with the reserved `_holdId` argument; consume()
+ * spends the approval so it cannot be replayed.
+ */
+export interface McpPolicyGuard {
+  evaluate(
+    actionName: string,
+    riskLevel: 'low' | 'medium' | 'high',
+    agentContext: { agentId: string; sessionId?: string; dryRun: boolean; model?: string; tenantId?: string },
+  ): Promise<{ allowed: boolean; holdId?: string; reason?: string }>;
+  getHold(holdId: string): { actionName: string; status: string; agentContext: { agentId: string; tenantId?: string } } | null;
+  isApproved(holdId: string): boolean;
+  consume(holdId: string): void;
+}
+
+/**
  * Dependencies injected into the MCP server. Mirrors the subset of
  * ApiDependencies needed to discover and execute actions and read objects.
  */
@@ -74,6 +93,15 @@ export interface McpServerDependencies {
    * limiter, not the per-principal 200 req/min limit humans get.
    */
   rateLimiter?: McpRateLimiter;
+  /**
+   * Human-in-the-loop guard for high-risk agent writes. When present together
+   * with a non-empty `highRiskActions`, a listed action called without an
+   * approved `_holdId` is held for human approval instead of executing.
+   * Dry-runs pass — they commit nothing, which is the point of the control.
+   */
+  policyGuard?: McpPolicyGuard;
+  /** Action names classified high-risk (host derives: destructive effects + env). */
+  highRiskActions?: ReadonlySet<string>;
   /**
    * Mandatory marking policy. Absent means no markings are configured.
    *

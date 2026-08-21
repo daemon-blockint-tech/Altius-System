@@ -880,6 +880,65 @@ async function invokeActionTool(
     actionCtx.justification = justification;
   }
 
+  // Reserved like dryRun/_justification: stripped before validation.
+  const holdId = params['_holdId'];
+  if ('_holdId' in params) delete params['_holdId'];
+
+  // Human-in-the-loop hold for high-risk actions — the agent-grade control on
+  // top of the human-grade pipeline (authz/consent/preconditions still run
+  // below). Dry-run passes without a hold: it commits nothing.
+  if (!dryRun && deps.policyGuard && deps.highRiskActions?.has(actionType.name)) {
+    const guard = deps.policyGuard;
+    if (typeof holdId === 'string' && holdId.length > 0) {
+      const hold = guard.getHold(holdId);
+      const valid =
+        hold !== null &&
+        hold.actionName === actionType.name &&
+        hold.agentContext.agentId === user.id &&
+        hold.agentContext.tenantId === user.tenantId &&
+        guard.isApproved(holdId);
+      if (!valid) {
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: false,
+              errors: [{
+                code: 'HOLD_NOT_APPROVED',
+                message: `Hold ${holdId} does not authorize ${actionType.name} for this agent — it may be pending, rejected, expired, already used, or belong to a different action, agent, or tenant. Ask a reviewer to approve the hold, then retry once with _holdId.`,
+              }],
+            }),
+          }],
+          isError: true,
+        };
+      }
+      guard.consume(holdId);
+    } else {
+      const verdict = await guard.evaluate(actionType.name, 'high', {
+        agentId: user.id,
+        dryRun: false,
+        tenantId: user.tenantId,
+        ...(requestContext.traceId ? { sessionId: requestContext.traceId } : {}),
+      });
+      if (!verdict.allowed) {
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: false,
+              holdId: verdict.holdId,
+              errors: [{
+                code: 'POLICY_HOLD',
+                message: verdict.reason ?? `${actionType.name} is held for human approval. Retry with _holdId once a reviewer approves hold ${verdict.holdId}.`,
+              }],
+            }),
+          }],
+          isError: true,
+        };
+      }
+    }
+  }
+
   const result: ActionResult = await deps.actionExecutor.execute(
     manifest,
     params,

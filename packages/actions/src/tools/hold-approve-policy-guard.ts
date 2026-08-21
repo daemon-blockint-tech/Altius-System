@@ -22,8 +22,8 @@ import type {
   AgentContext,
 } from './types.js';
 
-/** Status of a hold. */
-export type HoldStatus = 'pending' | 'approved' | 'rejected' | 'expired';
+/** Status of a hold. `consumed` = approved and already spent on one execution. */
+export type HoldStatus = 'pending' | 'approved' | 'rejected' | 'expired' | 'consumed';
 
 /** A hold record for a high-risk agent action. */
 export interface HoldRecord {
@@ -137,6 +137,16 @@ export class HoldApprovePolicyGuard implements PolicyGuard {
     if (!hold) return false;
     if (hold.status === 'approved' && !this._isExpired(hold)) return true;
     return false;
+  }
+
+  /**
+   * Spend an approved hold. One-shot: after consume, isApproved is false, so
+   * a single human approval cannot be replayed into N executions within the
+   * TTL window. No-op unless the hold is currently approved.
+   */
+  consume(holdId: string): void {
+    const hold = this.holds.get(holdId);
+    if (hold?.status === 'approved') hold.status = 'consumed';
   }
 
   /**

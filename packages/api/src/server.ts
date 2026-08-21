@@ -206,6 +206,7 @@ import {
   ActionExecutor,
   CelClient,
   SideEffectExecutor,
+  HoldApprovePolicyGuard,
 } from '@altius/actions';
 import type { SecurityLayer, CelEvaluator, EventBus as SideEffectEventBus, HttpClient as SideEffectHttpClient, LinkTupleMap } from '@altius/actions';
 import {
@@ -1590,6 +1591,23 @@ async function main(): Promise<void> {
   // #14 invariant is still visible where the choice is made.
   const changeProposals = pgPool ? new PostgresChangeProposalStore(pgPool) : new InMemoryChangeProposalStore();
 
+  // High-risk agent actions: destructive effects (deleteObject/deleteLink)
+  // classify by default, plus env additions (MCP_HIGH_RISK_ACTIONS). One
+  // in-memory guard instance is shared by the MCP write gate and the
+  // /api/v1/agent-holds reviewer routes — an approval recorded on one is what
+  // the other checks. ponytail: holds do not survive restarts; back the guard
+  // with a store when agent traffic warrants it.
+  const agentHighRiskActions = new Set<string>(
+    schema.actionTypes
+      .filter(a => manifestRegistry?.get(a.name)?.effects.some(e => e.type === 'deleteObject' || e.type === 'deleteLink'))
+      .map(a => a.name),
+  );
+  for (const name of parseRoles(process.env['MCP_HIGH_RISK_ACTIONS']) ?? []) agentHighRiskActions.add(name);
+  const agentHoldGuard = mcpEnabled ? new HoldApprovePolicyGuard() : undefined;
+  if (agentHoldGuard && agentHighRiskActions.size > 0) {
+    logger.info(`Agent governance: ${agentHighRiskActions.size} high-risk action(s) held for human approval on /mcp (${[...agentHighRiskActions].join(', ')})`);
+  }
+
   const deps: ApiDependencies = {
     schema,
     objectManager,
@@ -1618,6 +1636,11 @@ async function main(): Promise<void> {
     // back to DEFAULT_SCOPED_SESSION_ADMIN_ROLES when unset.
     ...(parseRoles(process.env['SCOPED_SESSION_ADMIN_ROLES'])
       ? { scopedSessionAdminRoles: parseRoles(process.env['SCOPED_SESSION_ADMIN_ROLES'])! }
+      : {}),
+    // Agent-hold reviewer surface — same guard instance the MCP gate uses.
+    ...(agentHoldGuard ? { agentHoldGuard } : {}),
+    ...(parseRoles(process.env['AGENT_HOLD_APPROVER_ROLES'])
+      ? { agentHoldApproverRoles: parseRoles(process.env['AGENT_HOLD_APPROVER_ROLES'])! }
       : {}),
     consentPurposes,
     ...(consentSubjectTypes ? { consentSubjectTypes } : {}),
@@ -2388,6 +2411,9 @@ async function main(): Promise<void> {
               },
             }
           : {}),
+        // Human-in-the-loop: destructive actions are held for a reviewer's
+        // approval; the same guard instance backs /api/v1/agent-holds.
+        ...(agentHoldGuard ? { policyGuard: agentHoldGuard, highRiskActions: agentHighRiskActions } : {}),
       },
       isDev,
       ...(mcpAllowedUsers ? { allowedUsers: mcpAllowedUsers } : {}),
