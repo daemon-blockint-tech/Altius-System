@@ -38,6 +38,9 @@ export type ErrorCode =
   | 'OBJECT_NOT_FOUND'
   | 'LINK_NOT_FOUND'
   | 'TYPE_NOT_FOUND'
+  // A resource the caller asked to create is already there. Distinct from
+  // VERSION_CONFLICT, which is a stale-write (412) rather than a name clash.
+  | 'ALREADY_EXISTS'
   | 'INTERNAL_ERROR'
   | 'PROVIDER_ERROR'
   | 'OPERATION_TIMEOUT'

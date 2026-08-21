@@ -378,6 +378,16 @@ export {
 // is visible through the other.
 export { ChangeProposalHumanInTheLoop } from './human-in-the-loop.js';
 
+// Shared DatasetService refusals, so a create/not-found means the same thing
+// and carries the same status whichever provider is wired.
+export {
+  datasetAlreadyExistsError,
+  datasetNotFoundError,
+  datasetBranchExistsError,
+  datasetBranchNotFoundError,
+} from './dataset-contract.js';
+export type { CodedError } from './dataset-contract.js';
+
 // Enterprise connector catalog
 export type {
   ConnectorCatalogService,
