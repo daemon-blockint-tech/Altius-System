@@ -1934,7 +1934,12 @@ async function main(): Promise<void> {
   // agent-evals, agent-threads, conflict-resolution, connectors, data-expectations,
   // embedded-copilots, event-objects, graph-analyses, multi-ontology, pipeline-builds,
   // platform-assistant, process-mining, workshop-ux) ──
-  registerAbsentServiceRoutes(app, deps, authenticator, isDev);
+  // Role-gated as a whole (default admin-only): these services carry no
+  // per-object authorization of their own.
+  const platformServiceRoles = (process.env['PLATFORM_SERVICE_ROLES'] ?? '')
+    .split(',').map(r => r.trim()).filter(Boolean);
+  registerAbsentServiceRoutes(app, deps, authenticator, isDev,
+    platformServiceRoles.length > 0 ? platformServiceRoles : ['admin']);
 
   // ── LLM gateway routes ──
   registerLLMGatewayRoutes(app, deps, authenticator, isDev);
