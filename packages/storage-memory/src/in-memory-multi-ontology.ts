@@ -3,6 +3,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { evaluateOntologyAccess } from '@altius/spi';
 import type {
   MultiOntologyGovernanceService,
   OntologySpace,
@@ -208,31 +209,10 @@ export class InMemoryMultiOntologyGovernanceService implements MultiOntologyGove
     if (!ontology) throw new Error(`Ontology not found: ${ontologyId}`);
     const space = this.spaces.get(ctx.tenantId)?.get(ontology.spaceId);
     if (!space) throw new Error(`Space not found: ${ontology.spaceId}`);
-    const denialReasons: string[] = [];
-    // Same org → allow
-    if (space.orgScope === callerOrgScope) {
-      return { allowed: true, spaceId: space.id, callerOrgScope, ontologyOrgScope: space.orgScope, viaSharingRule: false, denialReasons: [] };
-    }
-    // Check sharing rules
-    const rules = await this.listSharingRules(ctx, space.id);
-    for (const rule of rules) {
-      if (!rule.enabled) continue;
-      // Check if the target org matches
-      if (rule.targetOrgScope !== callerOrgScope && !(rule.bidirectional && space.orgScope === callerOrgScope)) continue;
-      // Check ontology filter
-      if (rule.ontologyIds.length > 0 && !rule.ontologyIds.includes(ontologyId)) continue;
-      // Check markings
-      if (rule.allowedMarkings.length > 0) {
-        const hasDisallowed = ontology.markings.some(m => !rule.allowedMarkings.includes(m));
-        if (hasDisallowed) {
-          denialReasons.push(`Ontology has markings not allowed by sharing rule ${rule.id}`);
-          continue;
-        }
-      }
-      return { allowed: true, spaceId: space.id, callerOrgScope, ontologyOrgScope: space.orgScope, viaSharingRule: true, denialReasons: [], sharingRuleId: rule.id };
-    }
-    denialReasons.push(`No sharing rule grants ${callerOrgScope} access to ontology ${ontologyId} in space ${space.name}`);
-    return { allowed: false, spaceId: space.id, callerOrgScope, ontologyOrgScope: space.orgScope, viaSharingRule: false, denialReasons };
+    // The decision itself is shared with the Postgres provider: it is an
+    // authorization check, and two providers that disagreed would mean one
+    // deployment granting cross-org access the other denies.
+    return evaluateOntologyAccess(ontology, space, await this.listSharingRules(ctx, space.id), callerOrgScope);
   }
 
   async resolveAccessibleOntologies(ctx: RequestContext, callerOrgScope: string): Promise<OntologyEntity[]> {

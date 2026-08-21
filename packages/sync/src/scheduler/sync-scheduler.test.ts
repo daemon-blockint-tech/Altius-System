@@ -11,6 +11,7 @@ function makeConfig(overrides: Partial<DatasourceMappingConfig["sync"]> = {}): D
   return {
     datasource: "TestSource",
     connector: "fake",
+    runtime: "DIRECT",
     connection: { url: "postgres://ignored/db", table: "patients" },
     mapping: {
       objectType: "Patient",

@@ -159,7 +159,7 @@ export class PostgresLayoutDeviceCaptureService implements LayoutDeviceCaptureSe
         input.objectId ?? null,
         'capture',
         JSON.stringify(payload),
-        now,
+        // $7 fills both "created_at" and "updated_at", so `now` is bound once.
         now,
         ctx.actorId ?? 'system',
         null,
