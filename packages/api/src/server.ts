@@ -219,7 +219,7 @@ import {
   DefaultAccessExplanationService,
 } from '@altius/security';
 import type { OpenFgaClientInterface, FgaClientResolver } from '@altius/security';
-import type { StorageProvider, RequestContext } from '@altius/spi';
+import type { StorageProvider, RequestContext, ScopedSessionStore } from '@altius/spi';
 import {
   createGraphQLServer,
   buildResolverContext,
@@ -962,6 +962,11 @@ async function main(): Promise<void> {
 
   // â”€â”€ Authentication â”€â”€
   const oidcIssuer = process.env['OIDC_ISSUER'] ?? 'http://localhost:8180/realms/altius';
+  // Late-bound: constructed with the storage provider further down and shared
+  // with the security-governance routes â€” the resolver must read the SAME
+  // store the REST endpoints write, or enforcement never sees a session.
+  // Until assignment no session can exist, so resolving null is exact.
+  let scopedSessionStore: ScopedSessionStore | undefined;
   const authenticator = new OidcAuthenticator();
   authenticator.configure({
     issuer: oidcIssuer,
@@ -975,6 +980,13 @@ async function main(): Promise<void> {
     // deployments set OIDC_DEFAULT_TENANT=default; multi-tenant deployments leave
     // it unset and map real tenants via a tenant_id claim. See issue #1.
     defaultTenantId: process.env['OIDC_DEFAULT_TENANT'],
+    // Scoped-session enforcement (Foundry parity): restrict the caller's
+    // effective markings to their active scoped session on every request,
+    // at the one funnel all surfaces (REST/GraphQL/CDM/FHIR/MCP) share.
+    // ponytail: one store lookup per authenticated request; add a short-TTL
+    // cache here if p99 ever cares â€” revocation latency is the trade.
+    scopedSessionResolver: async (tenantId, userId) =>
+      scopedSessionStore ? scopedSessionStore.getActiveForUser(tenantId, userId) : null,
   });
 
   // â”€â”€ Authorization (OpenFGA) â”€â”€
@@ -1635,8 +1647,10 @@ async function main(): Promise<void> {
       ...(consentSubjectTypes ? { consentSubjectTypes } : {}),
       ...(consentService ? { consent: consentService } : {}),
     }),
-    // ScopedSessionStore â€” Postgres-backed when available.
-    scopedSessionStore: pgPool ? new PostgresScopedSessionStore(pgPool) : new InMemoryScopedSessionStore(),
+    // ScopedSessionStore â€” Postgres-backed when available. Assigned to the
+    // hoisted variable so the authenticator's scopedSessionResolver reads the
+    // same instance these routes write to.
+    scopedSessionStore: (scopedSessionStore = pgPool ? new PostgresScopedSessionStore(pgPool) : new InMemoryScopedSessionStore()),
     // Ontology SQL â€” Postgres-backed when available; falls back to in-memory
     // with ObjectManager delegation for ontology reads.
     ontologySqlService: pgPool ? new PostgresOntologySqlService(pgPool) : new InMemoryOntologySqlService(async (ctx, objectType) => {
