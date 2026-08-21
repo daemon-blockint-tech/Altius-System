@@ -14,7 +14,8 @@ against real Postgres. Reproduce with `node tools/parity/reachability.mjs`.
 | Measured 20 Aug (`177b628`, 71 services) | 16 | 55 | 0 | this tool |
 | Measured 20 Aug (`DatasetService`, merged) | 17 | 54 | 0 | this tool |
 | Measured 20 Aug (`ChangeProposalStore`, merged) | 18 | 53 | 0 | this tool |
-| **Measured now — analyser co-implementation leak fixed** | **18** | **47** | **6** | this tool |
+| Measured 20 Aug — analyser co-implementation leak fixed | 18 | 47 | 6 | this tool |
+| **Measured now (`DataExpectationsService`, 71 services)** | **19** | **46** | **6** | this tool |
 
 **Durability moved this time, and it was real.** The previous pass recorded reachability
 improving while `full` stayed pinned at 8 — services were being wired to REST without
@@ -28,7 +29,7 @@ service per pass is the expected rate — the count is meant to move slowly and 
 something, rather than quickly and not.
 
 The gap to the tracker is still large (18 vs ~77) but it is now a gap of *degree*
-rather than *kind*: the remaining 47 are genuinely reachable, and each needs a Postgres
+rather than *kind*: the remaining 46 are genuinely reachable, and each needs a Postgres
 implementation rather than a rethink.
 
 ## Verified, not inferred
@@ -56,7 +57,7 @@ mean "works":
   makes exactly the two composite-key cases fail with `invalid byte sequence for
   encoding "UTF8": 0x00`, and nothing else — so the cases test what they claim to.
 
-## The 18 that reach a durable implementation
+## The 19 that reach a durable implementation
 
 `AlertingService` · `AuditStore` · `BlobStore` · `BranchStore` ·
 **`ChangeProposalStore`** · `CommentStore` · `DataFreshnessService` ·
@@ -69,7 +70,7 @@ mean "works":
 durable implementation, not that the capability is complete. Rows still need demoting
 by hand where behaviour is missing.
 
-## Work queue — reachable but memory-only (47)
+## Work queue — reachable but memory-only (46)
 
 Every one is already wired to REST, so the remaining work is persistence alone. These
 are the honest `partial → full` candidates:
@@ -78,7 +79,7 @@ are the honest `partial → full` candidates:
 `AgentThreadStore` · `ApprovalWorkflowService` · `BatchTransformService` ·
 `BuildTriggerService` · `BusinessRulesService` ·
 `CommandExchangeService` · `CommandService` · `ConflictResolutionService` ·
-`ConnectorCatalogService` · `CopilotService` · `DataExpectationsService` ·
+`ConnectorCatalogService` · `CopilotService` ·
 `DatasetProjectionService` · `DatasourceService` ·
 `DesignSystemService` · `EmbeddedCopilotService` · `EmbeddingService` · `EvalService` ·
 `EventObjectService` · `GraphAnalysisService` · `GraphService` ·
@@ -101,7 +102,34 @@ None of these loses data today — #14's gate withholds them under Postgres, so 
 routes answer 404 rather than accepting a write they would drop. Making one durable is
 what moves it from 404 to working.
 
-## This pass — `ChangeProposalStore`
+## This pass — `DataExpectationsService`
+
+The build quality gate: not-null, unique, range, regex checks, and a `blocking`
+flag deciding whether a failing one stops a build.
+
+**Losing it does not error.** `gateBuild` finds nothing to check and passes
+everything, so bad data flows through a gate that still looks enforced. Same shape
+as a rule losing its `active` state, and the reason this ranked above the remaining
+data-plane candidates.
+
+The check engine was extracted to `@altius/spi` rather than reimplemented — running a
+check is pure over the expectation and the rows. Two providers that disagreed about
+whether a check passed would disagree about whether bad data reached production, which
+is worse than losing the expectation, because a lost one is visibly gone. The in-memory
+service delegates and its 27 tests pass unchanged.
+
+Conformance pins the gate semantics on both providers, including the two that are easy
+to get wrong when porting: `enabled` is honoured *before* evaluating (a disabled check
+must not appear as a passing one), and `blocking` *after* (a non-blocking failure is
+reported without stopping the build). Proven non-vacuous by dropping the `enabled`
+filter on the Postgres side — exactly those two Postgres cases fail while memory passes
+untouched.
+
+The durability case asserts the silent failure directly: an expectation is written, the
+provider closed, and through a fresh provider the gate still **blocks**. A store that
+lost it would return `passed: true` rather than an error.
+
+## Previous pass — `ChangeProposalStore`
 
 The audit trail for AI-driven change: an agent proposes rather than executes, and a
 human approves, rejects, or asks for revisions. Who decided what, and when. That record

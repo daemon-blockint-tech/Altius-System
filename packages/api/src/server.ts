@@ -118,6 +118,7 @@ import { PostgresStorageProvider, PostgresLineageStore, PostgresAuditStore, Post
   PostgresAlertingService, PostgresDataFreshnessService, PostgresDatasetMetadataService,
   PostgresGeospatialMapService, PostgresJustificationStore, PostgresOntologySqlService,
   PostgresOntologyUsageMetricsService, PostgresScopedSessionStore,
+  PostgresDataExpectationsService,
   PostgresChangeProposalStore,
   PostgresDatasetService,
 } from '@altius/storage-postgres';
@@ -1294,7 +1295,6 @@ async function main(): Promise<void> {
       agentThreadStore: new InMemoryAgentThreadStore(),
       conflictResolutionService: new InMemoryConflictResolutionService(),
       connectorCatalogService: new InMemoryConnectorCatalogService(),
-      dataExpectationsService: new InMemoryDataExpectationsService(),
       embeddedCopilotService: new InMemoryEmbeddedCopilotService(),
       eventObjectService: new InMemoryEventObjectService(),
       graphAnalysisService: new InMemoryGraphAnalysisService(),
@@ -1432,6 +1432,10 @@ async function main(): Promise<void> {
     // out of `nonDurableServices`, where the gate withheld it under Postgres
     // rather than accept approvals it would lose on restart.
     changeProposalStore: pgPool ? new PostgresChangeProposalStore(pgPool) : new InMemoryChangeProposalStore(),
+    // Data expectations — Postgres-backed when available. These are the build
+    // quality gate: losing them does not error, it just lets everything
+    // through, so a gate that looks closed isn't.
+    dataExpectationsService: pgPool ? new PostgresDataExpectationsService(pgPool) : new InMemoryDataExpectationsService(),
     // Usage metrics — Postgres-backed when available. The record() method is
     // an instrumentation hook; query/summary endpoints read from Postgres.
     usageMetricsService: pgPool ? new PostgresOntologyUsageMetricsService(pgPool) : new InMemoryOntologyUsageMetricsService(),
