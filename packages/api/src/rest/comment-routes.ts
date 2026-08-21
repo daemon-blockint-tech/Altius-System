@@ -7,8 +7,8 @@
  *   DELETE /api/v1/comments/:commentId             — delete comment
  *   POST   /api/v1/comments/:commentId/resolve     — resolve thread
  *   POST   /api/v1/comments/:commentId/unresolve   — unresolve thread
- *   GET    /api/v1/notifications                   — list user notifications
- *   POST   /api/v1/notifications/:id/read          — mark notification read
+ *   GET    /api/v1/comment-notifications           — list comment-mention notifications
+ *   POST   /api/v1/comment-notifications/:id/read  — mark comment notification read
  */
 
 import type { Express } from 'express';
@@ -145,8 +145,12 @@ export function registerCommentRoutes(
     }
   });
 
-  // ── GET /api/v1/notifications — list user notifications ──
-  app.get('/api/v1/notifications', async (req, res) => {
+  // ── GET /api/v1/comment-notifications — list comment-mention notifications ──
+  // Distinct from /api/v1/notifications (the platform NotificationStore in
+  // notification-routes): these are comment @-mention notifications, a different
+  // store. They shared the same path and, being registered first, shadowed the
+  // platform notification list entirely — this de-collides them.
+  app.get('/api/v1/comment-notifications', async (req, res) => {
     try {
       const user = await extractUser(req, authenticator, isDev);
       const unreadOnly = req.query['unreadOnly'] === 'true';
@@ -157,8 +161,8 @@ export function registerCommentRoutes(
     }
   });
 
-  // ── POST /api/v1/notifications/:id/read — mark notification read ──
-  app.post('/api/v1/notifications/:id/read', async (req, res) => {
+  // ── POST /api/v1/comment-notifications/:id/read — mark comment notification read ──
+  app.post('/api/v1/comment-notifications/:id/read', async (req, res) => {
     try {
       const user = await extractUser(req, authenticator, isDev);
       await store.markNotificationRead(user.tenantId, user.id, req.params['id']!);
