@@ -122,6 +122,7 @@ import { PostgresStorageProvider, PostgresLineageStore, PostgresAuditStore, Post
   PostgresChangeProposalStore,
   PostgresApprovalWorkflowService,
   PostgresDatasetService,
+  PostgresUserDirectoryService,
 } from '@altius/storage-postgres';
 import {
   ObjectManager, LineageRecorder,
@@ -1276,8 +1277,7 @@ async function main(): Promise<void> {
       embeddingService: new InMemoryEmbeddingService(),
       // Platform resources — in-memory resource catalog and object linking.
       platformResourceService: new InMemoryPlatformResourceService(),
-      // User directory — in-memory, seeded from authenticated users.
-      userDirectoryService: new InMemoryUserDirectoryService(),
+      // User directory — graduated to durable service above.
       // API Tooling services — in-memory only (no Postgres implementations yet).
       layoutDeviceCaptureService: new InMemoryLayoutDeviceCaptureService(),
       ontologyManagerService: new InMemoryOntologyManagerService(),
@@ -1448,6 +1448,9 @@ async function main(): Promise<void> {
     kioskService: pgPool ? new PostgresKioskService(pgPool) : new InMemoryKioskService(),
     // Saved views — Postgres-backed when available; private views are owner-only.
     savedViewStore: pgPool ? new PostgresSavedViewStore(pgPool) : new InMemorySavedViewStore(),
+    // User directory — Postgres-backed when available; read-only SPI plus
+    // tenant-isolated administrative group membership.
+    userDirectoryService: pgPool ? new PostgresUserDirectoryService(pgPool) : new InMemoryUserDirectoryService(),
 
     // Non-durable platform services — withheld under Postgres unless opted in.
     // Built and explained above.

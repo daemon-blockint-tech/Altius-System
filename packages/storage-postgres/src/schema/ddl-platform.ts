@@ -547,5 +547,25 @@ export function generatePlatformDDL(): string[] {
   statements.push(`CREATE INDEX IF NOT EXISTS "idx_saved_views_tenant_app_id" ON "governance"."saved_views" ("tenant_id", "app_id");`);
   statements.push(`CREATE INDEX IF NOT EXISTS "idx_saved_views_tenant_is_public" ON "governance"."saved_views" ("tenant_id", "is_public");`);
 
+  // ── User directory ──
+  statements.push(`CREATE TABLE IF NOT EXISTS "governance"."user_directory" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "tenant_id" TEXT NOT NULL,
+  "user_id" TEXT NOT NULL,
+  "email" TEXT,
+  "display_name" TEXT,
+  "roles" JSONB NOT NULL DEFAULT '[]',
+  "groups" JSONB NOT NULL DEFAULT '[]',
+  "attributes" JSONB NOT NULL DEFAULT '{}',
+  "is_active" BOOLEAN NOT NULL DEFAULT TRUE,
+  "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "created_by" TEXT
+);`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_user_directory_tenant" ON "governance"."user_directory" ("tenant_id");`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_user_directory_tenant_user" ON "governance"."user_directory" ("tenant_id", "user_id");`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_user_directory_tenant_email" ON "governance"."user_directory" ("tenant_id", "email");`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_user_directory_tenant_active" ON "governance"."user_directory" ("tenant_id", "is_active");`);
+
   return statements;
 }
