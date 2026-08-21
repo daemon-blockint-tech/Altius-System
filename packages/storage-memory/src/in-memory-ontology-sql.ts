@@ -6,7 +6,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { parseSql } from '@altius/spi';
+import { parseSql, evaluateOntologySql, detectSqlObjectTypes } from '@altius/spi';
 import type {
   OntologySqlService,
   SavedSqlQuery,
@@ -24,9 +24,7 @@ export type OntologyObjectReader = (
 ) => Promise<Array<{ id: string; properties: Record<string, unknown> }>>;
 
 function detectObjectTypes(parsed: ReturnType<typeof parseSql>): string[] {
-  const types = new Set<string>([parsed.from]);
-  for (const j of parsed.joins) types.add(j.table);
-  return Array.from(types);
+  return detectSqlObjectTypes(parsed);
 }
 
 // ── Service ───────────────────────────────────────────────────────────
@@ -42,127 +40,21 @@ export class InMemoryOntologySqlService implements OntologySqlService {
   async execute(ctx: RequestContext, sql: string, options?: SqlExecutionOptions): Promise<OntologySqlResult> {
     const start = Date.now();
     const parsed = parseSql(sql);
-    const objectTypes = detectObjectTypes(parsed);
+    const objectTypes = detectSqlObjectTypes(parsed);
     const limit = options?.limit ?? parsed.limit ?? 1000;
 
     if (!this.objectReader) {
       return { columns: [], rows: [], totalRowCount: 0, truncated: false, executionTimeMs: Date.now() - start, accessedObjectTypes: objectTypes };
     }
 
-    // Load objects from all referenced types
+    // Load objects per referenced type through the tenant-scoped reader, then
+    // evaluate with the shared engine — no raw SQL touches storage.
     const objectsByType = new Map<string, Array<{ id: string; properties: Record<string, unknown> }>>();
     for (const ot of objectTypes) {
       objectsByType.set(ot, await this.objectReader(ctx, ot));
     }
-
-    // Build the base result set from the FROM table
-    let rows: Array<Record<string, unknown>> = objectsByType.get(parsed.from)!.map(obj => ({
-      ...obj.properties,
-      _id: obj.id,
-      _type: parsed.from,
-    }));
-
-    // Apply JOINs (nested loop — in-memory only)
-    for (const join of parsed.joins) {
-      const joinObjects = objectsByType.get(join.table) ?? [];
-      const [leftPart, rightPart] = join.on.split('=').map(s => s.trim());
-      const [leftTable, leftField] = leftPart!.split('.');
-      const [, rightField] = rightPart!.split('.');
-      const joined: Array<Record<string, unknown>> = [];
-      for (const row of rows) {
-        // Look up the join field: try direct, then _id fallback, then table-qualified
-        const leftValue = (leftTable === parsed.from || leftTable === join.type)
-          ? (row[leftField!] ?? row['_id'])
-          : row[`${leftTable}.${leftField}`];
-        for (const joinObj of joinObjects) {
-          const rightValue = joinObj.properties[rightField!] ?? joinObj.id;
-          if (leftValue === rightValue) {
-            joined.push({ ...row, ...Object.fromEntries(Object.entries(joinObj.properties).map(([k, v]) => [`${join.table}.${k}`, v])) });
-          }
-        }
-      }
-      rows = joined;
-    }
-
-    // Apply WHERE
-    if (parsed.where) {
-      rows = rows.filter(row => {
-        return parsed.where!.every(w => {
-          const val = row[w.field];
-          const cmp = String(val);
-          switch (w.op) {
-            case '=': case 'eq': return cmp === String(w.value);
-            case '!=': case '<>': case 'neq': return cmp !== String(w.value);
-            case '>': case 'gt': return Number(val) > Number(w.value);
-            case '>=': case 'gte': return Number(val) >= Number(w.value);
-            case '<': case 'lt': return Number(val) < Number(w.value);
-            case '<=': case 'lte': return Number(val) <= Number(w.value);
-            case 'like': return new RegExp(String(w.value).replace(/%/g, '.*').replace(/_/g, '.')).test(cmp);
-            default: return true;
-          }
-        });
-      });
-    }
-
-    const totalRowCount = rows.length;
-
-    // Apply GROUP BY with aggregations
-    if (parsed.groupBy) {
-      const groupBy = parsed.groupBy;
-      const groups = new Map<string, Array<Record<string, unknown>>>();
-      for (const row of rows) {
-        const key = groupBy.map(g => String(row[g])).join('|');
-        if (!groups.has(key)) groups.set(key, []);
-        groups.get(key)!.push(row);
-      }
-      rows = Array.from(groups.entries()).map(([key, groupRows]) => {
-        const result: Record<string, unknown> = {};
-        const keyParts = key.split('|');
-        groupBy.forEach((g, i) => { result[g] = keyParts[i]; });
-        // Apply aggregate functions in SELECT
-        for (const col of parsed.columns === '*' ? [] : parsed.columns) {
-          const aggMatch = col.match(/(count|sum|avg|min|max)\s*\(\s*(\*|\S+)\s*\)/i);
-          if (aggMatch) {
-            const fn = aggMatch[1]!.toLowerCase();
-            const field = aggMatch[2]!;
-            if (fn === 'count') result[col] = groupRows.length;
-            else if (field === '*') result[col] = groupRows.length;
-            else {
-              const values = groupRows.map(r => Number(r[field])).filter(n => !isNaN(n));
-              if (fn === 'sum') result[col] = values.reduce((a, b) => a + b, 0);
-              else if (fn === 'avg') result[col] = values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : 0;
-              else if (fn === 'min') result[col] = values.length > 0 ? Math.min(...values) : null;
-              else if (fn === 'max') result[col] = values.length > 0 ? Math.max(...values) : null;
-            }
-          }
-        }
-        return result;
-      });
-    }
-
-    // Apply ORDER BY
-    if (parsed.orderBy) {
-      for (const ob of parsed.orderBy) {
-        rows.sort((a, b) => {
-          const av = String(a[ob.field] ?? ''), bv = String(b[ob.field] ?? '');
-          if (av === bv) return 0;
-          const cmp = av < bv ? -1 : 1;
-          return ob.direction === 'desc' ? -cmp : cmp;
-        });
-      }
-    }
-
-    // Apply LIMIT
-    const truncated = rows.length > limit;
-    rows = rows.slice(0, limit);
-
-    // Build columns from SELECT (or all columns if *)
-    const colList = parsed.columns === '*' ? null : parsed.columns;
-    const columns = colList === null
-      ? (rows[0] ? Object.keys(rows[0]).map(k => ({ name: k, type: 'string' })) : [])
-      : colList.map(c => ({ name: c, type: 'string' }));
-
-    return { columns, rows: rows.map(r => [r]), totalRowCount, truncated, executionTimeMs: Date.now() - start, accessedObjectTypes: objectTypes };
+    const evaluated = evaluateOntologySql(parsed, objectsByType, limit);
+    return { ...evaluated, executionTimeMs: Date.now() - start };
   }
 
   async explain(_ctx: RequestContext, sql: string): Promise<SqlQueryExplanation> {

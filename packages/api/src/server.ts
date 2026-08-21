@@ -1658,6 +1658,17 @@ async function main(): Promise<void> {
     logger.info(`Agent governance: ${agentHighRiskActions.size} high-risk action(s) held for human approval on /mcp (${[...agentHighRiskActions].join(', ')})`);
   }
 
+  // Tenant-scoped ontology reader for SQL Studio: reads one object type through
+  // the governed ObjectManager, so both storage providers evaluate SQL over the
+  // same authorized rows and never touch physical tables.
+  const ontologySqlReader = async (ctx: RequestContext, objectType: string) => {
+    const page = await objectManager.query(objectType, {}, { limit: 10000 }, ctx);
+    return page.items.map((obj: Record<string, unknown>) => ({
+      id: obj['_id'] as string,
+      properties: obj,
+    }));
+  };
+
   const deps: ApiDependencies = {
     schema,
     objectManager,
@@ -1750,13 +1761,13 @@ async function main(): Promise<void> {
     markingMembershipStore: (markingMembershipStore = pgPool ? new PostgresMarkingMembershipStore(pgPool) : new InMemoryMarkingMembershipStore()),
     // Ontology SQL â€” Postgres-backed when available; falls back to in-memory
     // with ObjectManager delegation for ontology reads.
-    ontologySqlService: pgPool ? new PostgresOntologySqlService(pgPool) : new InMemoryOntologySqlService(async (ctx, objectType) => {
-      const page = await objectManager.query(objectType, {}, { limit: 10000 }, ctx);
-      return page.items.map((obj: Record<string, unknown>) => ({
-        id: obj['_id'] as string,
-        properties: obj,
-      }));
-    }),
+    // SQL Studio executes over object types (virtual tables), never raw DB
+    // tables. Both providers read through this one tenant-scoped ObjectManager
+    // reader, so a query cannot cross tenants or reach physical tables — the
+    // Postgres service used to run caller SQL straight on the pool.
+    ontologySqlService: pgPool
+      ? new PostgresOntologySqlService(pgPool, ontologySqlReader)
+      : new InMemoryOntologySqlService(ontologySqlReader),
     // Datasets â€” Postgres-backed when available, so rows, the transaction log
     // and branches survive a restart and are shared across replicas. This
     // graduated out of `nonDurableServices`: the dataset routes answered 404 on

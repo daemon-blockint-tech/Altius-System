@@ -413,6 +413,12 @@ export type { ParsedSqlAst } from './sql-parser.js';
 export { executeSqlQuery } from './sql-query-engine.js';
 export type { SqlQueryResult } from './sql-query-engine.js';
 
+// The ontology-SQL (SQL Studio) evaluator: a SELECT subset over object types,
+// pure and shared so both providers evaluate a query identically — and so
+// neither can reach raw tables. Reading the rows stays the provider's job.
+export { evaluateOntologySql, detectSqlObjectTypes, runOntologySql } from './ontology-sql-engine.js';
+export type { OntologySqlRow, OntologySqlEvalResult } from './ontology-sql-engine.js';
+
 // HumanInTheLoopService is a rename of ChangeProposalStore, not a store of its
 // own. Sharing one adapter is what lets the API hand the HITL surface and the
 // change-proposal surface the same store, so an approval recorded through one
