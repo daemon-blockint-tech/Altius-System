@@ -406,6 +406,32 @@ describe("MappingParser", () => {
       expect(config.connector).toBe("jdbc");
     });
 
+    it("defaults runtime to DIRECT when undeclared", () => {
+      const config = parseMappingConfig(PAS_MAPPING_YAML);
+      expect(config.runtime).toBe("DIRECT");
+      expect(config.agent).toBeUndefined();
+    });
+
+    it("parses runtime AGENT with an agent pin", () => {
+      const config = parseMappingConfig(
+        PAS_MAPPING_YAML + "\nruntime: AGENT\nagent: trust-dc-agent\n",
+      );
+      expect(config.runtime).toBe("AGENT");
+      expect(config.agent).toBe("trust-dc-agent");
+    });
+
+    it("rejects an unknown runtime", () => {
+      expect(() => parseMappingConfig(PAS_MAPPING_YAML + "\nruntime: REMOTE\n")).toThrow(
+        /Invalid runtime: REMOTE/,
+      );
+    });
+
+    it("rejects runtime AGENT combined with OVERLAY mode", () => {
+      expect(() => parseMappingConfig(PAS_OVERLAY_YAML + "\nruntime: AGENT\n")).toThrow(
+        /AGENT cannot be combined with sync.mode OVERLAY/,
+      );
+    });
+
     it("parses connection config", () => {
       const config = parseMappingConfig(PAS_MAPPING_YAML);
 

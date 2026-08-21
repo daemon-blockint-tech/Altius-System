@@ -6,7 +6,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { parseSql } from './sql-parser.js';
+import { parseSql } from '@altius/spi';
 import type {
   OntologySqlService,
   SavedSqlQuery,
