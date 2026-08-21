@@ -117,6 +117,8 @@ Graded `partial` as capabilities, but each Gap describes an enforcement hole in 
 
 **Status:** `partial`
 
+> 🔒 CLAIMED: loop-0821-e7d1 2026-08-21T15:05+07:00 (scope: permission-scoped tool discovery — sub-gap b)
+
 **Evidence (read 14 Aug):** One of three sub-gaps closed. Closed: the protocol server exists and reads run under the caller's token — packages/mcp-server/src/tools.ts:263-267 scopes every search to authorizationService.listObjects(`user:${user.id}`, 'viewer', ...), fails closed to an empty page when nothing is authorized (tools.ts:280-285), and redacts per-role fields (tools.ts:304-309). Still open: (a) admin gating is per-PACK, not per-user/group — packages/api/src/server.ts:542 (`packCapabilities.has('mcp')`) and domain-packs/nhs-acute/pack.yaml:14-17 are the only switch; there is no per-user or per-group enablement anywhere; (b) tool discovery is not permission-scoped — packages/mcp-server/src/server.ts:74 builds the list once at server construction and server.ts:161-164 returns every action and every search tool to every authenticated caller, so an agent for a read-only user still sees every mutating action tool (execution is denied later at ActionExecutor step 2, but discovery leaks the full action catalogue and its parameter schemas); (c) no packaged IDE integration — no .mcp.json/manifest, no OAuth discovery endpoint (repo-wide grep: no /.well-known/oauth-protected-resource), so IDE setup is manual bearer-token configuration.
 
 **Gap:** MCP access is enabled per-pack, never per-user or per-group; tools/list returns the full action catalogue to every authenticated caller; no IDE package or OAuth discovery, so setup is manual token pasting.
