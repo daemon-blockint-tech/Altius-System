@@ -119,6 +119,7 @@ import { PostgresStorageProvider, PostgresLineageStore, PostgresAuditStore, Post
   PostgresGeospatialMapService, PostgresJustificationStore, PostgresOntologySqlService,
   PostgresOntologyUsageMetricsService, PostgresScopedSessionStore,
   PostgresDataExpectationsService,
+  PostgresPipelineBuildService,
   PostgresChangeProposalStore,
   PostgresDatasetService,
 } from '@altius/storage-postgres';
@@ -1299,7 +1300,6 @@ async function main(): Promise<void> {
       eventObjectService: new InMemoryEventObjectService(),
       graphAnalysisService: new InMemoryGraphAnalysisService(),
       multiOntologyGovernanceService: new InMemoryMultiOntologyGovernanceService(),
-      pipelineBuildService: new InMemoryPipelineBuildService(),
       platformAssistantService: new InMemoryPlatformAssistantService(),
       processMiningService: new InMemoryProcessMiningService(),
       // Pipeline Data Ops — Pipeline & Data Ops.
@@ -1436,6 +1436,13 @@ async function main(): Promise<void> {
     // quality gate: losing them does not error, it just lets everything
     // through, so a gate that looks closed isn't.
     dataExpectationsService: pgPool ? new PostgresDataExpectationsService(pgPool) : new InMemoryDataExpectationsService(),
+    // Pipeline builds, schedules and action triggers — Postgres-backed when
+    // available. Also graduated out of `nonDurableServices`. The schedules and
+    // the action->pipeline map are the durable part that matters: both fail
+    // silently when lost, since a cron that stops firing looks like nothing
+    // happening. Note the builds themselves are still simulated in BOTH
+    // providers — see the store's header.
+    pipelineBuildService: pgPool ? new PostgresPipelineBuildService(pgPool) : new InMemoryPipelineBuildService(),
     // Usage metrics — Postgres-backed when available. The record() method is
     // an instrumentation hook; query/summary endpoints read from Postgres.
     usageMetricsService: pgPool ? new PostgresOntologyUsageMetricsService(pgPool) : new InMemoryOntologyUsageMetricsService(),

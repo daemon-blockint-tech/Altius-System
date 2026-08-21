@@ -15,7 +15,8 @@ against real Postgres. Reproduce with `node tools/parity/reachability.mjs`.
 | Measured 20 Aug (`DatasetService`, merged) | 17 | 54 | 0 | this tool |
 | Measured 20 Aug (`ChangeProposalStore`, merged) | 18 | 53 | 0 | this tool |
 | Measured 20 Aug — analyser co-implementation leak fixed | 18 | 47 | 6 | this tool |
-| **Measured now (`DataExpectationsService`, 71 services)** | **19** | **46** | **6** | this tool |
+| Measured 20 Aug (`DataExpectationsService`, 71 services) | 19 | 46 | 6 | this tool |
+| **Measured now (`PipelineBuildService`, 71 services)** | **20** | **45** | **6** | this tool |
 
 **Durability moved this time, and it was real.** The previous pass recorded reachability
 improving while `full` stayed pinned at 8 — services were being wired to REST without
@@ -23,13 +24,14 @@ gaining a Postgres implementation. That changed: #18 added eight Postgres platfo
 stores and `full` doubled, 8 → 16. This is the first pass where the honest number went
 up for the right reason.
 
-`DatasetService` then took it to 17 and `ChangeProposalStore` to 18, by the same route
-each time: a Postgres store, restart survival proven, no new surface claimed. One
-service per pass is the expected rate — the count is meant to move slowly and mean
-something, rather than quickly and not.
+`DatasetService` then took it to 17, `ChangeProposalStore` to 18,
+`DataExpectationsService` to 19 and `PipelineBuildService` to 20, by the same route each
+time: a Postgres store, restart survival proven, no new surface claimed. One service per
+pass is the expected rate — the count is meant to move slowly and mean something, rather
+than quickly and not.
 
-The gap to the tracker is still large (18 vs ~77) but it is now a gap of *degree*
-rather than *kind*: the remaining 46 are genuinely reachable, and each needs a Postgres
+The gap to the tracker is still large (20 vs ~77) but it is now a gap of *degree*
+rather than *kind*: the remaining 45 are genuinely reachable, and each needs a Postgres
 implementation rather than a rethink.
 
 ## Verified, not inferred
@@ -57,20 +59,21 @@ mean "works":
   makes exactly the two composite-key cases fail with `invalid byte sequence for
   encoding "UTF8": 0x00`, and nothing else — so the cases test what they claim to.
 
-## The 19 that reach a durable implementation
+## The 20 that reach a durable implementation
 
 `AlertingService` · `AuditStore` · `BlobStore` · `BranchStore` ·
-**`ChangeProposalStore`** · `CommentStore` · `DataFreshnessService` ·
-`DatasetMetadataService` · **`DatasetService`** · `EmbeddingStore` ·
-`GeospatialMapService` · `JustificationStore` · `NotificationStore` · `ObjectSetStore` ·
-`OntologySqlService` · `OntologyUsageMetricsService` · `ScopedSessionStore` ·
+**`ChangeProposalStore`** · `CommentStore` · **`DataExpectationsService`** ·
+`DataFreshnessService` · `DatasetMetadataService` · **`DatasetService`** ·
+`EmbeddingStore` · `GeospatialMapService` · `JustificationStore` ·
+`NotificationStore` · `ObjectSetStore` · `OntologySqlService` ·
+`OntologyUsageMetricsService` · **`PipelineBuildService`** · `ScopedSessionStore` ·
 `TimeSeriesStore`
 
 `full` here stays a **necessary, not sufficient** condition: it says a user can reach a
 durable implementation, not that the capability is complete. Rows still need demoting
 by hand where behaviour is missing.
 
-## Work queue — reachable but memory-only (46)
+## Work queue — reachable but memory-only (45)
 
 Every one is already wired to REST, so the remaining work is persistence alone. These
 are the honest `partial → full` candidates:
@@ -87,7 +90,7 @@ are the honest `partial → full` candidates:
 `ModelCatalogService` · `ModelChainService` · `ModelInferenceService` ·
 `ModelRegistryService` · `ModelingObjectiveService` · `MultiOntologyGovernanceService` ·
 `ObjectSetFilterStore` · `OntologyChangeHistoryService` · `OntologyManagerService` ·
-`PipelineBuildService` · `PipelineService` · `PlatformAssistantService` ·
+`PipelineService` · `PlatformAssistantService` ·
 `PlatformResourceService` · `ProcessMiningService` · `SavedViewStore` ·
 `ScenarioService` · `SqlAnalyticsService` · `SqlQueryService` · `SyncCdcService` ·
 `TokenMeteringService` · `TransformExpressionService` · `UserDirectoryService` ·
@@ -102,7 +105,53 @@ None of these loses data today — #14's gate withholds them under Postgres, so 
 routes answer 404 rather than accepting a write they would drop. Making one durable is
 what moves it from 404 to working.
 
-## This pass — `DataExpectationsService`
+## This pass — `PipelineBuildService`
+
+Three pieces of state behind one service: build history, cron schedules, and the
+action→pipeline trigger map.
+
+**Two of the three fail silently when lost.** A schedule that stops firing looks like
+nothing happening rather than like a failure; an action trigger that disappears means
+actions still succeed, they just stop kicking anything off. Nothing errors in either
+case. The build history is the loud one — and the least important.
+
+**Read the next paragraph before treating a `succeeded` row as evidence.** `startBuild`
+does not run a pipeline. It writes a `running` build, then immediately rewrites it as
+`succeeded` with a hardcoded 100 ms duration and one synthetic `init` step. That is the
+in-memory behaviour and it is reproduced exactly, per the standing rule that a contract
+changes in both providers or neither. So this pass makes the *record* of builds durable,
+not the execution: every build still reports success without work having happened.
+`BatchTransformService` is the one that actually reads inputs and writes an output
+dataset. A persisted lie is more convincing than a transient one, which is why it is
+written here, in the store's header, and in the conformance file rather than left for a
+reader to discover. Making the stub honest is a contract change, not a storage one.
+
+Conformance caught a real ordering bug in the **in-memory** provider before any
+regression was injected — the same bug class already fixed in `BatchTransformService`.
+`listBuilds` and `listSchedules` promise newest-first and sorted on a millisecond
+timestamp alone, which is not a total order: two entries in the same millisecond compare
+equal, the sort becomes a no-op for them, and the pair comes back oldest-first. Fixed in
+memory (insertion order breaks the tie) rather than weakening the assertion.
+
+The first ordering case was itself vacuous on the Postgres side, and the injection is
+what proved it: swapping `ORDER BY seq` for `ORDER BY started_at` failed nothing,
+because three round-trips to Postgres land in three different milliseconds. Luck, not a
+contract. A second case freezes the clock — both providers stamp the timestamp from
+`new Date()` in-process, so all three builds carry an identical one and only a real
+tiebreak can still return them newest-first. With that case present the same swap fails
+both providers' ordering tests, as it should.
+
+Four regressions injected, four caught, each failing only the intended cases:
+reverting either in-memory tiebreak fails that provider's ordering case alone (three
+consecutive runs, deterministic); dropping `ON CONFLICT DO NOTHING` fails the duplicate
+action-trigger case on Postgres alone; swapping `seq` ordering for timestamp ordering
+fails both new collision cases; and pointing the post-restart half of the durability
+case at a fresh in-memory service fails it with `expected [] to have a length of 1`.
+
+No `TEXT[]` columns here, so the #19 bug class does not apply: `steps` and
+`expectation_results` are JSONB, where `JSON.stringify` is the correct binding.
+
+## Previous pass — `DataExpectationsService`
 
 The build quality gate: not-null, unique, range, regex checks, and a `blocking`
 flag deciding whether a failing one stops a build.
@@ -195,9 +244,14 @@ Two things that conversion surfaced, neither of them the dataset store's own bug
 
 Same pattern, in rough order of what losing it costs: `ApprovalWorkflowService` (the
 other governance audit trail — but it is **not wired into the API at all**, so it needs
-routes before persistence is worth anything), then `BatchTransformService`,
-`DatasetProjectionService` and `SqlQueryService`, which are the rest of the
-dataset/pipeline data plane.
+routes before persistence is worth anything), then `DatasetProjectionService` and
+`SqlQueryService`, the rest of the dataset/pipeline data plane. `BatchTransformService`
+is already converted and awaiting merge.
+
+One follow-up this pass names but does not fix: `startBuild` reports success without
+running anything, in both providers. Persisting that record does not make it true. Real
+execution — or an honest `not_implemented` — is a contract change and belongs in its own
+change, with the lead deciding which.
 
 ## Correction — the analyser was inflating its own numbers
 

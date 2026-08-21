@@ -99,6 +99,7 @@ export { PostgresNotificationStore } from './notification/postgres-notification-
 export { PostgresChangeProposalStore } from './governance/postgres-change-proposal-store.js';
 export { PostgresDatasetService } from './dataset/postgres-dataset-service.js';
 export { PostgresDataExpectationsService } from './quality/postgres-data-expectations-service.js';
+export { PostgresPipelineBuildService } from './pipeline/postgres-pipeline-build-service.js';
 export { generatePlatformDDL } from './schema/ddl-platform.js';
 export {
   PostgresAlertingService,
