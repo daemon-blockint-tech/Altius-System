@@ -572,6 +572,18 @@ Model catalog is env-driven (LLM_DAEMON_MODEL, LLM_OPENROUTER_MODEL, LLM_EXTRA_M
 
 **Gap:** No generated rules pipeline (rules execute in-memory, not as deployable pipelines). No integration with dataset/transaction primitives. No REST/GraphQL routes. No persistent storage. No UI.
 
+## Functions
+
+### `misc-2/user-authored-serverless-functions-typescrip` — User-authored serverless functions (TypeScript v2/Python code repositories, ontology edits from functions, unit testing, publish/deploy)
+
+**Status:** `full`
+
+> ✅ **RE-VERIFIED against source, 21 Aug 2026 (loop-0821-pii1).** All sub-gaps closed at HEAD. Upgraded from `partial` to `full`.
+
+**Evidence (21 Aug, loop-0821-pii1):** Re-verified every 17 Aug CLOSED claim against HEAD. Python runtime: `packages/engine/src/functions/python-runtime.ts` exists (7481 bytes). Git source: `git-function-source.ts` exists (8005 bytes). Pipeline: `function-pipeline.ts` exists (6853 bytes). Registry: `function-registry.ts` exists (7745 bytes). Webhook trigger: `webhook-pipeline-trigger.ts` exists (7978 bytes). Sandbox profile: `sandbox-profile.ts` exists (8960 bytes). Build script: `packages/engine/scripts/build-sandbox-preload.sh` exists (1893 bytes). Shipped pack: `domain-packs/nhs-acute/schema/functions.odl` declares 2 CEL functions (ComputeTriageScore, ComputeLengthOfStay) with per-patient ReBAC. Server wiring: `deriveFunctionAuthzMappings` at server.ts:1207, `functionAuthzMappings` passed at :1657, webhook mounted at server.ts:2565 (`POST /api/v1/functions-lifecycle/webhook`, enabled when `FUNCTION_WEBHOOK_SECRET` set). REST lifecycle routes at route-generator.ts:2804-2917. MCP function tools: `buildFunctionTool` at tools.ts:108 emits `function_<Name>` per FunctionType when `functionInvoker` wired.
+
+**Gap:** None for this row. All sub-gaps closed.
+
 ### `pipelines-data/interactive-sql-query-service-spark-sql-rest` — Interactive SQL query service (Spark SQL REST API with async job lifecycle)
 
 > ✅ **Fase 24.** `POST /api/v1/sql/query`, `POST /api/v1/sql/explain`, `POST /api/v1/sql/validate` and saved-query routes wired; `SqlWorkbenchWidget` registered.
