@@ -1468,8 +1468,6 @@ async function main(): Promise<void> {
     designSystemService: pgPool ? new PostgresDesignSystemService(pgPool) : new InMemoryDesignSystemService(),
     // Layout, device-capture, and deep-link resolution — Postgres-backed when available.
     layoutDeviceCaptureService: pgPool ? new PostgresLayoutDeviceCaptureService(pgPool) : new InMemoryLayoutDeviceCaptureService(),
-    // Agent threads — Postgres-backed when available.
-    agentThreadStore: pgPool ? new PostgresAgentThreadStore(pgPool) : new InMemoryAgentThreadStore(),
     // Object set filter states — Postgres-backed when available.
     objectSetFilterStore: pgPool ? new PostgresObjectSetFilterStore(pgPool) : new InMemoryObjectSetFilterStore(),
     // Data expectations — Postgres-backed when available; evaluation is computational.
