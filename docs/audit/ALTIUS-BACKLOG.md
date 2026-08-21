@@ -1,13 +1,13 @@
 # Altius capability backlog
 
-Restructured 21 Aug 2026 from code-verified gradings (last full pass 19 Aug). **187** capabilities graded: **102 full, 85 partial, 0 absent**.
+Restructured 21 Aug 2026 from code-verified gradings (last full pass 19 Aug). **187** capabilities graded: **103 full, 84 partial, 0 absent**.
 
 Structure:
 
-- **§Security defects** — 13 rows. Fix before parity work; these are holes, not gaps.
+- **§Security defects** — 12 rows. Fix before parity work; these are holes, not gaps.
 - **§Active work items** — 44 items (43 rows + 1 merged rules-engine item covering 5 duplicate rows). Claim per the rules below.
 - **§Proposed out-of-scope** — 24 rows parked pending a product decision. Not deleted; do NOT claim without that decision.
-- **`full` rows** (102, with evidence) → [ALTIUS-BACKLOG-DONE.md](ALTIUS-BACKLOG-DONE.md).
+- **`full` rows** (103, with evidence) → [ALTIUS-BACKLOG-DONE.md](ALTIUS-BACKLOG-DONE.md).
 - Narrative re-grading/phase logs removed — git history of this file has every pass.
 
 ## How to work an item
@@ -24,14 +24,6 @@ Structure:
 ## Security defects — fix before parity work
 
 Graded `partial` as capabilities, but each Gap describes an enforcement hole in the platform as it runs today. Priority over everything below.
-
-### `security-gov/organization-tenant-boundary-isolation` — Organization/tenant boundary isolation
-
-**Status:** `partial`
-
-**Evidence (read 15 Aug):** The data plane isolates on both providers: Postgres object tables are PRIMARY KEY (_tenant_id,_id) with tenant predicates on every query (packages/storage-postgres/src/schema/ddl-objects.ts:16,40; packages/storage-postgres/src/links/link-crud.ts:172-181), and the memory provider filters every read/write by ctx.tenantId (packages/storage-memory/src/memory-storage-provider.ts:283,366,547,868). Tenant identity fails closed at authentication (packages/security/src/auth/oidc-authenticator.ts:122-131, MISSING_TENANT unless OIDC_DEFAULT_TENANT is set). The authorization plane does NOT isolate: one OPENFGA_STORE_ID serves the whole deployment (packages/api/src/server.ts:461-465), tuples are written as `user:<id>` / `<type>:<id>` with no tenant prefix (packages/security/src/authz/authorization-service.ts:192-204), and the grant API never receives a tenantId nor checks that the target object belongs to the caller's tenant — applyRelationshipChange takes only (deps, allowlist, action, body, actor, traceId) (packages/api/src/relationships/router.ts:120-193), while its REST adapter has ctx.requestContext.tenantId available and passes only traceId (router.ts:205-208). docs/altius-spec-v2.md:2072 requires per-tenant FGA isolation. Audit records carry no tenant at all (cap 10), and Postgres RLS is explicitly deferred post-MVP (packages/storage-postgres/src/schema/ddl-consent.ts:11).
-
-**Gap:** Isolation is enforced in one plane only. Because object ids are unique per tenant, not globally, a granter role in tenant A can mint a tuple (e.g. patient:123 clinician) that authorizes the same id in tenant B, where storage will happily serve it to that tenant's user. Needs tenant-prefixed tuples or per-tenant FGA stores, a tenant check in the grant path, tenant on audit records, and RLS as defence in depth.
 
 ### `security-consent/sensitive-data-pii-protection-controls` — Sensitive-data (PII) protection controls
 

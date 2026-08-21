@@ -1132,3 +1132,16 @@ UPDATE (16 Aug): B2 is CLOSED — list link fields now accept `first`/`after` ar
 **Evidence (updated 19 Aug):** (a) Sharing is no longer one boolean. `ObjectSetDefinition` carries `sharedWithUsers` and `sharedWithGroups`, both stores evaluate them in their visibility check (public OR creator OR shared-with-me OR shared-with-a-group-I-am-in), and `RequestContext.actorGroups` — set once in `buildResolverContext`, so REST and GraphQL agree — is what makes the group case resolvable at the store layer. Sharing grants READ only: mutation and deletion stay with the creator, an unauthenticated caller inherits nothing, and a share does not cross the tenant boundary. Postgres persists them as additive `TEXT[]` columns (`ADD COLUMN IF NOT EXISTS`, matching the table's self-initialising pattern) with an array-overlap predicate. Revocation is an update to the list. (c) The SEC-14 predicate check on the execute path is present (`getVisibleFields` over the saved filter and orderBy, refusing execution of a set filtered or sorted by a redacted field). (e) Create now validates: name non-empty, objectType in the schema, filter/orderBy/aggregation field names stored and real, positive integer limit, boolean isPublic, share lists arrays of non-empty strings — previously a set naming a dropped field was accepted and only failed later, on someone else's execute request. 8 store tests + 18 REST tests.
 
 **Gap:** None for this row. Sharing is per-user and per-group and read-only by design; a role-scoped grant would ride on the same field. Group membership comes from the caller's token rather than a directory lookup, so a group renamed in the IdP needs the share updated.
+
+## security-gov
+
+### `security-gov/organization-tenant-boundary-isolation` — Organization/tenant boundary isolation
+
+**Status:** `full`
+
+> ✅ **RE-VERIFIED against source, 21 Aug 2026.** Closed by concurrent sessions; claimed, re-verified, and re-graded — no new code written.
+
+**Evidence (read 21 Aug):** The authz-plane hole is closed. `379e5be7` replaced the single shared store with per-tenant OpenFGA stores: `OPENFGA_STORE_IDS` maps tenant→storeId, every AuthorizationService method resolves `clientFor(tenantId)` (authorization-service.ts:173,193,230,261,287), and an unmapped tenant is denied outright with an error log naming the exact attack ("serving an unmapped tenant from another tenant's store would let a tuple granted there authorize the same object id here") — deliberately no fallback store. The grant path threads `actor.tenantId` into writeRelationship/deleteRelationship (packages/api/src/relationships/router.ts:175-177). `ce7ae32f` put `tenantId` on every audit record (packages/spi/src/audit.ts:19). Data plane was already isolated on both providers (tenant-scoped PKs and predicates). Tests: packages/api/src/__tests__/fga-store-map.test.ts.
+
+**Gap:** None for the enforcement hole. Postgres RLS remains absent as defence-in-depth (explicitly deferred post-MVP, ddl-consent.ts:11) — a hardening item, not an isolation breach.
+
