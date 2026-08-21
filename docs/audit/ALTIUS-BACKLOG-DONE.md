@@ -1135,6 +1135,20 @@ UPDATE (16 Aug): B2 is CLOSED — list link fields now accept `first`/`after` ar
 
 ## security-gov
 
+### `security-gov/checkpoints-justification-capture-for-sensit` — Checkpoints: justification capture for sensitive actions
+
+**Status:** `full`
+
+> ✅ **RE-VERIFIED & REGRADED 21 Aug 2026 (loop-0821-a7c3, verify-only).** Spot-checked at HEAD: executor gate action-executor.ts:483-492, justification-checkpoint.test.ts 7/7 green, /api/v1/justifications wired in server.ts. All three gap items (pipeline wiring, per-action declaration, persistence+audit) closed by 3436974. Upgraded partial → full.
+
+> ✅ **UPDATED 21 Aug 2026 (loop-0821-9c4e, commit `3436974` in `b6dab53` lineage).** Pipeline wiring CLOSED: `ActionManifest.requiresJustification` declares the checkpoint (parser + type, packages/actions/src/parser); the executor's Step 3b refuses execution without a non-empty `ctx.justification` (JUSTIFICATION_REQUIRED, refusal audited), captures to the `JustificationStore` BEFORE effects (capture failure refuses the action), and stamps the text into the success audit record (`AuditDetail.justification`). Transport: reserved `_justification` field on REST body, generated GraphQL input SDL, and MCP tool args (stripped pre-validation) — enforcement lives in the executor so all surfaces are covered. Store instance shared with /api/v1/justifications routes. Two-sided proof: `packages/actions/src/executor/__tests__/justification-checkpoint.test.ts` (6/7 fail without, 9/9 with parser tests pass with).
+
+> ⚠️ **EVIDENCE UPDATED 19 Aug (PR #13, §3.2).** REST endpoints were wired. The grade stays `partial` — not wired into the action execution pipeline, no per-action justification requirement declaration, no audit record integration.
+
+**Evidence (updated 19 Aug, §3.2):** `JustificationStore` SPI with create/get/list/approve (packages/spi/src/security-governance.ts). `JustificationRecord` captures tenantId, userId, actionName, objectType, objectId, justification text, category (break-glass/routine/audit/emergency/legal), approval state, and timestamps. `InMemoryJustificationStore` implements full CRUD with filtering by user/action/object/time and tenant isolation (packages/storage-memory/src/in-memory-security-governance.ts). REST endpoints wired in §3.2 (commit `7bbae51`): `GET/POST /api/v1/justifications`, `POST /api/v1/justifications/:id/approve`. 5 justification tests + 13 security-governance route tests.
+
+**Gap:** Pipeline wiring, per-action declaration (manifest `requiresJustification`), and audit persistence CLOSED 21 Aug (`3436974` — see update note). Still open: PostgresJustificationStore existed already but no shipped pack declares `requiresJustification` yet (capability unexercised by a pack), no GraphQL surface for listing/approving justifications, no approval-hold integration (approve exists on the store/REST only).
+
 ### `security-gov/organization-tenant-boundary-isolation` — Organization/tenant boundary isolation
 
 **Status:** `full`

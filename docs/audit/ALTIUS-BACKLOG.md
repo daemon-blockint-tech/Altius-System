@@ -1,10 +1,10 @@
 # Altius capability backlog
 
-Restructured 21 Aug 2026 from code-verified gradings (last full pass 19 Aug). **187** capabilities graded: **103 full, 84 partial, 3 absent** (3 added 21 Aug from AIP/interop frame review).
+Restructured 21 Aug 2026 from code-verified gradings (last full pass 19 Aug). **187** capabilities graded: **104 full, 83 partial, 3 absent** (3 added 21 Aug from AIP/interop frame review).
 
 Structure:
 
-- **§Security defects** — 12 rows. Fix before parity work; these are holes, not gaps.
+- **§Security defects** — 11 rows. Fix before parity work; these are holes, not gaps.
 - **§Active work items** — 54 items (53 rows — incl. 3 new `absent` rows + 1 merged rules-engine item covering 5 duplicate rows; 7 rows client-committed 21 Aug). Claim per the rules below.
 - **§Proposed out-of-scope** — 17 rows parked with named triggers (decision taken 21 Aug vs client roster). Do NOT claim while parked.
 - **`full` rows** (103, with evidence) → [ALTIUS-BACKLOG-DONE.md](ALTIUS-BACKLOG-DONE.md).
@@ -30,7 +30,6 @@ Graded `partial` as capabilities, but each Gap describes an enforcement hole in 
 **Status:** `partial`
 
 > ✅ **UPDATED 21 Aug 2026 (loop-0821-9c4e, commit `b647423`).** Sub-gap 3's webhook egress CLOSED: side effects now receive a redacted copy of the effect context — `redactSensitiveForEgress` (action-executor.ts) nulls @sensitive fields on every storage-loaded object (identified by `_type`, from schema directives) and lists them in `_redactedFields`, so a webhook with no configured body no longer POSTs raw sensitive values externally. Explicit side-effect config still interpolates against the raw context (author-reviewable re-exposure). Two-sided proof: `packages/actions/src/executor/__tests__/sensitive-egress.test.ts` (2/3 fail without, 3/3 pass with). Still open in (3): observability/log egress. (4) at-rest unchanged.
-
 
 **Evidence (read 15 Aug):** @sensitive now has a real runtime consumer: api/src/schema-loader.ts:560-606 deriveSensitiveFieldDefaults synthesises a deny-by-default FieldPermissionConfig (alwaysVisible = all non-sensitive stored fields, fieldsByRelation:{}) for any ObjectType that declares @sensitive but ships no permissions/field-permissions.yaml; called at schema-loader.ts:963 after merge. Because getVisibleFields returns undefined (= no redaction) for an unconfigured type (authorization-service.ts:240-243), this is the piece that makes the directive enforceable. Verified against the shipped packs: only domain-packs/nhs-acute ships permissions/field-permissions.yaml, so aml Customer.name/dateOfBirth/taxId (domain-packs/aml/schema/customer.odl:11,17,18), aml Account.accountNumber (account.odl:11) and supply-chain Supplier.contactEmail (supplier.odl:14) are now redacted for every caller. schema-loader.ts:539-547 universallyVisibleSensitive warns when an explicit config re-exposes a sensitive field via alwaysVisible or `viewer`.
 
@@ -76,24 +75,9 @@ Graded `partial` as capabilities, but each Gap describes an enforcement hole in 
 
 **Gap:** No OIDC claim integration (session selection is store-driven, not claim-driven — arguably N/A for headless). No GraphQL surface. No spi-conformance cases proving InMemory and Postgres ScopedSessionStore agree (§4.3). Dev-mode identities bypass authenticate() and therefore scoped sessions (dev carries markings: [] so nothing to restrict).
 
-### `security-gov/checkpoints-justification-capture-for-sensit` — Checkpoints: justification capture for sensitive actions
-
-**Status:** `partial`
-
-> 🔒 CLAIMED: loop-0821-a7c3 2026-08-21T15:21+07:00
-
-> ✅ **UPDATED 21 Aug 2026 (loop-0821-9c4e, commit `3436974` in `b6dab53` lineage).** Pipeline wiring CLOSED: `ActionManifest.requiresJustification` declares the checkpoint (parser + type, packages/actions/src/parser); the executor's Step 3b refuses execution without a non-empty `ctx.justification` (JUSTIFICATION_REQUIRED, refusal audited), captures to the `JustificationStore` BEFORE effects (capture failure refuses the action), and stamps the text into the success audit record (`AuditDetail.justification`). Transport: reserved `_justification` field on REST body, generated GraphQL input SDL, and MCP tool args (stripped pre-validation) — enforcement lives in the executor so all surfaces are covered. Store instance shared with /api/v1/justifications routes. Two-sided proof: `packages/actions/src/executor/__tests__/justification-checkpoint.test.ts` (6/7 fail without, 9/9 with parser tests pass with).
-
-> ⚠️ **EVIDENCE UPDATED 19 Aug (PR #13, §3.2).** REST endpoints were wired. The grade stays `partial` — not wired into the action execution pipeline, no per-action justification requirement declaration, no audit record integration.
-
-**Evidence (updated 19 Aug, §3.2):** `JustificationStore` SPI with create/get/list/approve (packages/spi/src/security-governance.ts). `JustificationRecord` captures tenantId, userId, actionName, objectType, objectId, justification text, category (break-glass/routine/audit/emergency/legal), approval state, and timestamps. `InMemoryJustificationStore` implements full CRUD with filtering by user/action/object/time and tenant isolation (packages/storage-memory/src/in-memory-security-governance.ts). REST endpoints wired in §3.2 (commit `7bbae51`): `GET/POST /api/v1/justifications`, `POST /api/v1/justifications/:id/approve`. 5 justification tests + 13 security-governance route tests.
-
-**Gap:** Pipeline wiring, per-action declaration (manifest `requiresJustification`), and audit persistence CLOSED 21 Aug (`3436974` — see update note). Still open: PostgresJustificationStore existed already but no shipped pack declares `requiresJustification` yet (capability unexercised by a pack), no GraphQL surface for listing/approving justifications, no approval-hold integration (approve exists on the store/REST only).
-
 ### `security-gov/layered-permission-separation-app-module-vs-` — Layered permission separation (app/module vs data vs action vs function)
 
 **Status:** `partial`
-
 
 > ✅ **UPDATED 21 Aug 2026 (loop-0821-9c4e, commit `bacf52c`, pushed in `96eb062` lineage).** Object-less action default-allow CLOSED. `ActionManifest.requiredRoles` is the declarative role gate (parsed + validated in packages/actions/src/parser; mirrors @function requiredRoles `34f540f`). `createSecurityLayer` (config.ts) now DENIES unmapped actions unless the caller holds one of the manifest's requiredRoles — absent/empty means nobody, reason names the fix. `assertActionAuthzCoverage` is exact (declared field, substring heuristic deleted) and fatal in production. The three shipped object-less actions (RegisterPatient, OpenCase, StartConversation) declare requiredRoles mirroring their hasRole preconditions. Two-sided proof: `packages/api/src/__tests__/objectless-action-roles.test.ts` (3/5 fail without, all pass with) + updated `action-authz-coverage.test.ts` + `packages/actions/src/parser/__tests__/required-roles.test.ts`.
 
