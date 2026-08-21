@@ -30,7 +30,8 @@
  * packages/engine/src/functions/sandbox-preload.c and can be compiled with:
  *   cc -shared -fPIC -o sandbox-preload.so sandbox-preload.c -ldl
  */
-import { join, resolve, isAbsolute } from 'node:path';
+import { join, isAbsolute } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { existsSync } from 'node:fs';
@@ -132,8 +133,12 @@ export async function applySandboxProfile(
   };
 
   if (platform === 'linux') {
-    // Check for the preload library
-    const preloadPath = resolve(__dirname, 'sandbox-preload.so');
+    // Check for the preload library next to this module. This package is ESM
+    // (`"type": "module"`), where `__dirname` is undefined — referencing it threw
+    // a ReferenceError here on every Linux function invocation (the branch never
+    // runs on the macOS dev/test host, so it went unseen). Resolve via the module
+    // URL, the same pattern isolated-node-runtime uses for the worker.
+    const preloadPath = fileURLToPath(new URL('sandbox-preload.so', import.meta.url));
     if (existsSync(preloadPath)) {
       env['LD_PRELOAD'] = preloadPath;
       enforced = true;
