@@ -125,6 +125,7 @@ import { PostgresStorageProvider, PostgresLineageStore, PostgresAuditStore, Post
   PostgresAgentThreadStore,
   PostgresChangeProposalStore,
   PostgresHumanInTheLoopService,
+  PostgresMultiOntologyGovernanceService,
   PostgresObjectSetFilterStore, PostgresApprovalWorkflowService, PostgresDataExpectationsService,
   PostgresDesignSystemService,
   PostgresModelRegistryService, PostgresModelInferenceService,
@@ -1495,6 +1496,8 @@ async function main(): Promise<void> {
     humanInTheLoopService: pgPool ? new PostgresHumanInTheLoopService(pgPool) : new InMemoryHumanInTheLoopService(changeProposals),
     // SQL query — Postgres-backed when available.
     sqlQueryService: pgPool ? new PostgresSqlQueryService(pgPool) : new InMemorySqlQueryService(datasets),
+    // Multi-ontology governance — Postgres-backed when available.
+    multiOntologyGovernanceService: pgPool ? new PostgresMultiOntologyGovernanceService(pgPool) : new InMemoryMultiOntologyGovernanceService(),
     // Business rules â€” Postgres-backed when available. `state` is what decides
     // whether a rule governs anything, so losing it silently reverts a rule to
     // draft: nothing looks broken, the rule just stops applying.

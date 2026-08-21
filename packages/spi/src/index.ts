@@ -378,6 +378,12 @@ export {
   datasetProjectColumns,
 } from './dataset-rows.js';
 
+// Cross-org ontology access is an authorization decision, so it is evaluated by
+// one shared function rather than once per provider. Two providers that
+// disagreed would mean one deployment granting access the other denies, with
+// neither looking wrong from where it stands.
+export { evaluateOntologyAccess } from './ontology-access.js';
+
 // The SQL parser and the query engine over datasets: both pure, so both live
 // here rather than in a provider. Two providers that disagreed about what a
 // WHERE clause meant would return different rows for the same SQL — a worse

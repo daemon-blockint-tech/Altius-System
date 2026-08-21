@@ -97,6 +97,7 @@ export { PostgresBranchStore } from './branch/postgres-branch-store.js';
 export { PostgresCommentStore } from './comment/postgres-comment-store.js';
 export { PostgresNotificationStore } from './notification/postgres-notification-store.js';
 export { PostgresChangeProposalStore } from './governance/postgres-change-proposal-store.js';
+export { PostgresMultiOntologyGovernanceService } from './governance/postgres-multi-ontology-governance-service.js';
 export { PostgresHumanInTheLoopService } from './governance/postgres-human-in-the-loop-service.js';
 export { PostgresApprovalWorkflowService } from './governance/postgres-approval-workflow-service.js';
 export { PostgresBusinessRulesService } from './governance/postgres-business-rules-service.js';
