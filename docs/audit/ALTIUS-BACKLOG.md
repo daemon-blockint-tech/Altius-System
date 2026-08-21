@@ -49,6 +49,8 @@ Graded `partial` as capabilities, but each Gap describes an enforcement hole in 
 
 **Status:** `partial`
 
+> 🔒 CLAIMED: loop-0821-a7c3 2026-08-21T15:35+07:00
+
 > ✅ **RE-VERIFIED against source, 17 Aug 2026.** absent → partial. Marking policy and read-path enforcement exist; write-path bypasses CLOSED in `c246b51`.
 
 **Evidence (read 17 Aug):** A mandatory access-control marking system now exists. `MarkingPolicy` (packages/security/src/markings/marking-policy.ts) defines `MarkingDefinition` (name, optional category, optional rank), `MarkingCategoryDefinition` with mode `CONJUNCTIVE` | `DISJUNCTIVE`, and `MarkingPolicyConfig` with `byObjectType` mapping. Semantics: every required marking must be held in a conjunctive category; any one suffices in a disjunctive category; categories combine conjunctively; higher rank satisfies lower rank in hierarchical categories; undefined markings fail closed (unsatisfiable). Read-path enforcement is wired: `isTypeVisible` and `missingMarkings` (packages/api/src/markings/enforce.ts) are called across GraphQL resolvers (resolver-generator.ts), REST routes, and MCP — the `marking-read-surfaces` change (`a61f2c1`) closed nine of ten read-surface gaps. The `markings-merged` merge (`7fa80cd`, PR #6) brought the feature onto `main` with a shared `DEV_USER` definition carrying `markings: []` so no dev role bypasses a mandatory control. Write-path bypasses CLOSED (`c246b51`): `resolveTargetDetailed` classifies caller-supplied values as `forged` and denies them; `staticTargetType` walks `@link` hops from declared param types; `platformObjects` WeakSet tracks platform-loaded objects; runtime `_toType` is checked against the marking policy; `executeCreateObject` throws on `@-prefixed` properties.
