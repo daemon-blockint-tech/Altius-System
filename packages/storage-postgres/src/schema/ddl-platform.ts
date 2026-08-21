@@ -804,6 +804,51 @@ export function generatePlatformDDL(): string[] {
   statements.push(`CREATE INDEX IF NOT EXISTS "idx_layout_device_state_tenant_session" ON "governance"."layout_device_state" ("tenant_id", "session_id");`);
   statements.push(`CREATE INDEX IF NOT EXISTS "idx_layout_device_state_tenant_kind" ON "governance"."layout_device_state" ("tenant_id", "kind");`);
   statements.push(`CREATE INDEX IF NOT EXISTS "idx_layout_device_state_tenant_expires" ON "governance"."layout_device_state" ("tenant_id", "expires_at");`);
+  // ── Process-mining event objects and their breach thresholds ──
+  //
+  // The events are the process-mining input; a model discovered from a log that
+  // lost half its events is not wrong-looking, it is just a smaller model. And a
+  // lost threshold does not error either — new events simply stop being flagged
+  // as breaches, which is the same silent-gate shape as losing a data
+  // expectation.
+  statements.push(`CREATE SCHEMA IF NOT EXISTS "process";`);
+  statements.push(`CREATE TABLE IF NOT EXISTS "process"."events" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "seq" BIGSERIAL,
+  "tenant_id" TEXT NOT NULL,
+  "event_type" TEXT NOT NULL,
+  "case_id" TEXT NOT NULL,
+  "object_id" TEXT,
+  "object_type" TEXT,
+  -- Timestamps are TEXT, not TIMESTAMPTZ: the query filters compare them as
+  -- strings against caller-supplied bounds, and the in-memory provider does a
+  -- lexicographic compare. Storing them as instants would re-order events whose
+  -- strings differ but whose instants match, and the two providers would part
+  -- company on the boundaries.
+  "start_time" TEXT NOT NULL,
+  "end_time" TEXT,
+  "duration_ms" BIGINT,
+  "actor_id" TEXT,
+  "badges" JSONB NOT NULL DEFAULT '[]',
+  "threshold_breached" BOOLEAN,
+  "threshold_details" JSONB,
+  "attributes" JSONB NOT NULL DEFAULT '{}',
+  "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);`);
+  // list() orders by start_time ascending; `seq` breaks the ties, which are
+  // common because events are frequently stamped from the same clock reading.
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_events_tenant_start" ON "process"."events" ("tenant_id", "start_time", "seq");`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_events_tenant_case" ON "process"."events" ("tenant_id", "case_id");`);
+
+  // One threshold per (tenant, event type), replaced rather than accumulated.
+  statements.push(`CREATE TABLE IF NOT EXISTS "process"."event_thresholds" (
+  "tenant_id" TEXT NOT NULL,
+  "event_type" TEXT NOT NULL,
+  "metric" TEXT NOT NULL,
+  "threshold" DOUBLE PRECISION NOT NULL,
+  "direction" TEXT NOT NULL,
+  "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY ("tenant_id", "event_type")
   // ── Ontology change history ──
   //
   // The record of who changed the schema, when, and what it looked like before.
