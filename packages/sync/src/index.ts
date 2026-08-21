@@ -52,6 +52,7 @@ export { IdentityResolver, QuarantineQueue } from "./connectors/index.js";
 export type {
   TransformFn,
   SyncMode,
+  SyncRuntime,
   ConflictResolution,
   RateLimitConfig,
   SyncConfig,
@@ -130,3 +131,25 @@ export { ConflictResolver } from "./conflict/index.js";
 // Scheduler — the driver loop for POLLING/CDC/BATCH datasources
 export type { SyncSchedulerConfig, DatasourceStatus } from "./scheduler/index.js";
 export { SyncScheduler, InMemoryCheckpointStore, parseInterval } from "./scheduler/index.js";
+
+// Agent-based data connection — outbound-only agents inside the customer
+// network capturing sources the platform cannot reach
+export type {
+  AgentEnrollRequest,
+  AgentEnrollResponse,
+  AgentHeartbeatRequest,
+  AgentHeartbeatResponse,
+  AgentLeaseGrant,
+  AgentLeaseStatus,
+  AgentUploadRequest,
+  AgentUploadResponse,
+  AgentErrorResponse,
+  WireSourceRecord,
+  AgentGatewayConfig,
+  AgentGatewayStatus,
+  AgentStatusView,
+  DatasourceStatusView,
+  GatewayResult,
+  DataConnectionAgentConfig,
+} from "./agent/index.js";
+export { AgentGateway, DataConnectionAgent, resolveAgentEnvPlaceholders } from "./agent/index.js";
