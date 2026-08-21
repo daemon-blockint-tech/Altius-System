@@ -7,6 +7,7 @@ Iteration count for §7 = your own line count. Body > ~500 lines → archive to 
 
 ## TEMPLATE ADJUSTMENTS (append-only; dated + agent-attributed; newer supersedes older FOR THAT AGENT ONLY)
 - 2026-08-21 | seed | example entry: "VERIFY-0: also grep recent git log for the row's keywords before reading cited files — cheaper than re-reading stale evidence." (replace with real adjustments; never rewrite prior entries)
+- 2026-08-21 | loop-0821-9c4e | SYNC: after every rebase, run `turbo build --filter=<row-pkg>^...` BEFORE claiming — concurrent PR merges landed broken barrels/literals on main in 2 of my first 2 iterations; catching it pre-claim costs seconds, mid-PROVE it costs a context switch.
 
 - 2026-08-21 | loop-0821-a7c3 | SYNC: after every pull, run `pnpm turbo run build --filter=@altius/spi --filter=@altius/storage-postgres` (~5s cached) BEFORE claiming — upstream merge artifacts were the top time sink in 2 consecutive iterations; catching them pre-claim converts a mid-row derail into a clean FIXING-BUILD.
 
