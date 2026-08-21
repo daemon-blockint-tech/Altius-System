@@ -97,7 +97,6 @@ export { PostgresBranchStore } from './branch/postgres-branch-store.js';
 export { PostgresCommentStore } from './comment/postgres-comment-store.js';
 export { PostgresNotificationStore } from './notification/postgres-notification-store.js';
 export { PostgresChangeProposalStore } from './governance/postgres-change-proposal-store.js';
-export { PostgresAgentThreadStore } from './agent/postgres-agent-thread-store.js';
 export { PostgresEventObjectService } from './process/postgres-event-object-service.js';
 export { PostgresConflictResolutionService } from './sync/postgres-conflict-resolution-service.js';
 export { PostgresOntologyChangeHistoryService } from './governance/postgres-ontology-change-history-service.js';
