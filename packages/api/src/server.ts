@@ -97,7 +97,6 @@ import {
   InMemoryGraphAnalysisService,
   InMemoryPlatformAssistantService,
   InMemoryEmbeddedCopilotService,
-  InMemoryBatchTransformService,
   InMemorySqlQueryService,
   InMemoryVariableTransformService,
   InMemoryRulesEngineService,
