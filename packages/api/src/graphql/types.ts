@@ -10,7 +10,7 @@ import type {
   MarkingPolicy,
 } from '@altius/security';
 import type { ParsedSchema } from '@altius/odl';
-import type { RequestContext, StorageProvider, LLMClient, BlobStore, TimeSeriesStore, BranchStore, CommentStore, NotificationStore, EmbeddingStore, AlertingService, LLMGateway, DataFreshnessService, JustificationStore, AccessExplanationService, ScopedSessionStore, OntologySqlService, DatasetService, DatasetMetadataService, OntologyUsageMetricsService, GeospatialMapService, ScenarioService, ModelInferenceService, ModelChainService, WorkshopPlatformService, EmbeddingService, PlatformResourceService, SavedViewStore, UserDirectoryService, KioskService, LayoutDeviceCaptureService, OntologyManagerService, WorkshopUxService, ValueFormattingService, DesignSystemService, OntologyChangeHistoryService, CommandExchangeService, ObjectSetFilterStore, GraphService, TransformExpressionService, ChangeProposalStore, BusinessRulesService, AgentEvaluationService, AgentThreadStore, ConflictResolutionService, ConnectorCatalogService, DataExpectationsService, EmbeddedCopilotService, EventObjectService, GraphAnalysisService, MultiOntologyGovernanceService, PipelineBuildService, PlatformAssistantService, ProcessMiningService, BatchTransformService, SqlQueryService, VariableTransformService, RulesEngineService, PipelineService, SyncCdcService, DatasourceService, BuildTriggerService, SqlAnalyticsService, AgentService, ModelCatalogService, EvalService, HumanInTheLoopService, VectorSearchService, CopilotService } from '@altius/spi';
+import type { RequestContext, StorageProvider, LLMClient, BlobStore, TimeSeriesStore, BranchStore, CommentStore, NotificationStore, EmbeddingStore, AlertingService, LLMGateway, DataFreshnessService, JustificationStore, AccessExplanationService, ScopedSessionStore, OntologySqlService, DatasetService, DatasetMetadataService, OntologyUsageMetricsService, GeospatialMapService, ScenarioService, ModelInferenceService, ModelChainService, ModelRegistryService, ApprovalWorkflowService, CommandService, WorkshopPlatformService, EmbeddingService, PlatformResourceService, SavedViewStore, UserDirectoryService, KioskService, LayoutDeviceCaptureService, OntologyManagerService, WorkshopUxService, ValueFormattingService, DesignSystemService, OntologyChangeHistoryService, CommandExchangeService, ObjectSetFilterStore, GraphService, TransformExpressionService, ChangeProposalStore, BusinessRulesService, AgentEvaluationService, AgentThreadStore, ConflictResolutionService, ConnectorCatalogService, DataExpectationsService, EmbeddedCopilotService, EventObjectService, GraphAnalysisService, MultiOntologyGovernanceService, PipelineBuildService, PlatformAssistantService, ProcessMiningService, BatchTransformService, SqlQueryService, VariableTransformService, RulesEngineService, PipelineService, SyncCdcService, DatasourceService, BuildTriggerService, SqlAnalyticsService, AgentService, ModelCatalogService, EvalService, HumanInTheLoopService, VectorSearchService, CopilotService } from '@altius/spi';
 import { DataPurpose } from '@altius/spi';
 
 /**
@@ -269,6 +269,16 @@ export interface ApiDependencies {
    */
   modelChainService?: ModelChainService;
   /**
+   * Model registry service — manages model artifacts, lifecycle states,
+   * versioning, and lineage. Postgres-backed when available.
+   */
+  modelRegistryService?: ModelRegistryService;
+  /**
+   * Command service — manages registered application commands and command
+   * chains. Postgres-backed when available.
+   */
+  commandService?: CommandService;
+  /**
    * Scenario simulation service — manages what-if scenarios, execution,
    * comparison, and persistence. When present, REST endpoints for
    * scenario management are registered:
@@ -405,6 +415,11 @@ export interface ApiDependencies {
    *   POST   /api/v1/usage/rules/evaluate      (evaluate monitoring rules)
    */
   usageMetricsService?: OntologyUsageMetricsService;
+  /**
+   * Approval workflow service — manages ABAC-governed approval workflows
+   * and their submissions.
+   */
+  approvalWorkflowService?: ApprovalWorkflowService;
   /**
    * App embedding & cross-app service — app registry, embedding manifests,
    * cross-app commands, and app pairing. When present, REST endpoints
