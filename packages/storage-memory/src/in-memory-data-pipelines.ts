@@ -3,6 +3,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { resolveConflictValue, DEFAULT_CONFLICT_STRATEGY } from '@altius/spi';
 import { evaluateDataExpectation } from '@altius/spi';
 import type {
   DataExpectationsService,
@@ -143,25 +144,10 @@ export class InMemoryConflictResolutionService implements ConflictResolutionServ
     if (!conflict) throw new Error(`Conflict not found: ${conflictId}`);
     if (conflict.resolved) throw new Error('Conflict already resolved');
 
-    let resolvedValue: unknown;
-    switch (strategy) {
-      case 'user_edits_win':
-        resolvedValue = conflict.userValue;
-        break;
-      case 'latest_value_wins':
-        resolvedValue = conflict.userTimestamp > conflict.datasourceTimestamp ? conflict.userValue : conflict.datasourceValue;
-        break;
-      case 'merge':
-        if (typeof conflict.userValue === 'object' && typeof conflict.datasourceValue === 'object' && conflict.userValue && conflict.datasourceValue) {
-          resolvedValue = { ...(conflict.datasourceValue as Record<string, unknown>), ...(conflict.userValue as Record<string, unknown>) };
-        } else {
-          resolvedValue = conflict.userValue;
-        }
-        break;
-      case 'manual':
-        resolvedValue = manualValue;
-        break;
-    }
+    // Which value wins is shared with the Postgres provider: the output is
+    // data, so two providers disagreeing would write different values into the
+    // same field with neither erring.
+    const resolvedValue = resolveConflictValue(conflict, strategy, manualValue);
 
     const updated: DataConflict = {
       ...conflict,
@@ -189,7 +175,10 @@ export class InMemoryConflictResolutionService implements ConflictResolutionServ
   }
 
   async getDefaultStrategy(ctx: RequestContext): Promise<ConflictStrategy> {
-    return this.defaultStrategies.get(ctx.tenantId) ?? 'user_edits_win';
+    // The fallback is why losing this setting is silent: a tenant that chose
+    // `latest_value_wins` and lost it does not error, it quietly starts
+    // resolving the other way.
+    return this.defaultStrategies.get(ctx.tenantId) ?? DEFAULT_CONFLICT_STRATEGY;
   }
 
   private getMap(tenantId: string): Map<string, DataConflict> {
