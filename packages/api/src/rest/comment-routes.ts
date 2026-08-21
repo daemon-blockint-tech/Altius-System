@@ -15,6 +15,7 @@ import type { Express } from 'express';
 import type { ApiDependencies } from '../graphql/types.js';
 import type { OidcAuthenticator } from '@altius/security';
 import { extractUser } from '../config.js';
+import { checkObjectAccess } from './object-access.js';
 
 export function registerCommentRoutes(
   app: Express,
@@ -42,6 +43,10 @@ export function registerCommentRoutes(
         return;
       }
 
+      // Comments hang off the object — you may read them only if you may read it.
+      const denied = await checkObjectAccess(deps, user, typeName, req.params['id']!, 'read');
+      if (denied) { res.status(denied.status).json(denied.body); return; }
+
       const query: { threadsOnly?: boolean; resolved?: boolean; authorId?: string; limit?: number; offset?: number } = {};
       if (req.query['threadsOnly'] === 'true') query.threadsOnly = true;
       if (req.query['resolved'] !== undefined) query.resolved = req.query['resolved'] === 'true';
@@ -65,6 +70,10 @@ export function registerCommentRoutes(
         res.status(404).json({ error: 'NOT_FOUND', message: 'Unknown object type' });
         return;
       }
+
+      // Commenting requires being able to read the object being commented on.
+      const denied = await checkObjectAccess(deps, user, typeName, req.params['id']!, 'read');
+      if (denied) { res.status(denied.status).json(denied.body); return; }
 
       const body = req.body as { body: string; parentCommentId?: string; authorName?: string };
       if (!body.body) {
