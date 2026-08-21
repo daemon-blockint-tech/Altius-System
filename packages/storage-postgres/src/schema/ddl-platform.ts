@@ -500,25 +500,28 @@ export function generatePlatformDDL(): string[] {
   statements.push(`CREATE INDEX IF NOT EXISTS "idx_kiosk_sessions_tenant_state" ON "governance"."kiosk_sessions" ("tenant_id", "state");`);
   statements.push(`CREATE INDEX IF NOT EXISTS "idx_kiosk_sessions_tenant_started" ON "governance"."kiosk_sessions" ("tenant_id", "started_at" DESC);`);
 
-  // ── Business rules engine ──
+  // ── Business rules (no-code rule DAGs, approval-gated) ──
+  //
+  // `state` is what governs runtime behaviour: only an `active` rule applies.
+  // Losing it silently reverts a rule to draft, which looks like nothing
+  // happening rather than like a failure.
   statements.push(`CREATE TABLE IF NOT EXISTS "governance"."business_rules" (
   "id" TEXT NOT NULL PRIMARY KEY,
   "tenant_id" TEXT NOT NULL,
-  "name" TEXT,
-  "description" TEXT,
-  "state" TEXT,
+  "name" TEXT NOT NULL,
+  "description" TEXT NOT NULL DEFAULT '',
   "nodes" JSONB NOT NULL DEFAULT '[]',
+  "state" TEXT NOT NULL DEFAULT 'draft',
   "is_time_series_board" BOOLEAN NOT NULL DEFAULT FALSE,
   "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  "created_by" TEXT,
-  "reviewed_by" TEXT,
+  "created_by" TEXT NOT NULL DEFAULT '',
   "review_notes" TEXT,
+  "reviewed_by" TEXT,
   "reviewed_at" TIMESTAMPTZ
 );`);
-  statements.push(`CREATE INDEX IF NOT EXISTS "idx_business_rules_tenant" ON "governance"."business_rules" ("tenant_id");`);
-  statements.push(`CREATE INDEX IF NOT EXISTS "idx_business_rules_tenant_state" ON "governance"."business_rules" ("tenant_id", "state");`);
-  statements.push(`CREATE INDEX IF NOT EXISTS "idx_business_rules_tenant_created" ON "governance"."business_rules" ("tenant_id", "created_at" DESC);`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_rules_tenant_state" ON "governance"."business_rules" ("tenant_id", "state");`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_rules_tenant_created" ON "governance"."business_rules" ("tenant_id", "created_at" DESC);`);
 
   // ── Saved views ──
   statements.push(`CREATE TABLE IF NOT EXISTS "governance"."saved_views" (
@@ -605,6 +608,185 @@ export function generatePlatformDDL(): string[] {
   statements.push(`CREATE INDEX IF NOT EXISTS "idx_layout_device_state_tenant_session" ON "governance"."layout_device_state" ("tenant_id", "session_id");`);
   statements.push(`CREATE INDEX IF NOT EXISTS "idx_layout_device_state_tenant_kind" ON "governance"."layout_device_state" ("tenant_id", "kind");`);
   statements.push(`CREATE INDEX IF NOT EXISTS "idx_layout_device_state_tenant_expires" ON "governance"."layout_device_state" ("tenant_id", "expires_at");`);
+
+  // ── Agent threads (Batch 2 — not in upstream) ──
+  statements.push(`CREATE SCHEMA IF NOT EXISTS "agent_threads";`);
+  statements.push(`CREATE TABLE IF NOT EXISTS "agent_threads"."threads" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "tenant_id" TEXT NOT NULL,
+  "user_id" TEXT NOT NULL,
+  "name" TEXT NOT NULL,
+  "model" TEXT,
+  "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_agent_threads_tenant_user" ON "agent_threads"."threads" ("tenant_id", "user_id");`);
+  statements.push(`CREATE TABLE IF NOT EXISTS "agent_threads"."messages" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "tenant_id" TEXT NOT NULL,
+  "thread_id" TEXT NOT NULL,
+  "role" TEXT NOT NULL,
+  "content" TEXT,
+  "tool_calls" JSONB,
+  "tool_result" JSONB,
+  "model" TEXT,
+  "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_agent_msgs_thread" ON "agent_threads"."messages" ("tenant_id", "thread_id", "created_at");`);
+
+  // ── Object set filter states (Batch 2 — not in upstream) ──
+  statements.push(`CREATE SCHEMA IF NOT EXISTS "object_set_filters";`);
+  statements.push(`CREATE TABLE IF NOT EXISTS "object_set_filters"."states" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "tenant_id" TEXT NOT NULL,
+  "object_set_id" TEXT NOT NULL,
+  "name" TEXT NOT NULL DEFAULT '',
+  "chips" JSONB NOT NULL DEFAULT '[]',
+  "variables" JSONB NOT NULL DEFAULT '{}',
+  "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_osf_tenant_set" ON "object_set_filters"."states" ("tenant_id", "object_set_id");`);
+
+  // ── Data expectations (Batch 2 — not in upstream) ──
+  statements.push(`CREATE SCHEMA IF NOT EXISTS "data_expectations";`);
+  statements.push(`CREATE TABLE IF NOT EXISTS "data_expectations"."expectations" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "tenant_id" TEXT NOT NULL,
+  "name" TEXT NOT NULL,
+  "description" TEXT NOT NULL DEFAULT '',
+  "target_type" TEXT NOT NULL,
+  "field" TEXT,
+  "type" TEXT NOT NULL,
+  "params" JSONB NOT NULL DEFAULT '{}',
+  "blocking" BOOLEAN NOT NULL DEFAULT FALSE,
+  "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "enabled" BOOLEAN NOT NULL DEFAULT TRUE
+);`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_de_tenant_target" ON "data_expectations"."expectations" ("tenant_id", "target_type");`);
+
+  // ── Model registry (Batch 2 — not in upstream) ──
+  statements.push(`CREATE SCHEMA IF NOT EXISTS "model_registry";`);
+  statements.push(`CREATE TABLE IF NOT EXISTS "model_registry"."models" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "tenant_id" TEXT NOT NULL,
+  "name" TEXT NOT NULL,
+  "display_name" TEXT NOT NULL DEFAULT '',
+  "description" TEXT NOT NULL DEFAULT '',
+  "source" TEXT NOT NULL,
+  "adapter" JSONB NOT NULL DEFAULT '{}',
+  "state" TEXT NOT NULL DEFAULT 'draft',
+  "version" INTEGER NOT NULL DEFAULT 0,
+  "tags" TEXT[] NOT NULL DEFAULT '{}',
+  "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "created_by" TEXT NOT NULL DEFAULT '',
+  "released_by" TEXT,
+  "released_at" TIMESTAMPTZ,
+  "upstream_model_ids" TEXT[] NOT NULL DEFAULT '{}',
+  "modeling_objective_id" TEXT
+);`);
+  statements.push(`CREATE TABLE IF NOT EXISTS "model_registry"."deployments" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "tenant_id" TEXT NOT NULL,
+  "model_id" TEXT NOT NULL,
+  "model_version" INTEGER NOT NULL DEFAULT 0,
+  "name" TEXT NOT NULL,
+  "state" TEXT NOT NULL DEFAULT 'pending',
+  "batch_mode" BOOLEAN NOT NULL DEFAULT FALSE,
+  "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "created_by" TEXT NOT NULL DEFAULT '',
+  "endpoint_url" TEXT,
+  "error_message" TEXT
+);`);
+  statements.push(`CREATE TABLE IF NOT EXISTS "model_registry"."inference_history" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "tenant_id" TEXT NOT NULL,
+  "model_id" TEXT NOT NULL,
+  "model_version" INTEGER NOT NULL DEFAULT 0,
+  "deployment_id" TEXT,
+  "user_id" TEXT,
+  "inputs" JSONB NOT NULL DEFAULT '{}',
+  "outputs" JSONB NOT NULL DEFAULT '{}',
+  "success" BOOLEAN NOT NULL DEFAULT TRUE,
+  "duration_ms" INTEGER,
+  "timestamp" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "error_message" TEXT
+);`);
+  statements.push(`CREATE TABLE IF NOT EXISTS "model_registry"."chains" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "tenant_id" TEXT NOT NULL,
+  "name" TEXT NOT NULL,
+  "description" TEXT NOT NULL DEFAULT '',
+  "steps" JSONB NOT NULL DEFAULT '[]',
+  "state" TEXT NOT NULL DEFAULT 'draft',
+  "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "created_by" TEXT NOT NULL DEFAULT ''
+);`);
+
+  // ── Connector catalog (Batch 2 — not in upstream) ──
+  statements.push(`CREATE SCHEMA IF NOT EXISTS "connector_catalog";`);
+  statements.push(`CREATE TABLE IF NOT EXISTS "connector_catalog"."configured" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "tenant_id" TEXT NOT NULL,
+  "vendor_connector_id" TEXT NOT NULL,
+  "instance_name" TEXT NOT NULL,
+  "config" JSONB NOT NULL DEFAULT '{}',
+  "auth" JSONB NOT NULL DEFAULT '{}',
+  "egress_policy_id" TEXT,
+  "enabled" BOOLEAN NOT NULL DEFAULT TRUE,
+  "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "created_by" TEXT NOT NULL DEFAULT '',
+  "last_validation" JSONB,
+  "UNIQUE ("tenant_id", "instance_name")
+);`);
+  statements.push(`CREATE TABLE IF NOT EXISTS "connector_catalog"."egress_policies" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "tenant_id" TEXT NOT NULL,
+  "name" TEXT NOT NULL,
+  "description" TEXT NOT NULL DEFAULT '',
+  "allowed_hosts" TEXT[] NOT NULL DEFAULT '{}',
+  "denied_hosts" TEXT[] NOT NULL DEFAULT '{}',
+  "require_on_prem_proxy" BOOLEAN NOT NULL DEFAULT FALSE,
+  "on_prem_proxy" JSONB,
+  "max_throughput_mbps" DOUBLE PRECISION,
+  "require_tls" BOOLEAN NOT NULL DEFAULT TRUE,
+  "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "created_by" TEXT NOT NULL DEFAULT '',
+  "enabled" BOOLEAN NOT NULL DEFAULT TRUE
+);`);
+
+  // ── Commands (Batch 2 — not in upstream) ──
+  statements.push(`CREATE SCHEMA IF NOT EXISTS "commands";`);
+  statements.push(`CREATE TABLE IF NOT EXISTS "commands"."commands" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "tenant_id" TEXT NOT NULL,
+  "name" TEXT NOT NULL,
+  "label" TEXT NOT NULL DEFAULT '',
+  "description" TEXT NOT NULL DEFAULT '',
+  "source_app" TEXT NOT NULL,
+  "icon" TEXT,
+  "input_schema" JSONB NOT NULL DEFAULT '{}',
+  "output_schema" JSONB NOT NULL DEFAULT '{}',
+  "available_as_tool" BOOLEAN NOT NULL DEFAULT FALSE,
+  "chainable" BOOLEAN NOT NULL DEFAULT FALSE,
+  "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "created_by" TEXT NOT NULL DEFAULT '',
+  "enabled" BOOLEAN NOT NULL DEFAULT TRUE
+);`);
+  statements.push(`CREATE TABLE IF NOT EXISTS "commands"."chains" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "tenant_id" TEXT NOT NULL,
+  "name" TEXT NOT NULL,
+  "description" TEXT NOT NULL DEFAULT '',
+  "steps" JSONB NOT NULL DEFAULT '[]',
+  "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "created_by" TEXT NOT NULL DEFAULT '',
+  "enabled" BOOLEAN NOT NULL DEFAULT TRUE
+);`);
 
   return statements;
 }

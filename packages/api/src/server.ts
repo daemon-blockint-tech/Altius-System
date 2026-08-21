@@ -86,6 +86,7 @@ import {
   InMemoryApprovalWorkflowService,
   InMemoryBusinessRulesService,
   InMemoryAgentEvaluationService,
+  InMemoryCommandService,
   InMemoryDataExpectationsService,
   InMemoryConflictResolutionService,
   InMemoryPipelineBuildService,
@@ -119,11 +120,14 @@ import { PostgresStorageProvider, PostgresLineageStore, PostgresAuditStore, Post
   PostgresAlertingService, PostgresBusinessRulesService, PostgresKioskService, PostgresSavedViewStore, PostgresDataFreshnessService, PostgresDatasetMetadataService,
   PostgresGeospatialMapService, PostgresJustificationStore, PostgresOntologySqlService,
   PostgresOntologyUsageMetricsService, PostgresScopedSessionStore,
+  PostgresAgentThreadStore,
   PostgresChangeProposalStore,
-  PostgresApprovalWorkflowService,
+  PostgresObjectSetFilterStore, PostgresApprovalWorkflowService, PostgresDataExpectationsService,
+  PostgresDesignSystemService,
+  PostgresModelRegistryService, PostgresModelInferenceService,
+  PostgresModelChainService, PostgresConnectorCatalogService, PostgresCommandService,
   PostgresDatasetService,
   PostgresUserDirectoryService,
-  PostgresDesignSystemService,
   PostgresLayoutDeviceCaptureService,
 } from '@altius/storage-postgres';
 import {
@@ -1266,17 +1270,21 @@ async function main(): Promise<void> {
   const nonDurableServices = nonDurableServicesEnabled
     ? {
       // Model inference and chain services — in-memory only.
-      // Scenario service — in-memory, wired to the model services.
+      // Model services — Postgres-backed when available; scenario service
+      // wires to the inference/chain services regardless of backing.
       ...(() => {
+        if (pgPool) {
+          const registry = new PostgresModelRegistryService(pgPool);
+          const inference = new PostgresModelInferenceService(pgPool);
+          const chain = new PostgresModelChainService(pgPool);
+          const scenarios = new InMemoryScenarioService({ inferenceService: inference, chainService: chain });
+          return { modelRegistryService: registry, modelInferenceService: inference, modelChainService: chain, scenarioService: scenarios };
+        }
         const registry = new InMemoryModelRegistryService();
         const inference = new InMemoryModelInferenceService(registry);
         const chain = new InMemoryModelChainService(inference);
         const scenarios = new InMemoryScenarioService({ inferenceService: inference, chainService: chain });
-        return {
-          modelInferenceService: inference,
-          modelChainService: chain,
-          scenarioService: scenarios,
-        };
+        return { modelRegistryService: registry, modelInferenceService: inference, modelChainService: chain, scenarioService: scenarios };
       })(),
       // Workshop platform service — in-memory app definition persistence.
       workshopPlatformService: new InMemoryWorkshopPlatformService(),
@@ -1284,6 +1292,8 @@ async function main(): Promise<void> {
       embeddingService: new InMemoryEmbeddingService(),
       // Platform resources — in-memory resource catalog and object linking.
       platformResourceService: new InMemoryPlatformResourceService(),
+      // Saved views, design system, approval workflows, change proposals —
+      // graduated to durable services (see deps literal below).
       // User directory — graduated to durable service above.
       // Layout/device-capture — graduated to durable service above.
       // API Tooling services — in-memory only (no Postgres implementations yet).
@@ -1293,12 +1303,10 @@ async function main(): Promise<void> {
       ontologyChangeHistoryService: new InMemoryOntologyChangeHistoryService(),
       // Workshop UI services.
       commandExchangeService: new InMemoryCommandExchangeService(),
-      objectSetFilterStore: new InMemoryObjectSetFilterStore(),
       graphService: new InMemoryGraphService(),
       // Previously-unreachable services — in-memory only, wired so they have a
       // REST surface when the non-durable gate is open.
       agentEvaluationService: new InMemoryAgentEvaluationService(),
-      agentThreadStore: new InMemoryAgentThreadStore(),
       conflictResolutionService: new InMemoryConflictResolutionService(),
       connectorCatalogService: new InMemoryConnectorCatalogService(),
       dataExpectationsService: new InMemoryDataExpectationsService(),
@@ -1445,6 +1453,10 @@ async function main(): Promise<void> {
     // out of `nonDurableServices`, where the gate withheld it under Postgres
     // rather than accept approvals it would lose on restart.
     changeProposalStore: pgPool ? new PostgresChangeProposalStore(pgPool) : new InMemoryChangeProposalStore(),
+    // Business rules — Postgres-backed when available. `state` is what decides
+    // whether a rule governs anything, so losing it silently reverts a rule to
+    // draft: nothing looks broken, the rule just stops applying.
+    businessRulesService: pgPool ? new PostgresBusinessRulesService(pgPool) : new InMemoryBusinessRulesService(),
     // Usage metrics — Postgres-backed when available. The record() method is
     // an instrumentation hook; query/summary endpoints read from Postgres.
     usageMetricsService: pgPool ? new PostgresOntologyUsageMetricsService(pgPool) : new InMemoryOntologyUsageMetricsService(),
@@ -1452,9 +1464,6 @@ async function main(): Promise<void> {
     // submission tables are tenant-scoped and the same state machine as the
     // in-memory service.
     approvalWorkflowService,
-    // Business rules — Postgres-backed when available. Rules and DAG
-    // execution are persisted; execution runs in-process over supplied data.
-    businessRulesService: pgPool ? new PostgresBusinessRulesService(pgPool) : new InMemoryBusinessRulesService(),
     // Kiosk sessions — Postgres-backed when available. Long-lived read-only
     // display sessions are durable and shared across replicas.
     kioskService: pgPool ? new PostgresKioskService(pgPool) : new InMemoryKioskService(),
@@ -1467,6 +1476,16 @@ async function main(): Promise<void> {
     designSystemService: pgPool ? new PostgresDesignSystemService(pgPool) : new InMemoryDesignSystemService(),
     // Layout, device-capture, and deep-link resolution — Postgres-backed when available.
     layoutDeviceCaptureService: pgPool ? new PostgresLayoutDeviceCaptureService(pgPool) : new InMemoryLayoutDeviceCaptureService(),
+    // Agent threads — Postgres-backed when available.
+    agentThreadStore: pgPool ? new PostgresAgentThreadStore(pgPool) : new InMemoryAgentThreadStore(),
+    // Object set filter states — Postgres-backed when available.
+    objectSetFilterStore: pgPool ? new PostgresObjectSetFilterStore(pgPool) : new InMemoryObjectSetFilterStore(),
+    // Data expectations — Postgres-backed when available; evaluation is computational.
+    dataExpectationsService: pgPool ? new PostgresDataExpectationsService(pgPool) : new InMemoryDataExpectationsService(),
+    // Connector catalog — Postgres-backed when available; vendor catalog is static.
+    connectorCatalogService: pgPool ? new PostgresConnectorCatalogService(pgPool) : new InMemoryConnectorCatalogService(),
+    // Commands and chains — Postgres-backed when available; execution is delegated.
+    commandService: pgPool ? new PostgresCommandService(pgPool) : new InMemoryCommandService(),
 
     // Non-durable platform services — withheld under Postgres unless opted in.
     // Built and explained above.
