@@ -9,6 +9,8 @@ import type { WebConfig } from './client.js';
 import { AuthSession } from './auth/session.js';
 import { beginLogin, completeLogin } from './auth/pkce.js';
 import { isAuthFailure } from './auth/auth-failure.js';
+import { decodeJwtClaims, principalFromClaims } from './auth/claims.js';
+import type { Principal } from './auth/claims.js';
 import { EditorialShell } from './components/EditorialShell.js';
 import type { JobKey, JobGroup, PackOption, RoleOption } from './components/EditorialShell.js';
 import { FacilitiesScreen } from './components/FacilitiesScreen.js';
@@ -29,6 +31,16 @@ import { SyncHealthScreen } from './components/SyncHealthScreen.js';
 import type { TraceState } from './components/TraceBar.js';
 
 type AuthState = 'checking' | 'anonymous' | 'signed-in' | 'error';
+
+/** Up to two initials from a display name, for the avatar chip. */
+function initialsOf(name: string | undefined): string {
+  if (!name) return '··';
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '··';
+  const first = parts[0]![0] ?? '';
+  const last = parts.length > 1 ? (parts[parts.length - 1]![0] ?? '') : '';
+  return (first + last).toUpperCase() || '··';
+}
 
 // ── Pack / job / role definitions ─────────────────────────────
 
@@ -138,6 +150,19 @@ export function App({ config }: { config: WebConfig }): ReactNode {
   );
 
   useEffect(() => () => client.close(), [client]);
+
+  // Real signed-in principal, decoded from the access token's display claims —
+  // replaces the former hardcoded demo identity. Authorization is unaffected:
+  // the gateway verifies the token and enforces access server-side.
+  const [principal, setPrincipal] = useState<Principal | null>(null);
+  useEffect(() => {
+    if (authState !== 'signed-in' || !session) { setPrincipal(null); return; }
+    let live = true;
+    session.getAccessToken()
+      .then(t => { if (live) setPrincipal(principalFromClaims(decodeJwtClaims(t))); })
+      .catch(() => { if (live) setPrincipal(null); });
+    return () => { live = false; };
+  }, [authState, session]);
 
   const guardAuth = <R,>(p: Promise<R>): Promise<R> =>
     p.catch((err: unknown) => {
@@ -257,19 +282,28 @@ export function App({ config }: { config: WebConfig }): ReactNode {
       roles={ROLES}
       activeRole={activeRole}
       onRoleChange={setActiveRole}
-      brand="SC"
-      userInitials="JO"
+      brand="AL"
+      userInitials={initialsOf(principal?.name)}
       principal={{
-        name: 'Joy Okafor',
-        email: 'j.okafor@trust.example',
-        tenant: 'acme-eu',
-        sub: '4f2a…9c1',
-        relationsSummary: (
-          <>
-            Holds <code>warehouse_manager</code> on 4 facilities and{' '}
-            <code>viewer</code> everywhere it derives.
-          </>
-        ),
+        name: principal?.name ?? 'Signing in…',
+        email: principal?.email ?? '',
+        tenant: principal?.tenant ?? 'default',
+        sub: principal?.sub ?? '',
+        relationsSummary:
+          principal && principal.roles.length > 0 ? (
+            <>
+              Holds{' '}
+              {principal.roles.map((r, i) => (
+                <span key={r}>
+                  {i > 0 ? ', ' : ''}
+                  <code>{r}</code>
+                </span>
+              ))}{' '}
+              from the identity token; object-level relations are enforced server-side.
+            </>
+          ) : (
+            <>No roles in the identity token.</>
+          ),
       }}
       hidden={[
         {
