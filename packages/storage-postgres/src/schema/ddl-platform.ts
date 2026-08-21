@@ -299,6 +299,26 @@ export function generatePlatformDDL(): string[] {
   // list() returns newest first; `seq` gives that a total order, since two
   // jobs can be submitted within the same millisecond.
   statements.push(`CREATE INDEX IF NOT EXISTS "idx_sql_jobs_tenant_seq" ON "dataset"."sql_jobs" ("tenant_id", "seq" DESC);`);
+  // ── Data expectations (quality checks that gate builds) ──
+  //
+  // `blocking` is what makes a failing check stop a build. An expectation that
+  // vanishes does not error — the gate simply passes everything, which is why
+  // this is worth persisting.
+  statements.push(`CREATE SCHEMA IF NOT EXISTS "quality";`);
+  statements.push(`CREATE TABLE IF NOT EXISTS "quality"."expectations" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "tenant_id" TEXT NOT NULL,
+  "name" TEXT NOT NULL,
+  "description" TEXT NOT NULL DEFAULT '',
+  "target_type" TEXT NOT NULL,
+  "field" TEXT,
+  "type" TEXT NOT NULL,
+  "params" JSONB NOT NULL DEFAULT '{}',
+  "blocking" BOOLEAN NOT NULL DEFAULT TRUE,
+  "enabled" BOOLEAN NOT NULL DEFAULT TRUE,
+  "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_expectations_tenant_target" ON "quality"."expectations" ("tenant_id", "target_type");`);
 
   // ── Geospatial maps ──
   statements.push(`CREATE SCHEMA IF NOT EXISTS "geospatial";`);

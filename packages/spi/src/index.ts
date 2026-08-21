@@ -269,6 +269,10 @@ export type {
   CreateScheduleInput,
 } from './data-pipelines.js';
 
+// Data-expectation evaluation, shared so two providers cannot disagree about
+// whether a build gate passed.
+export { evaluateDataExpectation } from './data-expectation-engine.js';
+
 // Process mining and event objects
 export type {
   EventObjectService,
