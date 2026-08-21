@@ -113,6 +113,7 @@ import {
   InMemoryPlatformAssistantService,
   InMemoryEmbeddedCopilotService,
   InMemorySqlQueryService,
+  InMemoryBatchTransformService,
   InMemoryVariableTransformService,
   InMemoryRulesEngineService,
   InMemoryPipelineService,
@@ -174,7 +175,6 @@ import {
   PostgresVariableTransformService,
   PostgresUserDirectoryService,
   PostgresLayoutDeviceCaptureService,
-  PostgresSqlQueryService,
   PostgresWorkshopUxService,
 } from '@altius/storage-postgres';
 import {
@@ -1674,8 +1674,6 @@ async function main(): Promise<void> {
     // the store's, so the adapter lives once in @altius/spi and the store above
     // decides both durability and *which* record is being approved.
     humanInTheLoopService: pgPool ? new PostgresHumanInTheLoopService(pgPool) : new InMemoryHumanInTheLoopService(changeProposals),
-    // SQL query — Postgres-backed when available.
-    sqlQueryService: pgPool ? new PostgresSqlQueryService(pgPool) : new InMemorySqlQueryService(datasets),
     // Variable transforms — Postgres-backed when available.
     variableTransformService: pgPool ? new PostgresVariableTransformService(pgPool) : new InMemoryVariableTransformService(),
     // Multi-ontology governance — Postgres-backed when available.
