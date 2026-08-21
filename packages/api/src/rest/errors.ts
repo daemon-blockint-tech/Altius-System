@@ -151,6 +151,11 @@ export function mapCodeToCategory(code: ErrorCode): ErrorCategory {
     OBJECT_NOT_FOUND: 'not_found',
     LINK_NOT_FOUND: 'not_found',
     TYPE_NOT_FOUND: 'not_found',
+    // A name clash on create, not a stale write — 409, where VERSION_CONFLICT
+    // is the 412. Without this row the category falls through to 'system' and
+    // a deliberate refusal reaches the caller as a 500 with the message
+    // withheld, indistinguishable from a crash.
+    ALREADY_EXISTS: 'conflict',
     INTERNAL_ERROR: 'system',
     PROVIDER_ERROR: 'system',
     OPERATION_TIMEOUT: 'timeout',
