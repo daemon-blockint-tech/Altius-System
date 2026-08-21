@@ -1452,12 +1452,6 @@ async function main(): Promise<void> {
     // out of `nonDurableServices`, where the gate withheld it under Postgres
     // rather than accept approvals it would lose on restart.
     changeProposalStore: pgPool ? new PostgresChangeProposalStore(pgPool) : new InMemoryChangeProposalStore(),
-    // Batch transforms â€” Postgres-backed when available, so transforms, build
-    // history and schedules survive a restart. A schedule that silently stops
-    // firing looks like nothing happening rather than like a failure.
-    // The executor registry stays per-process in both providers: a
-    // TransformExecutor is a live object, not something a table can hold.
-    batchTransformService: pgPool ? new PostgresBatchTransformService(pgPool, new PostgresDatasetService(pgPool)) : new InMemoryBatchTransformService(datasets),
     // SQL query — Postgres-backed when available.
     sqlQueryService: pgPool ? new PostgresSqlQueryService(pgPool) : new InMemorySqlQueryService(),
     // Business rules â€” Postgres-backed when available. `state` is what decides
