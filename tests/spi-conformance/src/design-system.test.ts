@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, afterAll } from 'vitest';
-import type { RequestContext, DesignSystemService, CreateThemeInput, OntologySchema } from '@altius/spi';
+import type { RequestContext, DesignSystemService, OntologySchema } from '@altius/spi';
 import { InMemoryDesignSystemService } from '@altius/storage-memory';
 import { PostgresStorageProvider, PostgresDesignSystemService } from '@altius/storage-postgres';
 import { pgTestUrl } from './pg-gate.js';
