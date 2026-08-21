@@ -428,6 +428,9 @@ export type {
   FunctionRevisionStore,
 } from './function-revisions.js';
 
+// Shared AIP agent runtime — identical response behaviour across providers.
+export { generateAgentResponse } from './aip-agent-runtime.js';
+
 // HumanInTheLoopService is a rename of ChangeProposalStore, not a store of its
 // own. Sharing one adapter is what lets the API hand the HITL surface and the
 // change-proposal surface the same store, so an approval recorded through one

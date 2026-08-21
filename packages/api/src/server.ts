@@ -146,6 +146,7 @@ import {
   PostgresCommentStore,
   PostgresNotificationStore,
   PostgresFunctionRevisionStore,
+  PostgresAgentService,
   PostgresAlertingService,
   PostgresBusinessRulesService,
   PostgresKioskService,
@@ -1617,7 +1618,6 @@ async function main(): Promise<void> {
       buildTriggerService: new InMemoryBuildTriggerService(),
       sqlAnalyticsService: new InMemorySqlAnalyticsService(),
       // AIP LLM â€” AIP/LLM Platform.
-      agentService: new InMemoryAgentService(llmClient),
       modelCatalogService: new InMemoryModelCatalogService(llmClient),
       evalService: new InMemoryEvalService(),
       vectorSearchService: new InMemoryVectorSearchService(embeddingStore, llmClient),
@@ -1794,6 +1794,12 @@ async function main(): Promise<void> {
     batchTransformService: pgPool
       ? new PostgresBatchTransformService(pgPool, datasetSvc)
       : new InMemoryBatchTransformService(datasets),
+    // AIP agents — durable when Postgres is configured (definitions + chat
+    // threads survive restart / are shared across replicas). Graduated out of
+    // nonDurableServices.
+    agentService: pgPool
+      ? new PostgresAgentService(pgPool, llmClient)
+      : new InMemoryAgentService(llmClient),
     // Dataset metadata â€” Postgres-backed when available. It reads the same
     // `dataset.metadata` table PostgresDatasetService writes; before that store
     // existed nothing populated it, so this answered 200 with an empty list on

@@ -16,7 +16,7 @@ import type {
   CopilotActionSuggestion,
   EmbeddingSearchResult,
 } from '@altius/spi';
-import { ChangeProposalHumanInTheLoop } from '@altius/spi';
+import { ChangeProposalHumanInTheLoop, generateAgentResponse } from '@altius/spi';
 import type {
   ChangeProposalStore,
   AgentService,
@@ -271,18 +271,7 @@ export class InMemoryAgentService implements AgentService {
   }
 
   private async generate(ctx: RequestContext, agent: AgentDefinition, message: string): Promise<string> {
-    if (this.llmClient?.isConfigured()) {
-      try {
-        const result = await this.llmClient.complete(ctx, message, {
-          model: agent.modelRid,
-          systemPrompt: agent.systemPrompt,
-        });
-        return result.text;
-      } catch {
-        // fall through to synthetic response
-      }
-    }
-    return `${agent.name} says: I received "${message}". ${agent.systemPrompt}`;
+    return generateAgentResponse(this.llmClient, ctx, agent, message);
   }
 
   private getMap(tenantId: string): Map<string, AgentDefinition> {

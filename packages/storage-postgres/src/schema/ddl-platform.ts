@@ -155,6 +155,37 @@ export function generatePlatformDDL(): string[] {
     `CREATE INDEX IF NOT EXISTS "idx_fn_rev_tenant_fn" ON "function_lifecycle"."revisions" ("tenant_id", "function_name", "revision");`,
   );
 
+  // ── AIP agents (definitions + chat threads) ──
+  statements.push(`CREATE SCHEMA IF NOT EXISTS "aip";`);
+  statements.push(`CREATE TABLE IF NOT EXISTS "aip"."agents" (
+  "id" TEXT NOT NULL,
+  "tenant_id" TEXT NOT NULL,
+  "name" TEXT NOT NULL,
+  "description" TEXT NOT NULL DEFAULT '',
+  "system_prompt" TEXT NOT NULL,
+  "prompt_templates" JSONB NOT NULL DEFAULT '[]',
+  "tools" JSONB NOT NULL DEFAULT '[]',
+  "model_rid" TEXT,
+  "enabled" BOOLEAN NOT NULL DEFAULT TRUE,
+  "created_by" TEXT NOT NULL,
+  "created_at" TEXT NOT NULL,
+  "updated_at" TEXT NOT NULL,
+  PRIMARY KEY ("tenant_id", "id")
+);`);
+  statements.push(`CREATE TABLE IF NOT EXISTS "aip"."agent_threads" (
+  "id" TEXT NOT NULL,
+  "tenant_id" TEXT NOT NULL,
+  "agent_id" TEXT NOT NULL,
+  "user_id" TEXT NOT NULL,
+  "messages" JSONB NOT NULL DEFAULT '[]',
+  "created_at" TEXT NOT NULL,
+  "updated_at" TEXT NOT NULL,
+  PRIMARY KEY ("tenant_id", "id")
+);`);
+  statements.push(
+    `CREATE INDEX IF NOT EXISTS "idx_aip_agents_tenant" ON "aip"."agents" ("tenant_id");`,
+  );
+
   // ── Alerting service (threshold rules + alerts) ──
   statements.push(`CREATE SCHEMA IF NOT EXISTS "alerting";`);
   statements.push(`CREATE TABLE IF NOT EXISTS "alerting"."rules" (
