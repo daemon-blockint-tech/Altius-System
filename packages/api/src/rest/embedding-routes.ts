@@ -13,9 +13,22 @@ import type { ApiDependencies } from '../graphql/types.js';
 import type { OidcAuthenticator } from '@altius/security';
 import type { RequestContext } from '@altius/spi';
 import { extractUser } from '../config.js';
+import { checkObjectAccess, viewableObjectIds } from './object-access.js';
+import { isTypeVisible } from '../markings/enforce.js';
 
 function ctxFromUser(user: { tenantId: string; id: string }): RequestContext {
   return { tenantId: user.tenantId, actorId: user.id };
+}
+
+/** Intersect a caller-supplied id list with what they're authorized to view. */
+function narrowAllowedIds(
+  callerSupplied: string[] | undefined,
+  scope: { allowAll: boolean; ids: string[] },
+): string[] | undefined {
+  if (scope.allowAll) return callerSupplied; // dev/allow-all: honor caller's optional list
+  if (!callerSupplied) return scope.ids;
+  const viewable = new Set(scope.ids);
+  return callerSupplied.filter(id => viewable.has(id));
 }
 
 export function registerEmbeddingRoutes(
@@ -33,6 +46,9 @@ export function registerEmbeddingRoutes(
     try {
       const user = await extractUser(req, authenticator, isDev);
       const ctx = ctxFromUser(user);
+      // Storing an object's embedding requires write access to that object.
+      const denied = await checkObjectAccess(deps, user, req.params['type']!, req.params['id']!, 'write');
+      if (denied) { res.status(denied.status).json(denied.body); return; }
       const body = req.body as { vector: number[]; model: string; dimensions?: number };
       if (!Array.isArray(body.vector) || body.vector.length === 0) {
         res.status(400).json({ error: 'INVALID', message: 'vector must be a non-empty array' });
@@ -57,6 +73,8 @@ export function registerEmbeddingRoutes(
     try {
       const user = await extractUser(req, authenticator, isDev);
       const ctx = ctxFromUser(user);
+      const denied = await checkObjectAccess(deps, user, req.params['type']!, req.params['id']!, 'read');
+      if (denied) { res.status(denied.status).json(denied.body); return; }
       const emb = await store.get(ctx, req.params['type']!, req.params['id']!, req.params['field']!);
       if (!emb) {
         res.status(404).json({ error: 'NOT_FOUND', message: 'Embedding not found' });
@@ -73,6 +91,8 @@ export function registerEmbeddingRoutes(
     try {
       const user = await extractUser(req, authenticator, isDev);
       const ctx = ctxFromUser(user);
+      const denied = await checkObjectAccess(deps, user, req.params['type']!, req.params['id']!, 'write');
+      if (denied) { res.status(denied.status).json(denied.body); return; }
       await store.delete(ctx, req.params['type']!, req.params['id']!, req.params['field']!);
       res.status(204).send();
     } catch (err) {
@@ -90,10 +110,16 @@ export function registerEmbeddingRoutes(
         res.status(400).json({ error: 'INVALID', message: 'vector must be a non-empty array' });
         return;
       }
-      const result = await store.search(ctx, req.params['type']!, req.params['field']!, body.vector, {
+      // A vector search returns object ids by similarity; without scoping it
+      // discloses objects (and their similarity) the caller cannot see. Hide the
+      // whole type behind markings, then restrict hits to viewable ids.
+      const type = req.params['type']!;
+      if (!isTypeVisible(deps.markingPolicy, user, type)) { res.status(404).json({ error: 'NOT_FOUND', message: 'Not found' }); return; }
+      const allowedObjectIds = narrowAllowedIds(body.allowedObjectIds, await viewableObjectIds(deps, user, type));
+      const result = await store.search(ctx, type, req.params['field']!, body.vector, {
         limit: body.limit,
         minScore: body.minScore,
-        allowedObjectIds: body.allowedObjectIds,
+        allowedObjectIds,
       });
       res.status(200).json(result);
     } catch (err) {
@@ -117,11 +143,14 @@ export function registerEmbeddingRoutes(
         res.status(503).json({ error: 'NOT_CONFIGURED', message: 'LLM client not configured — cannot embed text query' });
         return;
       }
+      const type = req.params['type']!;
+      if (!isTypeVisible(deps.markingPolicy, user, type)) { res.status(404).json({ error: 'NOT_FOUND', message: 'Not found' }); return; }
       const embedResult = await llmClient.embed(ctx, body.query);
-      const result = await store.search(ctx, req.params['type']!, req.params['field']!, embedResult.vector, {
+      const allowedObjectIds = narrowAllowedIds(body.allowedObjectIds, await viewableObjectIds(deps, user, type));
+      const result = await store.search(ctx, type, req.params['field']!, embedResult.vector, {
         limit: body.limit,
         minScore: body.minScore,
-        allowedObjectIds: body.allowedObjectIds,
+        allowedObjectIds,
       });
       res.status(200).json(result);
     } catch (err) {

@@ -50,3 +50,24 @@ export async function checkObjectAccess(
   }
   return undefined;
 }
+
+/**
+ * The object ids of `typeName` the caller may view, via one FGA listObjects.
+ * `allowAll` is the dev/allow-all sentinel (`*`) meaning "do not restrict".
+ * Use this to scope a collection surface (e.g. vector search) that returns
+ * object ids the caller might not be authorized to see.
+ */
+export async function viewableObjectIds(
+  deps: ApiDependencies,
+  user: AuthenticatedUserInfo,
+  typeName: string,
+): Promise<{ allowAll: boolean; ids: string[] }> {
+  const ids = await deps.authorizationService.listObjects(
+    `user:${user.id}`,
+    'viewer',
+    toSnakeCase(typeName),
+    user.tenantId,
+  );
+  if (ids.includes('*')) return { allowAll: true, ids: [] };
+  return { allowAll: false, ids };
+}

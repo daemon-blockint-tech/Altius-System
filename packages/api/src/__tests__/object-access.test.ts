@@ -8,7 +8,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { MarkingPolicy } from '@altius/security';
-import { checkObjectAccess } from '../rest/object-access.js';
+import { checkObjectAccess, viewableObjectIds } from '../rest/object-access.js';
 import type { ApiDependencies, AuthenticatedUserInfo } from '../graphql/types.js';
 
 const user = (markings: string[] = []): AuthenticatedUserInfo => ({
@@ -73,5 +73,17 @@ describe('checkObjectAccess', () => {
     const w = deps({ check: () => true });
     await checkObjectAccess(w.deps, user(), 'Patient', 'p1', 'write');
     expect(w.checkedRelations).toEqual(['editor']);
+  });
+});
+
+describe('viewableObjectIds', () => {
+  it('reports allowAll for the dev/allow-all * sentinel', async () => {
+    const d = { authorizationService: { listObjects: async () => ['*'] } } as unknown as ApiDependencies;
+    expect(await viewableObjectIds(d, user(), 'Patient')).toEqual({ allowAll: true, ids: [] });
+  });
+
+  it('returns the concrete viewable id list otherwise', async () => {
+    const d = { authorizationService: { listObjects: async () => ['p1', 'p2'] } } as unknown as ApiDependencies;
+    expect(await viewableObjectIds(d, user(), 'Patient')).toEqual({ allowAll: false, ids: ['p1', 'p2'] });
   });
 });
