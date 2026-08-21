@@ -130,6 +130,7 @@ import { PostgresStorageProvider, PostgresLineageStore, PostgresAuditStore, Post
   PostgresModelRegistryService, PostgresModelInferenceService,
   PostgresModelChainService, PostgresConnectorCatalogService, PostgresCommandService,
   PostgresDatasetService,
+  PostgresSqlQueryService,
   PostgresUserDirectoryService,
   PostgresLayoutDeviceCaptureService,
   PostgresWorkshopUxService,
@@ -1492,6 +1493,8 @@ async function main(): Promise<void> {
     // the store's, so the adapter lives once in @altius/spi and the store above
     // decides both durability and *which* record is being approved.
     humanInTheLoopService: pgPool ? new PostgresHumanInTheLoopService(pgPool) : new InMemoryHumanInTheLoopService(changeProposals),
+    // SQL query — Postgres-backed when available.
+    sqlQueryService: pgPool ? new PostgresSqlQueryService(pgPool) : new InMemorySqlQueryService(datasets),
     // Business rules â€” Postgres-backed when available. `state` is what decides
     // whether a rule governs anything, so losing it silently reverts a rule to
     // draft: nothing looks broken, the rule just stops applying.

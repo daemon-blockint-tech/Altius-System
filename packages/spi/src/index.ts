@@ -378,6 +378,15 @@ export {
   datasetProjectColumns,
 } from './dataset-rows.js';
 
+// The SQL parser and the query engine over datasets: both pure, so both live
+// here rather than in a provider. Two providers that disagreed about what a
+// WHERE clause meant would return different rows for the same SQL — a worse
+// failure than either being wrong alone, since neither would look broken.
+export { parseSql } from './sql-parser.js';
+export type { ParsedSqlAst } from './sql-parser.js';
+export { executeSqlQuery } from './sql-query-engine.js';
+export type { SqlQueryResult } from './sql-query-engine.js';
+
 // HumanInTheLoopService is a rename of ChangeProposalStore, not a store of its
 // own. Sharing one adapter is what lets the API hand the HITL surface and the
 // change-proposal surface the same store, so an approval recorded through one
