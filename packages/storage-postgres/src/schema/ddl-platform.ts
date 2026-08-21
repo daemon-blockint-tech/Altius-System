@@ -758,9 +758,17 @@ export function generatePlatformDDL(): string[] {
   "name" TEXT NOT NULL,
   "model" TEXT,
   "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  -- Insertion order, so listThreads can break an updated_at tie the way the
+  -- memory provider does. Ties are the COMMON case here, not the edge one: a
+  -- thread's created_at and updated_at are one reading of the clock until
+  -- something writes to it, so a list of fresh threads is entirely ties, and
+  -- ordering by updated_at alone leaves them in whatever order the heap gives.
+  "seq" BIGSERIAL
 );`);
+  statements.push(`ALTER TABLE "agent_threads"."threads" ADD COLUMN IF NOT EXISTS "seq" BIGSERIAL;`);
   statements.push(`CREATE INDEX IF NOT EXISTS "idx_agent_threads_tenant_user" ON "agent_threads"."threads" ("tenant_id", "user_id");`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_agent_threads_tenant_updated_seq" ON "agent_threads"."threads" ("tenant_id", "updated_at" DESC, "seq" DESC);`);
   statements.push(`CREATE TABLE IF NOT EXISTS "agent_threads"."messages" (
   "id" TEXT NOT NULL PRIMARY KEY,
   "tenant_id" TEXT NOT NULL,
@@ -770,10 +778,13 @@ export function generatePlatformDDL(): string[] {
   "tool_calls" JSONB,
   "tool_result" JSONB,
   "model" TEXT,
-  "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  -- Same reason: several messages appended within one millisecond share a
+  -- created_at, and a transcript returned out of order is a wrong transcript.
+  "seq" BIGSERIAL
 );`);
-  statements.push(`CREATE INDEX IF NOT EXISTS "idx_agent_msgs_thread" ON "agent_threads"."messages" ("tenant_id", "thread_id", "created_at");`);
-
+  statements.push(`ALTER TABLE "agent_threads"."messages" ADD COLUMN IF NOT EXISTS "seq" BIGSERIAL;`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_agent_msgs_thread" ON "agent_threads"."messages" ("tenant_id", "thread_id", "created_at", "seq");`);
   // ── Object set filter states (Batch 2 — not in upstream) ──
   statements.push(`CREATE SCHEMA IF NOT EXISTS "object_set_filters";`);
   statements.push(`CREATE TABLE IF NOT EXISTS "object_set_filters"."states" (
