@@ -22,6 +22,7 @@ import type { MappedObject } from "../mapping/record-mapper.js";
 const config: DatasourceMappingConfig = {
   datasource: "KafkaSource",
   connector: "idle-cdc",
+  runtime: "DIRECT",
   connection: { url: "kafka://ignored", table: "patients" },
   mapping: {
     objectType: "Patient",

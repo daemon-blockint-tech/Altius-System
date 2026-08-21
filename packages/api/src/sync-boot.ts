@@ -151,6 +151,19 @@ export async function startSyncScheduler(opts: {
     }
     if (config.sync.mode === 'OVERLAY') continue; // read-through cache, not scheduled
 
+    // AGENT datasources run their connector on a Data Connection Agent inside
+    // the customer network, not in this process — the platform cannot reach
+    // the source (that is the point of the agent). Leased out by the
+    // data-connection gateway; scheduling it here would fail on first connect
+    // at best and exfiltrate credentials into platform logs at worst.
+    if (config.runtime === 'AGENT') {
+      logger.info(
+        { datasource: config.datasource, pack: manifest.packName },
+        'Sync: runtime AGENT — leased to a data-connection agent, not scheduled in-process',
+      );
+      continue;
+    }
+
     // A declared conflict strategy that does not run is worse than none: the
     // operator believes user edits are protected while every poll overwrites
     // them, and nothing logs it. Both declarable strategies (SOURCE_PRIORITY,

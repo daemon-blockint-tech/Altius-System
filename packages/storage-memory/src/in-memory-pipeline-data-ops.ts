@@ -25,7 +25,7 @@ import type {
   BuildTrigger,
 } from '@altius/spi';
 import type { RequestContext } from '@altius/spi';
-import { parseSql } from './sql-parser.js';
+import { parseSql } from '@altius/spi';
 
 // ===========================================================================
 // Rules engine

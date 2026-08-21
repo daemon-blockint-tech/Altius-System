@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Server entrypoint â€” starts the Altius API gateway.
  *
  * Mounts GraphQL, REST, and FHIR endpoints on a single Express server.
@@ -14,16 +14,19 @@
  *   ALLOW_NON_DURABLE_SERVICES â€” 'true' serves the services that have no Postgres implementation (see
  *                          nonDurableServices below; the gateway names them at boot) from process memory on a
  *                          Postgres deployment. Lost on restart and not shared across replicas: single-replica
- *                          prod-testing only. Default off â€” those routes answer 404 instead
- *   SYNC_SCHEDULER_ENABLED â€” 'true' starts the sync poll loop for POLLING/CDC/BATCH pack connectors (default: off)
- *   AUTOMATION_ENABLED   â€” 'true' starts pack-declared automations (event + schedule); run on a SINGLE instance only (default: off)
- *   SYNC_TENANT          â€” Tenant for sync-ingested objects (default: SEED_TENANT, then 'system')
- *   OIDC_ISSUER          â€” OIDC provider issuer URL (matches Helm configmap)
- *   OIDC_CLIENT_ID       â€” OIDC client ID
- *   OIDC_JWKS_URI        â€” JWKS endpoint override for non-Keycloak issuers
- *   OIDC_DEFAULT_TENANT  â€” Opt-in fallback tenant for tokens without a tenant_id claim (unset = fail-closed)
- *   OPENFGA_URL          â€” OpenFGA API URL (matches Helm configmap / docker-compose)
- *   OPENFGA_STORE_IDS    â€” Per-tenant OpenFGA stores: 'tenantA=storeId,tenantB=storeId'. One store
+ *                          prod-testing only. Default off — those routes answer 404 instead
+ *   SYNC_SCHEDULER_ENABLED — 'true' starts the sync poll loop for POLLING/CDC/BATCH pack connectors (default: off)
+ *   AUTOMATION_ENABLED   — 'true' starts pack-declared automations (event + schedule); run on a SINGLE instance only (default: off)
+ *   SYNC_TENANT          — Tenant for sync-ingested objects (default: SEED_TENANT, then 'system')
+ *   DATA_CONNECTION_ENROLLMENT_SECRET — Shared secret Data Connection Agents present at enrollment;
+ *                          setting it mounts the agent gateway at /api/v1/data-connection/* and leases
+ *                          runtime-AGENT pack datasources to enrolled agents (default: off)
+ *   OIDC_ISSUER          — OIDC provider issuer URL (matches Helm configmap)
+ *   OIDC_CLIENT_ID       — OIDC client ID
+ *   OIDC_JWKS_URI        — JWKS endpoint override for non-Keycloak issuers
+ *   OIDC_DEFAULT_TENANT  — Opt-in fallback tenant for tokens without a tenant_id claim (unset = fail-closed)
+ *   OPENFGA_URL          — OpenFGA API URL (matches Helm configmap / docker-compose)
+ *   OPENFGA_STORE_IDS    — Per-tenant OpenFGA stores: 'tenantA=storeId,tenantB=storeId'. One store
  *                          per tenant; a tenant not listed here is denied all access (fail closed)
  *   OPENFGA_STORE_ID     â€” Single-tenant OpenFGA store ID; requires OIDC_DEFAULT_TENANT to name the
  *                          one tenant it serves. Use OPENFGA_STORE_IDS for multi-tenant deployments
@@ -97,7 +100,6 @@ import {
   InMemoryGraphAnalysisService,
   InMemoryPlatformAssistantService,
   InMemoryEmbeddedCopilotService,
-  InMemoryBatchTransformService,
   InMemorySqlQueryService,
   InMemoryVariableTransformService,
   InMemoryRulesEngineService,
@@ -122,15 +124,21 @@ import { PostgresStorageProvider, PostgresLineageStore, PostgresAuditStore, Post
   PostgresOntologyUsageMetricsService, PostgresScopedSessionStore,
   PostgresAgentThreadStore,
   PostgresChangeProposalStore,
+  PostgresHumanInTheLoopService,
+  PostgresMultiOntologyGovernanceService,
+  PostgresOntologyChangeHistoryService,
+  PostgresConflictResolutionService,
+  PostgresEventObjectService,
   PostgresObjectSetFilterStore, PostgresApprovalWorkflowService, PostgresDataExpectationsService,
   PostgresDesignSystemService,
   PostgresModelRegistryService, PostgresModelInferenceService,
   PostgresModelChainService, PostgresConnectorCatalogService, PostgresCommandService,
   PostgresDatasetService,
-  PostgresEventObjectService,
-  PostgresBatchTransformService,
+  PostgresSqlQueryService,
+  PostgresVariableTransformService,
   PostgresUserDirectoryService,
   PostgresLayoutDeviceCaptureService,
+  PostgresWorkshopUxService,
 } from '@altius/storage-postgres';
 import {
   ObjectManager, LineageRecorder,
@@ -172,6 +180,7 @@ import { generateLlmRoutes, generateWorkflowRoutes } from './rest/index.js';
 import { generateTraverseRoutes } from './rest/traverse-route.js';
 import { recordRestUsage } from './rest/usage-recording.js';
 import { generateSyncStatusRoutes } from './rest/sync-status-routes.js';
+import { generateDataConnectionStatusRoutes } from './rest/data-connection-status-routes.js';
 import { registerAttachmentRoutes } from './rest/attachment-routes.js';
 import { registerTimeSeriesRoutes } from './rest/timeseries-routes.js';
 import { registerBranchRoutes } from './rest/branch-routes.js';
@@ -1192,7 +1201,31 @@ async function main(): Promise<void> {
   syncSchedulerEnabled.set(syncBoot.scheduler ? 1 : 0);
   const stopSyncMetricsGauge = syncBoot.scheduler ? startSyncMetricsGauge(syncBoot.scheduler) : (() => {});
 
-  // â”€â”€ API Dependencies â”€â”€
+  // ── Data Connection Gateway ──
+  // Agent-based counterpart of the scheduler: runtime-AGENT datasources are
+  // leased to Data Connection Agents enrolled from inside customer networks
+  // (outbound-only HTTPS — the platform never dials into the customer side).
+  // The HTTP endpoints are mounted further down, next to the ingest webhook.
+  let dataConnectionBoot: import('./data-connection-boot.js').DataConnectionBootResult = {
+    gateway: null,
+    leasable: [],
+  };
+  const dataConnectionSecret = process.env.DATA_CONNECTION_ENROLLMENT_SECRET;
+  if (dataConnectionSecret) {
+    const { startAgentGateway } = await import('./data-connection-boot.js');
+    dataConnectionBoot = await startAgentGateway({
+      // Deliberately NOT filtered by the platform's connectorRegistry: an
+      // AGENT datasource's plugin has to exist in the *agent's* local
+      // registry (lease eligibility checks the agent's reported list), not
+      // in this process.
+      connectorManifests,
+      enrollmentSecret: dataConnectionSecret,
+      objectManager,
+      tenantId: process.env.SYNC_TENANT || process.env.SEED_TENANT || 'system',
+    });
+  }
+
+  // ── API Dependencies ──
 
   // LLM client selected from LLM_PROVIDER / LLM_FALLBACK_PROVIDER /
   // LLM_EMBEDDING_PROVIDER. The no-op when all are unset, so a platform with
@@ -1300,7 +1333,6 @@ async function main(): Promise<void> {
       // Layout/device-capture â€” graduated to durable service above.
       // API Tooling services â€” in-memory only (no Postgres implementations yet).
       ontologyManagerService: new InMemoryOntologyManagerService(),
-      workshopUxService: new InMemoryWorkshopUxService(),
       valueFormattingService: new InMemoryValueFormattingService(),
       ontologyChangeHistoryService: new InMemoryOntologyChangeHistoryService(),
       // Workshop UI services.
@@ -1337,7 +1369,6 @@ async function main(): Promise<void> {
       agentService: new InMemoryAgentService(llmClient),
       modelCatalogService: new InMemoryModelCatalogService(llmClient),
       evalService: new InMemoryEvalService(),
-      humanInTheLoopService: new InMemoryHumanInTheLoopService(),
       vectorSearchService: new InMemoryVectorSearchService(embeddingStore, llmClient),
       copilotService: new InMemoryCopilotService(copilots),
       }
@@ -1357,6 +1388,15 @@ async function main(): Promise<void> {
       );
     }
   }
+
+  // One change-proposal store, two surfaces. `changeProposalStore` and
+  // `humanInTheLoopService` are the same records under two names â€”
+  // /api/v1/change-proposals and /api/v1/ai-proposals â€” so they are handed the
+  // same instance. They used not to be: the human-in-the-loop service built its
+  // own private Map, and an approval recorded on one surface was invisible on
+  // the other with neither erring. The pgPool ternary stays on this line so the
+  // #14 invariant is still visible where the choice is made.
+  const changeProposals = pgPool ? new PostgresChangeProposalStore(pgPool) : new InMemoryChangeProposalStore();
 
   const deps: ApiDependencies = {
     schema,
@@ -1452,15 +1492,23 @@ async function main(): Promise<void> {
     // trail for AI-driven changes: who approved what, and when. It graduated
     // out of `nonDurableServices`, where the gate withheld it under Postgres
     // rather than accept approvals it would lose on restart.
-    changeProposalStore: pgPool ? new PostgresChangeProposalStore(pgPool) : new InMemoryChangeProposalStore(),
-    // Batch transforms â€” Postgres-backed when available, so transforms, build
-    // history and schedules survive a restart. A schedule that silently stops
-    // firing looks like nothing happening rather than like a failure.
-    // The executor registry stays per-process in both providers: a
-    // TransformExecutor is a live object, not something a table can hold.
-    batchTransformService: pgPool ? new PostgresBatchTransformService(pgPool, new PostgresDatasetService(pgPool)) : new InMemoryBatchTransformService(datasets),
-    // Event objects — Postgres-backed when available. Process-mining events
-    // and their breach thresholds are durable.
+    changeProposalStore: changeProposals,
+    // Human-in-the-loop — the same proposals, reached through the AI-facing
+    // routes. It holds no state of its own: the five methods are a rename of
+    // the store's, so the adapter lives once in @altius/spi and the store above
+    // decides both durability and *which* record is being approved.
+    humanInTheLoopService: pgPool ? new PostgresHumanInTheLoopService(pgPool) : new InMemoryHumanInTheLoopService(changeProposals),
+    // SQL query — Postgres-backed when available.
+    sqlQueryService: pgPool ? new PostgresSqlQueryService(pgPool) : new InMemorySqlQueryService(datasets),
+    // Variable transforms — Postgres-backed when available.
+    variableTransformService: pgPool ? new PostgresVariableTransformService(pgPool) : new InMemoryVariableTransformService(),
+    // Multi-ontology governance — Postgres-backed when available.
+    multiOntologyGovernanceService: pgPool ? new PostgresMultiOntologyGovernanceService(pgPool) : new InMemoryMultiOntologyGovernanceService(),
+    // Ontology change history — Postgres-backed when available.
+    ontologyChangeHistoryService: pgPool ? new PostgresOntologyChangeHistoryService(pgPool) : new InMemoryOntologyChangeHistoryService(),
+    // Conflict resolution — Postgres-backed when available.
+    conflictResolutionService: pgPool ? new PostgresConflictResolutionService(pgPool) : new InMemoryConflictResolutionService(),
+    // Event objects — Postgres-backed when available.
     eventObjectService: pgPool ? new PostgresEventObjectService(pgPool) : new InMemoryEventObjectService(),
     // Business rules â€” Postgres-backed when available. `state` is what decides
     // whether a rule governs anything, so losing it silently reverts a rule to
@@ -1495,6 +1543,8 @@ async function main(): Promise<void> {
     connectorCatalogService: pgPool ? new PostgresConnectorCatalogService(pgPool) : new InMemoryConnectorCatalogService(),
     // Commands and chains â€” Postgres-backed when available; execution is delegated.
     commandService: pgPool ? new PostgresCommandService(pgPool) : new InMemoryCommandService(),
+    // Workshop UX — state saving, redact mode, performance profiles, and i18n — Postgres-backed when available.
+    workshopUxService: pgPool ? new PostgresWorkshopUxService(pgPool) : new InMemoryWorkshopUxService(),
 
     // Non-durable platform services â€” withheld under Postgres unless opted in.
     // Built and explained above.
@@ -1808,6 +1858,12 @@ async function main(): Promise<void> {
       enabled: syncBoot.scheduler !== null,
       datasources: () => syncBoot.scheduler?.stats() ?? [],
     }, deps.auditReaderRoles),
+    // Data-connection gateway status — registered unconditionally for the
+    // same reason as sync status: "not running" must be reportable.
+    ...generateDataConnectionStatusRoutes({
+      enabled: dataConnectionBoot.gateway !== null,
+      status: async () => (await dataConnectionBoot.gateway?.status()) ?? { agents: [], datasources: [] },
+    }, deps.auditReaderRoles),
   ];
   for (const route of restRoutes) {
     const method = route.method.toLowerCase() as 'get' | 'post' | 'put' | 'delete';
@@ -1935,8 +1991,13 @@ async function main(): Promise<void> {
   // â”€â”€ Previously-unreachable SPI services (change-proposals, business-rules,
   // agent-evals, agent-threads, conflict-resolution, connectors, data-expectations,
   // embedded-copilots, event-objects, graph-analyses, multi-ontology, pipeline-builds,
-  // platform-assistant, process-mining, workshop-ux) â”€â”€
-  registerAbsentServiceRoutes(app, deps, authenticator, isDev);
+  // platform-assistant, process-mining, workshop-ux) --
+  // Role-gated as a whole (default admin-only): these services carry no
+  // per-object authorization of their own.
+  const platformServiceRoles = (process.env['PLATFORM_SERVICE_ROLES'] ?? '')
+    .split(',').map(r => r.trim()).filter(Boolean);
+  registerAbsentServiceRoutes(app, deps, authenticator, isDev,
+    platformServiceRoles.length > 0 ? platformServiceRoles : ['admin']);
 
   // â”€â”€ LLM gateway routes â”€â”€
   registerLLMGatewayRoutes(app, deps, authenticator, isDev);
@@ -2169,7 +2230,53 @@ async function main(): Promise<void> {
     logger.info('Ingest webhook disabled (set INGEST_SECRET to enable)');
   }
 
-  // â”€â”€ Function Pipeline Webhook â”€â”€
+  // ── Data Connection Agent endpoints at /api/v1/data-connection/* ──
+  // Agent-facing (not OIDC): enrollment is gated by the shared
+  // X-Enrollment-Secret, everything after by the per-agent bearer token
+  // minted at enrollment — same posture as the ingest webhook's
+  // X-Ingest-Secret. All calls are agent-initiated over the agent's
+  // outbound-only channel; the admin-facing status endpoint lives in the
+  // OIDC-authenticated REST layer instead.
+  if (dataConnectionBoot.gateway) {
+    const gateway = dataConnectionBoot.gateway;
+    const bearer = (req: express.Request): string | undefined => {
+      const header = req.headers.authorization;
+      return header?.startsWith('Bearer ') ? header.slice('Bearer '.length) : undefined;
+    };
+    app.post('/api/v1/data-connection/enroll', express.json({ limit: '256kb' }), (req, res) => {
+      const out = gateway.enroll(
+        req.headers['x-enrollment-secret'] as string | undefined,
+        req.body,
+      );
+      res.status(out.status).json(out.body);
+    });
+    app.post('/api/v1/data-connection/agents/:agentId/heartbeat', express.json({ limit: '1mb' }), async (req, res) => {
+      const out = await gateway.heartbeat(req.params['agentId']!, bearer(req), req.body);
+      res.status(out.status).json(out.body);
+    });
+    app.post(
+      '/api/v1/data-connection/agents/:agentId/datasources/:datasource/records',
+      express.json({ limit: '10mb' }),
+      async (req, res) => {
+        const out = await gateway.upload(
+          req.params['agentId']!,
+          bearer(req),
+          req.params['datasource']!,
+          req.body,
+        );
+        res.status(out.status).json(out.body);
+      },
+    );
+    logger.info(
+      `Data-connection agent gateway mounted at /api/v1/data-connection/* (${dataConnectionBoot.leasable.length} leasable datasource(s))`,
+    );
+  } else {
+    logger.info(
+      'Data-connection agent gateway disabled (set DATA_CONNECTION_ENROLLMENT_SECRET and declare a runtime: AGENT datasource to enable)',
+    );
+  }
+
+  // ── Function Pipeline Webhook ──
   // Receives Git push events (GitHub/GitLab) and triggers the function
   // pipeline for matching functions. Signature-verified with HMAC-SHA256
   // (GitHub) or token (GitLab). Disabled when FUNCTION_WEBHOOK_SECRET is unset.
