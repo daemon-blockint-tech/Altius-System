@@ -101,4 +101,29 @@ describe('EngineEventEmitter @sensitive redaction', () => {
     expect((bus.events[0]!.data as { changes?: unknown }).changes).toBeUndefined();
     expect((bus.events[1]!.data as { changes?: unknown }).changes).toBeUndefined();
   });
+
+  it('redacts @sensitive link properties in link.updated changes', async () => {
+    const bus = new InMemoryEventBus();
+    // The map is keyed by the LINK type name (server builds it from linkTypes too).
+    const sensitiveMap = new Map<string, Set<string>>([
+      ['TreatedBy', new Set(['dosage'])],
+    ]);
+    const emitter = new EngineEventEmitter(bus, 'altius://engine/ontology', sensitiveMap);
+
+    await emitter.emitLinkUpdated(
+      CTX,
+      'TreatedBy',
+      'l1',
+      'p1',
+      'c1',
+      2,
+      { dosage: { old: '10mg', new: '20mg' }, status: { old: 'active', new: 'stopped' } },
+    );
+
+    expect(bus.events).toHaveLength(1);
+    const data = bus.events[0]!.data as { changes?: Record<string, { old: unknown; new: unknown }> };
+    // The sensitive link property is nulled; the ordinary one is untouched.
+    expect(data.changes?.['dosage']).toEqual({ old: null, new: null });
+    expect(data.changes?.['status']).toEqual({ old: 'active', new: 'stopped' });
+  });
 });

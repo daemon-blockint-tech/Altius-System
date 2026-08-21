@@ -242,7 +242,11 @@ export class EngineEventEmitter {
     if (!this.sensitiveFieldsByType || this.sensitiveFieldsByType.size === 0) return data;
     if (!data.changes) return data;
 
-    const typeName = 'objectType' in data ? data.objectType : undefined;
+    // Object events key on the object type; link events on the link type.
+    // A link's @sensitive property deltas ride in `changes` just like an
+    // object's and must be redacted the same way — keying only on objectType
+    // let them through unredacted.
+    const typeName = 'objectType' in data ? data.objectType : data.linkType;
     if (!typeName) return data;
 
     const sensitive = this.sensitiveFieldsByType.get(typeName);

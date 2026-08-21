@@ -579,6 +579,14 @@ function buildSensitiveFieldsByType(
       .map((f) => f.name);
     if (sensitive.length > 0) map.set(ot.name, new Set(sensitive));
   }
+  // Link types can carry @sensitive properties too; their change deltas ride in
+  // link.updated events and must be redacted at emit like object events.
+  for (const lt of schema.linkTypes) {
+    const sensitive = lt.fields
+      .filter((f) => f.directives.some((d) => d.kind === 'sensitive'))
+      .map((f) => f.name);
+    if (sensitive.length > 0) map.set(lt.name, new Set(sensitive));
+  }
   return map;
 }
 
