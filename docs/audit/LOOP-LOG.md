@@ -11,4 +11,5 @@ Iteration count for §7 = your own line count. Body > ~500 lines → archive to 
 ## BODY
 2026-08-21 | seed | security-gov/organization-tenant-boundary-isolation | closed-by-others | VERIFY-0 saved a full build: concurrent commits had closed the row
 2026-08-21 | loop-0821-a7c3 | FIXING-BUILD 9742ab7c | partial-progress | duplicate re-exports from merge; dedupe second block
+2026-08-21 | loop-0821-9c4e | actions-concurrency/governed-object-link-editing-with-writeback | partial-progress | consent+audit hole on direct writes closed via one shared guard; row stays partial (writeback, link mutation)
 2026-08-21 | loop-0821-a7c3 | security-consent/sensitive-data-pii-protection-controls | partial-progress | sub-gap 5 closed (allowSensitive gate); iteration dominated by 2 rounds of merge-artifact build fixes

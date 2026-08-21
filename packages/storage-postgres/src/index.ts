@@ -97,6 +97,11 @@ export { PostgresBranchStore } from './branch/postgres-branch-store.js';
 export { PostgresCommentStore } from './comment/postgres-comment-store.js';
 export { PostgresNotificationStore } from './notification/postgres-notification-store.js';
 export { PostgresChangeProposalStore } from './governance/postgres-change-proposal-store.js';
+export { PostgresEventObjectService } from './process/postgres-event-object-service.js';
+export { PostgresConflictResolutionService } from './sync/postgres-conflict-resolution-service.js';
+export { PostgresOntologyChangeHistoryService } from './governance/postgres-ontology-change-history-service.js';
+export { PostgresMultiOntologyGovernanceService } from './governance/postgres-multi-ontology-governance-service.js';
+export { PostgresHumanInTheLoopService } from './governance/postgres-human-in-the-loop-service.js';
 export { PostgresApprovalWorkflowService } from './governance/postgres-approval-workflow-service.js';
 export { PostgresBusinessRulesService } from './governance/postgres-business-rules-service.js';
 export { PostgresKioskService } from './governance/postgres-kiosk-service.js';
@@ -104,8 +109,18 @@ export { PostgresSavedViewStore } from './governance/postgres-saved-view-store.j
 export { PostgresUserDirectoryService } from './governance/postgres-user-directory-service.js';
 export { PostgresDesignSystemService } from './governance/postgres-design-system-service.js';
 export { PostgresLayoutDeviceCaptureService } from './governance/postgres-layout-device-capture-service.js';
+export { PostgresHumanInTheLoopService } from './governance/postgres-human-in-the-loop-service.js';
+export { PostgresWorkshopUxService } from './governance/postgres-workshop-ux-service.js';
 export { PostgresDatasetService } from './dataset/postgres-dataset-service.js';
 export { PostgresBatchTransformService } from './dataset/postgres-batch-transform-service.js';
+export { PostgresVariableTransformService } from './dataset/postgres-variable-transform-service.js';
+export { PostgresSqlQueryService } from './dataset/postgres-sql-query-service.js';
+export { PostgresDataExpectationsService } from './quality/postgres-data-expectations-service.js';
+// Restored: #32 landed this service *and* its conformance suite, then the #34
+// merge dropped the export (c08f0cd), leaving the suite unable to construct the
+// class it tests. The missing export also degraded that suite's `svc` binding
+// to `any`, which is where its two implicit-any errors came from -- so this one
+// line clears three typecheck errors and 18 conformance failures.
 export { generatePlatformDDL } from './schema/ddl-platform.js';
 export {
   PostgresAlertingService,
@@ -120,7 +135,12 @@ export {
 export {
   PostgresAgentThreadStore,
   PostgresObjectSetFilterStore,
-  PostgresDataExpectationsService,
+  // PostgresDataExpectationsService deliberately NOT taken from Batch 2. Two
+  // implementations exist; 23d2597 broke the build tie by keeping this one,
+  // but it fails the data-expectations conformance suite (blocking/enabled do
+  // not default to true) while the memory provider passes -- a provider
+  // divergence, not a test bug. The ./quality/ implementation below is the one
+  // that suite was written against, so it is the one exported.
   PostgresModelRegistryService,
   PostgresModelInferenceService,
   PostgresModelChainService,

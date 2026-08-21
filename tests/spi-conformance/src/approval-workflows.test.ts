@@ -7,14 +7,18 @@
  */
 
 import { describe, it, expect, afterAll } from 'vitest';
-import type { ApprovalWorkflowService, OntologySchema, RequestContext } from '@altius/spi';
+import type { ApprovalWorkflow, ApprovalWorkflowService, OntologySchema, RequestContext } from '@altius/spi';
 import { InMemoryApprovalWorkflowService } from '@altius/storage-memory';
 import { PostgresStorageProvider, PostgresApprovalWorkflowService } from '@altius/storage-postgres';
 import { pgTestUrl } from './pg-gate.js';
 
 const CTX = (tenantId: string, actorId = 'u1'): RequestContext => ({ tenantId, actorId });
 
-const WORKFLOW = {
+// Pinned to the SPI shape so a literal like `operator: 'eq'` is checked
+// against the union rather than widening to `string`.
+type NewWorkflow = Omit<ApprovalWorkflow, 'id' | 'tenantId' | 'createdAt' | 'updatedAt' | 'createdBy'>;
+
+const WORKFLOW: NewWorkflow = {
   name: 'export-approval',
   description: 'Approve data exports',
   actionType: 'exportData',
@@ -24,7 +28,7 @@ const WORKFLOW = {
   enabled: true,
 };
 
-const WORKFLOW_WITH_CRITERIA = {
+const WORKFLOW_WITH_CRITERIA: NewWorkflow = {
   ...WORKFLOW,
   name: 'abac',
   criteria: [

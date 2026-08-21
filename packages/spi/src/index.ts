@@ -269,6 +269,10 @@ export type {
   CreateScheduleInput,
 } from './data-pipelines.js';
 
+// Data-expectation evaluation, shared so two providers cannot disagree about
+// whether a build gate passed.
+export { evaluateDataExpectation } from './data-expectation-engine.js';
+
 // Process mining and event objects
 export type {
   EventObjectService,
@@ -374,6 +378,43 @@ export {
   datasetProjectColumns,
 } from './dataset-rows.js';
 
+// Whether an event breaches its threshold is written onto the event, so the two
+// providers must not disagree about it — decided once, here.
+export { evaluateEventThreshold } from './event-thresholds.js';
+export type { EventThreshold, EventThresholdBreach } from './event-thresholds.js';
+
+// Applying a transform step is pure, and its output is *data* — two providers
+// that disagreed about what `round` or `dateDiff` means would produce different
+// values from the same pipeline with neither erring. So it is defined once.
+export { applyTransformStep } from './variable-transforms.js';
+
+// Which value wins a conflict is a pure function of the conflict and the
+// strategy, and its output is *data* — two providers that disagreed would write
+// different values into the same field and neither would error. So it is
+// decided once, here.
+export { resolveConflictValue, DEFAULT_CONFLICT_STRATEGY } from './conflict-resolution.js';
+
+// Cross-org ontology access is an authorization decision, so it is evaluated by
+// one shared function rather than once per provider. Two providers that
+// disagreed would mean one deployment granting access the other denies, with
+// neither looking wrong from where it stands.
+export { evaluateOntologyAccess } from './ontology-access.js';
+
+// The SQL parser and the query engine over datasets: both pure, so both live
+// here rather than in a provider. Two providers that disagreed about what a
+// WHERE clause meant would return different rows for the same SQL — a worse
+// failure than either being wrong alone, since neither would look broken.
+export { parseSql } from './sql-parser.js';
+export type { ParsedSqlAst } from './sql-parser.js';
+export { executeSqlQuery } from './sql-query-engine.js';
+export type { SqlQueryResult } from './sql-query-engine.js';
+
+// HumanInTheLoopService is a rename of ChangeProposalStore, not a store of its
+// own. Sharing one adapter is what lets the API hand the HITL surface and the
+// change-proposal surface the same store, so an approval recorded through one
+// is visible through the other.
+export { ChangeProposalHumanInTheLoop } from './human-in-the-loop.js';
+
 // Shared DatasetService refusals, so a create/not-found means the same thing
 // and carries the same status whichever provider is wired.
 export {
@@ -383,6 +424,11 @@ export {
   datasetBranchNotFoundError,
 } from './dataset-contract.js';
 export type { CodedError } from './dataset-contract.js';
+// HumanInTheLoopService is a rename of ChangeProposalStore, not a store of its
+// own. Sharing one adapter is what lets the API hand the HITL surface and the
+// change-proposal surface the same store, so an approval recorded through one
+// is visible through the other.
+export { ChangeProposalHumanInTheLoop } from './human-in-the-loop.js';
 
 // Enterprise connector catalog
 export type {

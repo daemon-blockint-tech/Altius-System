@@ -72,7 +72,7 @@ export interface McpHttpResponse {
  * no session state is retained between calls.
  */
 export function createMcpServer(config: McpServerConfig): (req: McpHttpRequest) => Promise<McpHttpResponse> {
-  const { deps, serverName = 'altius-mcp', serverVersion = '0.1.0', isDev = false } = config;
+  const { deps, serverName = 'altius-mcp', serverVersion = '0.1.0', isDev = false, allowedUsers, allowedGroups } = config;
   const toolList = buildToolList(deps);
 
   return async (req) => {
@@ -105,6 +105,30 @@ export function createMcpServer(config: McpServerConfig): (req: McpHttpRequest) 
         status: authResult.status,
         body: { error: { code: authResult.status, message: authResult.message } },
       };
+    }
+
+    // ── Per-user/group enablement gate (before rate limiting: a caller the
+    // admin never enabled should not consume rate budget). Configured lists
+    // are an allowlist; an empty list matches nobody. Unconfigured = open to
+    // every authenticated principal — the per-pack capability is the outer
+    // switch, and per-call authz/markings/consent still apply downstream. ──
+    if (allowedUsers !== undefined || allowedGroups !== undefined) {
+      const memberships = [...(authResult.user.groups ?? []), ...(authResult.user.roles ?? [])];
+      const enabled =
+        (allowedUsers?.includes(authResult.user.id) ?? false) ||
+        (allowedGroups?.some((g) => memberships.includes(g)) ?? false);
+      if (!enabled) {
+        return {
+          status: 403,
+          body: {
+            error: {
+              code: 403,
+              message:
+                'MCP access is not enabled for your user or groups. Ask an administrator to add you to the MCP access allowlist.',
+            },
+          },
+        };
+      }
     }
 
     // ── Per-principal rate limiting (parity with GraphQL/REST/CDM/FHIR) ──
