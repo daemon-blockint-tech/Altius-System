@@ -113,6 +113,7 @@ import {
   InMemoryPlatformAssistantService,
   InMemoryEmbeddedCopilotService,
   InMemorySqlQueryService,
+  InMemoryBatchTransformService,
   InMemoryVariableTransformService,
   InMemoryRulesEngineService,
   InMemoryPipelineService,
@@ -158,12 +159,10 @@ import {
   PostgresObjectSetFilterStore,
   PostgresApprovalWorkflowService,
   PostgresDataExpectationsService,
-  PostgresEventObjectService,
   PostgresOntologyChangeHistoryService,
   PostgresConflictResolutionService,
   PostgresHumanInTheLoopService,
   PostgresMultiOntologyGovernanceService,
-  PostgresOntologyChangeHistoryService,
   PostgresEventObjectService,
   PostgresDesignSystemService,
   PostgresModelRegistryService,
@@ -175,15 +174,7 @@ import {
   PostgresSqlQueryService,
   PostgresVariableTransformService,
   PostgresUserDirectoryService,
-  PostgresDesignSystemService,
-  PostgresModelRegistryService,
-  PostgresModelInferenceService,
-  PostgresModelChainService,
-  PostgresConnectorCatalogService,
-  PostgresCommandService,
-  PostgresBatchTransformService,
   PostgresLayoutDeviceCaptureService,
-  PostgresSqlQueryService,
   PostgresWorkshopUxService,
 } from '@altius/storage-postgres';
 import {
@@ -340,40 +331,6 @@ import {
   SubscriptionManager,
   SubscriptionRegistry,
 } from './subscriptions/index.js';
-import { createGraphQLServer, buildResolverContext } from './graphql/index.js';
-import { guardWsOperation } from './graphql/ws-gate.js';
-import { generateRestRoutes, generateOpenApiSpec, auditRead } from './rest/index.js';
-import { writeReadAuditFor } from './rest/audit-read.js';
-import { isTypeVisible, missingMarkings } from './markings/enforce.js';
-import { invokeFunction } from './functions/invoke-function.js';
-import { generateAuditRoutes } from './rest/audit-routes.js';
-import { generateLlmRoutes, generateWorkflowRoutes } from './rest/index.js';
-import { generateTraverseRoutes } from './rest/traverse-route.js';
-import { recordRestUsage } from './rest/usage-recording.js';
-import { generateSyncStatusRoutes } from './rest/sync-status-routes.js';
-import { generateDataConnectionStatusRoutes } from './rest/data-connection-status-routes.js';
-import { registerAttachmentRoutes } from './rest/attachment-routes.js';
-import { registerTimeSeriesRoutes } from './rest/timeseries-routes.js';
-import { registerBranchRoutes } from './rest/branch-routes.js';
-import { registerCommentRoutes } from './rest/comment-routes.js';
-import { registerNotificationRoutes } from './rest/notification-routes.js';
-import { registerEmbeddingRoutes } from './rest/embedding-routes.js';
-import { registerAlertingRoutes } from './rest/alerting-routes.js';
-import { registerGeospatialRoutes } from './rest/geospatial-routes.js';
-import { registerScenarioRoutes } from './rest/scenario-routes.js';
-import { registerWorkshopRoutes } from './rest/workshop-routes.js';
-import { registerLLMGatewayRoutes } from './rest/llm-gateway-routes.js';
-import { registerAppEmbeddingRoutes } from './rest/app-embedding-routes.js';
-import { registerPlatformResourceRoutes } from './rest/platform-resource-routes.js';
-import { registerAbsentServiceRoutes } from './rest/absent-services-routes.js';
-import { registerSavedViewRoutes } from './rest/saved-view-routes.js';
-import { registerUserDirectoryRoutes } from './rest/user-directory-routes.js';
-import { readPlatformVersion } from './version.js';
-import { createFhirRouter } from './fhir/index.js';
-import { createCdmRouter } from './cdm/index.js';
-import { generateRelationshipRoutes, buildGrantAllowlist } from './relationships/router.js';
-import { generateConsentRoutes, assertConsentConfig } from './consent/router.js';
-import { InMemorySubscribableEventBus, SubscriptionManager, SubscriptionRegistry } from './subscriptions/index.js';
 import type { SubscribableEventBus } from './subscriptions/index.js';
 import {
   RedpandaEventBus,
@@ -1718,8 +1675,6 @@ async function main(): Promise<void> {
     // the store's, so the adapter lives once in @altius/spi and the store above
     // decides both durability and *which* record is being approved.
     humanInTheLoopService: pgPool ? new PostgresHumanInTheLoopService(pgPool) : new InMemoryHumanInTheLoopService(changeProposals),
-    // SQL query — Postgres-backed when available.
-    sqlQueryService: pgPool ? new PostgresSqlQueryService(pgPool) : new InMemorySqlQueryService(datasets),
     // Variable transforms — Postgres-backed when available.
     variableTransformService: pgPool ? new PostgresVariableTransformService(pgPool) : new InMemoryVariableTransformService(),
     // Multi-ontology governance — Postgres-backed when available.
@@ -1732,18 +1687,6 @@ async function main(): Promise<void> {
     // whether a rule governs anything, so losing it silently reverts a rule to
     // draft: nothing looks broken, the rule just stops applying.
     businessRulesService: pgPool ? new PostgresBusinessRulesService(pgPool) : new InMemoryBusinessRulesService(),
-    // Event objects — Postgres-backed when available. The events are the
-    // process-mining log, so losing them yields a smaller model rather than an
-    // error; the thresholds mark breaches at creation time, so losing one just
-    // stops new events being flagged. Both quiet. Graduated out of
-    // `nonDurableServices`.
-    eventObjectService: pgPool ? new PostgresEventObjectService(pgPool) : new InMemoryEventObjectService(),
-    // Ontology change history — Postgres-backed when available. The audit
-    // trail for schema change: who changed it, when, and a snapshot of what it
-    // looked like. Graduated out of `nonDurableServices`. Note `restore` and
-    // `applyChange` still report success without changing any schema, in BOTH
-    // providers — see the store's header.
-    ontologyChangeHistoryService: pgPool ? new PostgresOntologyChangeHistoryService(pgPool) : new InMemoryOntologyChangeHistoryService(),
     // Conflict resolution — Postgres-backed when available. Both halves fail
     // silently when lost: an unresolved conflict that disappears means the
     // datasource and the user edit quietly keep different values, and a lost
@@ -2355,6 +2298,14 @@ async function main(): Promise<void> {
   // calling the same 8-stage action pipeline. Stateless: no session storage.
   if (mcpEnabled) {
     const { createMcpServer } = await import('@altius/mcp-server');
+    // Per-user/group enablement (Foundry Control-Panel parity). Unset = every
+    // authenticated principal of an mcp-enabled pack (pre-gate behavior);
+    // set = only listed user ids / group-or-role names, everyone else 403.
+    const mcpAllowedUsers = parseRoles(process.env['MCP_ALLOWED_USERS']);
+    const mcpAllowedGroups = parseRoles(process.env['MCP_ALLOWED_GROUPS']);
+    if (mcpAllowedUsers || mcpAllowedGroups) {
+      logger.info(`MCP access allowlist active (users=${mcpAllowedUsers?.length ?? 0}, groups=${mcpAllowedGroups?.length ?? 0})`);
+    }
     const mcpHandler = createMcpServer({
       deps: {
         schema,
@@ -2407,6 +2358,8 @@ async function main(): Promise<void> {
           : {}),
       },
       isDev,
+      ...(mcpAllowedUsers ? { allowedUsers: mcpAllowedUsers } : {}),
+      ...(mcpAllowedGroups ? { allowedGroups: mcpAllowedGroups } : {}),
     });
     app.post('/mcp', async (req, res) => {
       const out = await mcpHandler({

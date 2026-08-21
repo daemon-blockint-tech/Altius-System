@@ -109,23 +109,17 @@ export { PostgresSavedViewStore } from './governance/postgres-saved-view-store.j
 export { PostgresUserDirectoryService } from './governance/postgres-user-directory-service.js';
 export { PostgresDesignSystemService } from './governance/postgres-design-system-service.js';
 export { PostgresLayoutDeviceCaptureService } from './governance/postgres-layout-device-capture-service.js';
-export { PostgresEventObjectService } from './process/postgres-event-object-service.js';
-export { PostgresOntologyChangeHistoryService } from './governance/postgres-ontology-change-history-service.js';
-export { PostgresConflictResolutionService } from './sync/postgres-conflict-resolution-service.js';
 export { PostgresWorkshopUxService } from './governance/postgres-workshop-ux-service.js';
 export { PostgresDatasetService } from './dataset/postgres-dataset-service.js';
 export { PostgresBatchTransformService } from './dataset/postgres-batch-transform-service.js';
-export { PostgresSqlQueryService } from './dataset/postgres-sql-query-service.js';
-export { PostgresDataExpectationsService } from './quality/postgres-data-expectations-service.js';
 export { PostgresVariableTransformService } from './dataset/postgres-variable-transform-service.js';
+export { PostgresSqlQueryService } from './dataset/postgres-sql-query-service.js';
 export { PostgresDataExpectationsService } from './quality/postgres-data-expectations-service.js';
 // Restored: #32 landed this service *and* its conformance suite, then the #34
 // merge dropped the export (c08f0cd), leaving the suite unable to construct the
 // class it tests. The missing export also degraded that suite's `svc` binding
 // to `any`, which is where its two implicit-any errors came from -- so this one
 // line clears three typecheck errors and 18 conformance failures.
-export { PostgresBatchTransformService } from './dataset/postgres-batch-transform-service.js';
-export { PostgresSqlQueryService } from './dataset/postgres-sql-query-service.js';
 export { generatePlatformDDL } from './schema/ddl-platform.js';
 export {
   PostgresAlertingService,

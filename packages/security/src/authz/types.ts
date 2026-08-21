@@ -44,6 +44,13 @@ export interface FieldPermissionConfig {
   fieldsByRelation: Record<string, string[]>;
   /** Fields that are never redacted regardless of relation (e.g., primary keys). */
   alwaysVisible: string[];
+  /**
+   * Explicit acknowledgment that this config makes one or more @sensitive
+   * fields readable by every caller who can read the object (via alwaysVisible
+   * or a `viewer` grant). Without this flag such a config is a boot error, not
+   * a warning — silent PII re-exposure is the hole being closed.
+   */
+  allowSensitive?: boolean;
 }
 
 /** Result of a field-level redaction operation. */

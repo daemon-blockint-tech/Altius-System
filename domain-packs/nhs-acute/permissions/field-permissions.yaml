@@ -8,6 +8,10 @@
 # subject to redaction and should not be listed here.
 
 - objectType: Patient
+  # Triage viewers must see patient display names to function on the ward;
+  # this re-exposes @sensitive name/family/given to every reader and is
+  # acknowledged deliberately (reviewed 21 Aug 2026).
+  allowSensitive: true
   alwaysVisible:
     - id
     - status

@@ -42,6 +42,7 @@ import { isTypeVisible } from '../markings/enforce.js';
 import { writeReadAuditFor } from './audit-read.js';
 import { lowerFirst, toSnakeCase, searchableTextFields } from '../utils.js';
 import { paginateWithConsent } from '../consent-pagination.js';
+import { guardDirectWriteConsent } from '../consent-write-guard.js';
 import { collectRawRecords } from '../cdm/router.js';
 
 // ─── Helpers ───
@@ -1043,6 +1044,21 @@ function generateUpdateRoute(
           user.tenantId,
         );
         if (!allowed) {
+          // Audit the denied attempt — a DPO needs to see denied writes, not
+          // just successful ones. Best-effort: a failed audit write is logged
+          // but never surfaces to the caller. (Same shape as the GraphQL
+          // update<Type> resolver.)
+          if (deps.auditWriter) {
+            try {
+              await deps.auditWriter.write({
+                tenantId: requestContext.tenantId,
+                actor: { type: 'user', id: user.id, roles: user.roles },
+                operation: { type: 'update', objectType: typeName, objectId: id },
+                detail: { result: 'denied' },
+                traceId: requestContext.traceId,
+              });
+            } catch { /* best-effort */ }
+          }
           return createRestErrorResponse({
             code: 'FORBIDDEN',
             category: 'authorization',
@@ -1079,6 +1095,10 @@ function generateUpdateRoute(
           }
         }
 
+        // Consent gate — the action pipeline checks consent before writing;
+        // the direct path must too, or revocation is meaningless for editors.
+        await guardDirectWriteConsent(deps, 'update', typeName, id, user, requestContext);
+
         const updated = await deps.objectManager.update(
           typeName,
           id,
@@ -1087,6 +1107,20 @@ function generateUpdateRoute(
           undefined,
           ifMatch,
         );
+
+        // Audit the successful update — best-effort. Field NAMES only: the
+        // values may be @sensitive, and an audit record is itself an egress.
+        if (deps.auditWriter) {
+          try {
+            await deps.auditWriter.write({
+              tenantId: requestContext.tenantId,
+              actor: { type: 'user', id: user.id, roles: user.roles },
+              operation: { type: 'update', objectType: typeName, objectId: id },
+              detail: { result: 'success', after: Object.fromEntries(Object.keys(properties).map(f => [f, '[changed]'])) },
+              traceId: requestContext.traceId,
+            });
+          } catch { /* best-effort */ }
+        }
 
         let restObj = objectToRest(updated, obj);
 
@@ -1155,6 +1189,19 @@ function generateDeleteRoute(
           user.tenantId,
         );
         if (!allowed) {
+          // Audit the denied attempt — best-effort, same shape as the GraphQL
+          // delete<Type> resolver.
+          if (deps.auditWriter) {
+            try {
+              await deps.auditWriter.write({
+                tenantId: requestContext.tenantId,
+                actor: { type: 'user', id: user.id, roles: user.roles },
+                operation: { type: 'delete', objectType: typeName, objectId: id },
+                detail: { result: 'denied' },
+                traceId: requestContext.traceId,
+              });
+            } catch { /* best-effort */ }
+          }
           return createRestErrorResponse({
             code: 'FORBIDDEN',
             category: 'authorization',
@@ -1163,6 +1210,9 @@ function generateDeleteRoute(
             traceId: requestContext.traceId,
           });
         }
+
+        // Consent gate — parity with the action pipeline; see guardDirectWriteConsent.
+        await guardDirectWriteConsent(deps, 'delete', typeName, id, user, requestContext);
 
         // Fetch-then-check for If-Match (SPI deleteObject has no expectedVersion)
         if (ifMatch !== undefined) {
@@ -1189,6 +1239,21 @@ function generateDeleteRoute(
 
         const mode = (req.query['mode'] as string | undefined) === 'hard' ? 'hard' : 'soft';
         await deps.objectManager.delete(typeName, id, mode, requestContext);
+
+        // Audit the successful delete — best-effort. `query` records the
+        // deletion mode: a hard delete is exactly the event a DPO must be
+        // able to find later.
+        if (deps.auditWriter) {
+          try {
+            await deps.auditWriter.write({
+              tenantId: requestContext.tenantId,
+              actor: { type: 'user', id: user.id, roles: user.roles },
+              operation: { type: 'delete', objectType: typeName, objectId: id },
+              detail: { result: 'success', query: `mode=${mode}` },
+              traceId: requestContext.traceId,
+            });
+          } catch { /* best-effort */ }
+        }
 
         return {
           status: 204,

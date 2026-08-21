@@ -16,7 +16,7 @@ against real Postgres. Reproduce with `node tools/parity/reachability.mjs`.
 | Measured 20 Aug (`ChangeProposalStore`) | 18 | 53 | 0 | this tool |
 | **Measured now (`BusinessRulesService` branch, 71 services)** | **19** | **52** | **0** | this tool |
 | Measured 20 Aug (`ChangeProposalStore`, merged) | 18 | 53 | 0 | this tool |
-| **Measured now (`EventObjectService`, 71 services)** | **19** | **52** | **0** | this tool |
+| **Measured now (`VariableTransformService`, 71 services)** | **19** | **52** | **0** | this tool |
 | **Measured now (`OntologyChangeHistoryService`, 71 services)** | **19** | **52** | **0** | this tool |
 | **Measured now (`SqlQueryService`, 71 services)** | **19** | **52** | **0** | this tool |
 | **Measured now (`ConflictResolutionService`, 71 services)** | **19** | **52** | **0** | this tool |
@@ -31,9 +31,7 @@ up for the right reason.
 `BusinessRulesService` to 19, by the same route each time: a Postgres store, restart
 survival proven, no new surface claimed. One service per pass is the expected rate —
 the count is meant to move slowly and mean something, rather than quickly and not.
-`EventObjectService` to 19, by the same route each time: a Postgres store, restart
-survival proven, no new surface claimed. One service per pass is the expected rate — the
-count is meant to move slowly and mean something, rather than quickly and not.
+`VariableTransformService` to 19, by the same route each time: a Postgres store,
 `OntologyChangeHistoryService` to 19, by the same route each time: a Postgres store,
 `DatasetService` then took it to 17, `ChangeProposalStore` to 18 and `SqlQueryService`
 to 19, by the same route each time: a Postgres store, restart survival proven, no new
@@ -80,11 +78,11 @@ mean "works":
 **`ChangeProposalStore`** · `CommentStore` · **`ConflictResolutionService`** ·
 `DataFreshnessService` ·
 `DatasetMetadataService` · **`DatasetService`** · `EmbeddingStore` ·
-**`EventObjectService`** ·
 `GeospatialMapService` · `JustificationStore` · `NotificationStore` · `ObjectSetStore` ·
 **`OntologyChangeHistoryService`** · `OntologySqlService` ·
 `OntologyUsageMetricsService` · `ScopedSessionStore` · `TimeSeriesStore`
 `OntologySqlService` · `OntologyUsageMetricsService` · `ScopedSessionStore` ·
+`TimeSeriesStore` · **`VariableTransformService`**
 **`SqlQueryService`** · `TimeSeriesStore`
 
 `full` here stays a **necessary, not sufficient** condition: it says a user can reach a
@@ -105,7 +103,7 @@ are the honest `partial → full` candidates:
 `CommandExchangeService` · `CommandService` · `ConnectorCatalogService` · `CopilotService` · `DataExpectationsService` ·
 `DatasetProjectionService` · `DatasourceService` ·
 `DesignSystemService` · `EmbeddedCopilotService` · `EmbeddingService` · `EvalService` ·
-`GraphAnalysisService` · `GraphService` ·
+`EventObjectService` · `GraphAnalysisService` · `GraphService` ·
 `HumanInTheLoopService` · `KioskService` · `LayoutDeviceCaptureService` ·
 `ModelCatalogService` · `ModelChainService` · `ModelInferenceService` ·
 `ModelRegistryService` · `ModelingObjectiveService` · `MultiOntologyGovernanceService` ·
@@ -114,7 +112,7 @@ are the honest `partial → full` candidates:
 `PlatformResourceService` · `ProcessMiningService` · `SavedViewStore` ·
 `ScenarioService` · `SqlAnalyticsService` · `SyncCdcService` ·
 `TokenMeteringService` · `TransformExpressionService` · `UserDirectoryService` ·
-`ValueFormattingService` · `VariableTransformService` · `VectorSearchService` ·
+`ValueFormattingService` · `VectorSearchService` ·
 `WorkshopPlatformService` · `WorkshopUxService`
 
 ¹ `AccessExplanationService` is a standing false demotion: it holds no state and
@@ -194,44 +192,49 @@ state = $expected` clause, not only checked beforehand. Two concurrent approvals
 one process would otherwise both read `proposed` and both write `approved`, recording
 the second reviewer over the first. A `Map` cannot interleave that way, so the
 in-memory service needs no equivalent.
-## This pass — `EventObjectService`
+## This pass — `VariableTransformService`
 
-The process-mining event log, plus the per-event-type thresholds that mark an event as
-breaching at the moment it is created. Both halves fail quietly: a log that lost half
-its events yields a *smaller* process model rather than an error, and a lost threshold
-simply stops flagging new events — the same silent-gate shape as losing a data
-expectation.
+Named pipelines of declarative steps — upper, round, formatDate, pickFields, coalesce —
+reduced over an input value.
 
-Whether an event breaches moved into `@altius/spi`, for the reason that keeps recurring:
-**the answer is written onto the event**. Two providers disagreeing would store different
-`thresholdBreached` flags for the same event and the same threshold, and anything reading
-breaches afterwards — an alert, a report, a timeline — would differ by deployment.
+**Losing a pipeline here is loud**, unlike most of what these passes have covered:
+`execute` throws `Transform pipeline not found`. The reason to persist it anyway is that
+a pipeline is user-authored configuration — someone composed those steps — and a restart
+eating it is not something a caller recovers from by retrying.
 
-**A dead query filter, found by conformance and fixed in both providers.** `list` accepts
-`thresholdBreached`, and the in-memory filter was `e.thresholdBreached === query.thresholdBreached`.
-A non-breaching event carries *no flag at all* rather than `false`, and `undefined === false`
-is false — so `thresholdBreached: false` could only ever return an empty list. The filter
-was inert for half its domain.
+**The drift risk is the real one, and it is the same shape as the conflict resolver's:
+the output is data.** A pipeline runs to produce a value something downstream consumes,
+so two providers disagreeing about what `round` or `dateDiff` means would produce
+different values from the same input with neither erring. `applyStep` moved verbatim
+into `@altius/spi` as `applyTransformStep`, and the in-memory service lost its copy.
+Two of the five injections break that shared function and fail on **both** providers.
 
-This one was fixed rather than matched, and the distinction from the quirks matched in
-earlier passes is worth stating: nobody can depend on the old behaviour, because the old
-behaviour returned nothing. Compare `bidirectional` in the multi-ontology pass, which was
-matched precisely because fixing it would have *widened access* — a real outcome someone
-could be relying on. Here the fix makes a dead filter work in the only direction it could
-have meant, with no security dimension. Both providers now read it as "did not breach"
-(`IS NOT TRUE` in SQL), and two injections pin it — one per provider.
+Three lenient behaviours are matched rather than tightened, and pinned by cases that say
+so — tightening any of them would change what an existing pipeline produces:
 
-Two more behaviours matched rather than fixed, each pinned: `update` never re-evaluates
-the threshold, so an event edited to a breaching duration keeps its unbreached flag and
-an event created before a threshold existed never gains one; and the comparison is strict
-on both sides, so a duration exactly equal to the boundary does not breach.
+- an unrecognised `kind` returns the input unchanged, so a typo in a step name is a
+  silent no-op
+- `upper` on `null` is the string `"NULL"`, because the string steps coerce with
+  `String(input)`
+- **`add` on a non-numeric input concatenates.** The `as number` cast is a TypeScript
+  fiction; at runtime `+` sees two strings, so `'abc'` plus 1 is `'abc1'`. A pipeline
+  meant to add can silently build a string. `multiply` on the same input does give NaN.
 
-One storage decision worth recording: **the timestamps are stored as TEXT, not
-TIMESTAMPTZ.** The range filters compare lexicographically in the in-memory provider and
-`list` orders the same way. Converting to instants would re-order events whose strings
-differ but whose instants match, and would move the boundaries of a range query — exactly
-the edge cases a timeline scrubber lands on. `durationMs` is still computed numerically
-from parsed dates.
+**A real divergence in the first version of the Postgres store, caught by conformance.**
+The in-memory `update` writes the record back under the OLD map key, so changing a
+pipeline's `name` renames the record without moving it: it stays reachable under the old
+name while reporting the new one. My first table keyed on `(tenant_id, name)`, which
+meant the UPDATE moved the row and the two providers disagreed. The fix is to model the
+map key as its own column — `lookup_key` alongside `name` — which reproduces the quirk
+faithfully. Ugly, and deliberately so: a single `name` column would have been tidier and
+wrong. Pinned, and raised as a contract question rather than fixed, since fixing it
+changes which name an existing caller has to use.
+
+**Two of my own assertions were wrong, and the suite caught them before any injection.**
+I asserted substring-then-trim on `'  hello  '` gives `''` (it gives `'h'`), and that
+`add` on a non-numeric input gives NaN (it concatenates). Both were corrected against
+what the code actually does rather than what I assumed — which is the whole point of
+running the thing rather than reasoning about it.
 ## This pass — `OntologyChangeHistoryService`
 
 The audit trail for schema change: who changed it, when, under which migration class,
@@ -441,18 +444,10 @@ Two things that conversion surfaced, neither of them the dataset store's own bug
 
 Same pattern, in rough order of what losing it costs: `ApprovalWorkflowService` (the
 other governance audit trail — but it is **not wired into the API at all**, so it needs
-routes before persistence is worth anything), then `AgentThreadStore` and
-`ObjectSetFilterStore`.
+routes before persistence is worth anything), then `EventObjectService` and
+`AgentThreadStore`.
 
 **Two candidates are blocked, and need a decision rather than a PR.**
-`ConnectorCatalogService` and `DatasourceService` both hold credentials in the state they
-would persist: `EnterpriseAuthScheme` carries `clientSecret`, `apiKey`, `password`,
-`token` and `refreshToken` as plain fields, and `Datasource.connection` is an untyped bag
-that in practice holds the same. There is **no encryption-at-rest machinery anywhere in
-this repo** — no `createCipheriv`, no KMS client, no `pgcrypto` in the DDL (checked, not
-assumed). Converting either as-is would move secrets from a `Map` that dies with the
-process into a table that does not, which is a security decision and not one to take as a
-side effect of a durability pass.
 routes before persistence is worth anything), then `VariableTransformService` and
 `TransformExpressionService`.
 routes before persistence is worth anything), then `DatasourceService` and
@@ -481,9 +476,6 @@ duplicates what `PipelineBuildService` already does with action triggers, and it
 `trigger()` fabricates a `succeeded` build into a `builds` map that **no method on the
 interface ever reads** — persisting write-only state that shadows another service is not
 worth a table, and the two should be reconciled first. And `TransformExpressionService`
-holds **no state at all**: it is `listFunctions()` plus a pure `evaluate()`, so it belongs
-beside `AccessExplanationService` as a standing false demotion rather than in the work
-queue.
 holds **no state at all**: it is `listFunctions()` plus a pure `evaluate()`, so it
 belongs beside `AccessExplanationService` as a standing false demotion rather than in
 the work queue.

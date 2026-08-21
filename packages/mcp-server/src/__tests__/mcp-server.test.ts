@@ -731,3 +731,40 @@ describe('MCP uniform governance', () => {
     expect(actionCtx.consentPurpose).toBe('RESEARCH');
   });
 });
+
+describe('MCP access allowlist (per-user/group enablement)', () => {
+  const validHeaders = { authorization: 'Bearer valid-token' };
+  const listReq = { jsonrpc: '2.0', id: 9, method: 'tools/list', params: {} };
+
+  it('denies a caller matching neither allowedUsers nor allowedGroups with 403', async () => {
+    const { deps } = createMockDeps();
+    const handler = createMcpServer({ deps, isDev: false, allowedGroups: ['agents'] });
+    const res = await handler({ method: 'POST', headers: validHeaders, body: listReq });
+    expect(res.status).toBe(403);
+    const body = res.body as { error: { message: string } };
+    expect(body.error.message).toMatch(/allowlist|not enabled/i);
+  });
+
+  it('allows a caller whose group or role matches allowedGroups', async () => {
+    // DEV_USER carries roles ['admin'], groups [] — a role name must satisfy
+    // the group allowlist, since deployments gate on roles.
+    const { deps } = createMockDeps();
+    const handler = createMcpServer({ deps, isDev: false, allowedGroups: ['admin'] });
+    const res = await handler({ method: 'POST', headers: validHeaders, body: listReq });
+    expect(res.status).toBe(200);
+  });
+
+  it('allows a caller listed in allowedUsers even when no group matches', async () => {
+    const { deps } = createMockDeps();
+    const handler = createMcpServer({ deps, isDev: false, allowedUsers: ['dev-user'], allowedGroups: ['agents'] });
+    const res = await handler({ method: 'POST', headers: validHeaders, body: listReq });
+    expect(res.status).toBe(200);
+  });
+
+  it('leaves the surface open to authenticated callers when no allowlist is configured', async () => {
+    const { deps } = createMockDeps();
+    const handler = createMcpServer({ deps, isDev: false });
+    const res = await handler({ method: 'POST', headers: validHeaders, body: listReq });
+    expect(res.status).toBe(200);
+  });
+});
