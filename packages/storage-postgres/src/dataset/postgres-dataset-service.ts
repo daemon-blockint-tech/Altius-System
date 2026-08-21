@@ -16,16 +16,16 @@
  * Row identity, filtering, ordering and projection come from @altius/spi so
  * this and the in-memory service cannot answer the same read differently.
  *
- * Two things are deliberately faithful to the in-memory service rather than
- * "better", because a provider-dependent contract is the defect class this
- * line of work exists to remove — dev and prod must agree. Both are contract
- * questions for the lead, to be changed in BOTH providers or neither:
+ * One behaviour remains deliberately faithful to the in-memory service rather
+ * than "better", because a provider-dependent contract is the defect class
+ * this line of work exists to remove — dev and prod must agree. It is a
+ * contract question for the lead, to be changed in BOTH providers or neither:
  *
- *   - `create` on an existing name replaces it, discarding rows and log. In
- *     memory that is a dev annoyance; on Postgres it is real data loss, so it
- *     is the more urgent of the two to revisit.
  *   - a write to any branch advances the dataset-wide `latestTransactionId`
  *     that `get` and `read` report, not just the written branch's.
+ *
+ * (`create` used to be on that list, replacing an existing dataset. Both
+ * providers now refuse instead — see @altius/spi's dataset-contract.)
  *
  * Known limitation, stated plainly: a read materialises the branch's rows and
  * filters in process. Scoping to (tenant, dataset, branch) happens in SQL, so
@@ -41,6 +41,10 @@ import {
   datasetRowMatches,
   datasetSortRows,
   datasetProjectColumns,
+  datasetAlreadyExistsError,
+  datasetNotFoundError,
+  datasetBranchExistsError,
+  datasetBranchNotFoundError,
 } from '@altius/spi';
 import type {
   DatasetService,
@@ -148,10 +152,15 @@ export class PostgresDatasetService implements DatasetService {
     const tx = await PgTransaction.begin(this.pool);
     try {
       const c = tx.client;
-      // The in-memory service replaces any dataset already under this name, so
-      // the old rows and log must go too or they would resurface under the new
-      // dataset id. See the header note — this is a contract worth revisiting.
-      await this.deleteDataset(c, ctx.tenantId, input.name);
+      // Refuse rather than replace. The unique index on (tenant, name, branch)
+      // would reject the INSERT anyway, but only after the caller had been led
+      // to believe a replace was on offer; checking first turns a constraint
+      // violation into the contract's own error.
+      const existing = await c.query(
+        `SELECT 1 FROM "dataset"."metadata" WHERE "tenant_id"=$1 AND "name"=$2 LIMIT 1`,
+        [ctx.tenantId, input.name],
+      );
+      if (existing.rowCount) throw datasetAlreadyExistsError(input.name);
       await c.query(
         `INSERT INTO "dataset"."metadata"
            ("id","dataset_id","tenant_id","name","branch","schema","description",
@@ -459,7 +468,7 @@ export class PostgresDatasetService implements DatasetService {
         `SELECT 1 FROM "dataset"."branches" WHERE "tenant_id"=$1 AND "dataset_name"=$2 AND "name"=$3`,
         [ctx.tenantId, name, branchName],
       );
-      if (exists.rowCount) throw new Error(`Branch already exists: ${branchName}`);
+      if (exists.rowCount) throw datasetBranchExistsError(branchName);
 
       const parentBranch = home.branch;
       const parentTxId = fromTransactionId ?? home.latestTransactionId;
@@ -551,7 +560,7 @@ export class PostgresDatasetService implements DatasetService {
           `SELECT 1 FROM "dataset"."branches" WHERE "tenant_id"=$1 AND "dataset_name"=$2 AND "name"=$3`,
           [ctx.tenantId, name, branch],
         );
-        if (!found.rowCount) throw new Error(`${label} branch not found: ${branch}`);
+        if (!found.rowCount) throw datasetBranchNotFoundError(label, branch);
       }
 
       // Last-write-wins: the source's version of a row replaces the target's.
@@ -772,7 +781,7 @@ export class PostgresDatasetService implements DatasetService {
 
   private async requireHome(c: Q, tenantId: string, name: string): Promise<MetaRow> {
     const home = await this.homeMeta(c, tenantId, name);
-    if (!home) throw new Error(`Dataset not found: ${name}`);
+    if (!home) throw datasetNotFoundError(name);
     return home;
   }
 

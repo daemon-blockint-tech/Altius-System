@@ -201,6 +201,35 @@ routes before persistence is worth anything), then `BatchTransformService`,
 `DatasetProjectionService` and `SqlQueryService`, which are the rest of the
 dataset/pipeline data plane.
 
+## Standing rule — a contract changes in every provider or in none
+
+The dataset conversion also produced a rule, which matters more than the row it moved.
+
+Porting a service to Postgres means meeting a contract that until then only one
+implementation had ever expressed, and where that contract is odd there are two bad
+options: copy the oddity, or quietly improve on it. Improving is worse. It makes the
+same call mean different things depending on which provider is wired, so dev is green
+and production is wrong, which is the defect class this whole line of work exists to
+remove.
+
+The concrete case: `create` on an existing dataset **replaced** it, dropping rows and
+transaction log. Against a Map that is a developer annoyance. Against Postgres it is
+irrecoverable data loss. Both providers now **refuse** instead, with a shared
+`ALREADY_EXISTS` error that the REST layer answers as 409 — previously an uncoded
+throw, which the transport categorised as `system` and returned as a 500 with the
+message withheld, making a deliberate refusal indistinguishable from a crash.
+
+What keeps it true is not the fix but the test: a `DatasetService` conformance category
+that runs the same assertions against **both** providers, so the next divergence fails
+in CI rather than in production. Proven non-vacuous — restoring the destructive
+`create` fails exactly the three memory-side cases while the Postgres ones keep passing,
+and that asymmetry is precisely the signature the suite exists to catch.
+
+**Still open, recorded not fixed:** a write to any branch advances the *dataset-wide*
+`latestTransactionId` that `get` and `read` report, rather than the written branch's.
+Both providers agree, so nothing diverges and nothing is being hidden — but the shared
+behaviour is arguably wrong, and per this rule it changes in both or neither.
+
 ## Standing caveat
 
 The tracker's `0 absent` is now literally true by this method — every SPI service is
