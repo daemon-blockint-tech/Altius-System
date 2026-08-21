@@ -46,9 +46,9 @@ export class PostgresAgentThreadStore implements AgentThreadStore {
     await this.pool.query(
       `INSERT INTO "agent_threads"."threads" ("id","tenant_id","user_id","name","model","created_at","updated_at")
        VALUES ($1,$2,$3,$4,$5,$6,$6)`,
-      [id, ctx.tenantId, ctx.actorId ?? '', input.name, input.model ?? null, now],
+      [id, ctx.tenantId, ctx.actorId ?? 'unknown', input.name, input.model ?? null, now],
     );
-    return { id, name: input.name, userId: ctx.actorId ?? '', tenantId: ctx.tenantId, model: input.model, createdAt: now, updatedAt: now };
+    return { id, name: input.name, userId: ctx.actorId ?? 'unknown', tenantId: ctx.tenantId, model: input.model, createdAt: now, updatedAt: now };
   }
 
   async getThread(ctx: RequestContext, threadId: string): Promise<AgentThread | null> {
@@ -60,7 +60,7 @@ export class PostgresAgentThreadStore implements AgentThreadStore {
     let sql = `SELECT * FROM "agent_threads"."threads" WHERE "tenant_id"=$1`;
     const params: unknown[] = [ctx.tenantId];
     if (userId) { params.push(userId); sql += ` AND "user_id"=$${params.length}`; }
-    sql += ` ORDER BY "updated_at" DESC`;
+    sql += ` ORDER BY "updated_at" DESC, "seq" DESC`;
     const r = await this.pool.query(sql, params);
     return r.rows.map(mapThread);
   }
@@ -71,6 +71,9 @@ export class PostgresAgentThreadStore implements AgentThreadStore {
       `UPDATE "agent_threads"."threads" SET "name"=COALESCE($3,"name"),"updated_at"=$4 WHERE "id"=$1 AND "tenant_id"=$2 RETURNING *`,
       [threadId, ctx.tenantId, updates.name ?? null, now],
     );
+    // Tenant-scoped, so another tenant's thread reports absent rather than
+    // forbidden -- the right answer for a caller who should not learn it exists.
+    if (!r.rows[0]) throw new Error(`Thread not found: ${threadId}`);
     return mapThread(r.rows[0]!);
   }
 
@@ -82,6 +85,11 @@ export class PostgresAgentThreadStore implements AgentThreadStore {
   async addMessage(ctx: RequestContext, threadId: string, input: Omit<ThreadMessage, 'id' | 'threadId' | 'createdAt'>): Promise<ThreadMessage> {
     const id = randomUUID();
     const now = new Date().toISOString();
+    const owner = await this.pool.query(
+      `SELECT 1 FROM "agent_threads"."threads" WHERE "id"=$1 AND "tenant_id"=$2`,
+      [threadId, ctx.tenantId],
+    );
+    if (!owner.rows[0]) throw new Error(`Thread not found: ${threadId}`);
     await this.pool.query(
       `INSERT INTO "agent_threads"."messages" ("id","tenant_id","thread_id","role","content","tool_calls","tool_result","model","created_at")
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
@@ -93,18 +101,35 @@ export class PostgresAgentThreadStore implements AgentThreadStore {
 
   async getMessages(ctx: RequestContext, threadId: string, limit?: number): Promise<ThreadMessage[]> {
     const r = await this.pool.query(
-      `SELECT * FROM "agent_threads"."messages" WHERE "thread_id"=$1 AND "tenant_id"=$2 ORDER BY "created_at" ASC LIMIT $3`,
+      // `limit` windows the END of the conversation -- the useful part of a
+      // long thread is its last few turns -- but the rows still read forwards.
+      // Taking the newest N in the subquery and re-sorting ascending outside is
+      // what gives both; a plain ASC ... LIMIT would return the OLDEST N.
+      `SELECT * FROM (
+         SELECT * FROM "agent_threads"."messages"
+          WHERE "thread_id"=$1 AND "tenant_id"=$2
+          ORDER BY "created_at" DESC, "seq" DESC
+          LIMIT $3
+       ) AS recent ORDER BY "created_at" ASC, "seq" ASC`,
       [threadId, ctx.tenantId, limit ?? 1000],
     );
     return r.rows.map(mapMessage);
   }
 }
 
+// pg hands back a Date for TIMESTAMPTZ; every SPI timestamp is an ISO string,
+// and `expect(createdAt).toBe('2026-08-20T09:00:00.000Z')` fails against a Date
+// even when the instant is identical.
+function toIso(v: unknown): string {
+  if (v instanceof Date) return v.toISOString();
+  return typeof v === 'string' ? v : new Date(String(v)).toISOString();
+}
+
 function mapThread(r: any): AgentThread {
-  return { id: r.id, name: r.name, userId: r.user_id, tenantId: r.tenant_id, model: r.model ?? undefined, createdAt: r.created_at, updatedAt: r.updated_at };
+  return { id: r.id, name: r.name, userId: r.user_id, tenantId: r.tenant_id, model: r.model ?? undefined, createdAt: toIso(r.created_at), updatedAt: toIso(r.updated_at) };
 }
 function mapMessage(r: any): ThreadMessage {
-  return { id: r.id, threadId: r.thread_id, role: r.role as MessageRole, content: r.content ?? undefined, toolCalls: r.tool_calls ? (typeof r.tool_calls === 'string' ? JSON.parse(r.tool_calls) : r.tool_calls) : undefined, toolResult: r.tool_result ? (typeof r.tool_result === 'string' ? JSON.parse(r.tool_result) : r.tool_result) : undefined, model: r.model ?? undefined, createdAt: r.created_at };
+  return { id: r.id, threadId: r.thread_id, role: r.role as MessageRole, content: r.content ?? undefined, toolCalls: r.tool_calls ? (typeof r.tool_calls === 'string' ? JSON.parse(r.tool_calls) : r.tool_calls) : undefined, toolResult: r.tool_result ? (typeof r.tool_result === 'string' ? JSON.parse(r.tool_result) : r.tool_result) : undefined, model: r.model ?? undefined, createdAt: toIso(r.created_at) };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
