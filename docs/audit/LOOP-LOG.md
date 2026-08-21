@@ -10,3 +10,4 @@ Iteration count for §7 = your own line count. Body > ~500 lines → archive to 
 
 ## BODY
 2026-08-21 | seed | security-gov/organization-tenant-boundary-isolation | closed-by-others | VERIFY-0 saved a full build: concurrent commits had closed the row
+2026-08-21 | loop-0821-a7c3 | FIXING-BUILD 9742ab7c | partial-progress | duplicate re-exports from merge; dedupe second block
