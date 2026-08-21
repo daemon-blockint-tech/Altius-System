@@ -2,6 +2,7 @@
 action: StartConversation
 version: 1
 reversible: false
+requiredRoles: [admin, clinician, user]
 
 preconditions:
   - expr: "actor.hasRole('admin') || actor.hasRole('clinician') || actor.hasRole('user')"

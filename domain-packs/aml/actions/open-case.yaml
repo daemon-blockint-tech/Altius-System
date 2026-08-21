@@ -2,6 +2,7 @@
 action: OpenCase
 version: 1
 reversible: false
+requiredRoles: [compliance_analyst, compliance_officer]
 
 preconditions:
   - expr: "actor.hasRole('compliance_analyst') || actor.hasRole('compliance_officer')"

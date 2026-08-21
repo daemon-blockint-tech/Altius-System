@@ -2,13 +2,14 @@
 #
 # Governed patient registration — the ED-arrival creation path. There is no
 # existing object to ReBAC-authorize against pre-creation, so authorization is
-# by role claim (CEL); the platform's SecurityLayer allows object-less actions
-# and defers to these preconditions. Consent-on-register is default-on with an
+# the declarative requiredRoles below, enforced deny-by-default by the
+# platform's SecurityLayer. Consent-on-register is default-on with an
 # opt-out (consent: false) so an unconsented patient can still be created for
 # the consent-denial demo.
 action: RegisterPatient
 version: 1
 reversible: false
+requiredRoles: [receptionist, clinician, nurse_in_charge]
 
 preconditions:
   - expr: "actor.hasRole('receptionist') || actor.hasRole('clinician') || actor.hasRole('nurse_in_charge')"
