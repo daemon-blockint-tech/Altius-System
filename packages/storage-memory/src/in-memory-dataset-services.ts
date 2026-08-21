@@ -162,7 +162,17 @@ export class InMemoryBatchTransformService implements BatchTransformService {
   async listBuilds(ctx: RequestContext, name: string, limit = 100): Promise<TransformBuild[]> {
     const m = this.builds.get(ctx.tenantId);
     if (!m) return [];
-    return Array.from(m.values()).filter(b => b.transformName === name).sort((a, b) => b.startedAt.localeCompare(a.startedAt)).slice(0, limit);
+    // Newest first, with insertion order breaking ties. `startedAt` alone is
+    // not a total order: two builds started in the same millisecond compare
+    // equal, the sort becomes a no-op for them, and the pair comes back
+    // oldest-first — the opposite of what this method promises. The Postgres
+    // provider orders by a sequence, so without this the two disagree.
+    return Array.from(m.values())
+      .filter(b => b.transformName === name)
+      .map((b, i) => ({ b, i }))
+      .sort((x, y) => y.b.startedAt.localeCompare(x.b.startedAt) || y.i - x.i)
+      .map(e => e.b)
+      .slice(0, limit);
   }
 
   async abortBuild(ctx: RequestContext, buildId: string): Promise<void> {

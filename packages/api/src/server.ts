@@ -127,7 +127,7 @@ import { PostgresStorageProvider, PostgresLineageStore, PostgresAuditStore, Post
   PostgresModelRegistryService, PostgresModelInferenceService,
   PostgresModelChainService, PostgresConnectorCatalogService, PostgresCommandService,
   PostgresDatasetService,
-  PostgresVariableTransformService,
+  PostgresBatchTransformService,
   PostgresUserDirectoryService,
   PostgresLayoutDeviceCaptureService,
 } from '@altius/storage-postgres';
@@ -1324,8 +1324,8 @@ async function main(): Promise<void> {
       platformAssistantService: new InMemoryPlatformAssistantService(),
       processMiningService: new InMemoryProcessMiningService(),
       // Pipeline Data Ops — Pipeline & Data Ops.
-      batchTransformService: new InMemoryBatchTransformService(datasets),
       sqlQueryService: new InMemorySqlQueryService(datasets),
+      variableTransformService: new InMemoryVariableTransformService(),
       rulesEngineService: new InMemoryRulesEngineService(),
       pipelineService: new InMemoryPipelineService(),
       syncCdcService: new InMemorySyncCdcService(),
@@ -1447,18 +1447,17 @@ async function main(): Promise<void> {
     // every Postgres deployment. The in-memory fallback shares the `datasets`
     // instance above for the same reason.
     datasetMetadataService: pgPool ? new PostgresDatasetMetadataService(pgPool) : new InMemoryDatasetMetadataService(datasets),
-    // Variable transform pipelines — Postgres-backed when available. The
-    // definitions are user-authored configuration, so a restart eating them is
-    // not something a caller can retry past. Step execution itself is shared
-    // code in @altius/spi, because a pipeline produces a value something
-    // downstream uses and the two providers must not disagree about it.
-    // Graduated out of `nonDurableServices`.
-    variableTransformService: pgPool ? new PostgresVariableTransformService(pgPool) : new InMemoryVariableTransformService(),
     // Change proposals — Postgres-backed when available. This is the audit
     // trail for AI-driven changes: who approved what, and when. It graduated
     // out of `nonDurableServices`, where the gate withheld it under Postgres
     // rather than accept approvals it would lose on restart.
     changeProposalStore: pgPool ? new PostgresChangeProposalStore(pgPool) : new InMemoryChangeProposalStore(),
+    // Batch transforms — Postgres-backed when available, so transforms, build
+    // history and schedules survive a restart. A schedule that silently stops
+    // firing looks like nothing happening rather than like a failure.
+    // The executor registry stays per-process in both providers: a
+    // TransformExecutor is a live object, not something a table can hold.
+    batchTransformService: pgPool ? new PostgresBatchTransformService(pgPool, new PostgresDatasetService(pgPool)) : new InMemoryBatchTransformService(datasets),
     // Business rules — Postgres-backed when available. `state` is what decides
     // whether a rule governs anything, so losing it silently reverts a rule to
     // draft: nothing looks broken, the rule just stops applying.
