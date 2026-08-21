@@ -13,9 +13,7 @@ against real Postgres. Reproduce with `node tools/parity/reachability.mjs`.
 | Measured 19 Aug (`f188339`, 58 services) | 8 | 35 | 15 | this tool |
 | Measured 20 Aug (`177b628`, 71 services) | 16 | 55 | 0 | this tool |
 | Measured 20 Aug (`DatasetService`, merged) | 17 | 54 | 0 | this tool |
-| Measured 20 Aug (`ChangeProposalStore`, merged) | 18 | 53 | 0 | this tool |
-| Measured 20 Aug — analyser co-implementation leak fixed | 18 | 47 | 6 | this tool |
-| **Measured now (`DataExpectationsService`, 71 services)** | **19** | **46** | **6** | this tool |
+| **Measured now (`ChangeProposalStore` branch, 71 services)** | **18** | **53** | **0** | this tool |
 
 **Durability moved this time, and it was real.** The previous pass recorded reachability
 improving while `full` stayed pinned at 8 — services were being wired to REST without
@@ -29,7 +27,7 @@ service per pass is the expected rate — the count is meant to move slowly and 
 something, rather than quickly and not.
 
 The gap to the tracker is still large (18 vs ~77) but it is now a gap of *degree*
-rather than *kind*: the remaining 46 are genuinely reachable, and each needs a Postgres
+rather than *kind*: the remaining 53 are genuinely reachable, and each needs a Postgres
 implementation rather than a rethink.
 
 ## Verified, not inferred
@@ -57,7 +55,7 @@ mean "works":
   makes exactly the two composite-key cases fail with `invalid byte sequence for
   encoding "UTF8": 0x00`, and nothing else — so the cases test what they claim to.
 
-## The 19 that reach a durable implementation
+## The 18 that reach a durable implementation
 
 `AlertingService` · `AuditStore` · `BlobStore` · `BranchStore` ·
 **`ChangeProposalStore`** · `CommentStore` · `DataFreshnessService` ·
@@ -70,7 +68,7 @@ mean "works":
 durable implementation, not that the capability is complete. Rows still need demoting
 by hand where behaviour is missing.
 
-## Work queue — reachable but memory-only (46)
+## Work queue — reachable but memory-only (53)
 
 Every one is already wired to REST, so the remaining work is persistence alone. These
 are the honest `partial → full` candidates:
@@ -79,7 +77,7 @@ are the honest `partial → full` candidates:
 `AgentThreadStore` · `ApprovalWorkflowService` · `BatchTransformService` ·
 `BuildTriggerService` · `BusinessRulesService` ·
 `CommandExchangeService` · `CommandService` · `ConflictResolutionService` ·
-`ConnectorCatalogService` · `CopilotService` ·
+`ConnectorCatalogService` · `CopilotService` · `DataExpectationsService` ·
 `DatasetProjectionService` · `DatasourceService` ·
 `DesignSystemService` · `EmbeddedCopilotService` · `EmbeddingService` · `EvalService` ·
 `EventObjectService` · `GraphAnalysisService` · `GraphService` ·
@@ -102,34 +100,47 @@ None of these loses data today — #14's gate withholds them under Postgres, so 
 routes answer 404 rather than accepting a write they would drop. Making one durable is
 what moves it from 404 to working.
 
-## This pass — `DataExpectationsService`
+## This pass — `CopilotService`: a shared store, and the flag it was bypassing
 
-The build quality gate: not-null, unique, range, regex checks, and a `blocking`
-flag deciding whether a failing one stops a build.
+**No parity movement, and that is correct** — this is a defect fix, not a conversion.
+Neither copilot service has a Postgres implementation, so both stay `partial`. Recorded
+here because the defect is the same shape as the one `HumanInTheLoopService` had, and
+because this one had teeth.
 
-**Losing it does not error.** `gateBuild` finds nothing to check and passes
-everything, so bad data flows through a gate that still looks enforced. Same shape
-as a rule losing its `active` state, and the reason this ranked above the remaining
-data-plane candidates.
+`CopilotService` (the view-facing suggest/apply half) constructed its own private
+`InMemoryEmbeddedCopilotService`, while the API separately wired
+`embeddedCopilotService` — the surface operators configure copilots through. Two stores,
+one concept.
 
-The check engine was extracted to `@altius/spi` rather than reimplemented — running a
-check is pure over the expectation and the rows. Two providers that disagreed about
-whether a check passed would disagree about whether bad data reached production, which
-is worse than losing the expectation, because a lost one is visibly gone. The in-memory
-service delegates and its 27 tests pass unchanged.
+**The consequence was not just a visibility split.** Copilot ids are generated UUIDs and
+`suggest` is called with an id the caller supplies, so `ensureCopilot`'s lookup in the
+private store never matched. It fell through to creating a fresh copilot with
+`canExecuteActions: true` — on every call.
 
-Conformance pins the gate semantics on both providers, including the two that are easy
-to get wrong when porting: `enabled` is honoured *before* evaluating (a disabled check
-must not appear as a passing one), and `blocking` *after* (a non-blocking failure is
-reported without stopping the build). Proven non-vacuous by dropping the `enabled`
-filter on the Postgres side — exactly those two Postgres cases fail while memory passes
-untouched.
+And `getSuggestedActions` is the **one place** that flag is enforced:
 
-The durability case asserts the silent failure directly: an expectation is written, the
-provider closed, and through a fresh provider the gate still **blocks**. A store that
-lost it would return `passed: true` rather than an error.
+```ts
+if (!copilot || !copilot.canExecuteActions) return [];
+```
 
-## Previous pass — `ChangeProposalStore`
+while `createCopilot` defaults it to **false**. So a copilot deliberately configured not
+to suggest actions was never the one consulted, and suggestions were served from a
+fabricated copilot that could. The restriction was inert. Sharing the store makes the
+configured copilot the one that answers, and a test asserts exactly that from both
+directions — restricted copilot yields no actions, permitted one yields some.
+
+Two things deliberately left alone. An unrecognised copilot id still auto-creates a
+permissive copilot, which is the opposite of `createCopilot`'s own default; narrowing it
+would change what `suggest` returns for unknown ids, so it is pinned as-is and raised
+separately. And the leak it caused — a fresh copilot per call — is fixed only as a
+consequence of the store being shared, not by adding cleanup.
+
+The tests live in `storage-memory` rather than the conformance suite, because there is no
+second provider: a conformance category with one provider is a unit test wearing a
+costume. A source-level guard in `api` pins the wiring, the same way #37's does for the
+proposal store.
+
+## This pass — `ChangeProposalStore`
 
 The audit trail for AI-driven change: an agent proposes rather than executes, and a
 human approves, rejects, or asks for revisions. Who decided what, and when. That record
@@ -199,45 +210,6 @@ routes before persistence is worth anything), then `BatchTransformService`,
 `DatasetProjectionService` and `SqlQueryService`, which are the rest of the
 dataset/pipeline data plane.
 
-## Correction — the analyser was inflating its own numbers
-
-`0 absent` was **wrong**, and it was the measurement tool producing it.
-
-Resolving reachability transitively, the analyser followed a wired service into the file
-that implements it and then treated every other service *mentioned there* as reached
-too. `storage-memory/src/in-memory-dataset-services.ts` implements **eight** classes in
-one file, so one genuinely-wired service — `BatchTransformService` — dragged in
-`DatasetProjectionService`, `SqlQueryService`, `TabularSdk` and `VariableTransformService`
-as "reached via rest". No route touches any of them.
-
-The tool already refused to do this for interface *declaration* files, with the right
-reason attached: "the SPI co-declares many services per file, and sharing a file is not
-a call relationship." Implementation files have the identical problem and were not
-guarded. Fixed by skipping a service the file *implements* rather than consumes; a real
-dependency — the way `InMemoryBatchTransformService` takes an `InMemoryDatasetService` —
-lives in another file and still resolves, which is why `SqlQueryService` and
-`VariableTransformService` keep their `rest` surface.
-
-**How it surfaced is the uncomfortable part.** Converting `DatasetProjectionService` to
-Postgres made the analyser grade it `full` — a service with no route anywhere, one
-Postgres class away from being counted as a delivered capability. The inflation this
-tool exists to catch, produced by the tool itself. The projection work is parked rather
-than shipped as a parity win.
-
-**Six services are genuinely unreachable**, each independently confirmed to have zero
-non-test references in `packages/api/src`:
-
-`ApprovalWorkflowService` · `CommandService` · `DatasetProjectionService` ·
-`ModelRegistryService` · `ModelingObjectiveService` · `TokenMeteringService`
-
-Making any of them durable buys nothing until it has a route. That is now the tool's
-answer too, rather than a judgement call made by hand each pass.
-
-**The analyser has no tests and does not run in CI.** Every number in this document
-comes from it, and it was wrong in the inflating direction for at least three passes.
-Worth fixing next: fixtures for the grading rules, and a CI job so a regression in the
-measurement is caught like any other.
-
 ## Standing rule — a contract changes in every provider or in none
 
 The dataset conversion also produced a rule, which matters more than the row it moved.
@@ -269,8 +241,10 @@ behaviour is arguably wrong, and per this rule it changes in both or neither.
 
 ## Standing caveat
 
-`6 absent` still understates what is missing. The tool grades the services that exist,
-not the ones that were never written — entire capability families the external audit
+The tracker's `0 absent` is now literally true by this method — every SPI service is
+reachable from some surface — but it should not be read as "nothing is missing".
+Reachable-and-empty is still the common case, and entire capability families the audit
 listed as absent (federation runtime, markings, Spark/datasets, an LLM model runtime)
-are invisible to a reachability count. Phase 25 ships an "AIP/LLM Platform" surface;
-whether a model runtime sits behind it is not something this method can answer.
+are absent in a sense this tool does not measure: it grades the services that exist, not
+the ones that were never written. Phase 25 ships an "AIP/LLM Platform" surface; whether
+a model runtime sits behind it is not something a reachability count can answer.
