@@ -858,10 +858,17 @@ export class PostgresScopedSessionStore implements ScopedSessionStore {
     const allowed = r.rows[0]!.allowed_markings ?? [];
     const excluded = r.rows[0]!.excluded_markings ?? [];
     if (excluded.includes(marking)) return false;
-    return allowed.length === 0 || allowed.includes(marking);
+    // Empty allowedMarkings allows NOTHING — conformance-pinned, matching the
+    // memory store and the auth funnel's intersection semantics. The previous
+    // `allowed.length === 0 ||` treated an empty list as allow-everything: a
+    // fail-open the other provider did not share.
+    return allowed.includes(marking);
   }
 }
 
 function mapScopedSession(r: any): ScopedSession {
-  return { id: r.id, tenantId: r.tenant_id, userId: r.user_id, allowedMarkings: r.allowed_markings ?? [], excludedMarkings: r.excluded_markings ?? [], label: r.label, createdAt: r.created_at, expiresAt: r.expires_at, revoked: r.revoked ?? false, createdBy: r.created_by };
+  // TIMESTAMPTZ columns come back from the driver as Date objects; the SPI
+  // contract is ISO 8601 strings — conformance-pinned.
+  const iso = (v: unknown): string => (v instanceof Date ? v.toISOString() : String(v));
+  return { id: r.id, tenantId: r.tenant_id, userId: r.user_id, allowedMarkings: r.allowed_markings ?? [], excludedMarkings: r.excluded_markings ?? [], label: r.label, createdAt: iso(r.created_at), expiresAt: iso(r.expires_at), revoked: r.revoked ?? false, createdBy: r.created_by };
 }
