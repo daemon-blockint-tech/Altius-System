@@ -748,6 +748,47 @@ export function generatePlatformDDL(): string[] {
   statements.push(`CREATE INDEX IF NOT EXISTS "idx_layout_device_state_tenant_session" ON "governance"."layout_device_state" ("tenant_id", "session_id");`);
   statements.push(`CREATE INDEX IF NOT EXISTS "idx_layout_device_state_tenant_kind" ON "governance"."layout_device_state" ("tenant_id", "kind");`);
   statements.push(`CREATE INDEX IF NOT EXISTS "idx_layout_device_state_tenant_expires" ON "governance"."layout_device_state" ("tenant_id", "expires_at");`);
+  // ── Data conflicts and the tenant's default resolution strategy ──
+  //
+  // Two pieces of state, both of which fail silently when lost. An unresolved
+  // conflict is a datasource sync and a user edit disagreeing about a field:
+  // lose it and the discrepancy is never surfaced, so the data quietly diverges
+  // with nothing erroring. And the default strategy falls back to
+  // `user_edits_win` when absent, so a tenant that chose otherwise does not get
+  // an error after a restart — it gets the other answer.
+  //
+  // The three value columns are JSONB rather than TEXT because a conflict can be
+  // over an object — the merge strategy exists precisely for that case — and
+  // because JSONB keeps "no value" distinguishable from "the value null", which
+  // matters since resolving manually without a value is legal.
+  statements.push(`CREATE SCHEMA IF NOT EXISTS "sync";`);
+  statements.push(`CREATE TABLE IF NOT EXISTS "sync"."data_conflicts" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "seq" BIGSERIAL,
+  "tenant_id" TEXT NOT NULL,
+  "object_type" TEXT NOT NULL,
+  "object_id" TEXT NOT NULL,
+  "field" TEXT NOT NULL,
+  "datasource_value" JSONB,
+  "user_value" JSONB,
+  "datasource_timestamp" TEXT NOT NULL DEFAULT '',
+  "user_timestamp" TEXT NOT NULL DEFAULT '',
+  "resolved_value" JSONB,
+  "resolved_by" TEXT,
+  "resolved" BOOLEAN NOT NULL DEFAULT FALSE,
+  "detected_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "resolved_at" TIMESTAMPTZ
+);`);
+  // listUnresolved returns newest first; `seq` gives that a total order, since
+  // two conflicts can be detected within the same millisecond.
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_conflicts_tenant_unresolved" ON "sync"."data_conflicts" ("tenant_id", "resolved", "detected_at" DESC, "seq" DESC);`);
+
+  // One row per tenant: the strategy applied when none is named per call.
+  statements.push(`CREATE TABLE IF NOT EXISTS "sync"."conflict_settings" (
+  "tenant_id" TEXT NOT NULL PRIMARY KEY,
+  "default_strategy" TEXT NOT NULL,
+  "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);`);
 
   // ── Agent threads (Batch 2 — not in upstream) ──
   statements.push(`CREATE SCHEMA IF NOT EXISTS "agent_threads";`);
