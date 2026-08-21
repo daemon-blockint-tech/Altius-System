@@ -209,10 +209,10 @@ function fieldPredicateToSqlFlat(pred: FieldPredicate, offset: number, tableAlia
           WITH poly AS (SELECT $${offset}::json AS pts),
           edges AS (
             SELECT i,
-              (poly.pts->i->0->>0)::float8 AS xi,
-              (poly.pts->i->1->>0)::float8 AS yi,
-              (poly.pts->((i+1) % json_array_length(poly.pts))->0->>0)::float8 AS xj,
-              (poly.pts->((i+1) % json_array_length(poly.pts))->1->>0)::float8 AS yj
+              (poly.pts->i->>0)::float8 AS xi,
+              (poly.pts->i->>1)::float8 AS yi,
+              (poly.pts->((i+1) % json_array_length(poly.pts))->>0)::float8 AS xj,
+              (poly.pts->((i+1) % json_array_length(poly.pts))->>1)::float8 AS yj
             FROM poly, generate_series(0, json_array_length(poly.pts) - 1) AS i
           )
           SELECT 1 FROM edges
