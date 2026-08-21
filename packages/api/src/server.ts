@@ -113,6 +113,7 @@ import {
   InMemoryPlatformAssistantService,
   InMemoryEmbeddedCopilotService,
   InMemorySqlQueryService,
+  InMemoryBatchTransformService,
   InMemoryVariableTransformService,
   InMemoryRulesEngineService,
   InMemoryPipelineService,
@@ -162,7 +163,6 @@ import {
   PostgresConflictResolutionService,
   PostgresHumanInTheLoopService,
   PostgresMultiOntologyGovernanceService,
-  PostgresOntologyChangeHistoryService,
   PostgresEventObjectService,
   PostgresDesignSystemService,
   PostgresModelRegistryService,
@@ -174,15 +174,7 @@ import {
   PostgresSqlQueryService,
   PostgresVariableTransformService,
   PostgresUserDirectoryService,
-  PostgresDesignSystemService,
-  PostgresModelRegistryService,
-  PostgresModelInferenceService,
-  PostgresModelChainService,
-  PostgresConnectorCatalogService,
-  PostgresCommandService,
-  PostgresBatchTransformService,
   PostgresLayoutDeviceCaptureService,
-  PostgresSqlQueryService,
   PostgresWorkshopUxService,
 } from '@altius/storage-postgres';
 import {
@@ -339,40 +331,6 @@ import {
   SubscriptionManager,
   SubscriptionRegistry,
 } from './subscriptions/index.js';
-import { createGraphQLServer, buildResolverContext } from './graphql/index.js';
-import { guardWsOperation } from './graphql/ws-gate.js';
-import { generateRestRoutes, generateOpenApiSpec, auditRead } from './rest/index.js';
-import { writeReadAuditFor } from './rest/audit-read.js';
-import { isTypeVisible, missingMarkings } from './markings/enforce.js';
-import { invokeFunction } from './functions/invoke-function.js';
-import { generateAuditRoutes } from './rest/audit-routes.js';
-import { generateLlmRoutes, generateWorkflowRoutes } from './rest/index.js';
-import { generateTraverseRoutes } from './rest/traverse-route.js';
-import { recordRestUsage } from './rest/usage-recording.js';
-import { generateSyncStatusRoutes } from './rest/sync-status-routes.js';
-import { generateDataConnectionStatusRoutes } from './rest/data-connection-status-routes.js';
-import { registerAttachmentRoutes } from './rest/attachment-routes.js';
-import { registerTimeSeriesRoutes } from './rest/timeseries-routes.js';
-import { registerBranchRoutes } from './rest/branch-routes.js';
-import { registerCommentRoutes } from './rest/comment-routes.js';
-import { registerNotificationRoutes } from './rest/notification-routes.js';
-import { registerEmbeddingRoutes } from './rest/embedding-routes.js';
-import { registerAlertingRoutes } from './rest/alerting-routes.js';
-import { registerGeospatialRoutes } from './rest/geospatial-routes.js';
-import { registerScenarioRoutes } from './rest/scenario-routes.js';
-import { registerWorkshopRoutes } from './rest/workshop-routes.js';
-import { registerLLMGatewayRoutes } from './rest/llm-gateway-routes.js';
-import { registerAppEmbeddingRoutes } from './rest/app-embedding-routes.js';
-import { registerPlatformResourceRoutes } from './rest/platform-resource-routes.js';
-import { registerAbsentServiceRoutes } from './rest/absent-services-routes.js';
-import { registerSavedViewRoutes } from './rest/saved-view-routes.js';
-import { registerUserDirectoryRoutes } from './rest/user-directory-routes.js';
-import { readPlatformVersion } from './version.js';
-import { createFhirRouter } from './fhir/index.js';
-import { createCdmRouter } from './cdm/index.js';
-import { generateRelationshipRoutes, buildGrantAllowlist } from './relationships/router.js';
-import { generateConsentRoutes, assertConsentConfig } from './consent/router.js';
-import { InMemorySubscribableEventBus, SubscriptionManager, SubscriptionRegistry } from './subscriptions/index.js';
 import type { SubscribableEventBus } from './subscriptions/index.js';
 import {
   RedpandaEventBus,
@@ -1717,14 +1675,10 @@ async function main(): Promise<void> {
     // the store's, so the adapter lives once in @altius/spi and the store above
     // decides both durability and *which* record is being approved.
     humanInTheLoopService: pgPool ? new PostgresHumanInTheLoopService(pgPool) : new InMemoryHumanInTheLoopService(changeProposals),
-    // SQL query — Postgres-backed when available.
-    sqlQueryService: pgPool ? new PostgresSqlQueryService(pgPool) : new InMemorySqlQueryService(datasets),
     // Variable transforms — Postgres-backed when available.
     variableTransformService: pgPool ? new PostgresVariableTransformService(pgPool) : new InMemoryVariableTransformService(),
     // Multi-ontology governance — Postgres-backed when available.
     multiOntologyGovernanceService: pgPool ? new PostgresMultiOntologyGovernanceService(pgPool) : new InMemoryMultiOntologyGovernanceService(),
-    // Ontology change history — Postgres-backed when available.
-    ontologyChangeHistoryService: pgPool ? new PostgresOntologyChangeHistoryService(pgPool) : new InMemoryOntologyChangeHistoryService(),
     // Event objects — Postgres-backed when available.
     eventObjectService: pgPool ? new PostgresEventObjectService(pgPool) : new InMemoryEventObjectService(),
     // Business rules â€” Postgres-backed when available. `state` is what decides
