@@ -4,6 +4,7 @@
 
 import { randomUUID } from 'node:crypto';
 import type {
+  EmbeddedCopilotService,
   RequestContext,
   LLMClient,
   EmbeddingStore,
@@ -573,9 +574,41 @@ export class InMemoryTokenMeteringService implements TokenMeteringService {
 // Embedded AI copilots
 // ===========================================================================
 
+/**
+ * The view-facing half of the copilot surface: suggest, then apply.
+ *
+ * It stores nothing of its own — every copilot it touches belongs to the
+ * `EmbeddedCopilotService` handed in. That store is a constructor argument,
+ * defaulted so existing call sites keep working, and the API passes the same
+ * instance it gives `deps.embeddedCopilotService`.
+ *
+ * ── Why the argument matters ──
+ *
+ * This class used to construct its own private `InMemoryEmbeddedCopilotService`.
+ * Because copilot ids are generated UUIDs and `suggest` is called with an id
+ * chosen by the caller, the lookup in that private store never matched — so
+ * `ensureCopilot` fell through to creating a fresh copilot, with
+ * `canExecuteActions: true`, on every call.
+ *
+ * That is not only a visibility split. `getSuggestedActions` is the one place
+ * the `canExecuteActions` flag is enforced, and `createCopilot` defaults it to
+ * *false*. So a copilot configured with action execution switched off was never
+ * consulted, and suggestions were served from a fabricated copilot with it
+ * switched on. Sharing the store is what makes the configured copilot the one
+ * that answers.
+ */
 export class InMemoryCopilotService implements CopilotService {
-  private readonly inner = new InMemoryEmbeddedCopilotService();
+  constructor(private readonly inner: EmbeddedCopilotService = new InMemoryEmbeddedCopilotService()) {}
 
+  /**
+   * The configured copilot, or a permissive default when the id is unknown.
+   *
+   * The `canExecuteActions: true` below is NOT the fix's doing — it is the
+   * original behaviour, kept so this change does exactly one thing. It is worth
+   * flagging on its own: an unrecognised copilot id still yields a copilot that
+   * may suggest actions, which is the opposite of `createCopilot`'s own default.
+   * Narrowing it is a contract change and belongs in its own change.
+   */
   private async ensureCopilot(ctx: RequestContext, copilotId: string): Promise<CopilotInstance> {
     const existing = await this.inner.getCopilot(ctx, copilotId);
     if (existing) return existing;
