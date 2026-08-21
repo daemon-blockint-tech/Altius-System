@@ -10,6 +10,7 @@
  * governance rail and trace bar, which are always present on ops screens.
  */
 
+import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { GovernanceRail } from './GovernanceRail.js';
 import type { GovernancePrincipal, GovernanceHidden, GovernanceEvent } from './GovernanceRail.js';
@@ -95,14 +96,24 @@ export function EditorialShell({
   brand,
   userInitials,
 }: EditorialShellProps): ReactNode {
+  // Nav chrome state is the shell's own — the parent owns what is selected,
+  // not how much room the navigation takes.
+  const [navCollapsed, setNavCollapsed] = useState(false);
+  const [screenFilter, setScreenFilter] = useState('');
+
   // The active job's screen list. Falls back to the first job if the active
   // job is not found — a defensive guard rather than a real branch, since the
   // parent controls activeJob and it should always match one of jobs.
   const activeJobGroup = jobs.find(j => j.key === activeJob) ?? jobs[0];
   if (!activeJobGroup) return null;
 
+  const query = screenFilter.trim().toLowerCase();
+  const shownScreens = query
+    ? activeJobGroup.screens.filter(s => s.label.toLowerCase().includes(query))
+    : activeJobGroup.screens;
+
   return (
-    <div className="ed-shell">
+    <div className={`ed-shell${navCollapsed ? ' al-nav-collapsed' : ''}`}>
       {/* Icon rail */}
       <nav className="ed-icon-rail" aria-label="Jobs">
         <div className="ed-icon-rail__brand">{brand}</div>
@@ -127,11 +138,24 @@ export function EditorialShell({
           })}
         </div>
         <div className="ed-icon-rail__spacer" />
+        {/* Collapse toggle lives in the rail so it stays reachable once the
+            navigation column is gone. */}
+        <button
+          type="button"
+          className="al-nav-toggle"
+          onClick={() => setNavCollapsed(c => !c)}
+          aria-expanded={!navCollapsed}
+          aria-controls="al-nav"
+          aria-label={navCollapsed ? 'Expand navigation' : 'Collapse navigation'}
+          title={navCollapsed ? 'Expand navigation' : 'Collapse navigation'}
+        >
+          {navCollapsed ? '»' : '«'}
+        </button>
         <span className="ed-icon-rail__user">{userInitials}</span>
       </nav>
 
       {/* Sidebar */}
-      <aside className="ed-sidebar" aria-label="Navigation">
+      <aside className="ed-sidebar" id="al-nav" aria-label="Navigation" hidden={navCollapsed}>
         {/* Pack switcher */}
         <div className="ed-sidebar__pack">
           <span className="ed-sidebar__section-label">PACK</span>
@@ -171,8 +195,22 @@ export function EditorialShell({
         <div className="ed-sidebar__group-label">
           <span className="ed-sidebar__section-label">{activeJobGroup.label.toUpperCase()}</span>
         </div>
+        <label className="al-nav-search">
+          <span className="al-nav-search__icon" aria-hidden="true">⌕</span>
+          <input
+            type="search"
+            className="al-nav-search__input"
+            value={screenFilter}
+            onChange={e => setScreenFilter(e.target.value)}
+            placeholder="Filter screens…"
+            aria-label="Filter screens"
+          />
+        </label>
         <div className="ed-sidebar__nav">
-          {activeJobGroup.screens.map(screen => {
+          {shownScreens.length === 0 && (
+            <p className="al-nav-empty">No screens match “{screenFilter.trim()}”.</p>
+          )}
+          {shownScreens.map(screen => {
             const active = screen.id === activeScreen;
             return (
               <a

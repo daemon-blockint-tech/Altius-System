@@ -209,6 +209,60 @@ code {
   font: 600 10px/24px var(--ed-sans);
 }
 
+/* Collapsible nav column: the toggle lives in the rail, so collapsing takes
+   the whole column away rather than leaving a strip of unlabelled icons —
+   screens have labels, not icons. */
+.ed-shell.al-nav-collapsed { grid-template-columns: 52px 0 1fr 300px; }
+@media (max-width: 1200px) {
+  .ed-shell.al-nav-collapsed { grid-template-columns: 52px 0 1fr; }
+}
+
+.al-nav-toggle {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  margin-bottom: 12px;
+  border: 1px solid var(--al-nav-rule);
+  border-radius: 2px;
+  background: none;
+  box-shadow: none;
+  color: var(--al-nav-faint);
+  font: 600 13px/1 var(--ed-sans);
+}
+.al-nav-toggle:hover { background: var(--al-nav-hover); color: var(--al-nav-fg-strong); }
+
+/* Nav filter — the dark-field counterpart of the workspace search box. */
+.al-nav-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 8px 8px;
+  padding: 4px 8px;
+  border: 1px solid var(--al-nav-rule);
+  border-radius: 2px;
+  background: var(--al-nav-bg-deep);
+}
+.al-nav-search__icon { color: var(--al-nav-faint); font-size: 13px; }
+.al-nav-search__input {
+  width: 100%;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--al-nav-fg-strong);
+  font: 400 13px var(--ed-sans);
+}
+.al-nav-search__input::placeholder { color: var(--al-nav-faint); }
+.al-nav-search__input:focus { outline: none; box-shadow: none; }
+.al-nav-search:focus-within { border-color: var(--al-blue); }
+
+.al-nav-empty {
+  margin: 0;
+  padding: 6px 18px;
+  color: var(--al-nav-faint);
+  font: 400 12px/1.5 var(--ed-sans);
+}
+
 /* Sidebar — Altius app nav */
 .ed-sidebar {
   background: var(--al-nav-bg);
@@ -275,12 +329,15 @@ code {
 
 .ed-muted { color: var(--ed-muted); font: 400 13px/1.5 var(--ed-sans); }
 
-/* Cards & tables — white surfaces on the light workspace */
+/* Cards & tables — white surfaces on the light workspace.
+   .ed-table-wrap is used both as a page-level table container (pack screens,
+   where it carries the 44px page gutter) and as an inline panel (object
+   browser), so it stays a plain surface: a floating card reads as a stray box
+   in the first case. */
 .ed-table-wrap {
   background: var(--ed-surface);
-  border: 1px solid var(--ed-rule);
-  border-radius: 3px;
-  box-shadow: 0 1px 2px rgba(28, 33, 39, 0.05);
+  border-top: 1px solid var(--ed-rule);
+  border-bottom: 1px solid var(--ed-rule);
 }
 .ed-table { background: var(--ed-surface); }
 .ed-table th {
@@ -311,6 +368,66 @@ code {
   background: var(--al-blue-light);
   color: var(--al-blue-dark);
   font-weight: 600;
+}
+
+/* Filter chips, search box and pagination — the editorial versions were
+   underlined mono text, which reads as decoration rather than a control. */
+.ed-filter-pill {
+  border: 1px solid var(--al-blue);
+  border-radius: 2px;
+  background: var(--al-blue-light);
+  color: var(--al-blue-dark);
+  font: 600 12px var(--ed-sans);
+  padding: 3px 8px;
+}
+.ed-filter-pill--add {
+  border: 1px dashed var(--ed-rule);
+  background: none;
+  color: var(--ed-muted);
+  font-weight: 400;
+}
+.ed-filter-pill--add:hover { border-color: var(--al-blue); color: var(--al-blue-dark); }
+.ed-filter-pill__remove { color: inherit; }
+
+.ed-search {
+  border: 1px solid var(--ed-rule);
+  border-radius: 2px;
+  background: var(--ed-surface);
+  padding: 5px 10px;
+  flex-wrap: nowrap;
+}
+.ed-search__icon { color: var(--ed-faint); }
+/* The field is the box; without this the global `input` chrome nests a second
+   border inside .ed-search and its padding wraps the icon onto its own line. */
+.ed-search__input {
+  font: 400 13px var(--ed-sans);
+  border: 0;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.ed-search__input:focus { box-shadow: none; }
+
+.ed-pagination__btn {
+  font: 600 12px var(--ed-sans);
+  border: 1px solid rgba(28, 33, 39, 0.2);
+  border-radius: 2px;
+  background: var(--ed-surface);
+  padding: 4px 10px;
+}
+.ed-pagination__btn--disabled {
+  color: var(--ed-faint);
+  background: none;
+  border-color: var(--ed-rule);
+}
+.ed-pagination__count { font: 400 12px var(--ed-sans); color: var(--ed-muted); }
+
+/* Action list — a wrapped chip row, not a one-per-line column. */
+section[aria-label='Actions'] ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0;
 }
 
 /* Errors & status */
@@ -367,8 +484,12 @@ code {
 }
 /* The stage list clips instead of running under the trailing link: its
    children are white-space: nowrap, so a flex item with min-width: 0 alone
-   still overflows and the two texts render on top of each other. */
-.ed-trace__stages { overflow: hidden; }
+   still overflows and the two texts render on top of each other. The fade
+   keeps a clipped stage from looking like a truncated word. */
+.ed-trace__stages {
+  overflow: hidden;
+  mask-image: linear-gradient(to right, #000 88%, transparent);
+}
 .ed-trace__label { color: var(--ed-faint); }
 .ed-trace__stage { color: var(--ed-muted); }
 .ed-trace__stage--active { color: var(--al-blue-dark); }
@@ -394,10 +515,11 @@ code {
 }
 .ed-button:hover { background: #f6f7f9; }
 
-/* Primary CTAs (green intent) — opt-in class + the bare "New app" button */
+/* Primary CTA — one accent, the Altius blue. */
 .ed-button--primary, button.al-primary {
-  background: #29a634;
-  border-color: #238551;
+  background: var(--al-blue);
+  border-color: var(--al-blue-dark);
   color: #ffffff;
+  box-shadow: none;
 }
-.ed-button--primary:hover, button.al-primary:hover { background: #238551; }
+.ed-button--primary:hover, button.al-primary:hover { background: var(--al-blue-dark); }

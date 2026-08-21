@@ -130,7 +130,7 @@ export function WorkshopScreen({ client, tenantId, userId }: WorkshopScreenProps
       </header>
 
       <div style={{ padding: '0 44px 16px' }}>
-        <button type="button" onClick={() => setEditing(blankApp(tenantId, userId))}>
+        <button type="button" className="al-primary" onClick={() => setEditing(blankApp(tenantId, userId))}>
           New app
         </button>
       </div>
