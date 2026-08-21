@@ -24,6 +24,15 @@ import { createRestErrorResponse, wrapErrorToRest } from './errors.js';
  */
 export const DEFAULT_SIMULATION_ROLES = ['admin'] as const;
 
+/**
+ * Roles allowed to manage scoped sessions beyond self-service. A scoped
+ * session RESTRICTS its subject's effective markings (enforced at the auth
+ * funnel), so cross-user create is a denial-of-access on the victim and
+ * revoke of an admin-imposed session is the subject's escape hatch — both
+ * administrative writes. Mirrors the audit-reader default.
+ */
+export const DEFAULT_SCOPED_SESSION_ADMIN_ROLES = ['admin'] as const;
+
 export function generateSecurityGovernanceRoutes(deps: ApiDependencies): RestRoute[] {
   const routes: RestRoute[] = [];
 
@@ -191,6 +200,9 @@ export function generateSecurityGovernanceRoutes(deps: ApiDependencies): RestRou
 
   if (deps.scopedSessionStore) {
     const store = deps.scopedSessionStore;
+    const sessionAdminRoles = deps.scopedSessionAdminRoles ?? DEFAULT_SCOPED_SESSION_ADMIN_ROLES;
+    const isSessionAdmin = (ctx: ResolverContext): boolean =>
+      sessionAdminRoles.some(role => ctx.user.roles.includes(role));
 
     routes.push({
       method: 'POST',
@@ -204,6 +216,19 @@ export function generateSecurityGovernanceRoutes(deps: ApiDependencies): RestRou
             return createRestErrorResponse({
               code: 'MISSING_PARAMETER', category: 'validation',
               message: 'userId and label are required', retryable: false,
+              traceId: ctx.requestContext.traceId,
+            });
+          }
+          // Self-service stays open (Foundry: users pick their own session);
+          // restricting ANOTHER user's markings is an administrative write.
+          if (userId !== ctx.user.id && !isSessionAdmin(ctx)) {
+            return createRestErrorResponse({
+              code: 'FORBIDDEN',
+              category: 'authorization',
+              message: sessionAdminRoles.length === 0
+                ? 'Creating a scoped session for another user is disabled: no session-admin role is configured.'
+                : `Creating a scoped session for another user requires one of: ${sessionAdminRoles.join(', ')}`,
+              retryable: false,
               traceId: ctx.requestContext.traceId,
             });
           }
@@ -231,7 +256,10 @@ export function generateSecurityGovernanceRoutes(deps: ApiDependencies): RestRou
       readOperation: 'query',
       handler: async (req: RestRequest, ctx: ResolverContext): Promise<RestResponse> => {
         try {
-          const userId = typeof req.query['userId'] === 'string' ? req.query['userId'] : undefined;
+          // Non-admins see only their own sessions: metadata names markings a
+          // user holds, which is administrative information about them.
+          const requested = typeof req.query['userId'] === 'string' ? req.query['userId'] : undefined;
+          const userId = isSessionAdmin(ctx) ? requested : ctx.user.id;
           const sessions = await store.list(ctx.requestContext.tenantId, userId);
           return { status: 200, body: { data: sessions } };
         } catch (err) {
@@ -247,7 +275,11 @@ export function generateSecurityGovernanceRoutes(deps: ApiDependencies): RestRou
       handler: async (req: RestRequest, ctx: ResolverContext): Promise<RestResponse> => {
         try {
           const session = await store.get(ctx.requestContext.tenantId, req.params['id'] ?? '');
-          if (!session) return { status: 404, body: { error: 'NOT_FOUND', message: 'Scoped session not found' } };
+          // 404 (not 403) for sessions the caller may not see: a distinct
+          // status would confirm the id exists — an enumeration oracle.
+          if (!session || (session.userId !== ctx.user.id && session.createdBy !== ctx.user.id && !isSessionAdmin(ctx))) {
+            return { status: 404, body: { error: 'NOT_FOUND', message: 'Scoped session not found' } };
+          }
           return { status: 200, body: { data: session } };
         } catch (err) {
           return wrapErrorToRest(err, ctx.requestContext.traceId);
@@ -260,7 +292,25 @@ export function generateSecurityGovernanceRoutes(deps: ApiDependencies): RestRou
       pattern: '/api/v1/security/sessions/:id/revoke',
       handler: async (req: RestRequest, ctx: ResolverContext): Promise<RestResponse> => {
         try {
-          await store.revoke(ctx.requestContext.tenantId, req.params['id'] ?? '');
+          const session = await store.get(ctx.requestContext.tenantId, req.params['id'] ?? '');
+          if (!session || (session.userId !== ctx.user.id && session.createdBy !== ctx.user.id && !isSessionAdmin(ctx))) {
+            return { status: 404, body: { error: 'NOT_FOUND', message: 'Scoped session not found' } };
+          }
+          // Revoking lifts the restriction. Only the creator (undoing their
+          // own self-service session) or a session admin may do that — the
+          // session's SUBJECT must not be able to shed an imposed restriction.
+          if (session.createdBy !== ctx.user.id && !isSessionAdmin(ctx)) {
+            return createRestErrorResponse({
+              code: 'FORBIDDEN',
+              category: 'authorization',
+              message: sessionAdminRoles.length === 0
+                ? 'Revoking this scoped session is disabled: no session-admin role is configured.'
+                : `Revoking a scoped session you did not create requires one of: ${sessionAdminRoles.join(', ')}`,
+              retryable: false,
+              traceId: ctx.requestContext.traceId,
+            });
+          }
+          await store.revoke(ctx.requestContext.tenantId, session.id);
           return { status: 200, body: { data: { revoked: true } } };
         } catch (err) {
           return wrapErrorToRest(err, ctx.requestContext.traceId);
@@ -282,7 +332,11 @@ export function generateSecurityGovernanceRoutes(deps: ApiDependencies): RestRou
               traceId: ctx.requestContext.traceId,
             });
           }
-          const allowed = await store.isMarkingAllowed(ctx.requestContext.tenantId, req.params['id'] ?? '', marking);
+          const session = await store.get(ctx.requestContext.tenantId, req.params['id'] ?? '');
+          if (!session || (session.userId !== ctx.user.id && session.createdBy !== ctx.user.id && !isSessionAdmin(ctx))) {
+            return { status: 404, body: { error: 'NOT_FOUND', message: 'Scoped session not found' } };
+          }
+          const allowed = await store.isMarkingAllowed(ctx.requestContext.tenantId, session.id, marking);
           return { status: 200, body: { data: { allowed } } };
         } catch (err) {
           return wrapErrorToRest(err, ctx.requestContext.traceId);

@@ -1605,6 +1605,12 @@ async function main(): Promise<void> {
     consentRecorderRoles,
     auditReaderRoles,
     auditUnredactedRoles,
+    // Scoped-session administrative tier (cross-user create, non-creator
+    // revoke, reading others' sessions). Default admin-only; routes fall
+    // back to DEFAULT_SCOPED_SESSION_ADMIN_ROLES when unset.
+    ...(parseRoles(process.env['SCOPED_SESSION_ADMIN_ROLES'])
+      ? { scopedSessionAdminRoles: parseRoles(process.env['SCOPED_SESSION_ADMIN_ROLES'])! }
+      : {}),
     consentPurposes,
     ...(consentSubjectTypes ? { consentSubjectTypes } : {}),
     cdmEnabled,
