@@ -114,6 +114,7 @@ export { PostgresConflictResolutionService } from './sync/postgres-conflict-reso
 export { PostgresWorkshopUxService } from './governance/postgres-workshop-ux-service.js';
 export { PostgresDatasetService } from './dataset/postgres-dataset-service.js';
 export { PostgresBatchTransformService } from './dataset/postgres-batch-transform-service.js';
+export { PostgresVariableTransformService } from './dataset/postgres-variable-transform-service.js';
 export { PostgresSqlQueryService } from './dataset/postgres-sql-query-service.js';
 export { PostgresDataExpectationsService } from './quality/postgres-data-expectations-service.js';
 export { PostgresVariableTransformService } from './dataset/postgres-variable-transform-service.js';

@@ -16,6 +16,7 @@ against real Postgres. Reproduce with `node tools/parity/reachability.mjs`.
 | Measured 20 Aug (`ChangeProposalStore`) | 18 | 53 | 0 | this tool |
 | **Measured now (`BusinessRulesService` branch, 71 services)** | **19** | **52** | **0** | this tool |
 | Measured 20 Aug (`ChangeProposalStore`, merged) | 18 | 53 | 0 | this tool |
+| **Measured now (`VariableTransformService`, 71 services)** | **19** | **52** | **0** | this tool |
 | **Measured now (`OntologyChangeHistoryService`, 71 services)** | **19** | **52** | **0** | this tool |
 | **Measured now (`SqlQueryService`, 71 services)** | **19** | **52** | **0** | this tool |
 | **Measured now (`ConflictResolutionService`, 71 services)** | **19** | **52** | **0** | this tool |
@@ -30,6 +31,7 @@ up for the right reason.
 `BusinessRulesService` to 19, by the same route each time: a Postgres store, restart
 survival proven, no new surface claimed. One service per pass is the expected rate —
 the count is meant to move slowly and mean something, rather than quickly and not.
+`VariableTransformService` to 19, by the same route each time: a Postgres store,
 `OntologyChangeHistoryService` to 19, by the same route each time: a Postgres store,
 `DatasetService` then took it to 17, `ChangeProposalStore` to 18 and `SqlQueryService`
 to 19, by the same route each time: a Postgres store, restart survival proven, no new
@@ -80,6 +82,7 @@ mean "works":
 **`OntologyChangeHistoryService`** · `OntologySqlService` ·
 `OntologyUsageMetricsService` · `ScopedSessionStore` · `TimeSeriesStore`
 `OntologySqlService` · `OntologyUsageMetricsService` · `ScopedSessionStore` ·
+`TimeSeriesStore` · **`VariableTransformService`**
 **`SqlQueryService`** · `TimeSeriesStore`
 
 `full` here stays a **necessary, not sufficient** condition: it says a user can reach a
@@ -109,7 +112,7 @@ are the honest `partial → full` candidates:
 `PlatformResourceService` · `ProcessMiningService` · `SavedViewStore` ·
 `ScenarioService` · `SqlAnalyticsService` · `SyncCdcService` ·
 `TokenMeteringService` · `TransformExpressionService` · `UserDirectoryService` ·
-`ValueFormattingService` · `VariableTransformService` · `VectorSearchService` ·
+`ValueFormattingService` · `VectorSearchService` ·
 `WorkshopPlatformService` · `WorkshopUxService`
 
 ¹ `AccessExplanationService` is a standing false demotion: it holds no state and
@@ -189,6 +192,49 @@ state = $expected` clause, not only checked beforehand. Two concurrent approvals
 one process would otherwise both read `proposed` and both write `approved`, recording
 the second reviewer over the first. A `Map` cannot interleave that way, so the
 in-memory service needs no equivalent.
+## This pass — `VariableTransformService`
+
+Named pipelines of declarative steps — upper, round, formatDate, pickFields, coalesce —
+reduced over an input value.
+
+**Losing a pipeline here is loud**, unlike most of what these passes have covered:
+`execute` throws `Transform pipeline not found`. The reason to persist it anyway is that
+a pipeline is user-authored configuration — someone composed those steps — and a restart
+eating it is not something a caller recovers from by retrying.
+
+**The drift risk is the real one, and it is the same shape as the conflict resolver's:
+the output is data.** A pipeline runs to produce a value something downstream consumes,
+so two providers disagreeing about what `round` or `dateDiff` means would produce
+different values from the same input with neither erring. `applyStep` moved verbatim
+into `@altius/spi` as `applyTransformStep`, and the in-memory service lost its copy.
+Two of the five injections break that shared function and fail on **both** providers.
+
+Three lenient behaviours are matched rather than tightened, and pinned by cases that say
+so — tightening any of them would change what an existing pipeline produces:
+
+- an unrecognised `kind` returns the input unchanged, so a typo in a step name is a
+  silent no-op
+- `upper` on `null` is the string `"NULL"`, because the string steps coerce with
+  `String(input)`
+- **`add` on a non-numeric input concatenates.** The `as number` cast is a TypeScript
+  fiction; at runtime `+` sees two strings, so `'abc'` plus 1 is `'abc1'`. A pipeline
+  meant to add can silently build a string. `multiply` on the same input does give NaN.
+
+**A real divergence in the first version of the Postgres store, caught by conformance.**
+The in-memory `update` writes the record back under the OLD map key, so changing a
+pipeline's `name` renames the record without moving it: it stays reachable under the old
+name while reporting the new one. My first table keyed on `(tenant_id, name)`, which
+meant the UPDATE moved the row and the two providers disagreed. The fix is to model the
+map key as its own column — `lookup_key` alongside `name` — which reproduces the quirk
+faithfully. Ugly, and deliberately so: a single `name` column would have been tidier and
+wrong. Pinned, and raised as a contract question rather than fixed, since fixing it
+changes which name an existing caller has to use.
+
+**Two of my own assertions were wrong, and the suite caught them before any injection.**
+I asserted substring-then-trim on `'  hello  '` gives `''` (it gives `'h'`), and that
+`add` on a non-numeric input gives NaN (it concatenates). Both were corrected against
+what the code actually does rather than what I assumed — which is the whole point of
+running the thing rather than reasoning about it.
 ## This pass — `OntologyChangeHistoryService`
 
 The audit trail for schema change: who changed it, when, under which migration class,
@@ -398,6 +444,10 @@ Two things that conversion surfaced, neither of them the dataset store's own bug
 
 Same pattern, in rough order of what losing it costs: `ApprovalWorkflowService` (the
 other governance audit trail — but it is **not wired into the API at all**, so it needs
+routes before persistence is worth anything), then `EventObjectService` and
+`AgentThreadStore`.
+
+**Two candidates are blocked, and need a decision rather than a PR.**
 routes before persistence is worth anything), then `VariableTransformService` and
 `TransformExpressionService`.
 routes before persistence is worth anything), then `DatasourceService` and
