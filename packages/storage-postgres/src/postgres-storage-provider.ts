@@ -244,6 +244,31 @@ export class PostgresStorageProvider implements StorageProvider {
 
   // ─── Schema ───
 
+  /**
+   * Run the idempotent platform DDL under the same advisory lock the migration
+   * path uses, on a dedicated session so the lock is held for every statement.
+   *
+   * `pg_advisory_xact_lock` is transaction-scoped, so the statements run inside
+   * one transaction and the lock releases on COMMIT. The key matches the
+   * migration path's — the two must not be able to run concurrently either.
+   */
+  private async withPlatformDDLLock(statements: string[]): Promise<void> {
+    const client = await this._pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('SELECT pg_advisory_xact_lock($1)', [0x4F46]);
+      for (const stmt of statements) {
+        await client.query(stmt);
+      }
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
   async applySchema(_ctx: RequestContext, schema: OntologySchema): Promise<MigrationResult> {
     const fromVersion = this._currentSchemaVersion;
     registerListProperties(this._pool, schema);
@@ -315,9 +340,21 @@ export class PostgresStorageProvider implements StorageProvider {
         // Schema version already applied — still run platform DDL (consent)
         // for upgrades that add new platform tables/columns. These statements
         // are idempotent (IF NOT EXISTS, ADD COLUMN IF NOT EXISTS).
-        for (const stmt of platformDDL) {
-          await this._pool.query(stmt);
-        }
+        //
+        // Idempotent is not the same as concurrency-safe. `CREATE TABLE IF NOT
+        // EXISTS`, `CREATE INDEX IF NOT EXISTS` and `ALTER TABLE ADD COLUMN IF
+        // NOT EXISTS` each take locks on the objects they touch, and two
+        // sessions running this list at once can acquire them in an order that
+        // deadlocks — Postgres then aborts one side with "deadlock detected".
+        //
+        // This is the path a restart takes, so it is the common one, not the
+        // rare one: only the very first boot against a database falls through
+        // to the migration below. Every pod restarting afterwards ran this loop
+        // unlocked, and the more platform tables the DDL grows, the wider the
+        // window. The locked path further down already says it serialises
+        // concurrent startup; this one has to do the same or that promise only
+        // holds for the first boot in the cluster's life.
+        await this.withPlatformDDLLock(platformDDL);
         this._currentSchemaVersion = schema.version;
         this._schemas.set(schema.version, schema);
         const now = new Date().toISOString() as DateTime;
