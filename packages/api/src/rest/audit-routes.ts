@@ -17,9 +17,55 @@
  */
 
 import type { AuditQueryFilter } from '@altius/security';
+import type { AuditRecord } from '@altius/spi';
 import type { RestRequest, RestResponse, RestRoute } from './types.js';
 import type { ResolverContext } from '../graphql/types.js';
 import { createRestErrorResponse, wrapErrorToRest } from './errors.js';
+
+
+/**
+ * Bound WHAT an audit reader sees, not just who reads: detail.before/after are
+ * whole object snapshots, so they are redacted with the caller's own field
+ * policy — the same redactFields every object read goes through. A role listed
+ * in AUDIT_UNREDACTED_ROLES (deps.auditUnredactedRoles, default empty = nobody)
+ * reads raw snapshots; without an AuthorizationService the snapshots are
+ * withheld wholesale rather than served raw (fail closed).
+ */
+function redactAuditDetails(
+  records: readonly AuditRecord[],
+  deps: ResolverContext['deps'],
+  user: { id: string; roles: string[] },
+): AuditRecord[] {
+  const unredacted = deps.auditUnredactedRoles ?? [];
+  if (unredacted.some(role => user.roles.includes(role))) return [...records];
+
+  const redactSnapshot = (
+    objectType: string | undefined,
+    snapshot: Record<string, unknown> | undefined,
+  ): Record<string, unknown> | undefined => {
+    if (!snapshot) return snapshot;
+    if (!objectType || !deps.authorizationService) return { _redacted: true };
+    const result = deps.authorizationService.redactFields(user.id, user.roles, objectType, snapshot);
+    return result._redactedFields.length > 0
+      ? { ...result.data, _redactedFields: result._redactedFields }
+      : result.data;
+  };
+
+  return records.map(record => {
+    const detail = record.detail;
+    if (!detail || (detail.before === undefined && detail.after === undefined)) return record;
+    const objectType = record.operation?.objectType;
+    return {
+      ...record,
+      detail: {
+        ...detail,
+        ...(detail.before !== undefined ? { before: redactSnapshot(objectType, detail.before) } : {}),
+        ...(detail.after !== undefined ? { after: redactSnapshot(objectType, detail.after) } : {}),
+      },
+    };
+  });
+}
+
 
 const DEFAULT_AUDIT_LIMIT = 100;
 const MAX_AUDIT_LIMIT = 1000;
@@ -81,7 +127,7 @@ export function generateAuditRoutes(deps: ResolverContext['deps']): RestRoute[] 
           return {
             status: 200,
             body: {
-              data: records,
+              data: redactAuditDetails(records, deps, ctx.user),
               totalCount,
               hasMore: offset + records.length < totalCount,
             },

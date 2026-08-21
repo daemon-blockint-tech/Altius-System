@@ -17,3 +17,4 @@ Iteration count for §7 = your own line count. Body > ~500 lines → archive to 
 FIXING-BUILD ec617dc/e809ddc loop-0821-9c4e 2026-08-21T14:46+07:00 (spi index.ts duplicated export tail again; fix in same push)
 2026-08-21 | loop-0821-9c4e | FIXING-BUILD ec617dc/e809ddc | closed | spi export-tail dedupe (3rd recurrence) + storage-postgres DDL literal unclosed by event-objects merge
 2026-08-21 | loop-0821-9c4e | security-gov/layered-permission-separation-app-module-vs- | partial-progress | object-less default-allow closed via declarative manifest requiredRoles; heuristic deleted; app/module tier still absent
+2026-08-21 | loop-0821-a7c3 | security-consent/sensitive-data-pii-protection-controls | partial-progress | audit detail redaction shipped; merge-dup class recurred 3x -> left no-duplicate-exports guard test

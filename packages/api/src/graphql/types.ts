@@ -83,6 +83,11 @@ export interface ApiDependencies {
    */
   auditReaderRoles?: readonly string[];
   /**
+   * Roles that read audit detail.before/after snapshots UNREDACTED. Default
+   * empty: every reader gets snapshots filtered by their own field policy.
+   */
+  auditUnredactedRoles?: readonly string[];
+  /**
    * Roles allowed to explain another principal's access via
    * POST /api/v1/security/explain with `subjectUserId`. Defaults to ['admin'].
    * An explicitly empty array disables simulation entirely.

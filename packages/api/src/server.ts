@@ -1055,6 +1055,9 @@ async function main(): Promise<void> {
   // Audit reads expose before/after object snapshots, so they are gated like
   // the other administrative surfaces rather than left open to any caller.
   const auditReaderRoles = parseRoles(process.env['AUDIT_READER_ROLES']) ?? ['admin'];
+  // Raw (unredacted) audit snapshots: default NOBODY — readers get detail
+  // before/after filtered by their own field policy like any object read.
+  const auditUnredactedRoles = parseRoles(process.env['AUDIT_UNREDACTED_ROLES']) ?? [];
 
   // Deployment-defined consent-purpose vocabulary (env CONSENT_PURPOSES). Unset â†’
   // the consent router falls back to the standard NHS/UK-IG preset (back-compat).
@@ -1601,6 +1604,7 @@ async function main(): Promise<void> {
     granterRoles,
     consentRecorderRoles,
     auditReaderRoles,
+    auditUnredactedRoles,
     consentPurposes,
     ...(consentSubjectTypes ? { consentSubjectTypes } : {}),
     cdmEnabled,
