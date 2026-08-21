@@ -175,6 +175,7 @@ import {
   PostgresDatasetService,
   PostgresSqlQueryService,
   PostgresVariableTransformService,
+  PostgresBatchTransformService,
   PostgresUserDirectoryService,
   PostgresLayoutDeviceCaptureService,
   PostgresWorkshopUxService,
@@ -1537,6 +1538,10 @@ async function main(): Promise<void> {
   // because the in-memory metadata service reads dataset state through this
   // same instance.
   const datasets = new InMemoryDatasetService();
+  // One dataset service instance, durable when Postgres is configured, shared by
+  // the datasetService dep and the batch-transform service that reads/writes
+  // through it (PostgresDatasetService is stateless over the pool).
+  const datasetSvc = pgPool ? new PostgresDatasetService(pgPool) : datasets;
   // Built above the gate so both copilot surfaces can be handed the same store.
   // Non-durable either way â€” there is no Postgres copilot implementation yet â€”
   // so it stays inside `nonDurableServices` below rather than graduating.
@@ -1596,7 +1601,6 @@ async function main(): Promise<void> {
       platformAssistantService: new InMemoryPlatformAssistantService(),
       processMiningService: new InMemoryProcessMiningService(),
       // Pipeline Data Ops â€” Pipeline & Data Ops.
-      batchTransformService: new InMemoryBatchTransformService(datasets),
       rulesEngineService: new InMemoryRulesEngineService(),
       pipelineService: new InMemoryPipelineService(),
       syncCdcService: new InMemorySyncCdcService(),
@@ -1775,7 +1779,12 @@ async function main(): Promise<void> {
     // and branches survive a restart and are shared across replicas. This
     // graduated out of `nonDurableServices`: the dataset routes answered 404 on
     // a Postgres deployment until there was somewhere durable to put the rows.
-    datasetService: pgPool ? new PostgresDatasetService(pgPool) : datasets,
+    datasetService: datasetSvc,
+    // Batch transforms — durable when Postgres is configured (graduated out of
+    // nonDurableServices). The Postgres impl reads/writes through datasetSvc.
+    batchTransformService: pgPool
+      ? new PostgresBatchTransformService(pgPool, datasetSvc)
+      : new InMemoryBatchTransformService(datasets),
     // Dataset metadata â€” Postgres-backed when available. It reads the same
     // `dataset.metadata` table PostgresDatasetService writes; before that store
     // existed nothing populated it, so this answered 200 with an empty list on
