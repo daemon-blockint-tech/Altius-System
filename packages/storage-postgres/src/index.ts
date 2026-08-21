@@ -103,6 +103,7 @@ export { PostgresKioskService } from './governance/postgres-kiosk-service.js';
 export { PostgresSavedViewStore } from './governance/postgres-saved-view-store.js';
 export { PostgresUserDirectoryService } from './governance/postgres-user-directory-service.js';
 export { PostgresDesignSystemService } from './governance/postgres-design-system-service.js';
+export { PostgresLayoutDeviceCaptureService } from './governance/postgres-layout-device-capture-service.js';
 export { PostgresDatasetService } from './dataset/postgres-dataset-service.js';
 export { generatePlatformDDL } from './schema/ddl-platform.js';
 export {

@@ -587,5 +587,24 @@ export function generatePlatformDDL(): string[] {
   statements.push(`CREATE INDEX IF NOT EXISTS "idx_user_directory_tenant_email" ON "governance"."user_directory" ("tenant_id", "email");`);
   statements.push(`CREATE INDEX IF NOT EXISTS "idx_user_directory_tenant_active" ON "governance"."user_directory" ("tenant_id", "is_active");`);
 
+  // ── Layout / device / deep-link state ──
+  statements.push(`CREATE TABLE IF NOT EXISTS "governance"."layout_device_state" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "tenant_id" TEXT NOT NULL,
+  "device_id" TEXT,
+  "session_id" TEXT,
+  "kind" TEXT NOT NULL,
+  "payload" JSONB NOT NULL DEFAULT '{}',
+  "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "created_by" TEXT,
+  "expires_at" TIMESTAMPTZ
+);`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_layout_device_state_tenant" ON "governance"."layout_device_state" ("tenant_id");`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_layout_device_state_tenant_device" ON "governance"."layout_device_state" ("tenant_id", "device_id");`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_layout_device_state_tenant_session" ON "governance"."layout_device_state" ("tenant_id", "session_id");`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_layout_device_state_tenant_kind" ON "governance"."layout_device_state" ("tenant_id", "kind");`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_layout_device_state_tenant_expires" ON "governance"."layout_device_state" ("tenant_id", "expires_at");`);
+
   return statements;
 }

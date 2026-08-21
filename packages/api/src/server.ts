@@ -124,6 +124,7 @@ import { PostgresStorageProvider, PostgresLineageStore, PostgresAuditStore, Post
   PostgresDatasetService,
   PostgresUserDirectoryService,
   PostgresDesignSystemService,
+  PostgresLayoutDeviceCaptureService,
 } from '@altius/storage-postgres';
 import {
   ObjectManager, LineageRecorder,
@@ -1279,8 +1280,8 @@ async function main(): Promise<void> {
       // Platform resources — in-memory resource catalog and object linking.
       platformResourceService: new InMemoryPlatformResourceService(),
       // User directory — graduated to durable service above.
+      // Layout/device-capture — graduated to durable service above.
       // API Tooling services — in-memory only (no Postgres implementations yet).
-      layoutDeviceCaptureService: new InMemoryLayoutDeviceCaptureService(),
       ontologyManagerService: new InMemoryOntologyManagerService(),
       workshopUxService: new InMemoryWorkshopUxService(),
       valueFormattingService: new InMemoryValueFormattingService(),
@@ -1453,6 +1454,8 @@ async function main(): Promise<void> {
     userDirectoryService: pgPool ? new PostgresUserDirectoryService(pgPool) : new InMemoryUserDirectoryService(),
     // Design system themes — Postgres-backed when available.
     designSystemService: pgPool ? new PostgresDesignSystemService(pgPool) : new InMemoryDesignSystemService(),
+    // Layout, device-capture, and deep-link resolution — Postgres-backed when available.
+    layoutDeviceCaptureService: pgPool ? new PostgresLayoutDeviceCaptureService(pgPool) : new InMemoryLayoutDeviceCaptureService(),
 
     // Non-durable platform services — withheld under Postgres unless opted in.
     // Built and explained above.
