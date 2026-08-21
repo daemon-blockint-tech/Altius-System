@@ -441,11 +441,6 @@ export type { SqlQueryResult } from './sql-query-engine.js';
 // different values into the same field and neither would error. So it is
 // decided once, here.
 export { resolveConflictValue, DEFAULT_CONFLICT_STRATEGY } from './conflict-resolution.js';
-// HumanInTheLoopService is a rename of ChangeProposalStore, not a store of its
-// own. Sharing one adapter is what lets the API hand the HITL surface and the
-// change-proposal surface the same store, so an approval recorded through one
-// is visible through the other.
-export { ChangeProposalHumanInTheLoop } from './human-in-the-loop.js';
 
 // Enterprise connector catalog
 export type {
