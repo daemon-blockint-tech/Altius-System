@@ -68,6 +68,8 @@ Graded `partial` as capabilities, but each Gap describes an enforcement hole in 
 
 **Status:** `partial`
 
+> 🔒 CLAIMED: loop-0821-e7d1 2026-08-21T14:40+07:00 (scope: enforce active scoped session on requests — restrict effective markings at the auth funnel)
+
 > ⚠️ **EVIDENCE UPDATED 19 Aug (PR #13, §3.2).** REST endpoints were wired. The grade stays `partial` — not wired into the auth/authorization pipeline, no OIDC claim integration, no admin allowlisting.
 
 **Evidence (updated 19 Aug, §3.2):** `ScopedSessionStore` SPI with create/get/getActiveForUser/list/revoke/isMarkingAllowed (packages/spi/src/security-governance.ts). `ScopedSession` carries allowedMarkings, excludedMarkings, label, expiry, revocation state, and creator. `InMemoryScopedSessionStore` implements full session lifecycle with expiry checking, revocation, marking-allowed checks, and tenant isolation (packages/storage-memory/src/in-memory-security-governance.ts). REST endpoints wired in §3.2 (commit `7bbae51`): `GET/POST /api/v1/scoped-sessions`, `DELETE /api/v1/scoped-sessions/:id`, `POST /api/v1/scoped-sessions/:id/check-marking`. 7 scoped session tests + 13 security-governance route tests.
