@@ -106,7 +106,7 @@ export { PostgresDesignSystemService } from './governance/postgres-design-system
 export { PostgresLayoutDeviceCaptureService } from './governance/postgres-layout-device-capture-service.js';
 export { PostgresWorkshopUxService } from './governance/postgres-workshop-ux-service.js';
 export { PostgresDatasetService } from './dataset/postgres-dataset-service.js';
-export { PostgresBatchTransformService } from './dataset/postgres-batch-transform-service.js';
+export { PostgresDataExpectationsService } from './quality/postgres-data-expectations-service.js';
 export { generatePlatformDDL } from './schema/ddl-platform.js';
 export {
   PostgresAlertingService,
