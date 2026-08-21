@@ -127,6 +127,7 @@ import { PostgresStorageProvider, PostgresLineageStore, PostgresAuditStore, Post
   PostgresModelRegistryService, PostgresModelInferenceService,
   PostgresModelChainService, PostgresConnectorCatalogService, PostgresCommandService,
   PostgresDatasetService,
+  PostgresBatchTransformService,
   PostgresUserDirectoryService,
   PostgresLayoutDeviceCaptureService,
 } from '@altius/storage-postgres';
@@ -1323,7 +1324,6 @@ async function main(): Promise<void> {
       platformAssistantService: new InMemoryPlatformAssistantService(),
       processMiningService: new InMemoryProcessMiningService(),
       // Pipeline Data Ops — Pipeline & Data Ops.
-      batchTransformService: new InMemoryBatchTransformService(datasets),
       sqlQueryService: new InMemorySqlQueryService(datasets),
       variableTransformService: new InMemoryVariableTransformService(),
       rulesEngineService: new InMemoryRulesEngineService(),
@@ -1452,12 +1452,12 @@ async function main(): Promise<void> {
     // out of `nonDurableServices`, where the gate withheld it under Postgres
     // rather than accept approvals it would lose on restart.
     changeProposalStore: pgPool ? new PostgresChangeProposalStore(pgPool) : new InMemoryChangeProposalStore(),
-    // Agent threads — Postgres-backed when available. The SPI docstring for
-    // this interface has always said it "survives process restarts"; until
-    // there was a store behind it, that described an intention. Losing a
-    // thread is not an error — the agent simply has no memory of the
-    // conversation and starts again. Graduated out of `nonDurableServices`.
-    agentThreadStore: pgPool ? new PostgresAgentThreadStore(pgPool) : new InMemoryAgentThreadStore(),
+    // Batch transforms — Postgres-backed when available, so transforms, build
+    // history and schedules survive a restart. A schedule that silently stops
+    // firing looks like nothing happening rather than like a failure.
+    // The executor registry stays per-process in both providers: a
+    // TransformExecutor is a live object, not something a table can hold.
+    batchTransformService: pgPool ? new PostgresBatchTransformService(pgPool, new PostgresDatasetService(pgPool)) : new InMemoryBatchTransformService(datasets),
     // Business rules — Postgres-backed when available. `state` is what decides
     // whether a rule governs anything, so losing it silently reverts a rule to
     // draft: nothing looks broken, the rule just stops applying.
@@ -1481,6 +1481,8 @@ async function main(): Promise<void> {
     designSystemService: pgPool ? new PostgresDesignSystemService(pgPool) : new InMemoryDesignSystemService(),
     // Layout, device-capture, and deep-link resolution — Postgres-backed when available.
     layoutDeviceCaptureService: pgPool ? new PostgresLayoutDeviceCaptureService(pgPool) : new InMemoryLayoutDeviceCaptureService(),
+    // Agent threads — Postgres-backed when available.
+    agentThreadStore: pgPool ? new PostgresAgentThreadStore(pgPool) : new InMemoryAgentThreadStore(),
     // Object set filter states — Postgres-backed when available.
     objectSetFilterStore: pgPool ? new PostgresObjectSetFilterStore(pgPool) : new InMemoryObjectSetFilterStore(),
     // Data expectations — Postgres-backed when available; evaluation is computational.
