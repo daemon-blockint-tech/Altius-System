@@ -20,7 +20,8 @@ function duplicateExports(file: string): string[] {
   for (const m of src.matchAll(re)) {
     const isType = Boolean(m[1]);
     for (const raw of m[2]!.split(',')) {
-      const name = raw.trim().replace(/\s+as\s+.*$/, '');
+      // `A as B` exports B, not A — the alias target is the public name.
+      const name = raw.trim().replace(/^.*\s+as\s+/, '');
       if (!name) continue;
       const key = `${isType ? 'type:' : ''}${name}`;
       if (seen.has(key)) dupes.push(`${key} (from ${m[3]})`);
