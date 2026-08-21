@@ -20,8 +20,15 @@ function duplicateExports(file: string): string[] {
   for (const m of src.matchAll(re)) {
     const isType = Boolean(m[1]);
     for (const raw of m[2]!.split(',')) {
-      const name = raw.trim().replace(/\s+as\s+.*$/, '');
-      if (!name) continue;
+      const spec = raw.trim();
+      if (!spec) continue;
+      // What the module exports is the ALIAS when one is present:
+      // `export { MarkingRecord as MarkingDefinition }` exports
+      // MarkingDefinition and does not collide with a plain MarkingRecord
+      // export -- tsc raises no TS2300 for it. Keying on the source name
+      // flagged exactly those legal aliases as duplicates.
+      const asMatch = spec.match(/\s+as\s+(\S+)$/);
+      const name = asMatch ? asMatch[1]! : spec;
       const key = `${isType ? 'type:' : ''}${name}`;
       if (seen.has(key)) dupes.push(`${key} (from ${m[3]})`);
       seen.add(key);
