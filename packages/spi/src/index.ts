@@ -269,6 +269,10 @@ export type {
   CreateScheduleInput,
 } from './data-pipelines.js';
 
+// Data-expectation evaluation, shared so two providers cannot disagree about
+// whether a build gate passed.
+export { evaluateDataExpectation } from './data-expectation-engine.js';
+
 // Process mining and event objects
 export type {
   EventObjectService,
@@ -382,6 +386,12 @@ export { parseSql } from './sql-parser.js';
 export type { ParsedSqlAst } from './sql-parser.js';
 export { executeSqlQuery } from './sql-query-engine.js';
 export type { SqlQueryResult } from './sql-query-engine.js';
+
+// HumanInTheLoopService is a rename of ChangeProposalStore, not a store of its
+// own. Sharing one adapter is what lets the API hand the HITL surface and the
+// change-proposal surface the same store, so an approval recorded through one
+// is visible through the other.
+export { ChangeProposalHumanInTheLoop } from './human-in-the-loop.js';
 
 // Shared DatasetService refusals, so a create/not-found means the same thing
 // and carries the same status whichever provider is wired.

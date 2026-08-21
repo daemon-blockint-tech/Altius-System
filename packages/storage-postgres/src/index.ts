@@ -97,6 +97,7 @@ export { PostgresBranchStore } from './branch/postgres-branch-store.js';
 export { PostgresCommentStore } from './comment/postgres-comment-store.js';
 export { PostgresNotificationStore } from './notification/postgres-notification-store.js';
 export { PostgresChangeProposalStore } from './governance/postgres-change-proposal-store.js';
+export { PostgresHumanInTheLoopService } from './governance/postgres-human-in-the-loop-service.js';
 export { PostgresApprovalWorkflowService } from './governance/postgres-approval-workflow-service.js';
 export { PostgresBusinessRulesService } from './governance/postgres-business-rules-service.js';
 export { PostgresKioskService } from './governance/postgres-kiosk-service.js';
@@ -104,8 +105,10 @@ export { PostgresSavedViewStore } from './governance/postgres-saved-view-store.j
 export { PostgresUserDirectoryService } from './governance/postgres-user-directory-service.js';
 export { PostgresDesignSystemService } from './governance/postgres-design-system-service.js';
 export { PostgresLayoutDeviceCaptureService } from './governance/postgres-layout-device-capture-service.js';
+export { PostgresWorkshopUxService } from './governance/postgres-workshop-ux-service.js';
 export { PostgresDatasetService } from './dataset/postgres-dataset-service.js';
 export { PostgresSqlQueryService } from './dataset/postgres-sql-query-service.js';
+export { PostgresDataExpectationsService } from './quality/postgres-data-expectations-service.js';
 export { generatePlatformDDL } from './schema/ddl-platform.js';
 export {
   PostgresAlertingService,
