@@ -29,6 +29,9 @@ function duplicateExports(file: string): string[] {
       // flagged exactly those legal aliases as duplicates.
       const asMatch = spec.match(/\s+as\s+(\S+)$/);
       const name = asMatch ? asMatch[1]! : spec;
+      // `A as B` exports B, not A — the alias target is the public name.
+      const name = raw.trim().replace(/^.*\s+as\s+/, '');
+      if (!name) continue;
       const key = `${isType ? 'type:' : ''}${name}`;
       if (seen.has(key)) dupes.push(`${key} (from ${m[3]})`);
       seen.add(key);

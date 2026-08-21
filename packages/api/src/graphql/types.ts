@@ -94,6 +94,13 @@ export interface ApiDependencies {
    */
   accessExplanationSimulationRoles?: readonly string[];
   /**
+   * Roles allowed to manage scoped sessions beyond self-service (create for
+   * another user, revoke sessions they did not create, read others'
+   * sessions). Defaults to ['admin']. An explicitly empty array means nobody
+   * holds the administrative tier. Env: SCOPED_SESSION_ADMIN_ROLES.
+   */
+  scopedSessionAdminRoles?: readonly string[];
+  /**
    * Allowed consent-purpose vocabulary for this deployment (env CONSENT_PURPOSES).
    * `DataPurpose` is an open string type; this is the set accepted when recording
    * consent. Absent → the standard NHS/UK-IG preset (back-compat). A non-NHS

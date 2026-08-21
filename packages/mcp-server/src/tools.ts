@@ -292,6 +292,13 @@ function buildActionTool(actionType: ActionType): McpTool {
     description: 'Validate and evaluate preconditions without committing any change.',
   };
 
+  // Checkpoint justification — reserved name, stripped before validation.
+  // Required (non-blank) when the action's manifest declares requiresJustification.
+  properties['_justification'] = {
+    type: 'string',
+    description: 'Stated reason for running this action. Required when the action declares requiresJustification.',
+  };
+
   return {
     name: actionType.name,
     description: actionType.description ?? `Execute ${actionType.name} action`,
@@ -865,6 +872,13 @@ async function invokeActionTool(
   // and shadow it.
   const dryRun = params['dryRun'] === true;
   if ('dryRun' in params) delete params['dryRun'];
+
+  // Checkpoint justification: reserved field, carried on the context, never a param.
+  const justification = params['_justification'];
+  if ('_justification' in params) delete params['_justification'];
+  if (typeof justification === 'string') {
+    actionCtx.justification = justification;
+  }
 
   const result: ActionResult = await deps.actionExecutor.execute(
     manifest,

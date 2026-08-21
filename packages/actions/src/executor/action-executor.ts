@@ -424,6 +424,46 @@ export class ActionExecutor {
     }
 
     // ------------------------------------------------------------------
+    // Step 3b: JUSTIFICATION — checkpoint capture for sensitive actions
+    // ------------------------------------------------------------------
+    // Capture-before-act: the record is written before any effect runs, so
+    // even a failed attempt leaves its stated reason behind, and a capture
+    // failure refuses the action rather than acting unrecorded.
+    if (manifest.requiresJustification) {
+      const justification = ctx.justification?.trim();
+      if (!justification) {
+        const reason =
+          `Action ${actionType} requires a justification. ` +
+          `Pass the reserved _justification field with a non-empty reason.`;
+        await this.auditDenied(actionId, actor, actionType, reqCtx, reason);
+        return failResult(actionId, [
+          {
+            code: 'JUSTIFICATION_REQUIRED',
+            message: reason,
+          },
+        ]);
+      }
+      if (this.config.justificationStore) {
+        try {
+          await this.config.justificationStore.create(reqCtx.tenantId, actor.id, {
+            actionName: actionType,
+            justification,
+            category: 'routine',
+          });
+        } catch (err) {
+          const reason = `Failed to record justification for ${actionType} — action refused, not run unrecorded`;
+          logger.error({ err, actionId, actionType }, reason);
+          return failResult(actionId, [
+            {
+              code: 'JUSTIFICATION_CAPTURE_FAILED',
+              message: reason,
+            },
+          ]);
+        }
+      }
+    }
+
+    // ------------------------------------------------------------------
     // Step 4: PRECONDITIONS — resolve @param objects, evaluate CEL
     // ------------------------------------------------------------------
     // Resolve object params from SPI before CEL evaluation
@@ -716,6 +756,9 @@ export class ActionExecutor {
             before: Object.fromEntries(beforeStates),
             after: Object.fromEntries(afterStates),
             result: 'success',
+            // The checkpoint's why, kept with the what: an auditor reading
+            // the change must not need a second store to see the reason.
+            ...(ctx.justification?.trim() ? { justification: ctx.justification.trim() } : {}),
           },
         });
       }

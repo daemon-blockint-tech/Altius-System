@@ -224,6 +224,69 @@ describe('Security governance REST routes', () => {
   // ── Scoped sessions ──
 
   describe('scoped sessions', () => {
+    function nonAdminCtx(deps: ApiDependencies, id: string): { user: AuthenticatedUserInfo; ctx: ResolverContext } {
+      const user: AuthenticatedUserInfo = { id, name: 'NA', email: 'na@t.uk', roles: ['clinician'], groups: [], tenantId: 'tenant-1' };
+      return { user, ctx: { requestContext: { tenantId: 'tenant-1', actorId: id, traceId: 'trace-test' }, user, deps } };
+    }
+
+    it('gates cross-user create and non-creator revoke behind admin roles', async () => {
+      const store = new InMemoryScopedSessionStore();
+      const deps = createDeps(parsed, { scopedSessionStore: store });
+      const routes = generateRestRoutes(parsed, deps);
+      const { user: attacker, ctx: attackerCtx } = nonAdminCtx(deps, 'attacker');
+
+      const createRoute = findRoute(routes, 'POST', '/api/v1/security/sessions');
+      // Cross-user create would strip the victim's markings — denied.
+      const crossRes = await createRoute.handler(
+        { ...restReq('POST', '/api/v1/security/sessions', { userId: 'victim', allowedMarkings: [], label: 'strip' }), user: attacker },
+        attackerCtx,
+      );
+      expect(crossRes.status).toBe(403);
+
+      // Self-service create stays allowed (Foundry: users pick their own session).
+      const selfRes = await createRoute.handler(
+        { ...restReq('POST', '/api/v1/security/sessions', { userId: 'attacker', allowedMarkings: ['OFFICIAL'], label: 'own' }), user: attacker },
+        attackerCtx,
+      );
+      expect(selfRes.status).toBe(201);
+
+      // Revoking an admin-imposed session would be the subject's escape hatch — denied.
+      const imposed = await store.create('tenant-1', 'admin-1', {
+        userId: 'attacker', allowedMarkings: ['OFFICIAL'], label: 'imposed', durationSeconds: 3600,
+      });
+      const revokeRoute = findRoute(routes, 'POST', '/api/v1/security/sessions/:id/revoke');
+      const revokeRes = await revokeRoute.handler(
+        { ...restReq('POST', `/api/v1/security/sessions/${imposed.id}/revoke`, {}, { id: imposed.id }), user: attacker },
+        attackerCtx,
+      );
+      expect(revokeRes.status).toBe(403);
+    });
+
+    it('scopes reads to own sessions for non-admins', async () => {
+      const store = new InMemoryScopedSessionStore();
+      const deps = createDeps(parsed, { scopedSessionStore: store });
+      const routes = generateRestRoutes(parsed, deps);
+      const { user: reader, ctx: readerCtx } = nonAdminCtx(deps, 'reader');
+
+      const own = await store.create('tenant-1', 'admin-1', { userId: 'reader', allowedMarkings: ['OFFICIAL'], label: 'own', durationSeconds: 3600 });
+      const other = await store.create('tenant-1', 'admin-1', { userId: 'someone-else', allowedMarkings: ['SECRET'], label: 'other', durationSeconds: 3600 });
+
+      const listRoute = findRoute(routes, 'GET', '/api/v1/security/sessions');
+      const listRes = await listRoute.handler(
+        { ...restReq('GET', '/api/v1/security/sessions'), user: reader },
+        readerCtx,
+      );
+      const listed = (listRes.body as Record<string, unknown>)['data'] as { id: string }[];
+      expect(listed.map(s => s.id)).toEqual([own.id]);
+
+      const getRoute = findRoute(routes, 'GET', '/api/v1/security/sessions/:id');
+      const getRes = await getRoute.handler(
+        { ...restReq('GET', `/api/v1/security/sessions/${other.id}`, {}, { id: other.id }), user: reader },
+        readerCtx,
+      );
+      expect(getRes.status).toBe(404);
+    });
+
     it('creates and retrieves a scoped session', async () => {
       const store = new InMemoryScopedSessionStore();
       const deps = createDeps(parsed, { scopedSessionStore: store });

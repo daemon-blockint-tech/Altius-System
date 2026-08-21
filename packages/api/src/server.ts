@@ -1299,9 +1299,17 @@ async function main(): Promise<void> {
     logger: pinoSideEffectLogger(logger),
   });
 
+  // Shared with the /api/v1/justifications routes (deps below) so a record
+  // captured by the executor's checkpoint step is listable over HTTP.
+  // (pgPool is declared later, so derive the pool here the same way.)
+  const justificationStore = storage instanceof PostgresStorageProvider
+    ? new PostgresJustificationStore((storage as PostgresStorageProvider).pool)
+    : new InMemoryJustificationStore();
+
   const actionExecutor = new ActionExecutor({
     storage, security, cel, auditWriter,
     ...(markingPolicy ? { markingPolicy } : {}),
+    justificationStore,
     eventPublisher: actionEventPublisher,
     consentManager: consentService,
     sideEffectHandler,
@@ -1605,6 +1613,12 @@ async function main(): Promise<void> {
     consentRecorderRoles,
     auditReaderRoles,
     auditUnredactedRoles,
+    // Scoped-session administrative tier (cross-user create, non-creator
+    // revoke, reading others' sessions). Default admin-only; routes fall
+    // back to DEFAULT_SCOPED_SESSION_ADMIN_ROLES when unset.
+    ...(parseRoles(process.env['SCOPED_SESSION_ADMIN_ROLES'])
+      ? { scopedSessionAdminRoles: parseRoles(process.env['SCOPED_SESSION_ADMIN_ROLES'])! }
+      : {}),
     consentPurposes,
     ...(consentSubjectTypes ? { consentSubjectTypes } : {}),
     cdmEnabled,
@@ -1641,7 +1655,7 @@ async function main(): Promise<void> {
     // Security governance â€” JustificationStore is Postgres-backed when
     // available; ScopedSessionStore is below. The AccessExplanationService
     // runs the live marking policy and consent service (next block).
-    justificationStore: pgPool ? new PostgresJustificationStore(pgPool) : new InMemoryJustificationStore(),
+    justificationStore,
     // The explanation runs the live marking policy and consent service, not a
     // default-allow placeholder â€” an explanation that disagrees with the read
     // path sends the operator to debug the wrong layer.

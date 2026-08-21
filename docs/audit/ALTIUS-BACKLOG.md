@@ -69,17 +69,17 @@ Graded `partial` as capabilities, but each Gap describes an enforcement hole in 
 
 **Status:** `partial`
 
-> 🔒 CLAIMED: loop-0821-e7d1 2026-08-21T14:40+07:00 (scope: enforce active scoped session on requests — restrict effective markings at the auth funnel)
+> ✅ **RE-VERIFIED + ENFORCED, 21 Aug 2026 (loop-0821-e7d1).** Enforcement wired at the auth funnel (`718f900`); routes gated self-service-or-admin (`27fb73e`).
 
-> ⚠️ **EVIDENCE UPDATED 19 Aug (PR #13, §3.2).** REST endpoints were wired. The grade stays `partial` — not wired into the auth/authorization pipeline, no OIDC claim integration, no admin allowlisting.
+**Evidence (updated 21 Aug):** ENFORCEMENT NOW WIRED (`718f900`): `OidcAuthenticator.authenticate` applies the caller's active scoped session via an injected `scopedSessionResolver` (packages/security/src/auth/oidc-authenticator.ts applyScopedSession) — effective markings = token markings ∩ allowedMarkings \ excludedMarkings; no session = pass-through; resolver failure fails closed to zero markings. Because every surface (REST/GraphQL/CDM/FHIR/MCP) authenticates through this one funnel, all marking checks see the restricted set. API wires the resolver to the SAME `ScopedSessionStore` instance the REST routes write (server.ts hoisted store), so a session created via POST /api/v1/security/sessions is enforced on the next request. Tests: oidc-authenticator.test.ts 'scoped session enforcement' (restrict/exclude/passthrough/fail-closed, real-JWKS harness, proven failing-then-passing). ADMIN GATING (`27fb73e`): cross-user create and non-creator revoke require `scopedSessionAdminRoles` (default admin, env SCOPED_SESSION_ADMIN_ROLES, empty = nobody); reads scoped to subject/creator/admin with 404 anti-enumeration; self-service create stays open (Foundry: users pick their own session). Tests: security-governance-routes.test.ts (15 pass). Persistence: `PostgresScopedSessionStore` wired when pgPool present (server.ts), InMemory otherwise — the 19 Aug "no persistent storage" clause is stale.
 
-**Evidence (updated 19 Aug, §3.2):** `ScopedSessionStore` SPI with create/get/getActiveForUser/list/revoke/isMarkingAllowed (packages/spi/src/security-governance.ts). `ScopedSession` carries allowedMarkings, excludedMarkings, label, expiry, revocation state, and creator. `InMemoryScopedSessionStore` implements full session lifecycle with expiry checking, revocation, marking-allowed checks, and tenant isolation (packages/storage-memory/src/in-memory-security-governance.ts). REST endpoints wired in §3.2 (commit `7bbae51`): `GET/POST /api/v1/scoped-sessions`, `DELETE /api/v1/scoped-sessions/:id`, `POST /api/v1/scoped-sessions/:id/check-marking`. 7 scoped session tests + 13 security-governance route tests.
-
-**Gap:** Not wired into the authentication/authorization pipeline (sessions exist but aren't enforced on requests). No OIDC claim integration. No admin allowlisting. No persistent storage. No GraphQL surface.
+**Gap:** No OIDC claim integration (session selection is store-driven, not claim-driven — arguably N/A for headless). No GraphQL surface. No spi-conformance cases proving InMemory and Postgres ScopedSessionStore agree (§4.3). Dev-mode identities bypass authenticate() and therefore scoped sessions (dev carries markings: [] so nothing to restrict).
 
 ### `security-gov/checkpoints-justification-capture-for-sensit` — Checkpoints: justification capture for sensitive actions
 
 **Status:** `partial`
+
+> 🔒 CLAIMED: loop-0821-9c4e 2026-08-21T14:52+07:00 (scope: manifest requiresJustification declaration + executor enforcement + justification into JustificationStore/audit)
 
 > ⚠️ **EVIDENCE UPDATED 19 Aug (PR #13, §3.2).** REST endpoints were wired. The grade stays `partial` — not wired into the action execution pipeline, no per-action justification requirement declaration, no audit record integration.
 
@@ -102,6 +102,8 @@ Graded `partial` as capabilities, but each Gap describes an enforcement hole in 
 ### `security-gov/ai-agent-write-governance-human-approved-non` — AI/agent write governance (human-approved, non-destructive agent access)
 
 **Status:** `partial`
+
+> 🔒 CLAIMED: loop-0821-e7d1 2026-08-21T15:01+07:00 (scope: wire HoldApprovePolicyGuard into the production agent write path + hold approve/reject REST surface; VERIFY-0 the possibly-closed sub-items first)
 
 **Evidence (read 15 Aug):** The production MCP server (mounted at /mcp only when a pack declares the `mcp` capability, packages/api/src/server.ts:1192-1231) advertises EVERY ActionType as a callable write tool plus a search_<Type> read tool, with no filtering by the caller's permissions (packages/mcp-server/src/tools.ts:46-60). Writes do run the full governed pipeline — authz, consent, preconditions, audit — under the caller's OIDC identity (tools.ts:232-238; packages/mcp-server/src/auth.ts:53-82), and reads are FGA-scoped then field-redacted (tools.ts:263-309). But nothing is agent-specific: no approval hold, no dry-run (the MCP action tool schema exposes only @param fields, tools.ts:66-87), no risk classification, no read-only mode, and the agent is audited as actor.type 'user' (tools.ts:212-216) because AuditActor admits only user|system|connector (packages/spi/src/audit.ts:16-21). The dry-run/PolicyGuard/RiskLevel machinery in packages/actions/src/tools is unwired (see cap 7). MCP search reads are unaudited — createMcpServer is given no auditWriter (server.ts:1194-1203).
 

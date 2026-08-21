@@ -1859,6 +1859,9 @@ function generateMutationResolver(
       // caller decided on arrives as a reserved input field rather than an
       // If-Match header (the REST equivalent).
       const expectedVersion = args.input?.['_expectedVersion'];
+      // Checkpoint justification: reserved input field, same transport idea
+      // as `_expectedVersion`.
+      const justification = args.input?.['_justification'];
 
       const actionCtx: ActionContext = {
         requestContext,
@@ -1867,6 +1870,7 @@ function generateMutationResolver(
           consentSubjectId,
         } : {}),
         ...(typeof expectedVersion === 'number' ? { expectedVersion } : {}),
+        ...(typeof justification === 'string' ? { justification } : {}),
       };
 
       // Resolve manifest from registry — fail closed if not found

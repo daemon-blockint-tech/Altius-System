@@ -427,6 +427,11 @@ function generateMutationInputType(
   lines.push('  """`_version` this action asserts its target object is at. Omit to skip the check."""');
   lines.push('  _expectedVersion: Int');
 
+  // Checkpoint justification, required when the action's manifest declares
+  // requiresJustification. The REST equivalent is the `_justification` body field.
+  lines.push('  """Stated reason for running this action. Required when the action declares requiresJustification."""');
+  lines.push('  _justification: String');
+
   // Dry-run, opt-in: validate + authorize + check preconditions but do not
   // apply effects. The REST equivalent is ?dryRun=true.
   lines.push('  """If true, validate and authorize but do not apply effects. Returns success with no affectedObjects."""');

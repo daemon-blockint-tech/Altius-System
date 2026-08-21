@@ -53,6 +53,8 @@ export interface AuditDetail {
   result?: 'success' | 'denied' | 'error';
   denialReason?: string;
   consentDecision?: 'granted' | 'denied' | 'not_required';
+  /** The caller's stated reason, for actions declaring requiresJustification. */
+  justification?: string;
 }
 
 // ---------------------------------------------------------------------------
