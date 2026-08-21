@@ -648,6 +648,8 @@ One capability graded five times under five themes. Work it as ONE item; closing
 
 **Status:** `partial`
 
+> 🔒 CLAIMED: loop-0821-cel1 2026-08-21T16:40+07:00
+
 **Evidence (read 15 Aug):** Real and production-wired, but text-authored and quietly fail-open in places. Rules are declared in YAML manifests (preconditions: blocks in domain-packs/nhs-acute/actions/*.yaml — admit-patient.yaml:6, clean-bed.yaml:15, register-patient.yaml:13, transfer-ward.yaml:6, discharge-patient.yaml:6) and as @constraint CEL directives in ODL (packages/odl/src/parser/types.ts:62,140). Both are evaluated at runtime: packages/actions/src/executor/action-executor.ts:279 evaluates preconditions, and lines 735, 765, 822, 942 evaluate per-effect CEL conditions; packages/engine/src/objects/validation.ts:142 and 151-156 evaluate field-level then type-level constraints, with only non-warning failures blocking the write (validation.ts:175-176). The evaluator is a real Go CEL gRPC sidecar (packages/cel-evaluator/main.go, Dockerfile) wired at packages/api/src/server.ts:301-306 and shared by both the validation pipeline and the action executor.
 
 > ✅ **EVIDENCE UPDATED (Fase 26).** `PostgresBusinessRulesService` (`packages/storage-postgres/src/governance/postgres-business-rules-service.ts`) persists `business_rules` in the `governance` schema and survives restarts when `PG_TEST_URL` is available. The remaining non-persistence gaps (no-code authoring UI, rule versioning, test/simulate surface, rule set editing, CEL dev stub) remain.
