@@ -11,6 +11,10 @@ import {
   datasetRowMatches as matchesFilter,
   datasetSortRows as sortRows,
   datasetProjectColumns as projectColumns,
+  datasetAlreadyExistsError,
+  datasetNotFoundError,
+  datasetBranchExistsError,
+  datasetBranchNotFoundError,
 } from '@altius/spi';
 import type {
   DatasetService,
@@ -52,6 +56,13 @@ export class InMemoryDatasetService implements DatasetService {
   private readonly datasets = new Map<string, Map<string, DatasetState>>();
 
   async create(ctx: RequestContext, input: CreateDatasetInput): Promise<Dataset> {
+    // This used to overwrite an existing dataset of the same name, dropping its
+    // rows and transaction log. Harmless-looking against a Map, unrecoverable
+    // against Postgres — so `create` refuses in both providers rather than
+    // meaning something different depending on which one is wired.
+    if (this.datasets.get(ctx.tenantId)?.has(input.name)) {
+      throw datasetAlreadyExistsError(input.name);
+    }
     const branch = input.branch ?? 'main';
     const id = randomUUID();
     const now = new Date().toISOString();
@@ -297,7 +308,7 @@ export class InMemoryDatasetService implements DatasetService {
 
   async createBranch(ctx: RequestContext, name: string, branchName: string, fromTransactionId?: string): Promise<DatasetBranch> {
     const state = this.getState(ctx.tenantId, name);
-    if (state.branches.has(branchName)) throw new Error(`Branch already exists: ${branchName}`);
+    if (state.branches.has(branchName)) throw datasetBranchExistsError(branchName);
     const parentBranch = state.dataset.branch;
     const parentTxId = fromTransactionId ?? state.dataset.latestTransactionId;
     // Snapshot current rows
@@ -324,8 +335,8 @@ export class InMemoryDatasetService implements DatasetService {
   async mergeBranch(ctx: RequestContext, name: string, sourceBranch: string, targetBranch?: string): Promise<{ transactionsApplied: number; mergedAt: string }> {
     const state = this.getState(ctx.tenantId, name);
     const target = targetBranch ?? 'main';
-    if (!state.branches.has(sourceBranch)) throw new Error(`Source branch not found: ${sourceBranch}`);
-    if (!state.branches.has(target)) throw new Error(`Target branch not found: ${target}`);
+    if (!state.branches.has(sourceBranch)) throw datasetBranchNotFoundError('Source', sourceBranch);
+    if (!state.branches.has(target)) throw datasetBranchNotFoundError('Target', target);
     const sourceRows = state.branchRows.get(sourceBranch) ?? new Map();
     const sourceTxs = state.branchTransactions.get(sourceBranch) ?? [];
     const targetRows = state.branchRows.get(target) ?? new Map();
@@ -352,7 +363,7 @@ export class InMemoryDatasetService implements DatasetService {
 
   private getState(tenantId: string, name: string): DatasetState {
     const state = this.datasets.get(tenantId)?.get(name);
-    if (!state) throw new Error(`Dataset not found: ${name}`);
+    if (!state) throw datasetNotFoundError(name);
     return state;
   }
 
