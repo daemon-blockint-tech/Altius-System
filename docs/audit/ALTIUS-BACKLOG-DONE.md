@@ -1159,3 +1159,15 @@ UPDATE (16 Aug): B2 is CLOSED — list link fields now accept `first`/`after` ar
 
 **Gap:** None for the enforcement hole. Postgres RLS remains absent as defence-in-depth (explicitly deferred post-MVP, ddl-consent.ts:11) — a hardening item, not an isolation breach.
 
+
+## ai-agent-surface
+
+### `ai-agent-surface/uniform-governance-of-ai-actors-agents-under` — Uniform governance of AI actors (agents under same security/audit as humans)
+
+**Status:** `full`
+
+> ✅ **RE-VERIFIED against source, 21 Aug 2026 (loop-0821-9c4e).** Last open clause closed by concurrent commit `5463771` (loop-0821-e7d1); claimed, re-verified at HEAD, re-graded — no new code written.
+
+**Evidence (read 21 Aug, HEAD `5463771`+):** An MCP action call runs the identical 8-stage executor pipeline as REST/GraphQL (same executor instance, api/server.ts). Uniform human-grade controls: per-principal rate limiting on /mcp (429; fails open ONLY on limiter error, a documented availability trade with authz unaffected), configurable consent purpose, agent actor stamping (`type: 'agent'` on ActionActor → audit distinguishes agent from human). Agent-grade controls now ALL wired: (a) per-user/group MCP enablement allowlist (`ff74c77`); (b) permission-scoped tool discovery (scopeToolList per caller); (c) human-in-the-loop holds (`5463771`) — HoldApprovePolicyGuard is constructed once in api/server.ts:1606 and shared by the MCP write gate (mcp-server/src/tools.ts:884-941: high-risk actions get POLICY_HOLD with a hold id; retry with reserved `_holdId` validates action+agent+tenant match and is one-shot via consume()) and the reviewer surface (GET /api/v1/agent-holds + POST /:id/approve|reject in rest/security-governance-routes.ts:384-410, AGENT_HOLD_APPROVER_ROLES default admin, empty = nobody, tenant-scoped 404); deleteObject/deleteLink effects classify high-risk by default, MCP_HIGH_RISK_ACTIONS extends; (d) dry-run passes without a hold (commits nothing) and is advertised on tool schemas. Production ToolRegistry use is tool LISTING only (resolver-generator.ts:2065 availableTools) — no execution path bypasses the gate; packages/aip-agent executes no actions. Verified by running mcp-server suite (84 tests) and security-governance-routes suite (18 tests) at HEAD, both green.
+
+**Gap:** None for this row. High-risk classification is effect-shape + env-list (a risk-taxonomy refinement would ride the same gate). Holds exist on the only agent write surface (MCP); if a second agent surface is added it must wire the same shared guard.

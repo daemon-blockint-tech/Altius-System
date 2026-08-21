@@ -119,18 +119,6 @@ Graded `partial` as capabilities, but each Gap describes an enforcement hole in 
 
 **Gap:** No IDE package or OAuth discovery (`/.well-known/oauth-protected-resource`), so agent/IDE setup is manual token pasting. Per-user/group enablement and permission-scoped tool discovery are now closed.
 
-### `ai-agent-surface/uniform-governance-of-ai-actors-agents-under` — Uniform governance of AI actors (agents under same security/audit as humans)
-
-**Status:** `partial`
-
-> 🔒 CLAIMED: loop-0821-9c4e 2026-08-21T15:19+07:00 (scope: VERIFY-0 — 5463771 appears to close the last open clause; re-verify at HEAD and update evidence)
-
-> ✅ **RE-VERIFIED against source, 16 Aug 2026.** Evidence below is current, not inherited.
-
-**Evidence (read 16 Aug):** Re-verified against commit 0b263e6 (working tree clean). An MCP action call runs the identical 8-stage pipeline — packages/mcp-server/src/tools.ts:232-238 calls deps.actionExecutor.execute, the same executor instance GraphQL and REST receive (server.ts:1204). Three prior non-uniformities are now CLOSED: (1) Per-principal rate limiting is wired on /mcp — server.ts:110-131 calls deps.rateLimiter.check({tenantId, principalId}) and returns JSON-RPC error with HTTP 429 when disallowed. API wiring passes rateLimiter at server.ts:1294. Note: the implementation fails open if the limiter throws (server.ts:128-130). (2) Consent purpose is configurable — mcp-server/src/types.ts:54-60 adds consentPurpose to McpServerDependencies, tools.ts:20-29 resolveConsentPurpose reads deps.consentPurpose falling back to DIRECT_CARE. API wiring passes consentPurpose at server.ts:1295. (3) Agent actor stamping — tools.ts:233 stamps `type: 'agent'` on the ActionActor, so audit records distinguish agent from human. ActionActor includes 'agent' (actions/src/executor/types.ts). Test: packages/mcp-server/src/__tests__/mcp-server.test.ts:673. STILL OPEN: The agent-specific PolicyGuard/human-approval and dry-run path remain an unwired library interface — packages/actions/src/tools/tool-registry.ts:89-90, 153-178 defines ToolRegistry.executeForAgent with dry-run and PolicyGuard high-risk approval hold, but PolicyGuard has no implementation in the repo, and the only production `new ToolRegistry` (resolver-generator.ts:1133) is constructed without executor or policyGuard arguments.
-
-**Gap:** The agent-specific PolicyGuard (human-approval hold for high-risk actions) and dry-run path exist only as an unwired library interface with zero implementations (tool-registry.ts:89-90, 153-178). Per-principal rate limiting, configurable consent purpose, and agent actor audit stamping are now closed.
-
 ### `actions-concurrency/governed-object-link-editing-with-writeback` — Governed object/link editing with writeback
 
 **Status:** `partial`
