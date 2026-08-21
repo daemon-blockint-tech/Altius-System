@@ -424,17 +424,12 @@ export {
   datasetBranchNotFoundError,
 } from './dataset-contract.js';
 export type { CodedError } from './dataset-contract.js';
-// Applying a transform step is pure, and its output is *data* — two providers
-// that disagreed about what `round` or `dateDiff` means would produce different
-// values from the same pipeline with neither erring. So it is defined once.
-// The SQL parser and the query engine over datasets: both pure, so both live
-// here rather than in a provider. Two providers that disagreed about what a
-// WHERE clause meant would return different rows for the same SQL — a worse
-// failure than either being wrong alone, since neither would look broken.
-// Which value wins a conflict is a pure function of the conflict and the
-// strategy, and its output is *data* — two providers that disagreed would write
-// different values into the same field and neither would error. So it is
-// decided once, here.
+// HumanInTheLoopService is a rename of ChangeProposalStore, not a store of its
+// own. Sharing one adapter is what lets the API hand the HITL surface and the
+// change-proposal surface the same store, so an approval recorded through one
+// is visible through the other.
+export { ChangeProposalHumanInTheLoop } from './human-in-the-loop.js';
+
 // Enterprise connector catalog
 export type {
   ConnectorCatalogService,
