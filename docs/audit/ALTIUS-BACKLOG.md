@@ -19,7 +19,7 @@ Structure:
 5. **Smallest correct change.** No refactors, no unrelated files, no new dependencies without saying why.
 6. **Never overwrite in-flight work.** If the build is red because another session references a symbol that does not exist yet, report and stop — do not guess their intent. A *committed* broken state (HEAD == working tree) is safe to fix.
 7. **DDL is additive only.** Never generate `DROP COLUMN` or a type change.
-8. **Stop and ask** when an item needs a product or contract decision rather than an implementation. Those are marked below.
+8. **Mark, don’t stall.** If an item needs a product or contract decision rather than an implementation, write `> ⏸ NEEDS-DECISION: <question>` into the row, append the question to [DECISIONS-NEEDED.md](DECISIONS-NEEDED.md), commit, and move to another item — do not implement a guess.
 
 ## Security defects — fix before parity work
 
