@@ -17,6 +17,8 @@ against real Postgres. Reproduce with `node tools/parity/reachability.mjs`.
 | **Measured now (`BusinessRulesService` branch, 71 services)** | **19** | **52** | **0** | this tool |
 | Measured 20 Aug (`ChangeProposalStore`, merged) | 18 | 53 | 0 | this tool |
 | **Measured now (`EventObjectService`, 71 services)** | **19** | **52** | **0** | this tool |
+| **Measured now (`SqlQueryService`, 71 services)** | **19** | **52** | **0** | this tool |
+| **Measured now (`ConflictResolutionService`, 71 services)** | **19** | **52** | **0** | this tool |
 
 **Durability moved this time, and it was real.** The previous pass recorded reachability
 improving while `full` stayed pinned at 8 — services were being wired to REST without
@@ -31,6 +33,14 @@ the count is meant to move slowly and mean something, rather than quickly and no
 `EventObjectService` to 19, by the same route each time: a Postgres store, restart
 survival proven, no new surface claimed. One service per pass is the expected rate — the
 count is meant to move slowly and mean something, rather than quickly and not.
+`DatasetService` then took it to 17, `ChangeProposalStore` to 18 and `SqlQueryService`
+to 19, by the same route each time: a Postgres store, restart survival proven, no new
+surface claimed. One service per pass is the expected rate — the count is meant to move
+slowly and mean something, rather than quickly and not.
+`ConflictResolutionService` to 19, by the same route each time: a Postgres store,
+restart survival proven, no new surface claimed. One service per pass is the expected
+rate — the count is meant to move slowly and mean something, rather than quickly and
+not.
 
 The gap to the tracker is still large (19 vs ~77) but it is now a gap of *degree*
 rather than *kind*: the remaining 52 are genuinely reachable, and each needs a Postgres
@@ -65,11 +75,13 @@ mean "works":
 
 `AlertingService` · `AuditStore` · `BlobStore` · `BranchStore` ·
 **`BusinessRulesService`** · **`ChangeProposalStore`** · `CommentStore` · `DataFreshnessService` ·
+**`ChangeProposalStore`** · `CommentStore` · **`ConflictResolutionService`** ·
+`DataFreshnessService` ·
 `DatasetMetadataService` · **`DatasetService`** · `EmbeddingStore` ·
 **`EventObjectService`** ·
 `GeospatialMapService` · `JustificationStore` · `NotificationStore` · `ObjectSetStore` ·
 `OntologySqlService` · `OntologyUsageMetricsService` · `ScopedSessionStore` ·
-`TimeSeriesStore`
+**`SqlQueryService`** · `TimeSeriesStore`
 
 `full` here stays a **necessary, not sufficient** condition: it says a user can reach a
 durable implementation, not that the capability is complete. Rows still need demoting
@@ -85,6 +97,8 @@ are the honest `partial → full` candidates:
 `BuildTriggerService` ·
 `CommandExchangeService` · `CommandService` · `ConflictResolutionService` ·
 `ConnectorCatalogService` · `CopilotService` · `DataExpectationsService` ·
+`BuildTriggerService` · `BusinessRulesService` ·
+`CommandExchangeService` · `CommandService` · `ConnectorCatalogService` · `CopilotService` · `DataExpectationsService` ·
 `DatasetProjectionService` · `DatasourceService` ·
 `DesignSystemService` · `EmbeddedCopilotService` · `EmbeddingService` · `EvalService` ·
 `GraphAnalysisService` · `GraphService` ·
@@ -94,7 +108,7 @@ are the honest `partial → full` candidates:
 `ObjectSetFilterStore` · `OntologyChangeHistoryService` · `OntologyManagerService` ·
 `PipelineBuildService` · `PipelineService` · `PlatformAssistantService` ·
 `PlatformResourceService` · `ProcessMiningService` · `SavedViewStore` ·
-`ScenarioService` · `SqlAnalyticsService` · `SqlQueryService` · `SyncCdcService` ·
+`ScenarioService` · `SqlAnalyticsService` · `SyncCdcService` ·
 `TokenMeteringService` · `TransformExpressionService` · `UserDirectoryService` ·
 `ValueFormattingService` · `VariableTransformService` · `VectorSearchService` ·
 `WorkshopPlatformService` · `WorkshopUxService`
@@ -214,6 +228,97 @@ TIMESTAMPTZ.** The range filters compare lexicographically in the in-memory prov
 differ but whose instants match, and would move the boundaries of a range query — exactly
 the edge cases a timeline scrubber lands on. `durationMs` is still computed numerically
 from parsed dates.
+## This pass — `SqlQueryService`
+
+The one a lead prod-testing the headless API actually reaches for: send SQL, get rows
+back. And unlike most of the queue, it does real work — the statement is parsed, the
+WHERE, ORDER BY, LIMIT and column list are pushed down to the dataset service, and the
+join is evaluated over what comes back. Datasets became durable in #24, so a query on
+this provider now reads rows that survived a restart and writes a job record that does
+the same.
+
+**The risk here is not mainly storage.** A query service that stores its jobs perfectly
+and *evaluates* differently on the two providers is the worse failure: the same
+statement over the same rows would return different answers on dev and prod, and neither
+deployment would look broken. So the parser moved from `storage-memory` into
+`@altius/spi` alongside a new query engine, and both providers call them. The in-memory
+service lost its copy of the execution path entirely; it is now a job store plus a call
+to the shared engine, which is what the Postgres one is too.
+
+The conformance category is weighted accordingly — twenty assertions per provider, most
+of them about what a query *means* rather than about the record round-tripping: filter
+pushdown, comparison operators, projection, ordering, which LIMIT wins when the
+statement and the request both carry one, joins, and the surprising-but-shared rule that
+`SELECT *` over an empty result reports no columns at all.
+
+**Two limits matched rather than fixed**, both stated in the store header. `submit` is
+"async" in name only: it writes the job `queued`, then `running`, then terminal, all
+before returning, so a caller polling `get()` will never catch one in flight and a queue
+that stopped draining is not a state this can represent. And the result rows are stored
+on the job in a single JSONB value — which is what makes `results()` answerable after
+the process that ran the query is gone, and also means a `SELECT` with no LIMIT writes
+its entire result set into one row. For a query service that is a real ceiling.
+
+Five regressions injected, five caught, each failing only its intended cases. The
+strongest is the one that proves the query reads real data rather than inventing it:
+pointing the Postgres service at a fresh in-memory dataset store fails thirteen cases.
+Breaking the *shared* engine (dropping the column projection) fails the same case on
+**both** providers, which is the property extracting it was for.
+
+**And one of my own cases turned out to be vacuous, twice over.** The plain
+"lists jobs newest first" assertion passes on a provider ordering by `submittedAt`
+alone, because two round-trips to Postgres land in two different milliseconds. Freezing
+the clock fixed it for the in-memory provider — but with only two colliding jobs the
+Postgres tie still happened to come back in the right order, so the injection passed
+anyway. Four colliding jobs catches it, deterministically across three runs. Worth
+recording because the first fix looked like it worked: a collision case is only a proof
+once the injection actually fails.
+## This pass — `ConflictResolutionService`
+
+A conflict is a datasource sync and a user edit disagreeing about one field. Two pieces
+of state live behind this service, and **both fail silently when lost**:
+
+- **unresolved conflicts** — the queue of disagreements waiting on a decision. Lose it
+  and the discrepancy is never surfaced: no error, no alert, just two systems quietly
+  holding different values for the same field.
+- **the tenant's default strategy** — `getDefaultStrategy` falls back to
+  `user_edits_win` when none is stored, so a tenant that chose `latest_value_wins` and
+  lost it does not get an error after a restart. It gets the other answer, on every
+  conflict, indefinitely. The durability injection reports exactly that:
+  `expected 'user_edits_win' to be 'latest_value_wins'`.
+
+**Choosing the winner moved into `@altius/spi`, and the reason is stronger here than in
+any previous pass: the output of that function is data.** Two providers disagreeing
+about `latest_value_wins` would write different values into the same field for the same
+conflict, and neither would error — the divergence would surface much later, in the data
+itself, with nothing to say which deployment produced it. So most of the conformance
+cases are about *which value wins* rather than about the record round-tripping, and the
+two injections that break the shared resolver fail on both providers.
+
+Two things the Postgres store had to get right that the `Map` got for free.
+
+**A stored `null` and an absent value are the same thing once they come back.**
+`undefined` binds as SQL NULL, `null` binds as JSON null, and the driver parses both to
+`null`. So every read also asks Postgres `IS NULL` per column, and that boolean decides
+between them. It is not academic: resolving `manual` with no value stores nothing, a
+conflict never resolved stores nothing, and a conflict whose user value genuinely *is*
+null has to round-trip as null rather than vanish.
+
+**The driver already parses JSONB.** The `typeof v === 'string' ? JSON.parse(v) : v`
+idiom the other stores in this repo use is harmless there because those columns only
+ever hold objects — here a column legitimately holds a bare string, and parsing it a
+second time throws `Unexpected token 'C', "Cardiology" is not valid JSON`. Found by the
+conformance suite on its first run, before any injection.
+
+**And an injection taught me a case was weaker than it looked — again.** Dropping the
+null guard from `merge` passed, because the case testing it used a null *datasource*
+value, and spreading `null` in an object literal is a no-op: guard or no guard, the
+answer is the same. The direction that makes the guard load-bearing is a null *user*
+value — without the guard both sides look mergeable and the result is the datasource
+object; with it, the user's null wins and the field is cleared. That case fails the
+injection. Recorded because this is the second pass in a row where a passing injection
+meant a badly aimed test rather than a badly aimed injection, and the two are only
+distinguishable by looking.
 
 ## Previous pass — `ChangeProposalStore`
 
@@ -293,6 +398,21 @@ this repo** — no `createCipheriv`, no KMS client, no `pgcrypto` in the DDL (ch
 assumed). Converting either as-is would move secrets from a `Map` that dies with the
 process into a table that does not, which is a security decision and not one to take as a
 side effect of a durability pass.
+routes before persistence is worth anything), then `DatasourceService` and
+`VariableTransformService`, which are what remains of the dataset/pipeline data plane
+once the open PRs land.
+routes before persistence is worth anything), then `VariableTransformService` and
+`EventObjectService`.
+
+**Two candidates are deliberately blocked, and need a decision rather than a PR.**
+`ConnectorCatalogService` and `DatasourceService` both hold credentials in the state
+they would persist: `EnterpriseAuthScheme` carries `clientSecret`, `apiKey`, `password`,
+`token` and `refreshToken` as plain fields, and `Datasource.connection` is an untyped
+bag that in practice holds the same. There is **no encryption-at-rest machinery anywhere
+in this repo** — no `createCipheriv`, no KMS client, no `pgcrypto` in the DDL (checked,
+not assumed). Converting either as-is would move secrets from a `Map` that dies with the
+process into a table that does not, which is a security decision and not one to take as
+a side effect of a durability pass.
 
 **Two more are skipped for reasons that are not about secrets.** `BuildTriggerService`
 duplicates what `PipelineBuildService` already does with action triggers, and its
@@ -302,6 +422,9 @@ worth a table, and the two should be reconciled first. And `TransformExpressionS
 holds **no state at all**: it is `listFunctions()` plus a pure `evaluate()`, so it belongs
 beside `AccessExplanationService` as a standing false demotion rather than in the work
 queue.
+holds **no state at all**: it is `listFunctions()` plus a pure `evaluate()`, so it
+belongs beside `AccessExplanationService` as a standing false demotion rather than in
+the work queue.
 
 Counts here are measured on **this branch's base**, `main`. Several durability PRs are
 open and unmerged, each moving the same counters, so the headline row will need

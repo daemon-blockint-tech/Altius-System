@@ -159,14 +159,20 @@ import {
   PostgresApprovalWorkflowService,
   PostgresDataExpectationsService,
   PostgresEventObjectService,
+  PostgresConflictResolutionService,
   PostgresHumanInTheLoopService,
   PostgresMultiOntologyGovernanceService,
-  PostgresObjectSetFilterStore, PostgresApprovalWorkflowService, PostgresDataExpectationsService,
+  PostgresOntologyChangeHistoryService,
+  PostgresEventObjectService,
   PostgresDesignSystemService,
-  PostgresModelRegistryService, PostgresModelInferenceService,
-  PostgresModelChainService, PostgresConnectorCatalogService, PostgresCommandService,
+  PostgresModelRegistryService,
+  PostgresModelInferenceService,
+  PostgresModelChainService,
+  PostgresConnectorCatalogService,
+  PostgresCommandService,
   PostgresDatasetService,
   PostgresSqlQueryService,
+  PostgresVariableTransformService,
   PostgresUserDirectoryService,
   PostgresDesignSystemService,
   PostgresModelRegistryService,
@@ -176,6 +182,7 @@ import {
   PostgresCommandService,
   PostgresBatchTransformService,
   PostgresLayoutDeviceCaptureService,
+  PostgresSqlQueryService,
   PostgresWorkshopUxService,
 } from '@altius/storage-postgres';
 import {
@@ -259,6 +266,9 @@ import {
 import {
   generateSyncStatusRoutes,
 } from './rest/sync-status-routes.js';
+import {
+  generateDataConnectionStatusRoutes,
+} from './rest/data-connection-status-routes.js';
 import {
   registerAttachmentRoutes,
 } from './rest/attachment-routes.js';
@@ -1540,6 +1550,7 @@ async function main(): Promise<void> {
       // REST surface when the non-durable gate is open.
       agentEvaluationService: new InMemoryAgentEvaluationService(),
       conflictResolutionService: new InMemoryConflictResolutionService(),
+      agentThreadStore: new InMemoryAgentThreadStore(),
       connectorCatalogService: new InMemoryConnectorCatalogService(),
       dataExpectationsService: new InMemoryDataExpectationsService(),
       // One copilot store, two surfaces. `embeddedCopilotService` configures
@@ -1556,6 +1567,7 @@ async function main(): Promise<void> {
       processMiningService: new InMemoryProcessMiningService(),
       // Pipeline Data Ops â€” Pipeline & Data Ops.
       sqlQueryService: new InMemorySqlQueryService(datasets),
+      batchTransformService: new InMemoryBatchTransformService(datasets),
       variableTransformService: new InMemoryVariableTransformService(),
       rulesEngineService: new InMemoryRulesEngineService(),
       pipelineService: new InMemoryPipelineService(),
@@ -1686,6 +1698,14 @@ async function main(): Promise<void> {
     // every Postgres deployment. The in-memory fallback shares the `datasets`
     // instance above for the same reason.
     datasetMetadataService: pgPool ? new PostgresDatasetMetadataService(pgPool) : new InMemoryDatasetMetadataService(datasets),
+    // Interactive SQL over datasets — Postgres-backed when available. The job
+    // record is what becomes durable: which query ran, who ran it, and what it
+    // returned, so `results` still answers after the process that ran it is
+    // gone. Execution itself is shared code in @altius/spi, and the rows it
+    // reads have been durable since datasets were. This graduated out of
+    // `nonDurableServices`, where the gate withheld it under Postgres.
+    sqlQueryService: pgPool ? new PostgresSqlQueryService(pgPool) : new InMemorySqlQueryService(datasets),
+    // Change proposals — Postgres-backed when available. This is the audit
     // Change proposals â€” Postgres-backed when available. This is the audit
     // trail for AI-driven changes: who approved what, and when. It graduated
     // out of `nonDurableServices`, where the gate withheld it under Postgres
@@ -1698,8 +1718,14 @@ async function main(): Promise<void> {
     humanInTheLoopService: pgPool ? new PostgresHumanInTheLoopService(pgPool) : new InMemoryHumanInTheLoopService(changeProposals),
     // SQL query — Postgres-backed when available.
     sqlQueryService: pgPool ? new PostgresSqlQueryService(pgPool) : new InMemorySqlQueryService(datasets),
+    // Variable transforms — Postgres-backed when available.
+    variableTransformService: pgPool ? new PostgresVariableTransformService(pgPool) : new InMemoryVariableTransformService(),
     // Multi-ontology governance — Postgres-backed when available.
     multiOntologyGovernanceService: pgPool ? new PostgresMultiOntologyGovernanceService(pgPool) : new InMemoryMultiOntologyGovernanceService(),
+    // Ontology change history — Postgres-backed when available.
+    ontologyChangeHistoryService: pgPool ? new PostgresOntologyChangeHistoryService(pgPool) : new InMemoryOntologyChangeHistoryService(),
+    // Event objects — Postgres-backed when available.
+    eventObjectService: pgPool ? new PostgresEventObjectService(pgPool) : new InMemoryEventObjectService(),
     // Business rules â€” Postgres-backed when available. `state` is what decides
     // whether a rule governs anything, so losing it silently reverts a rule to
     // draft: nothing looks broken, the rule just stops applying.
@@ -1710,6 +1736,13 @@ async function main(): Promise<void> {
     // stops new events being flagged. Both quiet. Graduated out of
     // `nonDurableServices`.
     eventObjectService: pgPool ? new PostgresEventObjectService(pgPool) : new InMemoryEventObjectService(),
+    // Conflict resolution — Postgres-backed when available. Both halves fail
+    // silently when lost: an unresolved conflict that disappears means the
+    // datasource and the user edit quietly keep different values, and a lost
+    // default strategy falls back to `user_edits_win` rather than erroring, so
+    // a tenant that chose otherwise gets the other answer on every conflict.
+    // Graduated out of `nonDurableServices`.
+    conflictResolutionService: pgPool ? new PostgresConflictResolutionService(pgPool) : new InMemoryConflictResolutionService(),
     // Usage metrics — Postgres-backed when available. The record() method is
     // Usage metrics â€” Postgres-backed when available. The record() method is
     // an instrumentation hook; query/summary endpoints read from Postgres.

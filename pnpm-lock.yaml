@@ -568,6 +568,9 @@ importers:
         specifier: workspace:*
         version: link:../../packages/spi
     devDependencies:
+      '@altius/engine':
+        specifier: workspace:*
+        version: link:../../packages/engine
       '@altius/storage-memory':
         specifier: workspace:*
         version: link:../../packages/storage-memory
