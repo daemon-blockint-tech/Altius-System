@@ -122,12 +122,12 @@ import { PostgresStorageProvider, PostgresLineageStore, PostgresAuditStore, Post
   PostgresOntologyUsageMetricsService, PostgresScopedSessionStore,
   PostgresAgentThreadStore,
   PostgresChangeProposalStore,
-  PostgresMultiOntologyGovernanceService,
   PostgresObjectSetFilterStore, PostgresApprovalWorkflowService, PostgresDataExpectationsService,
   PostgresDesignSystemService,
   PostgresModelRegistryService, PostgresModelInferenceService,
   PostgresModelChainService, PostgresConnectorCatalogService, PostgresCommandService,
   PostgresDatasetService,
+  PostgresBatchTransformService,
   PostgresUserDirectoryService,
   PostgresLayoutDeviceCaptureService,
 } from '@altius/storage-postgres';
@@ -1319,11 +1319,11 @@ async function main(): Promise<void> {
       embeddedCopilotService: copilots,
       eventObjectService: new InMemoryEventObjectService(),
       graphAnalysisService: new InMemoryGraphAnalysisService(),
+      multiOntologyGovernanceService: new InMemoryMultiOntologyGovernanceService(),
       pipelineBuildService: new InMemoryPipelineBuildService(),
       platformAssistantService: new InMemoryPlatformAssistantService(),
       processMiningService: new InMemoryProcessMiningService(),
       // Pipeline Data Ops — Pipeline & Data Ops.
-      batchTransformService: new InMemoryBatchTransformService(datasets),
       sqlQueryService: new InMemorySqlQueryService(datasets),
       variableTransformService: new InMemoryVariableTransformService(),
       rulesEngineService: new InMemoryRulesEngineService(),
@@ -1452,13 +1452,12 @@ async function main(): Promise<void> {
     // out of `nonDurableServices`, where the gate withheld it under Postgres
     // rather than accept approvals it would lose on restart.
     changeProposalStore: pgPool ? new PostgresChangeProposalStore(pgPool) : new InMemoryChangeProposalStore(),
-    // Multi-ontology governance — Postgres-backed when available. The sharing
-    // rules are an access-control surface: which other org may reach which
-    // ontologies, under which markings. It fails closed, so losing them costs
-    // partners their access rather than granting anyone more — but a cross-org
-    // arrangement that evaporates on restart takes its audit trail with it.
-    // Graduated out of `nonDurableServices`.
-    multiOntologyGovernanceService: pgPool ? new PostgresMultiOntologyGovernanceService(pgPool) : new InMemoryMultiOntologyGovernanceService(),
+    // Batch transforms — Postgres-backed when available, so transforms, build
+    // history and schedules survive a restart. A schedule that silently stops
+    // firing looks like nothing happening rather than like a failure.
+    // The executor registry stays per-process in both providers: a
+    // TransformExecutor is a live object, not something a table can hold.
+    batchTransformService: pgPool ? new PostgresBatchTransformService(pgPool, new PostgresDatasetService(pgPool)) : new InMemoryBatchTransformService(datasets),
     // Business rules — Postgres-backed when available. `state` is what decides
     // whether a rule governs anything, so losing it silently reverts a rule to
     // draft: nothing looks broken, the rule just stops applying.
