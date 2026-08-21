@@ -6,7 +6,6 @@
 import { randomUUID } from 'node:crypto';
 import { applyTransformStep } from '@altius/spi';
 import { executeSqlQuery } from '@altius/spi';
-import { parseSql } from './sql-parser.js';
 import type {
   BatchTransformService,
   BatchTransform,
