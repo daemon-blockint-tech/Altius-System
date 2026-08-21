@@ -1321,5 +1321,42 @@ export function generatePlatformDDL(): string[] {
   PRIMARY KEY ("tenant_id", "event_type")
 );`);
 
+
+  // ── Marking memberships (runtime half of MAC; definitions stay in packs) ──
+  statements.push(`CREATE TABLE IF NOT EXISTS "governance"."marking_memberships" (
+  "tenant_id" TEXT NOT NULL,
+  "user_id" TEXT NOT NULL,
+  "marking" TEXT NOT NULL,
+  "granted_by" TEXT NOT NULL,
+  "granted_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY ("tenant_id", "user_id", "marking")
+);`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_marking_members_tenant_marking" ON "governance"."marking_memberships" ("tenant_id", "marking");`);
+
+  // ── Agent approval holds (durable human-in-the-loop for high-risk actions) ──
+  statements.push(`CREATE TABLE IF NOT EXISTS "governance"."agent_holds" (
+  "id" TEXT NOT NULL,
+  "action_name" TEXT NOT NULL,
+  "risk_level" TEXT NOT NULL,
+  "agent_context" JSONB NOT NULL,
+  "status" TEXT NOT NULL DEFAULT 'pending',
+  "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "expires_at" TIMESTAMPTZ NOT NULL,
+  "decided_at" TIMESTAMPTZ,
+  "decided_by" TEXT,
+  "reason" TEXT,
+  PRIMARY KEY ("id")
+);`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_agent_holds_tenant_status" ON "governance"."agent_holds" (("agent_context"->>'tenantId'), "status");`);
+
+  // ── Sync checkpoints (durable CDC offset persistence) ──
+  statements.push(`CREATE TABLE IF NOT EXISTS "sync"."checkpoints" (
+  "tenant_id" TEXT NOT NULL,
+  "datasource" TEXT NOT NULL,
+  "checkpoint" JSONB NOT NULL,
+  "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY ("tenant_id", "datasource")
+);`);
+
   return statements;
 }

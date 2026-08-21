@@ -51,14 +51,26 @@ function generateEventId(): string {
 
 /**
  * Emits CloudEvents for object and link lifecycle operations.
+ *
+ * @sensitive fields are redacted from `changes` before publishing to the bus,
+ * so a CloudEvent consumer that reads directly from the bus (not through the
+ * subscription manager's read-path redaction) cannot recover @sensitive values.
+ * The redaction map is optional — when absent, no redaction occurs (preserves
+ * existing behaviour for tests that don't declare @sensitive fields).
  */
 export class EngineEventEmitter {
   private readonly source: string;
   private readonly bus: EventBus;
+  private readonly sensitiveFieldsByType?: Map<string, Set<string>>;
 
-  constructor(bus: EventBus, source = 'altius://engine/ontology') {
+  constructor(
+    bus: EventBus,
+    source = 'altius://engine/ontology',
+    sensitiveFieldsByType?: Map<string, Set<string>>,
+  ) {
     this.source = source;
     this.bus = bus;
+    this.sensitiveFieldsByType = sensitiveFieldsByType;
   }
 
   // ── Object events ──────────────────────────────────────────────────────
@@ -197,6 +209,11 @@ export class EngineEventEmitter {
     ctx: RequestContext,
     data: ObjectEventData | LinkEventData,
   ): Promise<void> {
+    // Redact @sensitive fields from `changes` before the event reaches the bus.
+    // The bus is shared infrastructure (Redis/Redpanda/in-memory); a consumer
+    // that reads directly from it bypasses the subscription manager's read-path
+    // redaction. This is the write-side guard — fail-closed at the source.
+    const redactedData = this.redactChanges(data);
     const event: CloudEvent<ObjectEventData | LinkEventData> = {
       specversion: '1.0',
       id: generateEventId(),
@@ -209,9 +226,37 @@ export class EngineEventEmitter {
       // by every tenant, so this is what lets a consumer tell whose change it
       // is looking at. Dropping it here is a cross-tenant leak downstream.
       tenantid: ctx.tenantId,
-      data,
+      data: redactedData,
     };
     await this.bus.publish(event);
+  }
+
+  /**
+   * Null out `changes` entries for @sensitive fields before the event leaves
+   * the engine. Returns `data` unchanged when no sensitive map is configured
+   * or the type has no sensitive fields. Mutates a copy, not the caller's
+   * original — the action executor's audit trail still needs the raw values
+   * for the read-path redaction to have something to redact.
+   */
+  private redactChanges(data: ObjectEventData | LinkEventData): ObjectEventData | LinkEventData {
+    if (!this.sensitiveFieldsByType || this.sensitiveFieldsByType.size === 0) return data;
+    if (!data.changes) return data;
+
+    const typeName = 'objectType' in data ? data.objectType : undefined;
+    if (!typeName) return data;
+
+    const sensitive = this.sensitiveFieldsByType.get(typeName);
+    if (!sensitive || sensitive.size === 0) return data;
+
+    const redactedChanges: ChangeSet = {};
+    for (const [field, values] of Object.entries(data.changes)) {
+      if (sensitive.has(field)) {
+        redactedChanges[field] = { old: null, new: null };
+      } else {
+        redactedChanges[field] = values;
+      }
+    }
+    return { ...data, changes: redactedChanges };
   }
 
   private buildCause(ctx: RequestContext, cause?: EventCause): EventCause {

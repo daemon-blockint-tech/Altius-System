@@ -425,7 +425,7 @@ describe('Security governance REST routes', () => {
       const approveRoute = findRoute(routes, 'POST', '/api/v1/agent-holds/:id/approve');
       const apprRes = await approveRoute.handler(restReq('POST', `/api/v1/agent-holds/${holdId}/approve`, {}, { id: holdId }), ctx);
       expect(apprRes.status).toBe(200);
-      expect(guard.isApproved(holdId)).toBe(true);
+      expect(await guard.isApproved(holdId)).toBe(true);
     });
 
     it('hides other-tenant holds from approve/reject (404), and reject records the reason', async () => {
@@ -435,13 +435,13 @@ describe('Security governance REST routes', () => {
       const approveRoute = findRoute(routes, 'POST', '/api/v1/agent-holds/:id/approve');
       const crossRes = await approveRoute.handler(restReq('POST', `/api/v1/agent-holds/${foreignHoldId}/approve`, {}, { id: foreignHoldId }), ctx);
       expect(crossRes.status).toBe(404);
-      expect(guard.isApproved(foreignHoldId)).toBe(false);
+      expect(await guard.isApproved(foreignHoldId)).toBe(false);
 
       const rejectRoute = findRoute(routes, 'POST', '/api/v1/agent-holds/:id/reject');
       const rejRes = await rejectRoute.handler(restReq('POST', `/api/v1/agent-holds/${holdId}/reject`, { reason: 'not justified' }, { id: holdId }), ctx);
       expect(rejRes.status).toBe(200);
-      expect(guard.getHold(holdId)!.status).toBe('rejected');
-      expect(guard.getHold(holdId)!.reason).toBe('not justified');
+      expect((await guard.getHold(holdId))!.status).toBe('rejected');
+      expect((await guard.getHold(holdId))!.reason).toBe('not justified');
     });
   });
 

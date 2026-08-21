@@ -1,6 +1,6 @@
 # Altius capability backlog — `full` rows
 
-Evidence archive for the 102 capabilities graded `full`, moved out of [ALTIUS-BACKLOG.md](ALTIUS-BACKLOG.md) 21 Aug 2026 to keep the working file actionable. A row here is a snapshot: re-verify evidence before citing it. If a regression reopens one, move the row back and set `partial`.
+Evidence archive for the 105 capabilities currently graded `full`, moved out of [ALTIUS-BACKLOG.md](ALTIUS-BACKLOG.md) to keep the working file actionable. Counts and document roles are defined in the [parity index](../altius-foundry-parity.md). A row here is a snapshot: re-verify evidence before citing it. If a regression reopens one, move the row back and set `partial`.
 
 ## Workshop widgets
 

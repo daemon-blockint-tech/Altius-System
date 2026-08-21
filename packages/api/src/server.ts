@@ -127,6 +127,8 @@ import {
   InMemoryHumanInTheLoopService,
   InMemoryVectorSearchService,
   InMemoryCopilotService,
+  InMemoryMarkingMembershipStore,
+  InMemoryAgentHoldStore,
 } from '@altius/storage-memory';
 import {
   PostgresStorageProvider,
@@ -176,6 +178,8 @@ import {
   PostgresUserDirectoryService,
   PostgresLayoutDeviceCaptureService,
   PostgresWorkshopUxService,
+  PostgresMarkingMembershipStore,
+  PostgresAgentHoldStore,
 } from '@altius/storage-postgres';
 import {
   ObjectManager,
@@ -220,7 +224,7 @@ import {
   DefaultAccessExplanationService,
 } from '@altius/security';
 import type { OpenFgaClientInterface, FgaClientResolver } from '@altius/security';
-import type { StorageProvider, RequestContext, ScopedSessionStore } from '@altius/spi';
+import type { StorageProvider, RequestContext, ScopedSessionStore, MarkingMembershipStore } from '@altius/spi';
 import {
   createGraphQLServer,
   buildResolverContext,
@@ -246,6 +250,7 @@ import {
 import {
   generateAuditRoutes,
 } from './rest/audit-routes.js';
+import { generateMarkingRoutes } from './rest/marking-routes.js';
 import {
   generateLlmRoutes,
   generateWorkflowRoutes,
@@ -559,6 +564,24 @@ function catalogEntryForProvider(
   };
 }
 
+/**
+ * Build a map of ObjectType name → set of @sensitive field names, for the
+ * event emitter to redact from CloudEvent `changes` before publishing to the
+ * bus. Returns an empty map when no type declares @sensitive.
+ */
+function buildSensitiveFieldsByType(
+  schema: import('@altius/odl').ParsedSchema,
+): Map<string, Set<string>> {
+  const map = new Map<string, Set<string>>();
+  for (const ot of schema.objectTypes) {
+    const sensitive = ot.fields
+      .filter((f) => f.directives.some((d) => d.kind === 'sensitive'))
+      .map((f) => f.name);
+    if (sensitive.length > 0) map.set(ot.name, new Set(sensitive));
+  }
+  return map;
+}
+
 async function main(): Promise<void> {
   const isDev = process.env['NODE_ENV'] !== 'production';
 
@@ -749,7 +772,11 @@ async function main(): Promise<void> {
       logger.warn('WARNING: EventBus is in-memory â€” events will not survive restarts. Set REDPANDA_BROKERS to enable persistent streaming.');
     }
   }
-  const emitter = new EngineEventEmitter(eventBus);
+  const emitter = new EngineEventEmitter(
+    eventBus,
+    'altius://engine/ontology',
+    buildSensitiveFieldsByType(schema),
+  );
 
   // â”€â”€ CEL Evaluator â”€â”€
   // Constructed before the ObjectManager so the same instance can be
@@ -968,6 +995,8 @@ async function main(): Promise<void> {
   // store the REST endpoints write, or enforcement never sees a session.
   // Until assignment no session can exist, so resolving null is exact.
   let scopedSessionStore: ScopedSessionStore | undefined;
+  // Marking memberships: runtime MAC grants, additive over token claims.
+  let markingMembershipStore: MarkingMembershipStore | undefined;
   const authenticator = new OidcAuthenticator();
   authenticator.configure({
     issuer: oidcIssuer,
@@ -988,6 +1017,10 @@ async function main(): Promise<void> {
     // cache here if p99 ever cares â€” revocation latency is the trade.
     scopedSessionResolver: async (tenantId, userId) =>
       scopedSessionStore ? scopedSessionStore.getActiveForUser(tenantId, userId) : null,
+    // Store-administered marking grants, unioned with token claims before
+    // scoped-session narrowing (additive-only; errors degrade to claims).
+    markingMembershipResolver: async (tenantId, userId) =>
+      markingMembershipStore ? markingMembershipStore.listForUser(tenantId, userId) : [],
   });
 
   // â”€â”€ Authorization (OpenFGA) â”€â”€
@@ -1375,20 +1408,12 @@ async function main(): Promise<void> {
   // read-through cache). Writes bypass the action pipeline by design
   // (Spec Section 6) under the sync tenant/actor.
   let syncBoot: import('./sync-boot.js').SyncBootResult = { scheduler: null, scheduled: [], stop: async () => {} };
-  if (process.env.SYNC_SCHEDULER_ENABLED === 'true') {
-    const { startSyncScheduler } = await import('./sync-boot.js');
-    syncBoot = await startSyncScheduler({
-      connectorManifests: connectorManifests.filter(cm => connectorRegistry.has(cm.connector)),
-      registry: connectorRegistry,
-      objectManager,
-      tenantId: process.env.SYNC_TENANT || process.env.SEED_TENANT || 'system',
-    });
-  }
+  // syncBoot is started after pgPool is declared (below), so the scheduler
+  // can receive a Postgres-backed checkpoint store when available.
   // Always exported, 0 or 1. The per-datasource sync gauges only exist once a
   // scheduler has registered a datasource, so without this a deployment with
   // ingestion off emits no sync series at all and every sync alert stays silent
   // rather than firing.
-  syncSchedulerEnabled.set(syncBoot.scheduler ? 1 : 0);
   const stopSyncMetricsGauge = syncBoot.scheduler ? startSyncMetricsGauge(syncBoot.scheduler) : (() => {});
 
   // ── Data Connection Gateway ──
@@ -1437,6 +1462,23 @@ async function main(): Promise<void> {
     ? new PostgresApprovalWorkflowService(pgPool)
     : new InMemoryApprovalWorkflowService();
   const embeddingStore = pgPool ? new PostgresEmbeddingStore(pgPool) : new InMemoryEmbeddingStore();
+
+  // ── Sync scheduler boot (after pgPool so checkpoints can be durable) ──
+  if (process.env.SYNC_SCHEDULER_ENABLED === 'true') {
+    const { startSyncScheduler } = await import('./sync-boot.js');
+    const { PostgresCheckpointStore } = await import('@altius/sync');
+    const syncTenantId = process.env.SYNC_TENANT || process.env.SEED_TENANT || 'system';
+    syncBoot = await startSyncScheduler({
+      connectorManifests: connectorManifests.filter(cm => connectorRegistry.has(cm.connector)),
+      registry: connectorRegistry,
+      objectManager,
+      tenantId: syncTenantId,
+      // Durable checkpoints: Postgres-backed when available, so a restart
+      // resumes from the last synced position instead of re-scanning.
+      checkpointStore: pgPool ? new PostgresCheckpointStore(pgPool, syncTenantId) : undefined,
+    });
+  }
+  syncSchedulerEnabled.set(syncBoot.scheduler ? 1 : 0);
 
   // Services with no Postgres implementation keep their state in process memory.
   // Without a Postgres pool that is the only option and matches the deployment
@@ -1603,7 +1645,15 @@ async function main(): Promise<void> {
       .map(a => a.name),
   );
   for (const name of parseRoles(process.env['MCP_HIGH_RISK_ACTIONS']) ?? []) agentHighRiskActions.add(name);
-  const agentHoldGuard = mcpEnabled ? new HoldApprovePolicyGuard() : undefined;
+  // Agent hold store — Postgres-backed when available, in-memory fallback.
+  // Durable holds survive process restarts so a hold created before a crash
+  // is still answerable after recovery.
+  const agentHoldStore = mcpEnabled
+    ? (pgPool ? new PostgresAgentHoldStore(pgPool) : new InMemoryAgentHoldStore())
+    : undefined;
+  const agentHoldGuard = mcpEnabled
+    ? new HoldApprovePolicyGuard(agentHoldStore ? { holdStore: agentHoldStore } : {})
+    : undefined;
   if (agentHoldGuard && agentHighRiskActions.size > 0) {
     logger.info(`Agent governance: ${agentHighRiskActions.size} high-risk action(s) held for human approval on /mcp (${[...agentHighRiskActions].join(', ')})`);
   }
@@ -1641,6 +1691,11 @@ async function main(): Promise<void> {
     ...(agentHoldGuard ? { agentHoldGuard } : {}),
     ...(parseRoles(process.env['AGENT_HOLD_APPROVER_ROLES'])
       ? { agentHoldApproverRoles: parseRoles(process.env['AGENT_HOLD_APPROVER_ROLES'])! }
+      : {}),
+    // Marking administration roles — who can grant/revoke runtime marking
+    // memberships via REST. Default admin; empty = nobody (fail-closed).
+    ...(parseRoles(process.env['MARKING_ADMIN_ROLES'])
+      ? { markingAdminRoles: parseRoles(process.env['MARKING_ADMIN_ROLES'])! }
       : {}),
     consentPurposes,
     ...(consentSubjectTypes ? { consentSubjectTypes } : {}),
@@ -1692,6 +1747,7 @@ async function main(): Promise<void> {
     // hoisted variable so the authenticator's scopedSessionResolver reads the
     // same instance these routes write to.
     scopedSessionStore: (scopedSessionStore = pgPool ? new PostgresScopedSessionStore(pgPool) : new InMemoryScopedSessionStore()),
+    markingMembershipStore: (markingMembershipStore = pgPool ? new PostgresMarkingMembershipStore(pgPool) : new InMemoryMarkingMembershipStore()),
     // Ontology SQL â€” Postgres-backed when available; falls back to in-memory
     // with ObjectManager delegation for ontology reads.
     ontologySqlService: pgPool ? new PostgresOntologySqlService(pgPool) : new InMemoryOntologySqlService(async (ctx, objectType) => {
@@ -2082,6 +2138,7 @@ async function main(): Promise<void> {
   const restRoutes = [
     ...generateRestRoutes(schema, deps),
     ...generateAuditRoutes(deps),
+    ...generateMarkingRoutes(deps),
     ...generateTraverseRoutes(deps),
     ...generateRelationshipRoutes(deps, grantAllowlist),
     ...generateConsentRoutes(deps),

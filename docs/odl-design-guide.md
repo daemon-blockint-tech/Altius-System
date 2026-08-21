@@ -22,7 +22,7 @@ Adapted from Foundry ontology design docs (best-practices, anti-patterns, struct
 | Composite value (address, money) | `@struct` — scalar/enum/nested struct only, ⊥ ObjectType refs |
 | Aggregate over links | `@reducer` (structural declaration), ⊥ copy-pasted function logic |
 | Retiring field/type | `@deprecated` first, remove later; DDL additive only |
-| PII/sensitive | `@sensitive` ! on every personal field + per-relation field-permissions.yaml. viewer grant of @sensitive field = boot warning — treat as error |
+| PII/sensitive | `@sensitive` on every personal field + per-relation `field-permissions.yaml`. Universal exposure (`alwaysVisible` or `viewer`) fails boot unless the entry explicitly declares `allowSensitive: true` |
 | Search | `@searchable(weight)` on human-queried text fields |
 | Document decisions | description strings in ODL — parser preserves them |
 

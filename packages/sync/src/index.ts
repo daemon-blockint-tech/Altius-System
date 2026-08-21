@@ -111,7 +111,7 @@ export type {
   ReconciliationOptions,
 } from "./cdc/index.js";
 
-export { CdcConsumer, KafkaCdcSource, ReconciliationService } from "./cdc/index.js";
+export { CdcConsumer, KafkaCdcSource, ReconciliationService, PostgresCheckpointStore } from "./cdc/index.js";
 
 // Conflict resolution (Section 6.6)
 export type {

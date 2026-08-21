@@ -1,8 +1,10 @@
 # Altius — MVP Design: NHS Acute Pilot
 
-**Status:** Draft
+**Status:** Historical MVP design baseline
 **Date:** February 2026
 **Parent Spec:** altius-spec-v2.md
+
+> **Snapshot notice (renewed 21 Aug 2026):** this document records the original NHS pilot boundary and anticipated implementation, not current platform progress. Several technology and scope statements have since changed (including Apache AGE usage, application/UI scope, full-text search, temporal read surfaces, and service counts). Use [altius-foundry-parity.md](altius-foundry-parity.md) and the audit backlog for current evidence; retain this file for design provenance.
 
 ---
 

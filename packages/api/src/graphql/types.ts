@@ -10,7 +10,7 @@ import type {
   MarkingPolicy,
 } from '@altius/security';
 import type { ParsedSchema } from '@altius/odl';
-import type { RequestContext, StorageProvider, LLMClient, BlobStore, TimeSeriesStore, BranchStore, CommentStore, NotificationStore, EmbeddingStore, AlertingService, LLMGateway, DataFreshnessService, JustificationStore, AccessExplanationService, ScopedSessionStore, OntologySqlService, DatasetService, DatasetMetadataService, OntologyUsageMetricsService, GeospatialMapService, ScenarioService, ModelInferenceService, ModelChainService, ModelRegistryService, ApprovalWorkflowService, CommandService, WorkshopPlatformService, EmbeddingService, PlatformResourceService, SavedViewStore, UserDirectoryService, KioskService, LayoutDeviceCaptureService, OntologyManagerService, WorkshopUxService, ValueFormattingService, DesignSystemService, OntologyChangeHistoryService, CommandExchangeService, ObjectSetFilterStore, GraphService, TransformExpressionService, ChangeProposalStore, BusinessRulesService, AgentEvaluationService, AgentThreadStore, ConflictResolutionService, ConnectorCatalogService, DataExpectationsService, EmbeddedCopilotService, EventObjectService, GraphAnalysisService, MultiOntologyGovernanceService, PipelineBuildService, PlatformAssistantService, ProcessMiningService, BatchTransformService, SqlQueryService, VariableTransformService, RulesEngineService, PipelineService, SyncCdcService, DatasourceService, BuildTriggerService, SqlAnalyticsService, AgentService, ModelCatalogService, EvalService, HumanInTheLoopService, VectorSearchService, CopilotService } from '@altius/spi';
+import type { MarkingMembershipStore, RequestContext, StorageProvider, LLMClient, BlobStore, TimeSeriesStore, BranchStore, CommentStore, NotificationStore, EmbeddingStore, AlertingService, LLMGateway, DataFreshnessService, JustificationStore, AccessExplanationService, ScopedSessionStore, OntologySqlService, DatasetService, DatasetMetadataService, OntologyUsageMetricsService, GeospatialMapService, ScenarioService, ModelInferenceService, ModelChainService, ModelRegistryService, ApprovalWorkflowService, CommandService, WorkshopPlatformService, EmbeddingService, PlatformResourceService, SavedViewStore, UserDirectoryService, KioskService, LayoutDeviceCaptureService, OntologyManagerService, WorkshopUxService, ValueFormattingService, DesignSystemService, OntologyChangeHistoryService, CommandExchangeService, ObjectSetFilterStore, GraphService, TransformExpressionService, ChangeProposalStore, BusinessRulesService, AgentEvaluationService, AgentThreadStore, ConflictResolutionService, ConnectorCatalogService, DataExpectationsService, EmbeddedCopilotService, EventObjectService, GraphAnalysisService, MultiOntologyGovernanceService, PipelineBuildService, PlatformAssistantService, ProcessMiningService, BatchTransformService, SqlQueryService, VariableTransformService, RulesEngineService, PipelineService, SyncCdcService, DatasourceService, BuildTriggerService, SqlAnalyticsService, AgentService, ModelCatalogService, EvalService, HumanInTheLoopService, VectorSearchService, CopilotService } from '@altius/spi';
 import { DataPurpose } from '@altius/spi';
 
 /**
@@ -27,10 +27,10 @@ export interface ManifestRegistry {
  * tests can stub it without the concrete class.
  */
 export interface AgentHoldGuard {
-  listHolds(status?: HoldStatus): HoldRecord[];
-  getHold(holdId: string): HoldRecord | null;
-  approve(holdId: string, approvedBy: string): HoldRecord;
-  reject(holdId: string, rejectedBy: string, reason?: string): HoldRecord;
+  listHolds(status?: HoldStatus): Promise<HoldRecord[]>;
+  getHold(holdId: string): Promise<HoldRecord | null>;
+  approve(holdId: string, approvedBy: string): Promise<HoldRecord>;
+  reject(holdId: string, rejectedBy: string, reason?: string): Promise<HoldRecord>;
 }
 
 /**
@@ -46,6 +46,10 @@ export interface ApiDependencies {
   consentService?: ConsentService;
   /** Mandatory marking policy; absent means no markings are configured. */
   markingPolicy?: MarkingPolicy;
+  /** Runtime marking memberships (who holds a marking); definitions stay pack-declared. */
+  markingMembershipStore?: MarkingMembershipStore;
+  /** Roles allowed to administer marking memberships. Default admin; empty = nobody. */
+  markingAdminRoles?: readonly string[];
   /**
    * Live-subscription registry, so consent revocation can close the streams
    * about the revoking subject. Absent means revocation still takes effect —

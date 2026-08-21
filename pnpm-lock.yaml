@@ -577,6 +577,9 @@ importers:
       '@altius/storage-postgres':
         specifier: workspace:*
         version: link:../../packages/storage-postgres
+      '@altius/sync':
+        specifier: workspace:*
+        version: link:../../packages/sync
       '@types/node':
         specifier: ^22.0.0
         version: 22.19.10

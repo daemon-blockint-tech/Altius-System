@@ -387,7 +387,7 @@ export function generateSecurityGovernanceRoutes(deps: ApiDependencies): RestRou
         const denied = approverGate(ctx);
         if (denied) return denied;
         const status = typeof req.query['status'] === 'string' ? req.query['status'] as HoldStatus : undefined;
-        const holds = guard.listHolds(status).filter(inTenant(ctx));
+        const holds = (await guard.listHolds(status)).filter(inTenant(ctx));
         return { status: 200, body: { data: holds } };
       },
     });
@@ -400,15 +400,15 @@ export function generateSecurityGovernanceRoutes(deps: ApiDependencies): RestRou
           const denied = approverGate(ctx);
           if (denied) return denied;
           const id = req.params['id'] ?? '';
-          const hold = guard.getHold(id);
+          const hold = await guard.getHold(id);
           if (!hold || !inTenant(ctx)(hold)) {
             return { status: 404, body: { error: 'NOT_FOUND', message: 'Agent hold not found' } };
           }
           try {
             const body = (req.body ?? {}) as Record<string, unknown>;
             const decided = decision === 'approve'
-              ? guard.approve(id, ctx.user.id)
-              : guard.reject(id, ctx.user.id, typeof body['reason'] === 'string' ? body['reason'] : undefined);
+              ? await guard.approve(id, ctx.user.id)
+              : await guard.reject(id, ctx.user.id, typeof body['reason'] === 'string' ? body['reason'] : undefined);
             return { status: 200, body: { data: decided } };
           } catch (err) {
             // Guard throws on non-pending/expired holds: a state conflict, not a 500.

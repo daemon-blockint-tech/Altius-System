@@ -178,6 +178,10 @@ export type {
   CreateScopedSessionInput,
 } from './security-governance.js';
 
+// Per-user marking memberships — runtime half of MAC; definitions stay pack-declared.
+export type { MarkingMembership, MarkingMembershipStore } from './marking-membership.js';
+export type { AgentHoldRecord, AgentHoldStore, HoldStatus, HoldRiskLevel, HoldAgentContext } from './agent-hold-store.js';
+
 // Ontology usage metrics
 export type {
   OntologyUsageMetricsService,

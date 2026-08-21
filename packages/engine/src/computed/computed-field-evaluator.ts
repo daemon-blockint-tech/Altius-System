@@ -32,6 +32,8 @@ export interface ComputeContext {
   ctx: RequestContext;
   objectType: string;
   objectId: string;
+  /** Needed to infer link direction — see resolveLinkArgs. */
+  schema: ParsedSchema;
 }
 
 /** A built-in compute function signature. */
@@ -51,11 +53,96 @@ const BUILT_IN_FUNCTIONS: Record<string, ComputeFunction> = {
 };
 
 /**
+ * Resolve the link type and direction for a link-walking builtin.
+ *
+ * The three builtins used to disagree with each other on both, silently:
+ *
+ *   countLinks    args.type      direction default 'inbound'
+ *   lookupField   args.linkType  direction default 'inbound'
+ *   sum/avg/min/maxLinks  args.linkType  direction default 'outbound'
+ *
+ * So `countLinks(type: "HasReading")` and `sumLinks(linkType: "HasReading",
+ * field: "value")` on the SAME ObjectType walked opposite directions from the
+ * same object. One of them returned 0 and neither raised anything, because a
+ * link query in the wrong direction is empty, not invalid.
+ *
+ * Rather than pick a default and make the other builtins match it — which
+ * would have silently zeroed the three shipped packs, all of which rely on the
+ * inbound one — the direction is now INFERRED from the schema. A link type
+ * names its ends, and the object being computed sits on exactly one of them:
+ * if this type is the link's `from`, the links lead outbound; if it is the
+ * `to`, they lead inbound. There is nothing left to get wrong.
+ *
+ * An explicit `direction` still wins, so existing declarations keep working
+ * and a self-referential link — the one case where both ends are this type —
+ * can still be expressed. That case is an error without it, because there is
+ * no correct guess to make.
+ *
+ * Both argument spellings are accepted. Neither is worth a migration, and a
+ * pack author copying one builtin's usage to another should not be punished.
+ */
+function resolveLinkArgs(
+  args: DirectiveArgValue | undefined,
+  context: ComputeContext,
+  label: string,
+): { linkType: string; direction: 'inbound' | 'outbound' } {
+  if (!args || typeof args !== 'object' || Array.isArray(args)) {
+    throw new Error(`${label} requires args with a link type`);
+  }
+  const argsObj = args as Record<string, DirectiveArgValue>;
+
+  const linkType = typeof argsObj.linkType === 'string'
+    ? argsObj.linkType
+    : typeof argsObj.type === 'string'
+      ? argsObj.type
+      : undefined;
+  if (!linkType) {
+    throw new Error(`${label} requires args.linkType (or args.type) to be a string`);
+  }
+
+  if (typeof argsObj.direction === 'string') {
+    const explicit = argsObj.direction.toLowerCase();
+    if (explicit !== 'inbound' && explicit !== 'outbound') {
+      throw new Error(`${label}: direction must be INBOUND or OUTBOUND, got "${argsObj.direction}"`);
+    }
+    return { linkType, direction: explicit };
+  }
+
+  const def = context.schema.linkTypes.find((lt) => lt.name === linkType);
+  if (!def) {
+    // Previously this produced an empty link query and a silent 0/null. A
+    // link type that is not in the schema is a pack bug, and saying so is
+    // cheaper than the answer it used to give.
+    throw new Error(
+      `${label}: "${linkType}" is not a link type in this ontology`,
+    );
+  }
+
+  const fromThis = def.from === context.objectType;
+  const toThis = def.to === context.objectType;
+
+  if (fromThis && toThis) {
+    throw new Error(
+      `${label}: "${linkType}" links ${context.objectType} to itself, so the ` +
+      `direction cannot be inferred — declare direction: INBOUND or OUTBOUND.`,
+    );
+  }
+  if (fromThis) return { linkType, direction: 'outbound' };
+  if (toThis) return { linkType, direction: 'inbound' };
+
+  throw new Error(
+    `${label}: "${linkType}" links ${def.from} to ${def.to}, neither of which ` +
+    `is ${context.objectType}`,
+  );
+}
+
+/**
  * countLinks — counts active (non-deleted) inbound links of a given type.
  *
  * Args (from @computed directive):
  *   - type: string — the link type name
- *   - direction: 'INBOUND' | 'OUTBOUND' (defaults to 'INBOUND')
+ *   - direction: 'INBOUND' | 'OUTBOUND' — optional; inferred from the link
+ *     type's ends when omitted, and required only for a self-referential link.
  *
  * Example ODL:
  *   currentOccupancy: Int @computed(fn: "countLinks", args: { type: "AdmittedTo" })
@@ -64,19 +151,7 @@ async function countLinks(
   args: DirectiveArgValue | undefined,
   context: ComputeContext,
 ): Promise<number> {
-  if (!args || typeof args !== 'object' || Array.isArray(args)) {
-    throw new Error('countLinks requires args with { type: string }');
-  }
-
-  const argsObj = args as Record<string, DirectiveArgValue>;
-  const linkType = argsObj.type;
-  if (typeof linkType !== 'string') {
-    throw new Error('countLinks requires args.type to be a string');
-  }
-
-  const direction = typeof argsObj.direction === 'string'
-    ? (argsObj.direction.toLowerCase() as 'inbound' | 'outbound')
-    : 'inbound';
+  const { linkType, direction } = resolveLinkArgs(args, context, 'countLinks');
 
   const result = await context.storage.getLinks(
     context.ctx,
@@ -92,8 +167,9 @@ async function countLinks(
  * lookupField — fetches a scalar field from a related object via a link.
  *
  * Args (from @computed directive):
- *   - linkType: string — the link type to traverse
- *   - direction: 'INBOUND' | 'OUTBOUND' (defaults to 'OUTBOUND')
+ *   - linkType / type: string — the link type to traverse (both spellings work)
+ *   - direction: 'INBOUND' | 'OUTBOUND' — optional; inferred from the link
+ *     type's ends when omitted, and required only for a self-referential link.
  *   - field: string — the field to read from the related object
  *
  * Example ODL:
@@ -111,14 +187,11 @@ async function lookupField(
     throw new Error('lookupField requires args with { linkType: string, field: string }');
   }
   const argsObj = args as Record<string, DirectiveArgValue>;
-  const linkType = argsObj.linkType;
+  const { linkType, direction } = resolveLinkArgs(args, context, 'lookupField');
   const field = argsObj.field;
-  if (typeof linkType !== 'string' || typeof field !== 'string') {
-    throw new Error('lookupField requires args.linkType and args.field to be strings');
+  if (typeof field !== 'string') {
+    throw new Error('lookupField requires args.field to be a string');
   }
-  const direction = typeof argsObj.direction === 'string'
-    ? (argsObj.direction.toLowerCase() as 'inbound' | 'outbound')
-    : 'outbound';
 
   const result = await context.storage.getLinks(
     context.ctx,
@@ -157,9 +230,10 @@ async function loadLinkTarget(
  * Aggregate a numeric field across every object linked to this one.
  *
  * Args (from @computed directive):
- *   - linkType: string — the link type to traverse
+ *   - linkType / type: string — the link type to traverse (both spellings work)
  *   - field: string — the numeric field to aggregate on the linked objects
- *   - direction: 'INBOUND' | 'OUTBOUND' (defaults to 'OUTBOUND')
+ *   - direction: 'INBOUND' | 'OUTBOUND' — optional; inferred from the link
+ *     type's ends when omitted, and required only for a self-referential link.
  *
  * Example ODL:
  *   totalDose: Float @computed(fn: "sumLinks", args: { linkType: "Prescribed", field: "dose" })
@@ -178,14 +252,11 @@ function aggregateLinks(op: NumericAggregate): ComputeFunction {
       throw new Error(`${label} requires args with { linkType: string, field: string }`);
     }
     const argsObj = args as Record<string, DirectiveArgValue>;
-    const linkType = argsObj.linkType;
+    const { linkType, direction } = resolveLinkArgs(args, context, label);
     const field = argsObj.field;
-    if (typeof linkType !== 'string' || typeof field !== 'string') {
-      throw new Error(`${label} requires args.linkType and args.field to be strings`);
+    if (typeof field !== 'string') {
+      throw new Error(`${label} requires args.field to be a string`);
     }
-    const direction = typeof argsObj.direction === 'string'
-      ? (argsObj.direction.toLowerCase() as 'inbound' | 'outbound')
-      : 'outbound';
 
     // getLinks pages, and its default page is DEFAULT_LINK_QUERY_LIMIT (100).
     // Passing no options meant this aggregated the FIRST 100 links and reported
@@ -324,6 +395,7 @@ export class ComputedFieldEvaluator {
       ctx,
       objectType,
       objectId,
+      schema: this.schema,
     });
   }
 
@@ -366,6 +438,7 @@ export class ComputedFieldEvaluator {
       ctx,
       objectType,
       objectId,
+      schema: this.schema,
     });
   }
 

@@ -62,9 +62,9 @@ export interface McpPolicyGuard {
     riskLevel: 'low' | 'medium' | 'high',
     agentContext: { agentId: string; sessionId?: string; dryRun: boolean; model?: string; tenantId?: string },
   ): Promise<{ allowed: boolean; holdId?: string; reason?: string }>;
-  getHold(holdId: string): { actionName: string; status: string; agentContext: { agentId: string; tenantId?: string } } | null;
-  isApproved(holdId: string): boolean;
-  consume(holdId: string): void;
+  getHold(holdId: string): Promise<{ actionName: string; status: string; agentContext: { agentId: string; tenantId?: string } } | null>;
+  isApproved(holdId: string): Promise<boolean>;
+  consume(holdId: string): Promise<void>;
 }
 
 /**

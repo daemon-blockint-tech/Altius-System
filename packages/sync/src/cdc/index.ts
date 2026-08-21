@@ -10,6 +10,7 @@ export type {
 } from './cdc-consumer.js';
 
 export { CdcConsumer } from './cdc-consumer.js';
+export { PostgresCheckpointStore } from './postgres-checkpoint-store.js';
 
 export type { KafkaCdcSourceConfig } from './kafka-cdc-source.js';
 export { KafkaCdcSource } from './kafka-cdc-source.js';

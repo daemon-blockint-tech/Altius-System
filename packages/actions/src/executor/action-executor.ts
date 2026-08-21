@@ -808,8 +808,12 @@ export class ActionExecutor {
             actionId,
           },
           detail: {
-            before: Object.fromEntries(beforeStates),
-            after: Object.fromEntries(afterStates),
+            // Redact @sensitive fields at write-time so the stored audit
+            // trail never holds raw PII. The read-path redaction in
+            // audit-routes.ts becomes defense-in-depth, not the primary
+            // guard. Same redactSensitiveForEgress used for webhook egress.
+            before: redactSensitiveForEgress(Object.fromEntries(beforeStates), schema),
+            after: redactSensitiveForEgress(Object.fromEntries(afterStates), schema),
             result: 'success',
             // The checkpoint's why, kept with the what: an auditor reading
             // the change must not need a second store to see the reason.

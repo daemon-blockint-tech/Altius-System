@@ -30,8 +30,12 @@ my-pack/
     bootstrap.yaml         # Bootstrap seed data (optional)
   connectors/
     source-jdbc.yaml       # Connector configs (optional)
+  automations/
+    refresh-widget.yaml    # Event/schedule automation manifests (optional)
   permissions/
     roles.fga              # OpenFGA DSL overrides (optional)
+    field-permissions.yaml # Field visibility policy (auto-discovered)
+    markings.yaml          # Mandatory marking policy (auto-discovered)
 ```
 
 ### pack.yaml
@@ -45,13 +49,13 @@ description: "Example external domain pack"
 dependencies:
   altius.core: ">=1.0.0"
 
-# Optional: platform capabilities this pack opts into. The FHIR facade (/fhir/*)
-# and the FDP/CDM projection (/api/v1/cdm/*) are NHS-shaped and only mounted when
-# a loaded pack declares them — so a deployment without an NHS-style pack does
-# not expose these endpoints. Most packs omit this.
+# Optional platform surfaces this pack opts into. FHIR and CDM are NHS-shaped;
+# MCP is domain-neutral and exposes caller-governed ontology tools. Each surface
+# is mounted only when at least one loaded pack declares it.
 capabilities:
   - cdm
   - fhir
+  - mcp
 
 schema:
   - schema/types.odl
@@ -67,6 +71,9 @@ seed:
 connectors:
   - connectors/source-jdbc.yaml
 
+automations:
+  - automations/refresh-widget.yaml
+
 permissions:
   - permissions/roles.fga
 ```
@@ -78,12 +85,15 @@ permissions:
 | `namespace` | Recommended | ODL namespace, dot-separated (used for dependency resolution) |
 | `description` | No | Human-readable summary |
 | `dependencies` | No | Map of `namespace: ">=X.Y.Z"` constraints |
-| `capabilities` | No | Capability-gated facades this pack opts into (`cdm`, `fhir`). Omit unless the pack provides NHS/CDM-shaped data. |
+| `capabilities` | No | Capability-gated facades this pack opts into: `cdm`, `fhir`, and/or `mcp`. `cdm`/`fhir` are NHS-shaped; `mcp` exposes governed ontology tools for any suitable pack. |
 | `schema` | Recommended | ODL files to compile (relative paths); omit for metadata-only packs |
 | `actions` | No | Action manifest YAML files |
 | `connectors` | No | Connector configuration YAML files |
+| `automations` | No | Event- or schedule-triggered automation manifests |
 | `permissions` | No | OpenFGA DSL files merged into the authorization model |
 | `seed` | No | Seed data YAML files applied at boot (idempotent bootstrap) |
+
+`permissions/field-permissions.yaml` and `permissions/markings.yaml` are discovered by convention when present; they are not listed under `permissions:` because that manifest field names OpenFGA `.fga` overrides.
 
 ### ODL Schema Files
 

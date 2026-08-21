@@ -1,27 +1,81 @@
 # MCP Server
 
-Altius exposes an [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) server at `POST /mcp` for external AI agents. It wraps the existing governed action surface and FGA-scoped read queries — an agent is just another OIDC principal calling the same 8-stage action pipeline as a human caller.
+**Updated:** 21 August 2026
 
-## Surface
+Altius exposes a Model Context Protocol (MCP) server at `POST /mcp` for external AI agents and IDEs. The server is an adapter over the same schema, identity, authorization, consent, field-redaction, marking, function, and action services used by the REST and GraphQL surfaces.
 
-The MCP server implements the [Streamable HTTP transport](https://modelcontextprotocol.io/specification/2025-03-26/basic/transports) (JSON-RPC 2.0 over HTTP). It is **tools-only** and **stateless**:
+## Protocol surface
 
-- `initialize` — returns protocol version + server info
-- `notifications/initialized` — acknowledged (no-op for stateless)
-- `tools/list` — returns one tool per ActionType + one `search_<Type>` per ObjectType
-- `tools/call` — executes an action or a read query
+The server implements JSON-RPC 2.0 over the MCP Streamable HTTP transport and currently negotiates protocol version `2025-03-26`.
 
-No `resources/*` or `prompts/*` methods. No session state between calls.
+Supported methods:
 
-## Tools
+- `initialize` — negotiates the implemented protocol version and returns server identity.
+- `server/discover` — compatibility discovery for newer clients; reports the supported version and tool capability.
+- `notifications/initialized` — accepted as a no-op.
+- `tools/list` — returns the tools visible and usable by the authenticated caller.
+- `tools/call` — invokes an action, function, search, aggregate, or traversal tool.
 
-### Action tools
+`DELETE /mcp` is accepted as stateless session termination. The server exposes no MCP resources or prompts and stores no protocol session state between requests.
 
-One per `ActionType` in the loaded schema. The tool name is the action name (e.g. `AdmitPatient`); the `inputSchema` is derived from the action's `@param` fields (JSON Schema). Calling the tool runs the action through the full 8-stage governed pipeline (validate → authorise → consent → preconditions → execute → side-effects → audit → emit).
+## Generated tools
 
-### Read tools
+Tools are generated from the merged ODL schema loaded from the active domain packs.
 
-One `search_<Type>` per `ObjectType` (e.g. `search_Patient`). Input:
+| Schema primitive | Tool name | Execution path |
+|---|---|---|
+| `ActionType` | `<ActionName>` | Full `ActionExecutor` pipeline |
+| `FunctionType` | `function_<Name>` | Shared governed `invokeFunction` path |
+| `ObjectType` | `search_<Type>` | FGA-scoped object query, redaction, consent |
+| `ObjectType` | `aggregate_<Type>` | FGA/consent-scoped aggregate query |
+| `ObjectType` | `traverse_<Type>` | Mixed-type graph traversal with per-node controls |
+
+Function tools are advertised only when a function invoker is wired. Read tools for a marking-hidden ObjectType are indistinguishable from unknown tools.
+
+### Permission-scoped discovery
+
+`tools/list` is caller-specific:
+
+- Function tools are hidden unless the caller holds one of the function's `requiredRoles`.
+- Action tools are hidden when the corresponding action relation resolves to no usable object for the caller.
+- Read tools remain visible when they can legitimately return an empty FGA-scoped result, but tools for mandatory-marking-hidden types are removed.
+
+This discovery filtering is an affordance control. Every `tools/call` still repeats the authoritative execution-time checks.
+
+## Action invocation
+
+Calling an action tool constructs an actor with `type: "agent"` and runs:
+
+```text
+validate parameters
+→ mandatory marking checks
+→ authorization
+→ consent
+→ justification capture (when required)
+→ object resolution and CEL preconditions
+→ one SPI transaction for effects
+→ post-commit side effects
+→ audit
+→ CloudEvents and relationship-tuple synchronization
+```
+
+Reserved tool arguments are removed before action parameter validation:
+
+- `dryRun: true` — runs validation and policy checks without effects.
+- `_justification` — supplies the reason required by a manifest with `requiresJustification: true`.
+- `_holdId` — retries a high-risk action after human approval.
+
+### Human approval for high-risk actions
+
+Actions containing destructive `deleteObject` or `deleteLink` effects are high-risk by default. Additional names may be configured with `MCP_HIGH_RISK_ACTIONS`.
+
+Without an approved hold, the first call returns `POLICY_HOLD` and a hold ID. A reviewer uses the role-gated `/api/v1/agent-holds` API to approve or reject it. The agent retries once with `_holdId`; the hold must match the action, agent, and tenant and is consumed one-shot.
+
+## Read behavior
+
+### `search_<Type>`
+
+Input example:
 
 ```json
 {
@@ -30,115 +84,137 @@ One `search_<Type>` per `ObjectType` (e.g. `search_Patient`). Input:
 }
 ```
 
-Returns up to 50 objects, FGA-scoped to the caller's `viewer` relation on the type, with field-level redaction applied. No write tools — writes go through actions only.
+The server:
 
-## Auth
+1. rejects predicates on fields the caller cannot read;
+2. obtains the caller's `viewer` object set from the tenant's OpenFGA store;
+3. queries through `ObjectManager` so computed fields are included;
+4. applies field redaction;
+5. applies consent filtering;
+6. reports a post-consent count.
 
-OIDC bearer token in the `Authorization` header, validated by the same `OidcAuthenticator` used by the REST/GraphQL surface. No special agent identity, no bypass. In dev mode (`NODE_ENV != production`), a missing token resolves to the dev-user identity.
+### `aggregate_<Type>`
+
+Aggregates are restricted to authorized and consented objects. Aggregate, grouping, bucket, ordering, and filter fields are validated against schema and field visibility before storage is called.
+
+### `traverse_<Type>`
+
+Traversal validates the starting object and each link step, applies a hard step/node bound, and checks every returned node against its own ObjectType. Nodes, edges, and counts that would reveal a hidden endpoint are removed.
+
+## Function invocation
+
+`function_<Name>` delegates to the shared API function invoker. It enforces:
+
+- per-object ReBAC when the function has an ObjectType parameter;
+- `requiredRoles` deny-by-default;
+- caller-bound ontology reads with field redaction and consent;
+- writes only through governed actions;
+- function audit records.
+
+## Authentication and access enablement
+
+Every request is authenticated independently with an OIDC bearer token using the shared `OidcAuthenticator`. The resulting identity supplies user ID, tenant, roles, groups, and effective markings.
+
+Production never permits an unauthenticated fallback. Development bypass requires both:
+
+```text
+NODE_ENV != production
+ALTIUS_MCP_DEV_AUTH_BYPASS=true
+```
+
+Optional deployment allowlists provide an outer MCP access gate:
+
+- `MCP_ALLOWED_USERS`
+- `MCP_ALLOWED_GROUPS` (matches groups or roles)
+
+When either variable is configured, callers not named by either list receive `403` before tool discovery. Per-tool governance remains active after this gate.
+
+## OAuth discovery
+
+The API gateway exposes RFC 9728 protected-resource metadata at:
+
+```text
+GET /.well-known/oauth-protected-resource
+```
+
+A `401` from `/mcp` includes a `WWW-Authenticate: Bearer` challenge with the `resource_metadata` URL, allowing OAuth-capable MCP clients to discover the configured OIDC issuer.
+
+Set `API_PUBLIC_URL` to the externally routable API origin so generated discovery URLs are correct behind ingress or a proxy.
 
 ## Capability gate
 
-The MCP endpoint is mounted only when a loaded domain pack declares `mcp` in its `pack.yaml` `capabilities:` list. Non-NHS deployments expose no MCP surface. The `nhs-acute` pack declares `mcp`.
+`/mcp` is mounted only when at least one loaded domain pack declares:
+
+```yaml
+capabilities:
+  - mcp
+```
+
+The `nhs-acute` reference pack enables it, but MCP is not healthcare-specific; any pack may opt in.
 
 ## Client configuration
 
-### Claude Code / Claude Desktop
-
-`~/.claude/claude_desktop_config.json`:
+A client must send the OIDC access token on every request:
 
 ```json
 {
   "mcpServers": {
     "altius": {
-      "url": "http://localhost:4000/mcp",
-      "headers": { "Authorization": "Bearer <oidc-token>" }
+      "url": "https://altius.example.com/mcp",
+      "headers": {
+        "Authorization": "Bearer <oidc-access-token>"
+      }
     }
   }
 }
 ```
 
-### Anthropic SDK (TypeScript)
+For clients supporting OAuth protected-resource discovery, configure the `/mcp` URL and allow the client to follow the `WWW-Authenticate` challenge instead of manually pasting a long-lived token.
 
-```ts
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+## Wire examples
 
-const transport = new StreamableHTTPClientTransport(
-  new URL("http://localhost:4000/mcp"),
-  { requestInit: { headers: { Authorization: `Bearer ${token}` } } },
-);
-const client = new Client({ name: "my-agent", version: "1.0.0" });
-await client.connect(transport);
-
-const { tools } = await client.listTools();
-const result = await client.callTool({
-  name: "AdmitPatient",
-  arguments: { patient: "p-1", ward: "w-1", reason: "Emergency" },
-});
-```
-
-## Wire protocol examples
-
-### initialize
+### Initialize
 
 ```http
 POST /mcp
 Authorization: Bearer <token>
 Content-Type: application/json
 
-{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"claude-code","version":"1.0"}}}
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"client","version":"1.0"}}}
 ```
 
-Response:
-```json
-{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-03-26","capabilities":{"tools":{}},"serverInfo":{"name":"altius-mcp","version":"0.1.0"}}}
-```
-
-### tools/list
+### List caller-scoped tools
 
 ```http
 POST /mcp
 Authorization: Bearer <token>
+Content-Type: application/json
 
 {"jsonrpc":"2.0","id":2,"method":"tools/list"}
 ```
 
-### tools/call
+### Call an action
 
 ```http
 POST /mcp
 Authorization: Bearer <token>
+Content-Type: application/json
 
 {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"AdmitPatient","arguments":{"patient":"p-1","ward":"w-1","reason":"Emergency"}}}
 ```
 
-Response (success):
-```json
-{"jsonrpc":"2.0","id":3,"result":{"content":[{"type":"text","text":"{\"success\":true,\"actionId\":\"act_...\",\"affectedObjects\":[...]}"}],"isError":false}}
-```
+Tool-level failures are normally returned as a successful JSON-RPC response whose MCP result has `isError: true`, allowing an agent to inspect the policy or validation error and recover. Malformed JSON-RPC requests and unknown JSON-RPC methods use protocol error codes.
 
-Response (action denied by authz):
-```json
-{"jsonrpc":"2.0","id":3,"result":{"content":[{"type":"text","text":"{\"success\":false,\"errors\":[{\"code\":\"AUTHORIZATION_DENIED\",...}]}"}],"isError":true}}
-```
+## Auditing
 
-Response (unknown tool):
-```json
-{"jsonrpc":"2.0","id":3,"error":{"code":-32602,"message":"Unknown tool: Foo"}}
-```
+- Action calls are stamped as agent actions and audited by `ActionExecutor`.
+- Function calls use the shared function audit path.
+- MCP search, aggregate, and traversal calls are audited at the read-tool dispatcher.
 
-## Audit
-
-Every `tools/call` that executes an action runs through `ActionExecutor`, which writes an audit record (success or denial) via the injected `AuditWriter`. The agent's OIDC identity appears in the `actor` field — agent-driven actions are audited identically to human-driven ones. No separate audit path.
-
-## Security properties
-
-- **No bypass:** agent calls ride the same 8-stage pipeline (validate, authorise, consent, preconditions, execute, side-effects, audit, emit) as REST/GraphQL calls.
-- **Fail-closed auth:** no token → 401 (prod). Invalid token → 401.
-- **FGA-scoped reads:** `search_<Type>` tools only return objects the caller has `viewer` access to; field-level redaction applies.
-- **No per-user tool filtering in `tools/list`:** an agent sees all action names, but `tools/call` fails closed on unauthorized actions. Per-user filtering is a documented follow-up.
-- **No new dependencies:** the MCP wire protocol is implemented in ~250 lines of TypeScript using only the Node.js stdlib. No `@modelcontextprotocol/sdk` dependency on the server side — the protocol is deterministic and stable (2025-03-26 spec), and avoiding the SDK eliminates API-drift risk.
+Audit writes are best-effort after the authoritative access decision; an audit-store outage does not grant access or roll back already committed ontology effects.
 
 ## Deployment
 
-No new ports, no new containers. The MCP endpoint rides on the existing api-gateway port (default 4000). No changes to Helm values or docker-compose. The `mcp` capability is declared per-pack in `pack.yaml`.
+The MCP server adds no port or container. It is mounted on the API gateway's existing port. Per-principal rate limiting uses the same limiter as REST and GraphQL; with Redis it is shared across gateway replicas, otherwise it is per-process.
+
+The server implementation deliberately uses the repository's local wire types instead of a server-side MCP SDK. Protocol changes therefore require explicit updates to `packages/mcp-server/src/protocol.ts`, compatibility tests, and this document.

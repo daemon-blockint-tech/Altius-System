@@ -890,13 +890,13 @@ async function invokeActionTool(
   if (!dryRun && deps.policyGuard && deps.highRiskActions?.has(actionType.name)) {
     const guard = deps.policyGuard;
     if (typeof holdId === 'string' && holdId.length > 0) {
-      const hold = guard.getHold(holdId);
-      const valid =
-        hold !== null &&
+      const hold = await guard.getHold(holdId);
+      const approved = hold !== null &&
         hold.actionName === actionType.name &&
         hold.agentContext.agentId === user.id &&
         hold.agentContext.tenantId === user.tenantId &&
-        guard.isApproved(holdId);
+        await guard.isApproved(holdId);
+      const valid = approved;
       if (!valid) {
         return {
           content: [{
@@ -912,7 +912,7 @@ async function invokeActionTool(
           isError: true,
         };
       }
-      guard.consume(holdId);
+      await guard.consume(holdId);
     } else {
       const verdict = await guard.evaluate(actionType.name, 'high', {
         agentId: user.id,

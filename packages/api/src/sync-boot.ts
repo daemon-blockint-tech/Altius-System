@@ -129,13 +129,15 @@ export async function startSyncScheduler(opts: {
   registry: ConnectorRegistry;
   objectManager: ObjectManager;
   tenantId: string;
+  /** Optional durable checkpoint store. When absent, defaults to in-memory. */
+  checkpointStore?: import('@altius/sync').CheckpointStore;
 }): Promise<SyncBootResult> {
-  const { connectorManifests, registry, objectManager, tenantId } = opts;
+  const { connectorManifests, registry, objectManager, tenantId, checkpointStore } = opts;
   const noop: SyncBootResult = { scheduler: null, scheduled: [], stop: async () => {} };
   if (connectorManifests.length === 0) return noop;
 
   const { SyncScheduler, parseMappingObject } = await import('@altius/sync');
-  const scheduler = new SyncScheduler({ registry });
+  const scheduler = new SyncScheduler({ registry, ...(checkpointStore ? { checkpointStore } : {}) });
   const scheduled: string[] = [];
 
   for (const manifest of connectorManifests) {

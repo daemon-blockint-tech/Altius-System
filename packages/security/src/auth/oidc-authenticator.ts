@@ -45,6 +45,7 @@ export class OidcAuthenticator {
   private defaultTenantId: string | null = null;
   private roleMapping: RoleMappingConfig = DEFAULT_ROLE_MAPPING;
   private scopedSessionResolver: OidcConfig["scopedSessionResolver"];
+  private markingMembershipResolver: OidcConfig["markingMembershipResolver"];
 
   /**
    * Configure the authenticator with OIDC provider settings.
@@ -60,6 +61,7 @@ export class OidcAuthenticator {
     this.markingsClaim = config.markingsClaim ?? "markings";
     this.defaultTenantId = config.defaultTenantId ?? null;
     this.scopedSessionResolver = config.scopedSessionResolver;
+    this.markingMembershipResolver = config.markingMembershipResolver;
 
     if (config.roleMapping) {
       this.roleMapping = config.roleMapping;
@@ -109,6 +111,19 @@ export class OidcAuthenticator {
    * only marked resources are affected, everything unmarked still works.
    */
   private async applyScopedSession(user: AuthenticatedUser): Promise<AuthenticatedUser> {
+    // Union store-administered memberships FIRST — the store adds, never
+    // subtracts, so an error here degrades to token claims (logged upstream
+    // by the resolver), not to zero markings.
+    if (this.markingMembershipResolver) {
+      try {
+        const granted = await this.markingMembershipResolver(user.tenantId, user.id);
+        if (granted.length > 0) {
+          user = { ...user, markings: [...new Set([...(user.markings ?? []), ...granted])] };
+        }
+      } catch {
+        // additive source unavailable → proceed with token claims alone
+      }
+    }
     if (!this.scopedSessionResolver) return user;
     try {
       const session = await this.scopedSessionResolver(user.tenantId, user.id);

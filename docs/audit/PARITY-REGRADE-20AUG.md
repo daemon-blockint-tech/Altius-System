@@ -1,5 +1,7 @@
 # Parity re-grade — 20 Aug 2026, HEAD `177b628`
 
+> **Historical working log:** retained for the sequence of service-persistence measurements at the named commits. Repeated “Measured now” entries are chronology, not a current aggregate. Use [../altius-foundry-parity.md](../altius-foundry-parity.md) and the canonical backlog files for current counts.
+
 Third measured pass, same bar as the external audit: **demote unless the code proves
 otherwise**, and a capability counts only when a user reaches it through a real API
 against real Postgres. Reproduce with `node tools/parity/reachability.mjs`.
