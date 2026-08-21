@@ -741,7 +741,7 @@ export function generatePlatformDDL(): string[] {
   "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   "created_by" TEXT NOT NULL DEFAULT '',
   "last_validation" JSONB,
-  "UNIQUE ("tenant_id", "instance_name")
+  UNIQUE ("tenant_id", "instance_name")
 );`);
   statements.push(`CREATE TABLE IF NOT EXISTS "connector_catalog"."egress_policies" (
   "id" TEXT NOT NULL PRIMARY KEY,
