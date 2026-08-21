@@ -79,13 +79,13 @@ Graded `partial` as capabilities, but each Gap describes an enforcement hole in 
 
 **Status:** `partial`
 
-> 🔒 CLAIMED: loop-0821-9c4e 2026-08-21T14:52+07:00 (scope: manifest requiresJustification declaration + executor enforcement + justification into JustificationStore/audit)
+> ✅ **UPDATED 21 Aug 2026 (loop-0821-9c4e, commit `3436974` in `b6dab53` lineage).** Pipeline wiring CLOSED: `ActionManifest.requiresJustification` declares the checkpoint (parser + type, packages/actions/src/parser); the executor's Step 3b refuses execution without a non-empty `ctx.justification` (JUSTIFICATION_REQUIRED, refusal audited), captures to the `JustificationStore` BEFORE effects (capture failure refuses the action), and stamps the text into the success audit record (`AuditDetail.justification`). Transport: reserved `_justification` field on REST body, generated GraphQL input SDL, and MCP tool args (stripped pre-validation) — enforcement lives in the executor so all surfaces are covered. Store instance shared with /api/v1/justifications routes. Two-sided proof: `packages/actions/src/executor/__tests__/justification-checkpoint.test.ts` (6/7 fail without, 9/9 with parser tests pass with).
 
 > ⚠️ **EVIDENCE UPDATED 19 Aug (PR #13, §3.2).** REST endpoints were wired. The grade stays `partial` — not wired into the action execution pipeline, no per-action justification requirement declaration, no audit record integration.
 
 **Evidence (updated 19 Aug, §3.2):** `JustificationStore` SPI with create/get/list/approve (packages/spi/src/security-governance.ts). `JustificationRecord` captures tenantId, userId, actionName, objectType, objectId, justification text, category (break-glass/routine/audit/emergency/legal), approval state, and timestamps. `InMemoryJustificationStore` implements full CRUD with filtering by user/action/object/time and tenant isolation (packages/storage-memory/src/in-memory-security-governance.ts). REST endpoints wired in §3.2 (commit `7bbae51`): `GET/POST /api/v1/justifications`, `POST /api/v1/justifications/:id/approve`. 5 justification tests + 13 security-governance route tests.
 
-**Gap:** Not wired into the action execution pipeline (actions don't yet require justification before executing). No per-action "requires justification" declaration in ODL. Justification not persisted into audit records. No persistent storage. No GraphQL surface.
+**Gap:** Pipeline wiring, per-action declaration (manifest `requiresJustification`), and audit persistence CLOSED 21 Aug (`3436974` — see update note). Still open: PostgresJustificationStore existed already but no shipped pack declares `requiresJustification` yet (capability unexercised by a pack), no GraphQL surface for listing/approving justifications, no approval-hold integration (approve exists on the store/REST only).
 
 ### `security-gov/layered-permission-separation-app-module-vs-` — Layered permission separation (app/module vs data vs action vs function)
 
