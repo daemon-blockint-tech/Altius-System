@@ -56,11 +56,10 @@ const JOBS: JobGroup[] = [
     label: 'Operate',
     screens: [
       { id: 'objects', label: 'Objects' },
-      { id: 'ops-map', label: 'Ops map' },
-      { id: 'facilities', label: 'Facilities', count: 41 },
-      { id: 'shipments', label: 'Shipments', count: 2184 },
-      { id: 'purchase-orders', label: 'Purchase orders', count: 867 },
-      { id: 'inventory', label: 'Inventory', count: 5402 },
+      { id: 'facilities', label: 'Facilities' },
+      { id: 'shipments', label: 'Shipments' },
+      { id: 'purchase-orders', label: 'Purchase orders' },
+      { id: 'inventory', label: 'Inventory' },
       { id: 'action-console', label: 'Action console' },
     ],
   },
@@ -87,7 +86,6 @@ const JOBS: JobGroup[] = [
     label: 'Administer',
     screens: [
       { id: 'sync-health', label: 'Sync & connector health' },
-      { id: 'fdp-cdm', label: 'FDP-CDM projection' },
     ],
   },
 ];
@@ -202,14 +200,11 @@ export function App({ config }: { config: WebConfig }): ReactNode {
   const [activeScreen, setActiveScreen] = useState('objects');
   const [activeRole, setActiveRole] = useState('warehouse_manager');
   const [detailObject, setDetailObject] = useState<{ type: string; id: string } | null>(null);
-  const [activeFilters, setActiveFilters] = useState<ActiveFilter[]>([
-    { field: 'country', values: ['DE', 'NL', 'GB'] },
-  ]);
+  const [activeFilters, setActiveFilters] = useState<ActiveFilter[]>([]);
 
-  const facilityStats: FacilityStats | null =
-    activeScreen === 'facilities' && activePack === 'supply-chain'
-      ? { visible: 38, total: 41, disrupted: 2, meanUtilisation: 67, cdcLagSeconds: 1.8 }
-      : null;
+  // No fabricated facility stats — the Facilities screen renders without a stats
+  // banner until a real source is wired (a placeholder banner invented numbers).
+  const facilityStats: FacilityStats | null = null;
 
   const handleScreenSelect = (job: JobKey, screenId: string) => {
     setActiveJob(job);
