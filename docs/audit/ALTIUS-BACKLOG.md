@@ -5,8 +5,8 @@ Restructured 21 Aug 2026 from code-verified gradings (last full pass 19 Aug). **
 Structure:
 
 - **§Security defects** — 12 rows. Fix before parity work; these are holes, not gaps.
-- **§Active work items** — 44 items (43 rows + 1 merged rules-engine item covering 5 duplicate rows). Claim per the rules below.
-- **§Proposed out-of-scope** — 24 rows parked pending a product decision. Not deleted; do NOT claim without that decision.
+- **§Active work items** — 51 items (50 rows + 1 merged rules-engine item covering 5 duplicate rows; 7 rows client-committed 21 Aug). Claim per the rules below.
+- **§Proposed out-of-scope** — 17 rows parked with named triggers (decision taken 21 Aug vs client roster). Do NOT claim while parked.
 - **`full` rows** (103, with evidence) → [ALTIUS-BACKLOG-DONE.md](ALTIUS-BACKLOG-DONE.md).
 - Narrative re-grading/phase logs removed — git history of this file has every pass.
 
@@ -637,9 +637,90 @@ One capability graded five times under five themes. Work it as ONE item; closing
 
 **Gap:** Not no-code: rules live in ODL/YAML files inside a domain pack and need a redeploy to change — there is no rule-authoring UI, no rule versioning, no test/simulate surface, and no rule set editable independently of the schema. Two fail-open holes: server.ts:307-310 substitutes an allow-all stub (`async evaluate() { return { value: true } }`) whenever isDev is set and CEL_EVALUATOR_URL is unset, so every precondition and constraint silently passes in dev; and validation.ts:53-54,297 downgrade any constraint the evaluator cannot handle to a warning that is explicitly NOT enforced. No rule-hit metrics beyond the generic COMPUTED_EVALUATIONS counter.
 
-## Proposed out-of-scope — product decision needed
+_theme: client-committed, 21 Aug 2026_
 
-Foundry-parity features with no identified Altius user demand: each is a multi-quarter product, and every current implementation is a stub scored for the grading rather than built for a user. Proposal: mark out-of-scope and stop investing. A product owner can move any row back to §Active. Do not claim these for implementation while this section stands.
+Moved back from §out-of-scope after the client roster was named: multi-sector — ekspedisi/logistik archipelago, medical records, AI geomineral exploration, C2 dashboard, enterprise ERP, mattress manufacturing (AI ICS/OT), regulators, AML/compliance — conventional and crypto. Each row carries its driver.
+
+### `workshop-ui/read-only-dashboard-delivery-org-app-access-` — Read-only dashboard delivery (org/app-access scoping, kiosk mode, read-only enforcement)
+
+**Status:** `partial`
+
+> 🎯 **Client driver (21 Aug 2026):** C2 dashboard — wall display / kiosk / read-only share is the product itself.
+
+**Evidence (read 15 Aug):** The enforcement half is real and fails closed. The generated OpenFGA model gives every object type `viewer` and `editor` relations — direct [user] assignment when the type has no outbound links, otherwise derived through a link relation (packages/odl/src/codegen/openfga.ts:190-199), plus can_* relations per ActionType (openfga.ts:13). Reads are authz-filtered before returning, short-circuiting to empty when nothing is authorized (packages/api/src/rest/route-generator.ts:328; packages/api/src/graphql/resolver-generator.ts:658). Identity feeds it via OIDC with claim→role mapping (packages/security/src/auth/role-mapping.ts:36-57) and every object carries _tenantId (packages/spi/src/ontology.ts:13,25).
+
+**Gap:** There is nothing to deliver. No dashboard or app entity exists to scope access to, so 'app-access scoping' has no subject; no kiosk mode, no full-screen/auto-cycle presentation mode, no share-link. Read-only here is an object-graph permission, not a delivery mode.
+
+### `misc-3/geospatial-map-workspace-object-selection-sh` — Geospatial map workspace (object selection, shape drawing/buffer/modify, spatial intersect search, geospatial actions, layer management)
+
+**Status:** `partial`
+
+> 🎯 **Client driver (21 Aug 2026):** Ekspedisi/logistik archipelago + AI geomineral exploration — map workspace is core UX for both.
+
+**Evidence (Phase 9):** `GeospatialMapService` SPI (packages/spi/src/geospatial-maps.ts) defines map layers (point/heatmap/cluster/line/polygon/tile with style, filter, opacity, zIndex), saved maps (layerIds, viewport, annotations, sharing), annotations (marker/shape/measurement/note with GeoShape), spatial search (spatialIntersect with point/bbox/circle/polygon, searchAround with Haversine radius, searchInBBox), geocoding (forward/reverse), and geometry helpers (buffer, area, distance, contains). `InMemoryGeospatialMapService` (packages/storage-memory/src/in-memory-geospatial-maps.ts) implements all operations with Haversine distance, ray-casting point-in-polygon, and injectable object reader for spatial queries. 13 tests in phase9-services.test.ts.
+
+**Gap:** No map UI. No real geocoder (in-memory stub returns empty). No PostGIS integration. No persistent storage. No REST/GraphQL routes. No heatmap/cluster rendering. No tile server.
+
+### `analytics-ts/interactive-time-series-analysis-workbench-w` — Interactive time series analysis workbench (Workshop Time Series Analysis widget / Quiver TS workflows)
+
+**Status:** `partial`
+
+> 🎯 **Client driver (21 Aug 2026):** ICS/OT manufacturing + logistics telemetry — sensor/TS analysis is the daily workflow.
+
+**Evidence (Phase 13):** `TimeSeriesAnalysisWidget` (packages/web/src/widgets/components/TimeSeriesAnalysisWidget.tsx) provides a Quiver-style TS analysis workbench with: multi-series overlay (compare metrics across objects); threshold lines with warning/alert severity; brush/scrub selection for zooming into time ranges; anomaly markers (points outside thresholds); aggregation toggle (raw/hourly/daily); series toggle (show/hide individual series); CSV export of visible data; stats panel (min/avg/max per series + anomaly count). `TimeSeriesWidget` (packages/web/src/widgets/components/TimeSeriesWidget.tsx) provides a simpler single-series chart with area fill and date axis. Both support bound variables. 12 TS tests pass.
+
+**Gap:** No time series property type in ODL/SPI (data must be provided as config or bound variable arrays). No backend time series store. No Quiver TS workflows (multi-step analysis pipelines). No forecasting or statistical functions. No saved analysis artifacts.
+
+### `scenarios-sim/ml-model-asset-registry-and-lifecycle-model-` — ML model asset registry and lifecycle (model artifacts + adapters, version history, permissioning, lineage, Modeling Objectives review/release)
+
+**Status:** `partial`
+
+> 🎯 **Client driver (21 Aug 2026):** AI geomineral + AI ICS/OT — clients bring models; registry/lifecycle is table stakes.
+
+**Evidence (Phase 6):** `ModelRegistryService` SPI (packages/spi/src/model-registry.ts) defines model artifacts with sources (in-platform/uploaded/container/external), adapters, lifecycle states (draft→in_review→released→deprecated→archived), version history, and lineage. `ModelingObjectiveService` SPI defines objectives with review/release workflow. `InMemoryModelRegistryService` and `InMemoryModelingObjectiveService` (packages/storage-memory/src/in-memory-model-registry.ts) implement full lifecycle. Tests verify lifecycle transitions, lineage, and objective workflow (24 tests pass).
+
+**Gap:** No PostgreSQL model store. No REST/GraphQL routes. No model-scoped permissions. No UI for model management. No actual model training or container deployment.
+
+### `scenarios-sim/model-inference-execution-no-code-live-deplo` — Model inference execution (no-code live deployments, batch inference, inference history)
+
+**Status:** `partial`
+
+> 🎯 **Client driver (21 Aug 2026):** AI geomineral + AI ICS/OT — inference against registered models, real adapter not mock.
+
+**Evidence (Phase 6):** `ModelInferenceService` SPI (packages/spi/src/model-registry.ts) defines deployments (active/stopped/failed), single inference, batch inference, and inference history. `InMemoryModelInferenceService` (packages/storage-memory/src/in-memory-model-registry.ts) implements all operations with mock adapter execution. Tests verify deployment, inference by model ID and deployment name, batch inference, and history recording.
+
+**Gap:** No real model serving (mock adapter only). No REST/GraphQL routes. No persistent inference history. No live deployment infrastructure. No UI for deployment management.
+
+### `misc-1/time-series-and-process-monitoring-applicati` — Time-series and process monitoring applications (Vertex thresholds, Machinery process mining)
+
+**Status:** `partial`
+
+> 🎯 **Client driver (21 Aug 2026):** ICS/OT manufacturing — monitoring app over the existing TS/alerting backend.
+
+**Evidence (updated 17 Aug, Phase 4 F4.4):** Time-series data type and store now exist (Phase 3 F3.2): `@timeSeries` ODL directive, `TimeSeriesStore` SPI, `InMemoryTimeSeriesStore` with bucketing (packages/spi/src/time-series.ts, packages/storage-memory/src/in-memory-time-series-store.ts). Threshold/alert definitions on data now exist (Phase 4 F4.4): `AlertingService` SPI with `ThresholdRule` (gt/gte/lt/lte, consecutivePoints, minDurationSeconds, tagFilter), `Alert` lifecycle (active/acknowledged/resolved), rule evaluation against time-series points, and notification dispatch via `NotificationStore` (packages/spi/src/alerting.ts, packages/storage-memory/src/in-memory-alerting-service.ts). REST endpoints for rule CRUD, alert listing, acknowledge/resolve, and evaluation (packages/api/src/rest/alerting-routes.ts). 22 alerting tests + 17 time-series tests pass. Workflow event log exists from prior work (packages/engine/src/workflow/workflow-monitor.ts). REMAINING GAPS: no monitoring app UI, no process-model discovery or conformance checking, no PostgreSQL time-series or alerting store, no anomaly detection (only threshold rules), no multi-object aggregate series.
+
+**Gap:** Time-series storage, threshold rules, alerting, and notification dispatch now exist as backend services. Still absent: monitoring app UI, process mining/model discovery, conformance checking, PostgreSQL stores, anomaly detection beyond static thresholds.
+
+### `misc-3/time-aware-graph-exploration-and-versioned-s` — Time-aware graph exploration and versioned saved analyses (Vertex: timeline view/filter/playback, comparative time selection, graph save/share/duplicate with version history and revert)
+
+**Status:** `partial`
+
+> 🎯 **Client driver (21 Aug 2026):** AML/compliance crypto — fund-flow tracing is temporal graph traversal; plus C2 temporal replay.
+
+**Evidence (Phase 8):** `GraphAnalysisService` SPI (packages/spi/src/graph-analysis.ts) defines saved analyses with root object, traversal steps (linkType/direction/maxDepth), filters (predicates + timeFilter), layout config, timeline config (timestampField, start/end, playbackSpeedMs, currentPosition), sharing (sharedWith, isPublic), tags, and versioning. `InMemoryGraphAnalysisService` (packages/storage-memory/src/in-memory-graph-analysis.ts) implements full CRUD, update (creates new version), version history listing, revert (creates new version from old snapshot), share/unshare, duplicate, and timeline comparison interface. 7 tests in phase8-services.test.ts.
+
+**Gap:** No UI/exploration surface. Timeline getTimeline/compare return empty (no integration with temporal-queries.ts). No REST/GraphQL routes. No persistent storage. No playback engine. No graph rendering.
+
+## Proposed out-of-scope — parked with named triggers
+
+Decision taken 21 Aug 2026 against the named client roster (see §client-committed above): 7 rows moved to §Active with client drivers; the rows below stay parked until their trigger fires. Nothing here may be claimed for implementation while parked.
+
+- **Process mining / Machinery** — Trigger: a signed client asks for flow analysis (logistics shipment flow, hospital patient flow, production flow). Path when triggered: derive from the existing audit trail — not a Machinery clone.
+- **Marketplace / pack distribution** — Trigger: clients self-install packs. Until then git + filesystem packs IS the distribution.
+- **ML model registry / serving / chaining** — Row `chained-model-orchestration` only — trigger: >1 model chained in production. Registry + inference moved to §Active.
+- **AI FDE / autonomous platform agent** — Cut-candidate. No client driver in any named sector; revisit only after platform core is done.
+- **Analytics workbench UIs (Quiver-class)** — Trigger: analyst-heavy client (geomineral, C2) outgrows the widget/section layout.
+- **Single-row parity features** — Per-row triggers: digital twin → mattress ICS/OT client signs (rides on TS+geo+models). Mobile MDM → field-worker rollout; responsive web meanwhile. Connector catalog → build REAL per-client connectors (SAP/TMS/WMS) instead of a vendor-metadata catalog. Workshop-ux → i18n may pull forward for Indonesian deployments. Projections → query latency at real scale.
 
 ### Process mining / Machinery
 
@@ -666,14 +747,6 @@ Foundry-parity features with no identified Altius user demand: each is a multi-q
 **Evidence (Phase 6):** `ProcessMiningService` SPI (packages/spi/src/process-mining.ts) provides process model discovery, variant analysis, conformance checking, and case statistics. `InMemoryProcessMiningService` implements all operations. See also the `platform-ops/process-monitoring-process-mining-machinery` row for full evidence.
 
 **Gap:** No Machinery-equivalent UI. No REST/GraphQL routes. No persistent storage. No integration with audit trail for automatic process mining.
-
-#### `misc-1/time-series-and-process-monitoring-applicati` — Time-series and process monitoring applications (Vertex thresholds, Machinery process mining)
-
-**Status:** `partial`
-
-**Evidence (updated 17 Aug, Phase 4 F4.4):** Time-series data type and store now exist (Phase 3 F3.2): `@timeSeries` ODL directive, `TimeSeriesStore` SPI, `InMemoryTimeSeriesStore` with bucketing (packages/spi/src/time-series.ts, packages/storage-memory/src/in-memory-time-series-store.ts). Threshold/alert definitions on data now exist (Phase 4 F4.4): `AlertingService` SPI with `ThresholdRule` (gt/gte/lt/lte, consecutivePoints, minDurationSeconds, tagFilter), `Alert` lifecycle (active/acknowledged/resolved), rule evaluation against time-series points, and notification dispatch via `NotificationStore` (packages/spi/src/alerting.ts, packages/storage-memory/src/in-memory-alerting-service.ts). REST endpoints for rule CRUD, alert listing, acknowledge/resolve, and evaluation (packages/api/src/rest/alerting-routes.ts). 22 alerting tests + 17 time-series tests pass. Workflow event log exists from prior work (packages/engine/src/workflow/workflow-monitor.ts). REMAINING GAPS: no monitoring app UI, no process-model discovery or conformance checking, no PostgreSQL time-series or alerting store, no anomaly detection (only threshold rules), no multi-object aggregate series.
-
-**Gap:** Time-series storage, threshold rules, alerting, and notification dispatch now exist as backend services. Still absent: monitoring app UI, process mining/model discovery, conformance checking, PostgreSQL stores, anomaly detection beyond static thresholds.
 
 ### Marketplace / pack distribution
 
@@ -719,22 +792,6 @@ Foundry-parity features with no identified Altius user demand: each is a multi-q
 
 **Gap:** No actual model import from files/containers. No real adapter execution (mock only). No REST/GraphQL routes. No PostgreSQL storage. No UI for model import or objective management.
 
-#### `scenarios-sim/ml-model-asset-registry-and-lifecycle-model-` — ML model asset registry and lifecycle (model artifacts + adapters, version history, permissioning, lineage, Modeling Objectives review/release)
-
-**Status:** `partial`
-
-**Evidence (Phase 6):** `ModelRegistryService` SPI (packages/spi/src/model-registry.ts) defines model artifacts with sources (in-platform/uploaded/container/external), adapters, lifecycle states (draft→in_review→released→deprecated→archived), version history, and lineage. `ModelingObjectiveService` SPI defines objectives with review/release workflow. `InMemoryModelRegistryService` and `InMemoryModelingObjectiveService` (packages/storage-memory/src/in-memory-model-registry.ts) implement full lifecycle. Tests verify lifecycle transitions, lineage, and objective workflow (24 tests pass).
-
-**Gap:** No PostgreSQL model store. No REST/GraphQL routes. No model-scoped permissions. No UI for model management. No actual model training or container deployment.
-
-#### `scenarios-sim/model-inference-execution-no-code-live-deplo` — Model inference execution (no-code live deployments, batch inference, inference history)
-
-**Status:** `partial`
-
-**Evidence (Phase 6):** `ModelInferenceService` SPI (packages/spi/src/model-registry.ts) defines deployments (active/stopped/failed), single inference, batch inference, and inference history. `InMemoryModelInferenceService` (packages/storage-memory/src/in-memory-model-registry.ts) implements all operations with mock adapter execution. Tests verify deployment, inference by model ID and deployment name, batch inference, and history recording.
-
-**Gap:** No real model serving (mock adapter only). No REST/GraphQL routes. No persistent inference history. No live deployment infrastructure. No UI for deployment management.
-
 #### `scenarios-sim/chained-model-orchestration-auto-propagate-o` — Chained model orchestration (auto-propagate one model's outputs as the next model's inputs across a multi-model case study)
 
 **Status:** `partial`
@@ -771,14 +828,6 @@ Foundry-parity features with no identified Altius user demand: each is a multi-q
 
 **Gap:** No free-form canvas mode (widgets are arranged in sections, not freely positioned on a 2D canvas). No Quiver-style notebook or code cells. No saved analysis artifacts. No histogram filtering on graph nodes. No templates for common analysis patterns.
 
-#### `analytics-ts/interactive-time-series-analysis-workbench-w` — Interactive time series analysis workbench (Workshop Time Series Analysis widget / Quiver TS workflows)
-
-**Status:** `partial`
-
-**Evidence (Phase 13):** `TimeSeriesAnalysisWidget` (packages/web/src/widgets/components/TimeSeriesAnalysisWidget.tsx) provides a Quiver-style TS analysis workbench with: multi-series overlay (compare metrics across objects); threshold lines with warning/alert severity; brush/scrub selection for zooming into time ranges; anomaly markers (points outside thresholds); aggregation toggle (raw/hourly/daily); series toggle (show/hide individual series); CSV export of visible data; stats panel (min/avg/max per series + anomaly count). `TimeSeriesWidget` (packages/web/src/widgets/components/TimeSeriesWidget.tsx) provides a simpler single-series chart with area fill and date axis. Both support bound variables. 12 TS tests pass.
-
-**Gap:** No time series property type in ODL/SPI (data must be provided as config or bound variable arrays). No backend time series store. No Quiver TS workflows (multi-step analysis pipelines). No forecasting or statistical functions. No saved analysis artifacts.
-
 ### Single-row parity features
 
 #### `misc-2/vertex-digital-twin-visualization-and-simula` — Vertex digital-twin visualization and simulation (object-backed process/system diagrams, what-if simulation over connected models, media layers and image annotations on maps/images)
@@ -797,14 +846,6 @@ Foundry-parity features with no identified Altius user demand: each is a multi-q
 
 **Gap:** No MDM/VPN/network-access guidance or configuration. No native mobile app (React Native/Expo). No offline mode or sync. No mobile-specific widget optimizations beyond responsive CSS. No dedicated mobile app store delivery.
 
-#### `workshop-ui/read-only-dashboard-delivery-org-app-access-` — Read-only dashboard delivery (org/app-access scoping, kiosk mode, read-only enforcement)
-
-**Status:** `partial`
-
-**Evidence (read 15 Aug):** The enforcement half is real and fails closed. The generated OpenFGA model gives every object type `viewer` and `editor` relations — direct [user] assignment when the type has no outbound links, otherwise derived through a link relation (packages/odl/src/codegen/openfga.ts:190-199), plus can_* relations per ActionType (openfga.ts:13). Reads are authz-filtered before returning, short-circuiting to empty when nothing is authorized (packages/api/src/rest/route-generator.ts:328; packages/api/src/graphql/resolver-generator.ts:658). Identity feeds it via OIDC with claim→role mapping (packages/security/src/auth/role-mapping.ts:36-57) and every object carries _tenantId (packages/spi/src/ontology.ts:13,25).
-
-**Gap:** There is nothing to deliver. No dashboard or app entity exists to scope access to, so 'app-access scoping' has no subject; no kiosk mode, no full-screen/auto-cycle presentation mode, no share-link. Read-only here is an object-graph permission, not a delivery mode.
-
 #### `misc-2/prebuilt-enterprise-source-connector-catalog` — Prebuilt enterprise source-connector catalog (Palantir-provided drivers, e.g. Microsoft Dynamics 365 Business Central: OAuth/AzureAD auth schemes, managed egress policies, agent proxy for on-prem)
 
 **Status:** `partial`
@@ -812,22 +853,6 @@ Foundry-parity features with no identified Altius user demand: each is a multi-q
 **Evidence (Phase 8):** `ConnectorCatalogService` SPI (packages/spi/src/enterprise-connectors.ts) defines a prebuilt vendor connector catalog with 6 entries (Dynamics 365 BC, Salesforce, Workday, Snowflake, SAP ERP/S/4HANA, Azure SQL), each with vendor, product, supported auth schemes (azuread, oauth2-authcode, basic, api-key, managed-identity), connector kind, config template, default egress host, and on-prem proxy support. AzureAD, OAuth2 auth-code, API-key, and managed-identity auth schemes are first-class types. `EgressPolicy` defines allowed/denied host patterns, on-prem proxy config, TLS requirement, and throughput limits. `InMemoryConnectorCatalogService` (packages/storage-memory/src/in-memory-enterprise-connectors.ts) implements catalog browsing, connector configuration with auth scheme validation, egress policy CRUD, egress validation (host pattern matching with glob), and connector validation. 10 tests in phase8-services.test.ts.
 
 **Gap:** No actual connector implementations — catalog entries are metadata templates, not executable drivers. No integration with the sync engine's ConnectorRegistry. No REST/GraphQL routes. No persistent storage. No secret env-indirection (secrets still committed in config). No on-prem agent proxy implementation.
-
-#### `misc-3/geospatial-map-workspace-object-selection-sh` — Geospatial map workspace (object selection, shape drawing/buffer/modify, spatial intersect search, geospatial actions, layer management)
-
-**Status:** `partial`
-
-**Evidence (Phase 9):** `GeospatialMapService` SPI (packages/spi/src/geospatial-maps.ts) defines map layers (point/heatmap/cluster/line/polygon/tile with style, filter, opacity, zIndex), saved maps (layerIds, viewport, annotations, sharing), annotations (marker/shape/measurement/note with GeoShape), spatial search (spatialIntersect with point/bbox/circle/polygon, searchAround with Haversine radius, searchInBBox), geocoding (forward/reverse), and geometry helpers (buffer, area, distance, contains). `InMemoryGeospatialMapService` (packages/storage-memory/src/in-memory-geospatial-maps.ts) implements all operations with Haversine distance, ray-casting point-in-polygon, and injectable object reader for spatial queries. 13 tests in phase9-services.test.ts.
-
-**Gap:** No map UI. No real geocoder (in-memory stub returns empty). No PostGIS integration. No persistent storage. No REST/GraphQL routes. No heatmap/cluster rendering. No tile server.
-
-#### `misc-3/time-aware-graph-exploration-and-versioned-s` — Time-aware graph exploration and versioned saved analyses (Vertex: timeline view/filter/playback, comparative time selection, graph save/share/duplicate with version history and revert)
-
-**Status:** `partial`
-
-**Evidence (Phase 8):** `GraphAnalysisService` SPI (packages/spi/src/graph-analysis.ts) defines saved analyses with root object, traversal steps (linkType/direction/maxDepth), filters (predicates + timeFilter), layout config, timeline config (timestampField, start/end, playbackSpeedMs, currentPosition), sharing (sharedWith, isPublic), tags, and versioning. `InMemoryGraphAnalysisService` (packages/storage-memory/src/in-memory-graph-analysis.ts) implements full CRUD, update (creates new version), version history listing, revert (creates new version from old snapshot), share/unshare, duplicate, and timeline comparison interface. 7 tests in phase8-services.test.ts.
-
-**Gap:** No UI/exploration surface. Timeline getTimeline/compare return empty (no integration with temporal-queries.ts). No REST/GraphQL routes. No persistent storage. No playback engine. No graph rendering.
 
 #### `misc-3/workshop-application-ux-platform-features-st` — Workshop application UX platform features (state saving/sharing, redact mode, performance profiler, translations/i18n incl. AIP auto-translate)
 
