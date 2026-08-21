@@ -127,6 +127,7 @@ import { PostgresStorageProvider, PostgresLineageStore, PostgresAuditStore, Post
   PostgresModelRegistryService, PostgresModelInferenceService,
   PostgresModelChainService, PostgresConnectorCatalogService, PostgresCommandService,
   PostgresDatasetService,
+  PostgresBatchTransformService,
   PostgresUserDirectoryService,
   PostgresLayoutDeviceCaptureService,
 } from '@altius/storage-postgres';
@@ -1313,8 +1314,7 @@ async function main(): Promise<void> {
       // One copilot store, two surfaces. `embeddedCopilotService` configures
       // copilots; `copilotService` is the view-facing suggest/apply half, and it
       // is handed the same instance. They used not to be: the second built its
-      // own private store, so a copilot configured with `canExecuteActions:
-      // false` was never found and suggestions came from a fabricated copilot
+      // own private store, so a copilot configured with `canExecuteActions:`n      // false` was never found and suggestions came from a fabricated copilot
       // with it set true — bypassing the one place the flag is enforced.
       embeddedCopilotService: copilots,
       eventObjectService: new InMemoryEventObjectService(),
@@ -1324,7 +1324,6 @@ async function main(): Promise<void> {
       platformAssistantService: new InMemoryPlatformAssistantService(),
       processMiningService: new InMemoryProcessMiningService(),
       // Pipeline Data Ops — Pipeline & Data Ops.
-      batchTransformService: new InMemoryBatchTransformService(datasets),
       sqlQueryService: new InMemorySqlQueryService(datasets),
       variableTransformService: new InMemoryVariableTransformService(),
       rulesEngineService: new InMemoryRulesEngineService(),
@@ -1453,6 +1452,12 @@ async function main(): Promise<void> {
     // out of `nonDurableServices`, where the gate withheld it under Postgres
     // rather than accept approvals it would lose on restart.
     changeProposalStore: pgPool ? new PostgresChangeProposalStore(pgPool) : new InMemoryChangeProposalStore(),
+    // Batch transforms — Postgres-backed when available, so transforms, build
+    // history and schedules survive a restart. A schedule that silently stops
+    // firing looks like nothing happening rather than like a failure.
+    // The executor registry stays per-process in both providers: a
+    // TransformExecutor is a live object, not something a table can hold.
+    batchTransformService: pgPool ? new PostgresBatchTransformService(pgPool, new PostgresDatasetService(pgPool)) : new InMemoryBatchTransformService(datasets),
     // Business rules — Postgres-backed when available. `state` is what decides
     // whether a rule governs anything, so losing it silently reverts a rule to
     // draft: nothing looks broken, the rule just stops applying.
