@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Server entrypoint â€” starts the Altius API gateway.
  *
  * Mounts GraphQL, REST, and FHIR endpoints on a single Express server.
@@ -159,7 +159,14 @@ import {
   PostgresApprovalWorkflowService,
   PostgresDataExpectationsService,
   PostgresEventObjectService,
+  PostgresHumanInTheLoopService,
+  PostgresMultiOntologyGovernanceService,
+  PostgresObjectSetFilterStore, PostgresApprovalWorkflowService, PostgresDataExpectationsService,
+  PostgresDesignSystemService,
+  PostgresModelRegistryService, PostgresModelInferenceService,
+  PostgresModelChainService, PostgresConnectorCatalogService, PostgresCommandService,
   PostgresDatasetService,
+  PostgresSqlQueryService,
   PostgresUserDirectoryService,
   PostgresDesignSystemService,
   PostgresModelRegistryService,
@@ -1560,7 +1567,6 @@ async function main(): Promise<void> {
       agentService: new InMemoryAgentService(llmClient),
       modelCatalogService: new InMemoryModelCatalogService(llmClient),
       evalService: new InMemoryEvalService(),
-      humanInTheLoopService: new InMemoryHumanInTheLoopService(),
       vectorSearchService: new InMemoryVectorSearchService(embeddingStore, llmClient),
       copilotService: new InMemoryCopilotService(copilots),
       }
@@ -1580,6 +1586,15 @@ async function main(): Promise<void> {
       );
     }
   }
+
+  // One change-proposal store, two surfaces. `changeProposalStore` and
+  // `humanInTheLoopService` are the same records under two names â€”
+  // /api/v1/change-proposals and /api/v1/ai-proposals â€” so they are handed the
+  // same instance. They used not to be: the human-in-the-loop service built its
+  // own private Map, and an approval recorded on one surface was invisible on
+  // the other with neither erring. The pgPool ternary stays on this line so the
+  // #14 invariant is still visible where the choice is made.
+  const changeProposals = pgPool ? new PostgresChangeProposalStore(pgPool) : new InMemoryChangeProposalStore();
 
   const deps: ApiDependencies = {
     schema,
@@ -1675,7 +1690,16 @@ async function main(): Promise<void> {
     // trail for AI-driven changes: who approved what, and when. It graduated
     // out of `nonDurableServices`, where the gate withheld it under Postgres
     // rather than accept approvals it would lose on restart.
-    changeProposalStore: pgPool ? new PostgresChangeProposalStore(pgPool) : new InMemoryChangeProposalStore(),
+    changeProposalStore: changeProposals,
+    // Human-in-the-loop — the same proposals, reached through the AI-facing
+    // routes. It holds no state of its own: the five methods are a rename of
+    // the store's, so the adapter lives once in @altius/spi and the store above
+    // decides both durability and *which* record is being approved.
+    humanInTheLoopService: pgPool ? new PostgresHumanInTheLoopService(pgPool) : new InMemoryHumanInTheLoopService(changeProposals),
+    // SQL query — Postgres-backed when available.
+    sqlQueryService: pgPool ? new PostgresSqlQueryService(pgPool) : new InMemorySqlQueryService(datasets),
+    // Multi-ontology governance — Postgres-backed when available.
+    multiOntologyGovernanceService: pgPool ? new PostgresMultiOntologyGovernanceService(pgPool) : new InMemoryMultiOntologyGovernanceService(),
     // Business rules â€” Postgres-backed when available. `state` is what decides
     // whether a rule governs anything, so losing it silently reverts a rule to
     // draft: nothing looks broken, the rule just stops applying.
@@ -2164,7 +2188,7 @@ async function main(): Promise<void> {
   // â”€â”€ Previously-unreachable SPI services (change-proposals, business-rules,
   // agent-evals, agent-threads, conflict-resolution, connectors, data-expectations,
   // embedded-copilots, event-objects, graph-analyses, multi-ontology, pipeline-builds,
-  // platform-assistant, process-mining, workshop-ux) ──
+  // platform-assistant, process-mining, workshop-ux) --
   // Role-gated as a whole (default admin-only): these services carry no
   // per-object authorization of their own.
   const platformServiceRoles = (process.env['PLATFORM_SERVICE_ROLES'] ?? '')
