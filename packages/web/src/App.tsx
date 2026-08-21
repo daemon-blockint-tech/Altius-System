@@ -19,6 +19,7 @@ import { InventoryScreen } from './components/InventoryScreen.js';
 import { ActionConsoleScreen } from './components/ActionConsoleScreen.js';
 import { AuditTrailScreen } from './components/AuditTrailScreen.js';
 import { OntologyExplorerScreen } from './components/OntologyExplorerScreen.js';
+import { ObjectBrowserScreen } from './components/ObjectBrowserScreen.js';
 import { ObjectDetailScreen } from './components/ObjectDetailScreen.js';
 import { ConsentPermissionsScreen } from './components/ConsentPermissionsScreen.js';
 import { GraphExplorerScreen } from './components/GraphExplorerScreen.js';
@@ -42,6 +43,7 @@ const JOBS: JobGroup[] = [
     key: 'OP',
     label: 'Operate',
     screens: [
+      { id: 'objects', label: 'Objects' },
       { id: 'ops-map', label: 'Ops map' },
       { id: 'facilities', label: 'Facilities', count: 41 },
       { id: 'shipments', label: 'Shipments', count: 2184 },
@@ -159,7 +161,7 @@ export function App({ config }: { config: WebConfig }): ReactNode {
 
   const [activePack, setActivePack] = useState('supply-chain');
   const [activeJob, setActiveJob] = useState<JobKey>('OP');
-  const [activeScreen, setActiveScreen] = useState('facilities');
+  const [activeScreen, setActiveScreen] = useState('objects');
   const [activeRole, setActiveRole] = useState('warehouse_manager');
   const [detailObject, setDetailObject] = useState<{ type: string; id: string } | null>(null);
   const [activeFilters, setActiveFilters] = useState<ActiveFilter[]>([
@@ -363,6 +365,12 @@ function renderScreen(
   authState: AuthState,
   onRowClick: (type: string, id: string) => void,
 ): ReactNode {
+  // Object browser — generic, ontology-driven worklist for any loaded pack.
+  if (screenId === 'objects') {
+    const getToken = session && authState === 'signed-in' ? session.getAccessToken : null;
+    return <ObjectBrowserScreen endpoint={config.endpoint} getToken={getToken} onRowClick={onRowClick} />;
+  }
+
   // Supply-chain Facilities — the anchor screen, fully wired.
   if (screenId === 'facilities' && packId === 'supply-chain') {
     return (
