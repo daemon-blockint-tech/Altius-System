@@ -1946,6 +1946,10 @@ function generateActionRoute(
           ? Number.parseInt(String(ifMatch).replace(/^W\/|"/g, ''), 10)
           : Number.NaN;
 
+        // Checkpoint justification rides the reserved `_justification` body
+        // field (underscore-prefixed = never a user @param).
+        const justification = input['_justification'];
+
         const actionCtx: ActionContext = {
           requestContext,
           ...(consentSubjectId ? {
@@ -1953,6 +1957,7 @@ function generateActionRoute(
             consentSubjectId,
           } : {}),
           ...(Number.isInteger(expectedVersion) ? { expectedVersion } : {}),
+          ...(typeof justification === 'string' ? { justification } : {}),
         };
 
         // Resolve manifest from registry — fail closed if not found

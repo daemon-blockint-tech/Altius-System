@@ -80,6 +80,9 @@ export function parseActionManifest(
   // Step 3b: Parse requiredRoles (optional; the role gate for object-less actions)
   const requiredRoles = parseRequiredRoles(doc['requiredRoles'], errors);
 
+  // Step 3c: Parse requiresJustification (optional checkpoint declaration)
+  const requiresJustification = validateBoolean(doc, 'requiresJustification', false);
+
   // Step 4: Parse effects
   const effects = parseEffects(doc['effects'], errors);
 
@@ -102,6 +105,7 @@ export function parseActionManifest(
     reversible,
     preconditions,
     ...(requiredRoles !== undefined ? { requiredRoles } : {}),
+    ...(requiresJustification ? { requiresJustification } : {}),
     effects,
     sideEffects,
     rollback,

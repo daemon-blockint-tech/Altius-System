@@ -165,6 +165,13 @@ export interface ActionManifest {
    * with an ObjectType @param, which are gated by their FGA relation instead.
    */
   requiredRoles?: string[];
+  /**
+   * Checkpoint declaration: when true, the executor refuses to run the
+   * action unless the caller supplies a non-empty justification via the
+   * reserved `_justification` input field; the text is captured to the
+   * JustificationStore before effects run and stamped into the audit record.
+   */
+  requiresJustification?: boolean;
   /** Sequential mutations applied within a single transaction. */
   effects: ActionEffect[];
   /** Async operations triggered after effects commit. */
