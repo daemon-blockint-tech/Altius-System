@@ -272,6 +272,34 @@ export function generatePlatformDDL(): string[] {
 );`);
   statements.push(`CREATE INDEX IF NOT EXISTS "idx_dataset_branches_tenant_name" ON "dataset"."branches" ("tenant_id", "dataset_name");`);
 
+  // ── Interactive SQL query jobs ──
+  //
+  // The job record carries its own result rows in `rows`, which is how
+  // `results()` answers after the process that ran the query is gone. It also
+  // means a SELECT with no LIMIT writes its entire result set into one JSONB
+  // value — matched from the in-memory provider rather than capped here,
+  // because capping is a contract change, but a real limit for a query
+  // service. Noted in the store header too.
+  statements.push(`CREATE TABLE IF NOT EXISTS "dataset"."sql_jobs" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "seq" BIGSERIAL,
+  "tenant_id" TEXT NOT NULL,
+  "sql" TEXT NOT NULL,
+  "state" TEXT NOT NULL DEFAULT 'queued',
+  "submitted_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "started_at" TIMESTAMPTZ,
+  "completed_at" TIMESTAMPTZ,
+  "duration_ms" BIGINT,
+  "submitted_by" TEXT NOT NULL DEFAULT '',
+  "rows" JSONB,
+  "result_columns" JSONB,
+  "row_count" BIGINT,
+  "error_message" TEXT
+);`);
+  // list() returns newest first; `seq` gives that a total order, since two
+  // jobs can be submitted within the same millisecond.
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_sql_jobs_tenant_seq" ON "dataset"."sql_jobs" ("tenant_id", "seq" DESC);`);
+
   // ── Data expectations (quality checks that gate builds) ──
   //
   // `blocking` is what makes a failing check stop a build. An expectation that
@@ -883,6 +911,66 @@ export function generatePlatformDDL(): string[] {
   statements.push(`CREATE INDEX IF NOT EXISTS "idx_workshop_ux_tenant_key_locale" ON "governance"."workshop_ux_state" ("tenant_id", "key", "locale");`);
   statements.push(`CREATE INDEX IF NOT EXISTS "idx_workshop_ux_tenant_created" ON "governance"."workshop_ux_state" ("tenant_id", "created_at" DESC);`);
   statements.push(`CREATE INDEX IF NOT EXISTS "idx_workshop_ux_tenant_updated" ON "governance"."workshop_ux_state" ("tenant_id", "updated_at" DESC);`);
+
+  // ── Multi-ontology governance: spaces, ontologies, cross-org sharing rules ──
+  //
+  // The sharing rules are an access-control surface: `checkAccess` fails closed,
+  // so losing them costs partner orgs their access rather than granting anyone
+  // more. Loud in the right direction, and still worth persisting — a cross-org
+  // arrangement that evaporates on restart takes its audit trail with it.
+  statements.push(`CREATE TABLE IF NOT EXISTS "governance"."ontology_spaces" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "seq" BIGSERIAL,
+  "tenant_id" TEXT NOT NULL,
+  "name" TEXT NOT NULL,
+  "description" TEXT NOT NULL DEFAULT '',
+  "org_scope" TEXT NOT NULL,
+  "shared" BOOLEAN NOT NULL DEFAULT FALSE,
+  "shared_with_orgs" JSONB,
+  "default_markings" JSONB NOT NULL DEFAULT '[]',
+  "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "created_by" TEXT NOT NULL DEFAULT ''
+);`);
+  // No UNIQUE on (tenant_id, name): the in-memory service does not enforce it
+  // either — a second space with the same name simply wins the name lookup.
+  // Matched rather than tightened, since adding a constraint here would reject
+  // writes the other provider accepts.
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_ont_spaces_tenant_name" ON "governance"."ontology_spaces" ("tenant_id", "name");`);
+
+  // `markings` and `shared_with_orgs` are JSONB, not TEXT[] — see #19: binding a
+  // JS array into a TEXT[] with JSON.stringify fails at runtime, and JSONB is
+  // the shape JSON.stringify is actually correct for.
+  statements.push(`CREATE TABLE IF NOT EXISTS "governance"."ontology_entities" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "seq" BIGSERIAL,
+  "tenant_id" TEXT NOT NULL,
+  "name" TEXT NOT NULL,
+  "display_name" TEXT NOT NULL DEFAULT '',
+  "space_id" TEXT NOT NULL,
+  "schema_version" INTEGER NOT NULL DEFAULT 1,
+  "markings" JSONB NOT NULL DEFAULT '[]',
+  "read_only" BOOLEAN NOT NULL DEFAULT FALSE,
+  "org_scope" TEXT NOT NULL DEFAULT '',
+  "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "created_by" TEXT NOT NULL DEFAULT ''
+);`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_ont_entities_tenant_space" ON "governance"."ontology_entities" ("tenant_id", "space_id");`);
+
+  statements.push(`CREATE TABLE IF NOT EXISTS "governance"."sharing_rules" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "seq" BIGSERIAL,
+  "tenant_id" TEXT NOT NULL,
+  "source_space_id" TEXT NOT NULL,
+  "target_org_scope" TEXT NOT NULL,
+  "ontology_ids" JSONB NOT NULL DEFAULT '[]',
+  "allowed_markings" JSONB NOT NULL DEFAULT '[]',
+  "bidirectional" BOOLEAN NOT NULL DEFAULT FALSE,
+  "enabled" BOOLEAN NOT NULL DEFAULT TRUE,
+  "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "created_by" TEXT NOT NULL DEFAULT ''
+);`);
+  statements.push(`CREATE INDEX IF NOT EXISTS "idx_sharing_rules_tenant_source" ON "governance"."sharing_rules" ("tenant_id", "source_space_id");`);
 
   return statements;
 }
