@@ -14,7 +14,7 @@ import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { loadDomainPacks, universallyVisibleSensitive } from '../schema-loader.js';
+import { loadDomainPacks, universallyVisibleSensitive, assertSensitiveExposureAcknowledged } from '../schema-loader.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DOMAIN_PACKS_DIR = resolve(__dirname, '..', '..', '..', '..', 'domain-packs');
@@ -734,6 +734,34 @@ describe('@sensitive enforcement', () => {
     expect(exposed).toEqual(['leaked', 'name', 'family']);
     // Granted only to a narrower relation => genuinely protected.
     expect(exposed).not.toContain('dateOfBirth');
+  });
+
+  it('unacknowledged @sensitive re-exposure to viewer is a boot error', () => {
+    const config = {
+      objectType: 'Patient',
+      alwaysVisible: ['id'],
+      fieldsByRelation: { viewer: ['name'] },
+    };
+    expect(() => assertSensitiveExposureAcknowledged(config, ['name'])).toThrow(/allowSensitive/);
+  });
+
+  it('allowSensitive: true acknowledges the re-exposure (no throw)', () => {
+    const config = {
+      objectType: 'Patient',
+      alwaysVisible: ['id'],
+      fieldsByRelation: { viewer: ['name'] },
+      allowSensitive: true,
+    };
+    expect(() => assertSensitiveExposureAcknowledged(config, ['name'])).not.toThrow();
+  });
+
+  it('no exposure needs no acknowledgment', () => {
+    const config = {
+      objectType: 'Patient',
+      alwaysVisible: ['id'],
+      fieldsByRelation: { clinician: ['name'] },
+    };
+    expect(() => assertSensitiveExposureAcknowledged(config, ['name'])).not.toThrow();
   });
 
   it('flags the shipped nhs-acute Patient grant', async () => {
