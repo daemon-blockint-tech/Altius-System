@@ -9,6 +9,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
+import { deriveBrowsableTypes } from './ObjectBrowserScreen.js';
 
 type GqlTypeRef = { name: string | null; kind: string; ofType: GqlTypeRef | null };
 
@@ -27,6 +28,8 @@ interface SchemaType {
 
 interface IntrospectionResult {
   __schema: {
+    /** List queries — the ontology types are the ones with a Connection field. */
+    queryType: { fields: SchemaField[] };
     types: SchemaType[];
   };
 }
@@ -34,6 +37,12 @@ interface IntrospectionResult {
 const INTROSPECTION_QUERY = `
   query {
     __schema {
+      queryType {
+        fields {
+          name
+          type { name kind ofType { name kind ofType { name kind } } }
+        }
+      }
       types {
         name
         kind
@@ -62,6 +71,7 @@ export interface OntologyExplorerScreenProps {
 
 export function OntologyExplorerScreen({ endpoint, getToken }: OntologyExplorerScreenProps): ReactNode {
   const [types, setTypes] = useState<SchemaType[]>([]);
+  const [ontologyNames, setOntologyNames] = useState<Set<string>>(new Set());
   const [selectedType, setSelectedType] = useState<SchemaType | null>(null);
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [error, setError] = useState<string | null>(null);
@@ -95,6 +105,16 @@ export function OntologyExplorerScreen({ endpoint, getToken }: OntologyExplorerS
       );
       if (mine !== ticket.current) return;
       setTypes(userTypes);
+      // An ontology object type is one the gateway exposes a list query for.
+      // Filtering by name suffix alone let GraphQL plumbing (PageInfo,
+      // BulkProgress, AuditRecord, ObjectSet…) show up as ontology types.
+      setOntologyNames(
+        new Set(
+          json.data
+            ? deriveBrowsableTypes(json.data as unknown as Parameters<typeof deriveBrowsableTypes>[0]).map(t => t.typeName)
+            : [],
+        ),
+      );
       setStatus('ready');
     } catch (err) {
       if (mine !== ticket.current) return;
@@ -123,7 +143,7 @@ export function OntologyExplorerScreen({ endpoint, getToken }: OntologyExplorerS
     );
   }
 
-  const objectTypes = types.filter((t) => t.kind === 'OBJECT' && !t.name.endsWith('Connection') && !t.name.endsWith('Filter') && !t.name.endsWith('OrderBy') && !t.name.endsWith('Input') && !t.name.startsWith('Update') && !t.name.startsWith('Search'));
+  const objectTypes = types.filter((t) => t.kind === 'OBJECT' && ontologyNames.has(t.name));
   const enums = types.filter((t) => t.kind === 'ENUM');
   const interfaces = types.filter((t) => t.kind === 'INTERFACE');
 

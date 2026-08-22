@@ -13,6 +13,8 @@ import { generateGraphQLSchema } from '@altius/odl';
 import type { ParsedSchema } from '@altius/odl';
 import type { ApiDependencies, ResolverContext, AuthenticatedUserInfo } from './types.js';
 import { generateResolvers } from './resolver-generator.js';
+import { GOVERNANCE_SDL } from './governance-sdl.js';
+import { generateGovernanceResolvers } from './governance-resolvers.js';
 import { QueryComplexityAnalyzer } from '../governance/index.js';
 import type { PubSub } from 'graphql-subscriptions';
 
@@ -48,10 +50,17 @@ export function createGraphQLServer(config: GraphQLServerConfig): GraphQLServerI
   // 1. Generate GraphQL SDL from ODL schema. CDM fields are capability-gated:
   // omitted when the deployment's packs do not declare `cdm` (config.deps.
   // cdmEnabled === false), keeping the SDL in lockstep with the resolvers.
-  const sdl = generateGraphQLSchema(config.schema, { cdm: config.deps.cdmEnabled });
+  const sdl = generateGraphQLSchema(config.schema, { cdm: config.deps.cdmEnabled }) + '\n' + GOVERNANCE_SDL;
 
   // 2. Generate resolvers (creates a single PubSub instance)
   const { resolvers, pubsub } = generateResolvers(config.schema, config.deps);
+
+  // 2b. Merge governance resolvers (scoped sessions, agent holds)
+  const governanceResolvers = generateGovernanceResolvers(config.deps);
+  for (const [type, fields] of Object.entries(governanceResolvers)) {
+    if (!resolvers[type]) resolvers[type] = {};
+    Object.assign(resolvers[type] as Record<string, unknown>, fields as Record<string, unknown>);
+  }
 
   // 3. Build a single executable schema used by both transports
   const executableSchema = makeExecutableSchema({

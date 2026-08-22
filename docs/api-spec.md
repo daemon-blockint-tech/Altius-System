@@ -1,7 +1,8 @@
 # API Specification Artifacts
 
-Altius publishes three machine-readable API contracts. These are generated
-from the merged schema at build time and attached to every GitHub release.
+> **Document role (renewed 21 Aug 2026):** operational guide for generating and validating API artifacts. It is not a parity score or proof that every generated field has a reachable implementation.
+
+Altius publishes three machine-readable API contracts. After the packages are built, the explicit `spec:all` task generates them from the merged schema; the tag-triggered release workflow attaches them to the corresponding GitHub release.
 
 ## Artifacts
 
@@ -90,11 +91,9 @@ npx @asyncapi/generator asyncapi.yaml @asyncapi/typescript-template -o ./generat
 
 ## Versioning
 
-Spec artifacts follow their own semver track, independent of the platform version.
-See the SDK plan (`.avril/plan/plan-sdk.md`) for the full versioning policy.
+Spec artifacts are intended to follow their own semver track, independent of the platform version. The previously referenced `.avril/plan/plan-sdk.md` is not present in this repository, so it is not a maintained source of policy.
 
-**Compatibility contract**: SDK `1.x` works against any spec `1.x` deployment.
-A spec major bump (2.0) requires SDK upgrades.
+**Target compatibility contract:** SDK `1.x` works against any spec `1.x` deployment; a spec major bump requires an SDK upgrade. Until this is backed by a maintained compatibility policy and cross-version tests, verify the SDK against the generated artifacts for the release being consumed.
 
 ## Validation
 

@@ -1,6 +1,8 @@
 # Altius → NHS FDP Integration Plan
 
-**Status.** This is v3, incorporating the v2 audit-hardening corrections: pinned repo baseline, sharper CDM conformance method, explicit PET non-claim boundary, supplier/deployer clinical-safety responsibility split, named hosting-topology decision record, service-management/incident artefacts, a pilot-mode matrix that separates real-data-read-only from synthetic-action operation, and explicit non-goals. The strategic frame and component structure are unchanged from v2; this revision is about audit precision rather than scope.
+**Status.** Historical NHS FDP delivery and assurance plan (v3). It incorporates the v2 audit-hardening corrections: pinned repo baseline, sharper CDM conformance method, explicit PET non-claim boundary, supplier/deployer clinical-safety responsibility split, named hosting-topology decision record, service-management/incident artefacts, a pilot-mode matrix that separates real-data-read-only from synthetic-action operation, and explicit non-goals.
+
+> **Snapshot notice (renewed 21 Aug 2026):** this is a staged pilot plan, not the platform parity tracker. Its May verification counts, Apache AGE topology, component gaps, and unfilled baseline fields must not be cited as current implementation evidence. Use [altius-foundry-parity.md](altius-foundry-parity.md), [cdm-mapping-profile.md](cdm-mapping-profile.md), and the audit backlog for current status. Preserve this plan for assurance and delivery provenance.
 
 ---
 

@@ -58,6 +58,26 @@ export interface OidcConfig {
   roleMapping?: RoleMappingConfig;
   /** Claim name carrying the caller's markings. Defaults to 'markings'. */
   markingsClaim?: string;
+  /**
+   * Resolves store-administered marking memberships for the caller.
+   * Effective markings = token claims ∪ memberships, THEN scoped-session
+   * narrowing. The store only ADDS markings, so a resolver error falls back
+   * to token claims alone (logged) — additive grants must not zero out
+   * IdP-attested claims, while scoped sessions still fail closed.
+   */
+  markingMembershipResolver?: (tenantId: string, userId: string) => Promise<string[]>;
+  /**
+   * Resolves the caller's active scoped session, if any. Wired by the host to
+   * ScopedSessionStore.getActiveForUser — typed structurally so this package
+   * stays free of an SPI dependency. When a session is returned, the caller's
+   * effective markings on every request are restricted to the session's
+   * allowed subset minus its exclusions (Foundry scoped-sessions semantics).
+   * A resolver error fails closed to zero markings.
+   */
+  scopedSessionResolver?: (
+    tenantId: string,
+    userId: string,
+  ) => Promise<{ allowedMarkings: string[]; excludedMarkings?: string[] } | null>;
 }
 
 /** Maps token claim values to platform roles. */

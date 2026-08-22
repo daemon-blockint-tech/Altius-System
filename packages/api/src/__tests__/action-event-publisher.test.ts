@@ -89,4 +89,32 @@ describe('createActionEventPublisher', () => {
     } as never);
     expect(withoutTypes!.map(r => r.topic)).toEqual(['p1', 'w1']);
   });
+
+  it('emits the committed version and field diff for an updated object', async () => {
+    const emitter = stubEmitter();
+    const publisher = createActionEventPublisher(emitter, LINK_TYPES);
+
+    const before = { _id: 'p1', _type: 'Patient', _version: 4, status: 'admitted', ward: 'A' };
+    const after = { _id: 'p1', _type: 'Patient', _version: 5, status: 'discharged', ward: 'A' };
+    await publisher.publishObjectChange('updated', 'Patient', 'p1', before, after, CAUSE, CTX);
+
+    const args = emitter.emitObjectUpdated.mock.calls[0]!;
+    expect(args[3]).toBe(5); // real committed version, not the version=1 placeholder
+    // Only the changed field appears in the diff; unchanged and system fields don't.
+    expect(args[4]).toEqual({ status: { old: 'admitted', new: 'discharged' } });
+  });
+
+  it('falls back to version 1 only when neither state carries a version', async () => {
+    const emitter = stubEmitter();
+    const publisher = createActionEventPublisher(emitter, LINK_TYPES);
+    await publisher.publishObjectChange('created', 'Patient', 'p1', undefined, { _id: 'p1' }, CAUSE, CTX);
+    expect(emitter.emitObjectCreated.mock.calls[0]![3]).toBe(1);
+  });
+
+  it('uses the before-state version for a delete', async () => {
+    const emitter = stubEmitter();
+    const publisher = createActionEventPublisher(emitter, LINK_TYPES);
+    await publisher.publishObjectChange('deleted', 'Patient', 'p1', { _id: 'p1', _version: 7 }, undefined, CAUSE, CTX);
+    expect(emitter.emitObjectDeleted.mock.calls[0]![3]).toBe(7);
+  });
 });

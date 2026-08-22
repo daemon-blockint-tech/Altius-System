@@ -731,3 +731,131 @@ describe('MCP uniform governance', () => {
     expect(actionCtx.consentPurpose).toBe('RESEARCH');
   });
 });
+
+describe('OAuth discovery challenge (RFC 9728)', () => {
+  const listReq = { jsonrpc: '2.0', id: 3, method: 'tools/list', params: {} };
+
+  it('points an unauthenticated caller at the protected-resource metadata', async () => {
+    const { deps } = createMockDeps();
+    const handler = createMcpServer({
+      deps, isDev: false,
+      resourceMetadataUrl: 'https://altius.example/.well-known/oauth-protected-resource',
+    });
+    const res = await handler({ method: 'POST', headers: {}, body: listReq });
+    expect(res.status).toBe(401);
+    expect(res.headers?.['WWW-Authenticate']).toBe(
+      'Bearer resource_metadata="https://altius.example/.well-known/oauth-protected-resource"',
+    );
+  });
+
+  it('falls back to a bare Bearer challenge when no metadata URL is configured', async () => {
+    const { deps } = createMockDeps();
+    const handler = createMcpServer({ deps, isDev: false });
+    const res = await handler({ method: 'POST', headers: {}, body: listReq });
+    expect(res.status).toBe(401);
+    expect(res.headers?.['WWW-Authenticate']).toBe('Bearer');
+  });
+});
+
+describe('high-risk action holds (human-in-the-loop)', () => {
+  const validHeaders = { authorization: 'Bearer valid-token' };
+
+  async function setup() {
+    const { HoldApprovePolicyGuard } = await import('@altius/actions');
+    const guard = new HoldApprovePolicyGuard();
+    const { deps } = createMockDeps();
+    const executeMock = deps.actionExecutor.execute as ReturnType<typeof vi.fn>;
+    deps.policyGuard = guard;
+    deps.highRiskActions = new Set(['AdmitPatient']);
+    const handler = createMcpServer({ deps, isDev: false });
+    const call = (args: Record<string, unknown>) =>
+      handler({
+        method: 'POST',
+        headers: validHeaders,
+        body: { jsonrpc: '2.0', id: 7, method: 'tools/call', params: { name: 'AdmitPatient', arguments: args } },
+      });
+    return { guard, call, executeMock };
+  }
+
+  function toolResult(res: { body: unknown }): { isError?: boolean; text: string } {
+    const body = res.body as { result: { isError?: boolean; content: { text: string }[] } };
+    return { isError: body.result.isError, text: body.result.content[0]!.text };
+  }
+
+  it('holds a high-risk action instead of executing, and returns the hold id', async () => {
+    const { call, executeMock } = await setup();
+    const res = await call({ patient: 'p-1', ward: 'w-1' });
+    const out = toolResult(res);
+    expect(out.isError).toBe(true);
+    expect(out.text).toMatch(/held for human approval/i);
+    expect(executeMock).not.toHaveBeenCalled();
+  });
+
+  it('executes after approval when retried with _holdId, and consumes the hold (no replay)', async () => {
+    const { guard, call, executeMock } = await setup();
+    const first = await call({ patient: 'p-1', ward: 'w-1' });
+    const holdId = (JSON.parse(toolResult(first).text) as { holdId: string }).holdId;
+    guard.approve(holdId, 'reviewer-1');
+
+    const second = await call({ patient: 'p-1', ward: 'w-1', _holdId: holdId });
+    expect(toolResult(second).isError).toBeFalsy();
+    expect(executeMock).toHaveBeenCalledTimes(1);
+
+    const replay = await call({ patient: 'p-1', ward: 'w-1', _holdId: holdId });
+    expect(toolResult(replay).isError).toBe(true);
+    expect(executeMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses a hold approved for a different agent or action', async () => {
+    const { guard, call, executeMock } = await setup();
+    const foreign = await guard.evaluate('AdmitPatient', 'high', { agentId: 'someone-else', dryRun: false, tenantId: 'default' });
+    guard.approve(foreign.holdId!, 'reviewer-1');
+    const res = await call({ patient: 'p-1', ward: 'w-1', _holdId: foreign.holdId });
+    expect(toolResult(res).isError).toBe(true);
+    expect(executeMock).not.toHaveBeenCalled();
+  });
+
+  it('lets a dry-run of a high-risk action through without a hold', async () => {
+    const { call, executeMock } = await setup();
+    const res = await call({ patient: 'p-1', ward: 'w-1', dryRun: true });
+    expect(toolResult(res).isError).toBeFalsy();
+    expect(executeMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('MCP access allowlist (per-user/group enablement)', () => {
+  const validHeaders = { authorization: 'Bearer valid-token' };
+  const listReq = { jsonrpc: '2.0', id: 9, method: 'tools/list', params: {} };
+
+  it('denies a caller matching neither allowedUsers nor allowedGroups with 403', async () => {
+    const { deps } = createMockDeps();
+    const handler = createMcpServer({ deps, isDev: false, allowedGroups: ['agents'] });
+    const res = await handler({ method: 'POST', headers: validHeaders, body: listReq });
+    expect(res.status).toBe(403);
+    const body = res.body as { error: { message: string } };
+    expect(body.error.message).toMatch(/allowlist|not enabled/i);
+  });
+
+  it('allows a caller whose group or role matches allowedGroups', async () => {
+    // DEV_USER carries roles ['admin'], groups [] — a role name must satisfy
+    // the group allowlist, since deployments gate on roles.
+    const { deps } = createMockDeps();
+    const handler = createMcpServer({ deps, isDev: false, allowedGroups: ['admin'] });
+    const res = await handler({ method: 'POST', headers: validHeaders, body: listReq });
+    expect(res.status).toBe(200);
+  });
+
+  it('allows a caller listed in allowedUsers even when no group matches', async () => {
+    const { deps } = createMockDeps();
+    const handler = createMcpServer({ deps, isDev: false, allowedUsers: ['dev-user'], allowedGroups: ['agents'] });
+    const res = await handler({ method: 'POST', headers: validHeaders, body: listReq });
+    expect(res.status).toBe(200);
+  });
+
+  it('leaves the surface open to authenticated callers when no allowlist is configured', async () => {
+    const { deps } = createMockDeps();
+    const handler = createMcpServer({ deps, isDev: false });
+    const res = await handler({ method: 'POST', headers: validHeaders, body: listReq });
+    expect(res.status).toBe(200);
+  });
+});

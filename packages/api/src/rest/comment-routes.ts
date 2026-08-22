@@ -7,14 +7,15 @@
  *   DELETE /api/v1/comments/:commentId             — delete comment
  *   POST   /api/v1/comments/:commentId/resolve     — resolve thread
  *   POST   /api/v1/comments/:commentId/unresolve   — unresolve thread
- *   GET    /api/v1/notifications                   — list user notifications
- *   POST   /api/v1/notifications/:id/read          — mark notification read
+ *   GET    /api/v1/comment-notifications           — list comment-mention notifications
+ *   POST   /api/v1/comment-notifications/:id/read  — mark comment notification read
  */
 
 import type { Express } from 'express';
 import type { ApiDependencies } from '../graphql/types.js';
 import type { OidcAuthenticator } from '@altius/security';
 import { extractUser } from '../config.js';
+import { checkObjectAccess } from './object-access.js';
 
 export function registerCommentRoutes(
   app: Express,
@@ -42,6 +43,10 @@ export function registerCommentRoutes(
         return;
       }
 
+      // Comments hang off the object — you may read them only if you may read it.
+      const denied = await checkObjectAccess(deps, user, typeName, req.params['id']!, 'read');
+      if (denied) { res.status(denied.status).json(denied.body); return; }
+
       const query: { threadsOnly?: boolean; resolved?: boolean; authorId?: string; limit?: number; offset?: number } = {};
       if (req.query['threadsOnly'] === 'true') query.threadsOnly = true;
       if (req.query['resolved'] !== undefined) query.resolved = req.query['resolved'] === 'true';
@@ -65,6 +70,10 @@ export function registerCommentRoutes(
         res.status(404).json({ error: 'NOT_FOUND', message: 'Unknown object type' });
         return;
       }
+
+      // Commenting requires being able to read the object being commented on.
+      const denied = await checkObjectAccess(deps, user, typeName, req.params['id']!, 'read');
+      if (denied) { res.status(denied.status).json(denied.body); return; }
 
       const body = req.body as { body: string; parentCommentId?: string; authorName?: string };
       if (!body.body) {
@@ -96,6 +105,10 @@ export function registerCommentRoutes(
         res.status(400).json({ error: 'INVALID_INPUT', message: 'body is required' });
         return;
       }
+      // Only the author may edit their own comment.
+      const existing = await store.getComment(user.tenantId, req.params['commentId']!);
+      if (!existing) { res.status(404).json({ error: 'NOT_FOUND', message: 'Comment not found' }); return; }
+      if (existing.authorId !== user.id) { res.status(403).json({ error: 'FORBIDDEN', message: 'Only the author may edit this comment' }); return; }
       const comment = await store.updateComment(user.tenantId, req.params['commentId']!, body.body);
       res.status(200).json(comment);
     } catch (err) {
@@ -107,6 +120,10 @@ export function registerCommentRoutes(
   app.delete('/api/v1/comments/:commentId', async (req, res) => {
     try {
       const user = await extractUser(req, authenticator, isDev);
+      // Only the author may delete their own comment.
+      const existing = await store.getComment(user.tenantId, req.params['commentId']!);
+      if (!existing) { res.status(404).json({ error: 'NOT_FOUND', message: 'Comment not found' }); return; }
+      if (existing.authorId !== user.id) { res.status(403).json({ error: 'FORBIDDEN', message: 'Only the author may delete this comment' }); return; }
       await store.deleteComment(user.tenantId, req.params['commentId']!);
       res.status(204).send();
     } catch (err) {
@@ -118,6 +135,11 @@ export function registerCommentRoutes(
   app.post('/api/v1/comments/:commentId/resolve', async (req, res) => {
     try {
       const user = await extractUser(req, authenticator, isDev);
+      // Resolving a thread requires being able to read the object it hangs off.
+      const existing = await store.getComment(user.tenantId, req.params['commentId']!);
+      if (!existing) { res.status(404).json({ error: 'NOT_FOUND', message: 'Comment not found' }); return; }
+      const denied = await checkObjectAccess(deps, user, existing.objectType, existing.objectId, 'read');
+      if (denied) { res.status(denied.status).json(denied.body); return; }
       await store.setResolved(user.tenantId, req.params['commentId']!, true);
       res.status(200).json({ resolved: true });
     } catch (err) {
@@ -129,6 +151,10 @@ export function registerCommentRoutes(
   app.post('/api/v1/comments/:commentId/unresolve', async (req, res) => {
     try {
       const user = await extractUser(req, authenticator, isDev);
+      const existing = await store.getComment(user.tenantId, req.params['commentId']!);
+      if (!existing) { res.status(404).json({ error: 'NOT_FOUND', message: 'Comment not found' }); return; }
+      const denied = await checkObjectAccess(deps, user, existing.objectType, existing.objectId, 'read');
+      if (denied) { res.status(denied.status).json(denied.body); return; }
       await store.setResolved(user.tenantId, req.params['commentId']!, false);
       res.status(200).json({ resolved: false });
     } catch (err) {
@@ -136,8 +162,12 @@ export function registerCommentRoutes(
     }
   });
 
-  // ── GET /api/v1/notifications — list user notifications ──
-  app.get('/api/v1/notifications', async (req, res) => {
+  // ── GET /api/v1/comment-notifications — list comment-mention notifications ──
+  // Distinct from /api/v1/notifications (the platform NotificationStore in
+  // notification-routes): these are comment @-mention notifications, a different
+  // store. They shared the same path and, being registered first, shadowed the
+  // platform notification list entirely — this de-collides them.
+  app.get('/api/v1/comment-notifications', async (req, res) => {
     try {
       const user = await extractUser(req, authenticator, isDev);
       const unreadOnly = req.query['unreadOnly'] === 'true';
@@ -148,11 +178,11 @@ export function registerCommentRoutes(
     }
   });
 
-  // ── POST /api/v1/notifications/:id/read — mark notification read ──
-  app.post('/api/v1/notifications/:id/read', async (req, res) => {
+  // ── POST /api/v1/comment-notifications/:id/read — mark comment notification read ──
+  app.post('/api/v1/comment-notifications/:id/read', async (req, res) => {
     try {
       const user = await extractUser(req, authenticator, isDev);
-      await store.markNotificationRead(user.tenantId, req.params['id']!);
+      await store.markNotificationRead(user.tenantId, user.id, req.params['id']!);
       res.status(200).json({ read: true });
     } catch (err) {
       res.status(500).json({ error: 'INTERNAL', message: err instanceof Error ? err.message : 'Failed' });

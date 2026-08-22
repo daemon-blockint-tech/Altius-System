@@ -9,6 +9,9 @@ import type { WebConfig } from './client.js';
 import { AuthSession } from './auth/session.js';
 import { beginLogin, completeLogin } from './auth/pkce.js';
 import { isAuthFailure } from './auth/auth-failure.js';
+import { decodeJwtClaims, principalFromClaims } from './auth/claims.js';
+import type { Principal } from './auth/claims.js';
+import { fetchPacks } from './packs.js';
 import { EditorialShell } from './components/EditorialShell.js';
 import type { JobKey, JobGroup, PackOption, RoleOption } from './components/EditorialShell.js';
 import { FacilitiesScreen } from './components/FacilitiesScreen.js';
@@ -19,15 +22,28 @@ import { InventoryScreen } from './components/InventoryScreen.js';
 import { ActionConsoleScreen } from './components/ActionConsoleScreen.js';
 import { AuditTrailScreen } from './components/AuditTrailScreen.js';
 import { OntologyExplorerScreen } from './components/OntologyExplorerScreen.js';
+import { ObjectBrowserScreen } from './components/ObjectBrowserScreen.js';
 import { ObjectDetailScreen } from './components/ObjectDetailScreen.js';
 import { ConsentPermissionsScreen } from './components/ConsentPermissionsScreen.js';
 import { GraphExplorerScreen } from './components/GraphExplorerScreen.js';
+import { WorkflowGraphScreen } from './components/WorkflowGraphScreen.js';
 import { McpActivityScreen } from './components/McpActivityScreen.js';
 import { PackManagerScreen } from './components/PackManagerScreen.js';
 import { SyncHealthScreen } from './components/SyncHealthScreen.js';
-import type { TraceState } from './components/TraceBar.js';
+import { WorkshopScreen } from './components/WorkshopScreen.js';
+import { setWidgetAuthProvider } from './widgets/auth-fetch.js';
 
 type AuthState = 'checking' | 'anonymous' | 'signed-in' | 'error';
+
+/** Up to two initials from a display name, for the avatar chip. */
+function initialsOf(name: string | undefined): string {
+  if (!name) return '··';
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '··';
+  const first = parts[0]![0] ?? '';
+  const last = parts.length > 1 ? (parts[parts.length - 1]![0] ?? '') : '';
+  return (first + last).toUpperCase() || '··';
+}
 
 // ── Pack / job / role definitions ─────────────────────────────
 
@@ -42,11 +58,11 @@ const JOBS: JobGroup[] = [
     key: 'OP',
     label: 'Operate',
     screens: [
-      { id: 'ops-map', label: 'Ops map' },
-      { id: 'facilities', label: 'Facilities', count: 41 },
-      { id: 'shipments', label: 'Shipments', count: 2184 },
-      { id: 'purchase-orders', label: 'Purchase orders', count: 867 },
-      { id: 'inventory', label: 'Inventory', count: 5402 },
+      { id: 'objects', label: 'Objects' },
+      { id: 'facilities', label: 'Facilities' },
+      { id: 'shipments', label: 'Shipments' },
+      { id: 'purchase-orders', label: 'Purchase orders' },
+      { id: 'inventory', label: 'Inventory' },
       { id: 'action-console', label: 'Action console' },
     ],
   },
@@ -57,6 +73,7 @@ const JOBS: JobGroup[] = [
       { id: 'audit-trail', label: 'Audit trail' },
       { id: 'consent-permissions', label: 'Consent & permissions' },
       { id: 'graph-explorer', label: 'Graph / link explorer' },
+      { id: 'workflow-graph', label: 'Workflow graph' },
       { id: 'mcp-activity', label: 'MCP activity' },
     ],
   },
@@ -66,6 +83,7 @@ const JOBS: JobGroup[] = [
     screens: [
       { id: 'ontology-explorer', label: 'Ontology / schema' },
       { id: 'pack-manager', label: 'Domain pack manager' },
+      { id: 'workshop', label: 'App builder' },
     ],
   },
   {
@@ -73,7 +91,6 @@ const JOBS: JobGroup[] = [
     label: 'Administer',
     screens: [
       { id: 'sync-health', label: 'Sync & connector health' },
-      { id: 'fdp-cdm', label: 'FDP-CDM projection' },
     ],
   },
 ];
@@ -94,7 +111,12 @@ const ROLES: RoleOption[] = [
  */
 export function App({ config }: { config: WebConfig }): ReactNode {
   const exchanged = useRef(false);
-  const [authState, setAuthState] = useState<AuthState>(config.oidc ? 'checking' : 'anonymous');
+  // Local-dev anonymous mode: only when this is a DEV build AND the flag is set.
+  // A production bundle has import.meta.env.DEV === false, so it can never engage.
+  const devNoAuth = import.meta.env.DEV && config.devNoAuth;
+  const [authState, setAuthState] = useState<AuthState>(
+    config.oidc ? 'checking' : (devNoAuth ? 'signed-in' : 'anonymous'),
+  );
   const session = useMemo(
     () =>
       config.oidc
@@ -137,6 +159,43 @@ export function App({ config }: { config: WebConfig }): ReactNode {
 
   useEffect(() => () => client.close(), [client]);
 
+  // Register the bearer token for the Workshop widget REST clients, which
+  // otherwise call the gateway unauthenticated. Cleared on sign-out.
+  useEffect(() => {
+    setWidgetAuthProvider(session && authState === 'signed-in' ? session.getAccessToken : null);
+    return () => setWidgetAuthProvider(null);
+  }, [session, authState]);
+
+  // Real signed-in principal, decoded from the access token's display claims —
+  // replaces the former hardcoded demo identity. Authorization is unaffected:
+  // the gateway verifies the token and enforces access server-side.
+  const [principal, setPrincipal] = useState<Principal | null>(null);
+  useEffect(() => {
+    if (devNoAuth) {
+      setPrincipal({ name: 'Dev User', email: 'dev@localhost', tenant: 'default', sub: 'dev', roles: ['admin'] });
+      return;
+    }
+    if (authState !== 'signed-in' || !session) { setPrincipal(null); return; }
+    let live = true;
+    session.getAccessToken()
+      .then(t => { if (live) setPrincipal(principalFromClaims(decodeJwtClaims(t))); })
+      .catch(() => { if (live) setPrincipal(null); });
+    return () => { live = false; };
+  }, [authState, session]);
+
+  // The actually-loaded packs, from the gateway — replaces the hardcoded list.
+  // Falls back to the built-in list only while loading or if the call fails.
+  const [packs, setPacks] = useState<PackOption[]>(PACKS);
+  useEffect(() => {
+    if (authState !== 'signed-in') return;
+    const getToken = session && authState === 'signed-in' ? session.getAccessToken : null;
+    let live = true;
+    fetchPacks(getToken)
+      .then(p => { if (live && p.length > 0) setPacks(p); })
+      .catch(() => { /* keep the fallback list */ });
+    return () => { live = false; };
+  }, [authState, session]);
+
   const guardAuth = <R,>(p: Promise<R>): Promise<R> =>
     p.catch((err: unknown) => {
       if (isAuthFailure(err)) setAuthState('anonymous');
@@ -159,24 +218,14 @@ export function App({ config }: { config: WebConfig }): ReactNode {
 
   const [activePack, setActivePack] = useState('supply-chain');
   const [activeJob, setActiveJob] = useState<JobKey>('OP');
-  const [activeScreen, setActiveScreen] = useState('facilities');
+  const [activeScreen, setActiveScreen] = useState('objects');
   const [activeRole, setActiveRole] = useState('warehouse_manager');
   const [detailObject, setDetailObject] = useState<{ type: string; id: string } | null>(null);
-  const [activeFilters, setActiveFilters] = useState<ActiveFilter[]>([
-    { field: 'country', values: ['DE', 'NL', 'GB'] },
-  ]);
+  const [activeFilters, setActiveFilters] = useState<ActiveFilter[]>([]);
 
-  const facilityStats: FacilityStats | null =
-    activeScreen === 'facilities' && activePack === 'supply-chain'
-      ? { visible: 38, total: 41, disrupted: 2, meanUtilisation: 67, cdcLagSeconds: 1.8 }
-      : null;
-
-  const trace: TraceState = {
-    activeStage: 'emit',
-    durationMs: 41,
-    auditId: '01JQ4Z…7KP',
-    traceId: '4f2a…9c1',
-  };
+  // No fabricated facility stats — the Facilities screen renders without a stats
+  // banner until a real source is wired (a placeholder banner invented numbers).
+  const facilityStats: FacilityStats | null = null;
 
   const handleScreenSelect = (job: JobKey, screenId: string) => {
     setActiveJob(job);
@@ -204,7 +253,7 @@ export function App({ config }: { config: WebConfig }): ReactNode {
 
   // ── Auth gates (unchanged) ───────────────────────────────────
 
-  if (!config.oidc) {
+  if (!config.oidc && !devNoAuth) {
     return (
       <main>
         <h1>Altius</h1>
@@ -242,68 +291,52 @@ export function App({ config }: { config: WebConfig }): ReactNode {
 
   // ── Render the active screen inside the shell ────────────────
 
+  // The role selector reflects the roles the identity token actually grants —
+  // roles are server-enforced, so this shows reality rather than a fixed list.
+  const roleOptions = principal && principal.roles.length > 0
+    ? principal.roles.map(r => ({ id: r, label: r }))
+    : ROLES;
+
   return (
     <>
     <EditorialShell
-      packs={PACKS}
+      packs={packs}
       activePack={activePack}
       onPackChange={setActivePack}
       jobs={JOBS}
       activeJob={activeJob}
       activeScreen={activeScreen}
       onScreenSelect={handleScreenSelect}
-      roles={ROLES}
-      activeRole={activeRole}
+      roles={roleOptions}
+      activeRole={roleOptions.some(r => r.id === activeRole) ? activeRole : (roleOptions[0]?.id ?? activeRole)}
       onRoleChange={setActiveRole}
-      brand="SC"
-      userInitials="JO"
+      brand="AL"
+      userInitials={initialsOf(principal?.name)}
       principal={{
-        name: 'Joy Okafor',
-        email: 'j.okafor@trust.example',
-        tenant: 'acme-eu',
-        sub: '4f2a…9c1',
-        relationsSummary: (
-          <>
-            Holds <code>warehouse_manager</code> on 4 facilities and{' '}
-            <code>viewer</code> everywhere it derives.
-          </>
-        ),
+        name: principal?.name ?? 'Signing in…',
+        email: principal?.email ?? '',
+        tenant: principal?.tenant ?? 'default',
+        sub: principal?.sub ?? '',
+        relationsSummary:
+          principal && principal.roles.length > 0 ? (
+            <>
+              Holds{' '}
+              {principal.roles.map((r, i) => (
+                <span key={r}>
+                  {i > 0 ? ', ' : ''}
+                  <code>{r}</code>
+                </span>
+              ))}{' '}
+              from the identity token; object-level relations are enforced server-side.
+            </>
+          ) : (
+            <>No roles in the identity token.</>
+          ),
       }}
-      hidden={[
-        {
-          title: '3 rows, filtered',
-          detail: (
-            <>
-              No <code>assigned</code> relation. Removed by the ReBAC pre-filter before the page
-              was built.
-            </>
-          ),
-        },
-        {
-          title: '2 fields, redacted',
-          detail: (
-            <>
-              <code>unitCost</code> and <code>currency</code> on linked purchase orders.
-              Commercial terms sit outside your relation.
-            </>
-          ),
-        },
-        {
-          title: 'Consent: not applicable',
-          detail: (
-            <>
-              No consent-gated type on this view. It engages on <code>nhs.acute</code>.
-            </>
-          ),
-        },
-      ]}
-      events={[
-        { time: '14:22:07', text: <>Shipment <code>SHP-8841</code> delayed</> },
-        { time: '14:21:58', text: 'Inventory adjusted at Leipzig' },
-        { time: '14:21:31', text: <>Hamburg Altenwerder set <code>DISRUPTED</code></> },
-      ]}
-      feedLive={true}
-      trace={trace}
+      hidden={[]}
+      events={[]}
+      feedLive={false}
+      trace={null}
     >
       {renderScreen(
         activeScreen,
@@ -319,6 +352,7 @@ export function App({ config }: { config: WebConfig }): ReactNode {
         session,
         authState,
         (type: string, id: string) => setDetailObject({ type, id }),
+        principal,
       )}
     </EditorialShell>
 
@@ -362,7 +396,24 @@ function renderScreen(
   session: AuthSession | null,
   authState: AuthState,
   onRowClick: (type: string, id: string) => void,
+  principal: Principal | null,
 ): ReactNode {
+  // Workshop app builder — reachable now that its widget clients authenticate.
+  if (screenId === 'workshop') {
+    return <WorkshopScreen client={client} tenantId={principal?.tenant ?? 'default'} userId={principal?.sub ?? ''} />;
+  }
+
+  // Workflow provenance graph — reads the mounted /api/v1/workflow/graph route.
+  if (screenId === 'workflow-graph') {
+    return <WorkflowGraphScreen />;
+  }
+
+  // Object browser — generic, ontology-driven worklist for any loaded pack.
+  if (screenId === 'objects') {
+    const getToken = session && authState === 'signed-in' ? session.getAccessToken : null;
+    return <ObjectBrowserScreen endpoint={config.endpoint} getToken={getToken} onRowClick={onRowClick} />;
+  }
+
   // Supply-chain Facilities — the anchor screen, fully wired.
   if (screenId === 'facilities' && packId === 'supply-chain') {
     return (

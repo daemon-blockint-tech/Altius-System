@@ -2,13 +2,14 @@
  * Graph explorer — traverse the object graph from a starting object.
  *
  * Uses the GraphQL `traverse{Type}` query to walk links from a starting
- * object. Shows nodes and edges in a simple list-based layout — a full
- * force-directed graph visualization is a future UI enhancement, but the
- * data is live and governed.
+ * object. The result draws as a node-link graph; selecting a node shows its
+ * properties, which is where the redaction markers appear. The data is live
+ * and governed — the canvas renders exactly what the traversal returned.
  */
 
 import { useCallback, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
+import { GraphCanvas } from './GraphCanvas.js';
 
 interface TraversalNode {
   id: string;
@@ -17,8 +18,9 @@ interface TraversalNode {
 }
 
 interface TraversalEdge {
-  from: string;
-  to: string;
+  /** The SDL names these `fromId`/`toId`, not `from`/`to`. */
+  fromId: string;
+  toId: string;
   linkType: string;
 }
 
@@ -39,6 +41,7 @@ export function GraphExplorerScreen({ endpoint, getToken }: GraphExplorerScreenP
   const [linkType, setLinkType] = useState('AdmittedTo');
   const [direction, setDirection] = useState('OUTBOUND');
   const [result, setResult] = useState<TraversalResult | null>(null);
+  const [selected, setSelected] = useState<string | null>(null);
   const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const [error, setError] = useState<string | null>(null);
   const ticket = useRef(0);
@@ -55,7 +58,7 @@ export function GraphExplorerScreen({ endpoint, getToken }: GraphExplorerScreenP
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         body: JSON.stringify({
-          query: `query($startId: ID!, $steps: [TraversalStepInput!]!, $limit: Int) { ${queryName}(startId: $startId, steps: $steps, limit: $limit) { nodes { id type properties } edges { from to linkType } totalCount } }`,
+          query: `query($startId: ID!, $steps: [TraversalStepInput!]!, $limit: Int) { ${queryName}(startId: $startId, steps: $steps, limit: $limit) { nodes { id type properties } edges { fromId toId linkType } totalCount } }`,
           variables: {
             startId,
             steps: [{ linkType, direction }],
@@ -69,6 +72,7 @@ export function GraphExplorerScreen({ endpoint, getToken }: GraphExplorerScreenP
       const data = json.data?.[queryName];
       if (mine !== ticket.current) return;
       setResult(data ?? null);
+      setSelected(null);
       setStatus('ready');
     } catch (err) {
       if (mine !== ticket.current) return;
@@ -76,6 +80,8 @@ export function GraphExplorerScreen({ endpoint, getToken }: GraphExplorerScreenP
       setStatus('error');
     }
   }, [endpoint, getToken, startType, startId, linkType, direction]);
+
+  const selectedNode = selected ? result?.nodes.find(n => n.id === selected) ?? null : null;
 
   return (
     <main className="ed-main">
@@ -120,53 +126,47 @@ export function GraphExplorerScreen({ endpoint, getToken }: GraphExplorerScreenP
 
         {result && status === 'ready' && (
           <div>
-                        <h2 className="ed-subhead">
+            <h2 className="ed-subhead">
               Nodes ({result.nodes.length}) — {result.totalCount} total
             </h2>
-            <table className="ed-table">
-              <thead>
-                <tr>
-                  <th scope="col">ID</th>
-                  <th scope="col">Type</th>
-                  <th scope="col">Properties</th>
-                </tr>
-              </thead>
-              <tbody>
-                {result.nodes.map((node) => (
-                  <tr key={node.id}>
-                    <td><code>{node.id}</code></td>
-                    <td>{node.type}</td>
-                    <td>
-                      <pre style={{ fontSize: '0.85em', margin: 0, maxWidth: 400, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {JSON.stringify(node.properties, null, 2)}
-                      </pre>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
 
-                        <h2 className="ed-subhead">
-              Edges ({result.edges.length})
-            </h2>
-            <table className="ed-table">
-              <thead>
-                <tr>
-                  <th scope="col">From</th>
-                  <th scope="col">To</th>
-                  <th scope="col">Link type</th>
-                </tr>
-              </thead>
-              <tbody>
-                {result.edges.map((edge, i) => (
-                  <tr key={i}>
-                    <td><code>{edge.from}</code></td>
-                    <td><code>{edge.to}</code></td>
-                    <td>{edge.linkType}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <GraphCanvas
+              label={`Traversal from ${startType} ${startId}`}
+              nodes={result.nodes.map(node => ({
+                id: node.id,
+                label: String(node.properties['name'] ?? node.properties['title'] ?? node.id),
+                kind: node.type,
+              }))}
+              edges={result.edges.map(edge => ({ from: edge.fromId, to: edge.toId, label: edge.linkType }))}
+              selectedId={selected}
+              onNodeClick={setSelected}
+            />
+
+            {selectedNode ? (
+              <>
+                <h2 className="ed-subhead">
+                  {selectedNode.type} · <code>{selectedNode.id}</code>
+                </h2>
+                <table className="ed-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">Field</th>
+                      <th scope="col">Value</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Object.entries(selectedNode.properties).map(([key, value]) => (
+                      <tr key={key}>
+                        <td>{key}</td>
+                        <td>{value === null || value === undefined ? '—' : String(value)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </>
+            ) : (
+              <p className="ed-muted">Select a node to see its fields.</p>
+            )}
           </div>
         )}
 

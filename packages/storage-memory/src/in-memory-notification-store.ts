@@ -59,11 +59,12 @@ export class InMemoryNotificationStore implements NotificationStore {
     return { notifications: results, totalCount };
   }
 
-  async markRead(tenantId: string, notificationId: string): Promise<void> {
+  async markRead(tenantId: string, userId: string, notificationId: string): Promise<void> {
     const tenantNotifs = this.notifications.get(tenantId);
     if (!tenantNotifs) return;
     const n = tenantNotifs.get(notificationId);
-    if (n) tenantNotifs.set(notificationId, { ...n, read: true });
+    // Only the recipient may mark their own notification read.
+    if (n && n.userId === userId) tenantNotifs.set(notificationId, { ...n, read: true });
   }
 
   async markAllRead(tenantId: string, userId: string): Promise<void> {
@@ -76,8 +77,11 @@ export class InMemoryNotificationStore implements NotificationStore {
     }
   }
 
-  async delete(tenantId: string, notificationId: string): Promise<void> {
-    this.notifications.get(tenantId)?.delete(notificationId);
+  async delete(tenantId: string, userId: string, notificationId: string): Promise<void> {
+    const tenantNotifs = this.notifications.get(tenantId);
+    const n = tenantNotifs?.get(notificationId);
+    // Only the recipient may delete their own notification.
+    if (n && n.userId === userId) tenantNotifs!.delete(notificationId);
   }
 
   async getPreferences(tenantId: string, userId: string): Promise<NotificationPreferences> {

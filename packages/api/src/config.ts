@@ -215,6 +215,7 @@ export type { ActionAuthzMapping };
 export function createSecurityLayer(
   authz: AuthorizationService,
   actionMappings?: Map<string, ActionAuthzMapping>,
+  manifests?: ManifestRegistry,
 ): SecurityLayer {
   return {
     async checkPermission(actor, actionType, params, ctx) {
@@ -235,30 +236,44 @@ export function createSecurityLayer(
         return { allowed };
       }
       // Unmapped actions have no ObjectType @param to ReBAC-authorize against
-      // (e.g. creation actions like RegisterPatient). Authorization for these is
-      // the manifest's CEL preconditions (role claims) — the next pipeline stage.
-      // We allow at the ReBAC layer rather than checking `execute on
-      // action:<type>` (which would fail closed without provisioned tuples and
-      // make every object-less action permanently denied).
+      // (e.g. creation actions like RegisterPatient). Their gate is the
+      // manifest's declarative requiredRoles — deny-by-default, mirroring
+      // @function requiredRoles. CEL preconditions are NOT the gate: whether
+      // an expression checks the caller cannot be decided without evaluating
+      // it, and a boot-time substring scan proved unable to fail closed.
+      const required = manifests?.get(actionType)?.requiredRoles ?? [];
+      if (required.length === 0) {
+        return {
+          allowed: false,
+          reason:
+            `Action ${actionType} has no ObjectType @param and its manifest declares no requiredRoles — ` +
+            `nobody may execute it. Add requiredRoles: [<role>, ...] to the action manifest.`,
+        };
+      }
+      if (!required.some(r => actor.roles.includes(r))) {
+        return {
+          allowed: false,
+          reason: `Action ${actionType} requires one of roles [${required.join(', ')}].`,
+        };
+      }
       return { allowed: true };
     },
   };
 }
 
 /**
- * Assert that every action the ReBAC layer cannot gate is gated by its manifest.
+ * Assert that every action the ReBAC layer cannot gate declares its role gate.
  *
- * createSecurityLayer (config.ts) returns `allowed: true` for any action with no
- * ObjectType @param — there is no instance to check a relation against, so a
- * creation action like RegisterPatient would otherwise be permanently denied.
- * The documented compensating control is the manifest's CEL preconditions, but
- * nothing enforced that they exist: an object-less action shipping zero
- * preconditions is executable by ANY authenticated user, silently.
+ * createSecurityLayer denies any action with no ObjectType @param unless the
+ * caller holds one of the manifest's `requiredRoles` — deny-by-default,
+ * mirroring @function requiredRoles. This check makes that contract visible at
+ * boot instead of as a runtime 403 on every call: an object-less action whose
+ * manifest declares no requiredRoles is permanently unexecutable, which is
+ * fail-closed but almost certainly a pack authoring mistake.
  *
- * Fatal when there is no gate at all. Only a warning when preconditions exist but
- * none reference a role — those may be deliberate data-conditions, and the
- * `actor.hasRole(` test is a substring heuristic, not a CEL parse, so it must not
- * be able to make a valid deployment unbootable on its own.
+ * The check is exact (a declared field, not the old `actor.hasRole(` substring
+ * scan of preconditions), so it is fatal in production. Dev warns, because the
+ * dev security layer is an allow-all stub anyway.
  */
 export function assertActionAuthzCoverage(
   schema: ParsedSchema,
@@ -267,7 +282,6 @@ export function assertActionAuthzCoverage(
   isDev: boolean,
 ): void {
   const ungated: string[] = [];
-  const roleless: string[] = [];
 
   for (const action of schema.actionTypes) {
     if (mappings.has(action.name)) continue; // ReBAC-checked against its target
@@ -275,39 +289,28 @@ export function assertActionAuthzCoverage(
     const manifest = manifests.get(action.name);
     if (!manifest) continue; // missing manifests are already fatal in schema-loader
 
-    if (manifest.preconditions.length === 0) {
+    if ((manifest.requiredRoles ?? []).length === 0) {
       ungated.push(
-        `${action.name} has no ObjectType @param and no preconditions — any authenticated caller can execute it`,
-      );
-    } else if (!manifest.preconditions.some((p: { expr: string }) => p.expr.includes('actor.hasRole('))) {
-      roleless.push(
-        `${action.name} has no ObjectType @param and no role-based precondition — its preconditions gate data, not the caller`,
+        `${action.name} has no ObjectType @param and its manifest declares no requiredRoles — nobody can execute it`,
       );
     }
   }
 
   const guidance =
-    'Add a precondition such as "actor.hasRole(\'some_role\')" to the action manifest, ' +
+    'Add requiredRoles: [<role>, ...] to the action manifest, ' +
     'or give the action an @param typed as an ObjectType so ReBAC can authorize it.';
-
-  if (roleless.length > 0) {
-    logger.warn(
-      `Action authorization: these actions rely on preconditions that do not check the caller:\n` +
-      `${roleless.map(w => `  - ${w}`).join('\n')}\n${guidance}`,
-    );
-  }
 
   if (ungated.length === 0) return;
 
   const detail = ungated.map(p => `  - ${p}`).join('\n');
   if (isDev) {
     logger.warn(
-      `Action authorization gaps (allow-all stub in dev, but these WILL be open in production):\n${detail}\n${guidance}`,
+      `Action authorization gaps (allow-all stub in dev, but these are denied in production):\n${detail}\n${guidance}`,
     );
     return;
   }
   throw new Error(
-    `FATAL: these actions have no authorization at any layer:\n${detail}\n${guidance}`,
+    `FATAL: these object-less actions declare no requiredRoles, so nobody can execute them:\n${detail}\n${guidance}`,
   );
 }
 

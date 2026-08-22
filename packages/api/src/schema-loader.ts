@@ -424,7 +424,12 @@ function loadPackFieldPermissions(
     }
 
     if (typeof objectType === 'string') {
-      configs.push({ objectType, alwaysVisible, fieldsByRelation });
+      configs.push({
+        objectType,
+        alwaysVisible,
+        fieldsByRelation,
+        ...(e['allowSensitive'] === true ? { allowSensitive: true } : {}),
+      });
     }
   }
 }
@@ -695,6 +700,36 @@ export function universallyVisibleSensitive(
 }
 
 /**
+ * A config that re-exposes @sensitive fields to every reader must say so.
+ *
+ * Fail closed (precedent: schema-evolution's breaking-change default moved
+ * from 'warn' to 'block'): a silent grant of a @sensitive field to `viewer`
+ * or alwaysVisible is a boot ERROR unless the pack declares
+ * `allowSensitive: true` on that entry — making the re-exposure explicit and
+ * reviewable instead of a log line nobody reads.
+ */
+export function assertSensitiveExposureAcknowledged(
+  config: FieldPermissionConfig,
+  sensitiveFields: readonly string[],
+): void {
+  const exposed = universallyVisibleSensitive(config, sensitiveFields);
+  if (exposed.length === 0) return;
+  if (config.allowSensitive === true) {
+    logger.warn(
+      `Field permissions [${config.objectType}]: @sensitive field(s) ${exposed.join(', ')} are readable by every ` +
+      `caller who can read the object — acknowledged via allowSensitive: true.`,
+    );
+    return;
+  }
+  throw new Error(
+    `Field permissions [${config.objectType}]: @sensitive field(s) ${exposed.join(', ')} are readable by every ` +
+    `caller who can read the object (listed in alwaysVisible and/or granted to 'viewer', which every read ` +
+    `checks). Move them under a narrower relation, or declare \`allowSensitive: true\` on this entry to ` +
+    `acknowledge the re-exposure explicitly.`,
+  );
+}
+
+/**
  * Make @sensitive enforceable.
  *
  * Redaction is driven entirely by field-permissions.yaml: AuthorizationService
@@ -733,14 +768,7 @@ function deriveSensitiveFieldDefaults(
 
     const existing = configs.find(c => c.objectType === objType.name);
     if (existing) {
-      const exposed = universallyVisibleSensitive(existing, sensitive);
-      if (exposed.length > 0) {
-        logger.warn(
-          `Field permissions [${objType.name}]: @sensitive field(s) ${exposed.join(', ')} are readable by every ` +
-          `caller who can read the object (listed in alwaysVisible and/or granted to 'viewer', which every read ` +
-          `checks). Move them under a narrower relation if that is not intended.`,
-        );
-      }
+      assertSensitiveExposureAcknowledged(existing, sensitive);
       continue;
     }
 

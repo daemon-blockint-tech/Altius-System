@@ -175,39 +175,44 @@ function fieldPredicateToSqlFlat(pred: FieldPredicate, offset: number, tableAlia
       };
     }
     case 'near': {
-      // Haversine distance in meters: 6371000 * 2 * atan2(sqrt(a), sqrt(1-a))
+      // Haversine distance in meters: 6371000 * 2 * atan2(sqrt(a), sqrt(1-a)).
+      // Params are contiguous from $offset: [queryLat, queryLng, radiusMeters].
+      // (A prior version bound [lng, lat, radius] but referenced $offset+1..+3,
+      //  leaving $offset+3 unbound and colliding with the next fragment's param.)
       const filter = pred.value as { lat: number; lng: number; radiusMeters: number };
       const lat = `(${col}->>'lat')::float8`;
       const lng = `(${col}->>'lng')::float8`;
       const earthR = 6371000;
-      const dLat = `(RADIANS($${offset + 1} - ${lat}))`;
-      const dLng = `(RADIANS($${offset + 2} - ${lng}))`;
-      const a = `SIN(${dLat}/2)*SIN(${dLat}/2) + COS(RADIANS(${lat}))*COS(RADIANS($${offset + 1}))*SIN(${dLng}/2)*SIN(${dLng}/2)`;
+      const dLat = `(RADIANS($${offset} - ${lat}))`;
+      const dLng = `(RADIANS($${offset + 1} - ${lng}))`;
+      const a = `SIN(${dLat}/2)*SIN(${dLat}/2) + COS(RADIANS(${lat}))*COS(RADIANS($${offset}))*SIN(${dLng}/2)*SIN(${dLng}/2)`;
       const dist = `${earthR} * 2 * ATAN2(SQRT(${a}), SQRT(1-${a}))`;
       return {
-        text: `${dist} <= $${offset + 3}`,
-        params: [filter.lng, filter.lat, filter.radiusMeters],
+        text: `${dist} <= $${offset + 2}`,
+        params: [filter.lat, filter.lng, filter.radiusMeters],
       };
     }
     case 'withinPolygon': {
       // Ray-casting in SQL: iterate polygon edges and count crossings.
-      // This uses a LATERAL query with generate_series for the edge loop.
+      // The polygon is bound as a JSON parameter, never interpolated — a point
+      // coordinate is untrusted (types are erased at the trust boundary) and a
+      // string value could otherwise close the SQL literal. Coordinates are
+      // coerced to numbers; a non-numeric one becomes JSON null and drops out.
       const filter = pred.value as { points: Array<{ lat: number; lng: number }> };
       const pts = filter.points;
       if (pts.length < 3) return { text: 'FALSE', params: [] };
       const lat = `(${col}->>'lat')::float8`;
       const lng = `(${col}->>'lng')::float8`;
-      // Build a JSON array for the polygon and use a lateral subquery
-      const polyJson = JSON.stringify(pts.map(p => [p.lng, p.lat]));
+      const polyJson = JSON.stringify(pts.map(p => [Number(p.lng), Number(p.lat)]));
       return {
         text: `EXISTS (
-          WITH poly AS (SELECT '${polyJson}'::json AS pts),
+          WITH poly AS (SELECT $${offset}::json AS pts),
           edges AS (
             SELECT i,
-              (poly.pts->i->0->>0)::float8 AS xi,
-              (poly.pts->i->1->>0)::float8 AS yi,
-              (poly.pts->((i+1) % json_array_length(poly.pts))->0->>0)::float8 AS xj,
-              (poly.pts->((i+1) % json_array_length(poly.pts))->1->>0)::float8 AS yj
+              (poly.pts->i->>0)::float8 AS xi,
+              (poly.pts->i->>1)::float8 AS yi,
+              (poly.pts->((i+1) % json_array_length(poly.pts))->>0)::float8 AS xj,
+              (poly.pts->((i+1) % json_array_length(poly.pts))->>1)::float8 AS yj
             FROM poly, generate_series(0, json_array_length(poly.pts) - 1) AS i
           )
           SELECT 1 FROM edges
@@ -215,7 +220,7 @@ function fieldPredicateToSqlFlat(pred: FieldPredicate, offset: number, tableAlia
             AND (${lng} < (xj - xi) * (${lat} - yi) / (yj - yi) + xi)
           HAVING COUNT(*) % 2 = 1
         )`,
-        params: [],
+        params: [polyJson],
       };
     }
     default:

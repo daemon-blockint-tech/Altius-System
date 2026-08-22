@@ -28,6 +28,7 @@ import {
 import type { ApiDependencies } from '../graphql/types.js';
 import type { OidcAuthenticator } from '@altius/security';
 import { extractUser } from '../config.js';
+import { checkObjectAccess } from './object-access.js';
 
 export function registerTimeSeriesRoutes(
   app: Express,
@@ -66,6 +67,10 @@ export function registerTimeSeriesRoutes(
         res.status(404).json({ error: 'NOT_FOUND', message: 'Not a time-series property' });
         return;
       }
+
+      // Governs the same as a read of the parent object.
+      const denied = await checkObjectAccess(deps, user, typeName, objectId, 'read');
+      if (denied) { res.status(denied.status).json(denied.body); return; }
 
       const query: TimeSeriesQuery = {};
       if (req.query['start']) query.start = String(req.query['start']);
@@ -123,6 +128,10 @@ export function registerTimeSeriesRoutes(
         return;
       }
 
+      // Appending points mutates the parent object's data — editor access.
+      const denied = await checkObjectAccess(deps, user, typeName, objectId, 'write');
+      if (denied) { res.status(denied.status).json(denied.body); return; }
+
       const body = req.body as { points?: TimeSeriesPoint[] } | TimeSeriesPoint[];
       const points = Array.isArray(body) ? body : (body.points ?? []);
       if (points.length === 0) {
@@ -158,6 +167,11 @@ export function registerTimeSeriesRoutes(
 
       const objectId = req.params['id']!;
       const property = req.params['property']!;
+
+      // Deleting a range mutates the parent object's data — editor access.
+      const denied = await checkObjectAccess(deps, user, typeName, objectId, 'write');
+      if (denied) { res.status(denied.status).json(denied.body); return; }
+
       const start = req.query['start'];
       const end = req.query['end'];
       if (!start || !end) {
@@ -209,6 +223,10 @@ export function registerTimeSeriesRoutes(
         res.status(404).json({ error: 'NOT_FOUND', message: 'Not a time-series property' });
         return;
       }
+
+      // Reads the parent object's series before transforming — read access.
+      const denied = await checkObjectAccess(deps, user, typeName, objectId, 'read');
+      if (denied) { res.status(denied.status).json(denied.body); return; }
 
       const body = req.body as {
         operation: string;
@@ -295,6 +313,9 @@ export function registerTimeSeriesRoutes(
 
       const fetched: TimeSeriesPoint[][] = [];
       for (const s of body.series) {
+        // Every series named must be readable as its own parent object.
+        const denied = await checkObjectAccess(deps, user, s.objectType, s.objectId, 'read');
+        if (denied) { res.status(denied.status).json(denied.body); return; }
         const r = await store.getSeries(
           { tenantId: user.tenantId, branch: 'main' },
           s.objectType,

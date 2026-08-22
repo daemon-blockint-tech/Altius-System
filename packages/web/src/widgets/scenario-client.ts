@@ -1,3 +1,4 @@
+import { authedFetch } from './auth-fetch.js';
 /**
  * Scenario client — helpers for fetching and managing scenarios from the backend.
  *
@@ -61,13 +62,13 @@ export async function listScenarios(
   if (query?.state) url.searchParams.set('state', query.state);
   if (query?.tags?.length) url.searchParams.set('tags', query.tags.join(','));
   if (query?.limit) url.searchParams.set('limit', String(query.limit));
-  const res = await fetch(url.toString());
+  const res = await authedFetch(url.toString());
   if (!res.ok) throw new Error(`listScenarios: ${res.status}`);
   return res.json() as Promise<{ scenarios: Scenario[]; totalCount: number }>;
 }
 
 export async function getScenario(id: string, baseUrl = '/api/v1'): Promise<Scenario> {
-  const res = await fetch(`${baseUrl}/scenarios/${encodeURIComponent(id)}`);
+  const res = await authedFetch(`${baseUrl}/scenarios/${encodeURIComponent(id)}`);
   if (!res.ok) throw new Error(`getScenario: ${res.status}`);
   return res.json() as Promise<Scenario>;
 }
@@ -86,7 +87,7 @@ export async function createScenario(
   },
   baseUrl = '/api/v1',
 ): Promise<Scenario> {
-  const res = await fetch(`${baseUrl}/scenarios`, {
+  const res = await authedFetch(`${baseUrl}/scenarios`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
@@ -100,7 +101,7 @@ export async function updateScenario(
   updates: Partial<Scenario>,
   baseUrl = '/api/v1',
 ): Promise<Scenario> {
-  const res = await fetch(`${baseUrl}/scenarios/${encodeURIComponent(id)}`, {
+  const res = await authedFetch(`${baseUrl}/scenarios/${encodeURIComponent(id)}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(updates),
@@ -110,7 +111,7 @@ export async function updateScenario(
 }
 
 export async function deleteScenario(id: string, baseUrl = '/api/v1'): Promise<void> {
-  const res = await fetch(`${baseUrl}/scenarios/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  const res = await authedFetch(`${baseUrl}/scenarios/${encodeURIComponent(id)}`, { method: 'DELETE' });
   if (!res.ok) throw new Error(`deleteScenario: ${res.status}`);
 }
 
@@ -121,7 +122,7 @@ export async function runScenario(
   tsInputs?: Array<{ objectType: string; objectId: string; property: string; inputKey: string }>,
   baseUrl = '/api/v1',
 ): Promise<ScenarioResult> {
-  const res = await fetch(`${baseUrl}/scenarios/${encodeURIComponent(id)}/run`, {
+  const res = await authedFetch(`${baseUrl}/scenarios/${encodeURIComponent(id)}/run`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ tsInputs }),
@@ -131,7 +132,7 @@ export async function runScenario(
 }
 
 export async function getScenarioResults(id: string, baseUrl = '/api/v1'): Promise<ScenarioResult[]> {
-  const res = await fetch(`${baseUrl}/scenarios/${encodeURIComponent(id)}/results`);
+  const res = await authedFetch(`${baseUrl}/scenarios/${encodeURIComponent(id)}/results`);
   if (!res.ok) throw new Error(`getScenarioResults: ${res.status}`);
   const data = await res.json() as { results: ScenarioResult[] };
   return data.results;
@@ -142,7 +143,7 @@ export async function compareScenarios(
   scenarioIdB: string,
   baseUrl = '/api/v1',
 ): Promise<ScenarioComparison> {
-  const res = await fetch(`${baseUrl}/scenarios/compare`, {
+  const res = await authedFetch(`${baseUrl}/scenarios/compare`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ scenarioIdA, scenarioIdB }),
@@ -152,7 +153,7 @@ export async function compareScenarios(
 }
 
 export async function duplicateScenario(id: string, newName: string, baseUrl = '/api/v1'): Promise<Scenario> {
-  const res = await fetch(`${baseUrl}/scenarios/${encodeURIComponent(id)}/duplicate`, {
+  const res = await authedFetch(`${baseUrl}/scenarios/${encodeURIComponent(id)}/duplicate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ newName }),
@@ -168,7 +169,7 @@ export async function stageActions(
   actions: StagedAction[],
   baseUrl = '/api/v1',
 ): Promise<{ staged: StagedAction[]; count: number }> {
-  const res = await fetch(`${baseUrl}/scenarios/${encodeURIComponent(scenarioId)}/stage`, {
+  const res = await authedFetch(`${baseUrl}/scenarios/${encodeURIComponent(scenarioId)}/stage`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ actions }),
@@ -188,7 +189,7 @@ export async function applyStagedActions(
   allOrNothing: boolean;
   rolledBack: boolean;
 }> {
-  const res = await fetch(`${baseUrl}/scenarios/${encodeURIComponent(scenarioId)}/apply`, {
+  const res = await authedFetch(`${baseUrl}/scenarios/${encodeURIComponent(scenarioId)}/apply`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ allOrNothing }),
@@ -206,7 +207,7 @@ export async function loadTsInputs(
 ): Promise<{
   inputs: Record<string, { points: Array<{ timestamp: string; value: number | string | boolean }>; values: number[]; count: number }>;
 }> {
-  const res = await fetch(`${baseUrl}/scenarios/${encodeURIComponent(scenarioId)}/ts-inputs`, {
+  const res = await authedFetch(`${baseUrl}/scenarios/${encodeURIComponent(scenarioId)}/ts-inputs`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ tsInputs }),

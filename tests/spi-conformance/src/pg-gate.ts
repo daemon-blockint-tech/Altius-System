@@ -23,3 +23,26 @@ if (REQUIRE_PG && !pgTestUrl) {
       'set PG_TEST_URL, or unset REQUIRE_PG to allow skipping.',
   );
 }
+
+/**
+ * Parse a `postgres://user:pass@host:port/database` URL into the discrete
+ * fields that {@link PostgresStorageConfig} expects. The config interface
+ * does not accept a connection string, so each conformance test must parse
+ * the URL itself before constructing the provider.
+ */
+export function parsePgUrl(url: string): {
+  host: string;
+  port: number;
+  database: string;
+  user: string;
+  password: string;
+} {
+  const u = new URL(url);
+  return {
+    host: u.hostname,
+    port: u.port ? Number(u.port) : 5432,
+    database: u.pathname.replace(/^\//, ''),
+    user: decodeURIComponent(u.username),
+    password: decodeURIComponent(u.password),
+  };
+}

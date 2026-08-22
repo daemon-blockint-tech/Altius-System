@@ -42,44 +42,44 @@ describe('HoldApprovePolicyGuard', () => {
     const result = await guard.evaluate('DeletePatient', 'high', agentCtx);
     const holdId = result.holdId!;
 
-    expect(guard.isApproved(holdId)).toBe(false);
+    expect(await guard.isApproved(holdId)).toBe(false);
 
-    const approved = guard.approve(holdId, 'reviewer-1');
+    const approved = await guard.approve(holdId, 'reviewer-1');
     expect(approved.status).toBe('approved');
     expect(approved.decidedBy).toBe('reviewer-1');
 
-    expect(guard.isApproved(holdId)).toBe(true);
+    expect(await guard.isApproved(holdId)).toBe(true);
   });
 
   it('rejects a hold', async () => {
     const result = await guard.evaluate('DeletePatient', 'high', agentCtx);
     const holdId = result.holdId!;
 
-    const rejected = guard.reject(holdId, 'reviewer-1', 'Too risky');
+    const rejected = await guard.reject(holdId, 'reviewer-1', 'Too risky');
     expect(rejected.status).toBe('rejected');
     expect(rejected.reason).toBe('Too risky');
-    expect(guard.isApproved(holdId)).toBe(false);
+    expect(await guard.isApproved(holdId)).toBe(false);
   });
 
   it('throws when approving a non-pending hold', async () => {
     const result = await guard.evaluate('DeletePatient', 'high', agentCtx);
     const holdId = result.holdId!;
-    guard.approve(holdId, 'reviewer-1');
-    expect(() => guard.approve(holdId, 'reviewer-2')).toThrow(/not pending/);
+    await guard.approve(holdId, 'reviewer-1');
+    await expect(guard.approve(holdId, 'reviewer-2')).rejects.toThrow(/not pending/);
   });
 
-  it('throws when approving a non-existent hold', () => {
-    expect(() => guard.approve('nonexistent', 'reviewer-1')).toThrow(/not found/);
+  it('throws when approving a non-existent hold', async () => {
+    await expect(guard.approve('nonexistent', 'reviewer-1')).rejects.toThrow(/not found/);
   });
 
   it('lists holds by status', async () => {
     await guard.evaluate('Action1', 'high', agentCtx);
     await guard.evaluate('Action2', 'high', agentCtx);
     const result3 = await guard.evaluate('Action3', 'high', agentCtx);
-    guard.approve(result3.holdId!, 'reviewer-1');
+    await guard.approve(result3.holdId!, 'reviewer-1');
 
-    const pending = guard.listHolds('pending');
-    const approved = guard.listHolds('approved');
+    const pending = await guard.listHolds('pending');
+    const approved = await guard.listHolds('approved');
     expect(pending).toHaveLength(2);
     expect(approved).toHaveLength(1);
     expect(approved[0]!.actionName).toBe('Action3');
@@ -93,8 +93,8 @@ describe('HoldApprovePolicyGuard', () => {
     // Wait for expiry
     await new Promise((resolve) => setTimeout(resolve, 60));
 
-    expect(() => g.approve(holdId, 'reviewer-1')).toThrow(/expired/);
-    expect(g.isApproved(holdId)).toBe(false);
+    await expect(g.approve(holdId, 'reviewer-1')).rejects.toThrow(/expired/);
+    expect(await g.isApproved(holdId)).toBe(false);
   });
 
   it('cleans up expired holds', async () => {
@@ -104,20 +104,36 @@ describe('HoldApprovePolicyGuard', () => {
 
     await new Promise((resolve) => setTimeout(resolve, 60));
 
-    const cleaned = g.cleanupExpired();
+    const cleaned = await g.cleanupExpired();
     expect(cleaned).toBe(2);
 
-    const expired = g.listHolds('expired');
+    const expired = await g.listHolds('expired');
     expect(expired).toHaveLength(2);
   });
 
   it('getHold returns the hold record', async () => {
     const result = await guard.evaluate('DeletePatient', 'high', agentCtx);
-    const hold = guard.getHold(result.holdId!);
+    const hold = await guard.getHold(result.holdId!);
     expect(hold).not.toBeNull();
     expect(hold!.actionName).toBe('DeletePatient');
     expect(hold!.riskLevel).toBe('high');
     expect(hold!.status).toBe('pending');
+  });
+
+  it('consume is one-shot: an approved hold authorizes exactly one execution', async () => {
+    const result = await guard.evaluate('DeletePatient', 'high', agentCtx);
+    await guard.approve(result.holdId!, 'reviewer-1');
+    expect(await guard.isApproved(result.holdId!)).toBe(true);
+
+    await guard.consume(result.holdId!);
+    expect(await guard.isApproved(result.holdId!)).toBe(false);
+    expect((await guard.getHold(result.holdId!))!.status).toBe('consumed');
+  });
+
+  it('consume on a non-approved hold is a no-op', async () => {
+    const result = await guard.evaluate('DeletePatient', 'high', agentCtx);
+    await guard.consume(result.holdId!);
+    expect((await guard.getHold(result.holdId!))!.status).toBe('pending');
   });
 
   it('integrates with ToolRegistry executeForAgent', async () => {

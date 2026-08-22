@@ -1,23 +1,26 @@
 /**
- * Server entrypoint — starts the Altius API gateway.
+ * Server entrypoint â€” starts the Altius API gateway.
  *
  * Mounts GraphQL, REST, and FHIR endpoints on a single Express server.
  * Used by the Dockerfile CMD and for local development.
  *
  * Configuration via environment variables:
- *   PORT                 — HTTP port (default: 4000)
- *   NODE_ENV             — 'production' enables real service wiring
- *   DOMAIN_PACKS_DIR     — Path to domain-packs directory (auto-detected if omitted)
- *   DOMAIN_PACKS         — Comma-separated or JSON array of pack names to load
- *   SEED_TENANT          — Tenant for domain-pack boot seeds (default: 'system', isolated from request tenants)
- *   SCHEMA_BREAKING_POLICY — 'warn' (default) records BREAKING schema changes and continues; 'block' fails boot without recording
- *   ALLOW_NON_DURABLE_SERVICES — 'true' serves the services that have no Postgres implementation (see
+ *   PORT                 â€” HTTP port (default: 4000)
+ *   NODE_ENV             â€” 'production' enables real service wiring
+ *   DOMAIN_PACKS_DIR     â€” Path to domain-packs directory (auto-detected if omitted)
+ *   DOMAIN_PACKS         â€” Comma-separated or JSON array of pack names to load
+ *   SEED_TENANT          â€” Tenant for domain-pack boot seeds (default: 'system', isolated from request tenants)
+ *   SCHEMA_BREAKING_POLICY â€” 'warn' (default) records BREAKING schema changes and continues; 'block' fails boot without recording
+ *   ALLOW_NON_DURABLE_SERVICES â€” 'true' serves the services that have no Postgres implementation (see
  *                          nonDurableServices below; the gateway names them at boot) from process memory on a
  *                          Postgres deployment. Lost on restart and not shared across replicas: single-replica
  *                          prod-testing only. Default off — those routes answer 404 instead
  *   SYNC_SCHEDULER_ENABLED — 'true' starts the sync poll loop for POLLING/CDC/BATCH pack connectors (default: off)
  *   AUTOMATION_ENABLED   — 'true' starts pack-declared automations (event + schedule); run on a SINGLE instance only (default: off)
  *   SYNC_TENANT          — Tenant for sync-ingested objects (default: SEED_TENANT, then 'system')
+ *   DATA_CONNECTION_ENROLLMENT_SECRET — Shared secret Data Connection Agents present at enrollment;
+ *                          setting it mounts the agent gateway at /api/v1/data-connection/* and leases
+ *                          runtime-AGENT pack datasources to enrolled agents (default: off)
  *   OIDC_ISSUER          — OIDC provider issuer URL (matches Helm configmap)
  *   OIDC_CLIENT_ID       — OIDC client ID
  *   OIDC_JWKS_URI        — JWKS endpoint override for non-Keycloak issuers
@@ -25,26 +28,38 @@
  *   OPENFGA_URL          — OpenFGA API URL (matches Helm configmap / docker-compose)
  *   OPENFGA_STORE_IDS    — Per-tenant OpenFGA stores: 'tenantA=storeId,tenantB=storeId'. One store
  *                          per tenant; a tenant not listed here is denied all access (fail closed)
- *   OPENFGA_STORE_ID     — Single-tenant OpenFGA store ID; requires OIDC_DEFAULT_TENANT to name the
+ *   OPENFGA_STORE_ID     â€” Single-tenant OpenFGA store ID; requires OIDC_DEFAULT_TENANT to name the
  *                          one tenant it serves. Use OPENFGA_STORE_IDS for multi-tenant deployments
- *   POSTGRES_URL         — PostgreSQL connection string (with ?sslmode= for TLS)
- *   CEL_EVALUATOR_URL    — CEL gRPC sidecar address (default: localhost:50051)
- *   CORS_ALLOWED_ORIGINS — Comma-separated allowed origins (empty = deny all in prod)
- *   FHIR_BASE_URL        — Externally routable FHIR base URL for Bundle links
- *   REDPANDA_BROKERS     — Comma-separated Kafka/Redpanda brokers (enables persistent events)
- *   REDIS_URL            — Redis connection URL (enables distributed rate limiting)
+ *   POSTGRES_URL         â€” PostgreSQL connection string (with ?sslmode= for TLS)
+ *   CEL_EVALUATOR_URL    â€” CEL gRPC sidecar address (default: localhost:50051)
+ *   CORS_ALLOWED_ORIGINS â€” Comma-separated allowed origins (empty = deny all in prod)
+ *   FHIR_BASE_URL        â€” Externally routable FHIR base URL for Bundle links
+ *   REDPANDA_BROKERS     â€” Comma-separated Kafka/Redpanda brokers (enables persistent events)
+ *   REDIS_URL            â€” Redis connection URL (enables distributed rate limiting)
  */
 
 import http from 'node:http';
-import { WebSocketServer } from 'ws';
-import { useServer } from 'graphql-ws/lib/use/ws';
+import {
+  WebSocketServer,
+} from 'ws';
+import {
+  useServer,
+} from 'graphql-ws/lib/use/ws';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
-import { GraphQLError } from 'graphql';
-import { expressMiddleware } from '@apollo/server/express4';
-import { ApolloServerPluginDrainHttpServer } from '@apollo/server/plugin/drainHttpServer';
-import { MemoryStorageProvider } from '@altius/storage-memory';
+import {
+  GraphQLError,
+} from 'graphql';
+import {
+  expressMiddleware,
+} from '@apollo/server/express4';
+import {
+  ApolloServerPluginDrainHttpServer,
+} from '@apollo/server/plugin/drainHttpServer';
+import {
+  MemoryStorageProvider,
+} from '@altius/storage-memory';
 import {
   InMemoryBlobStore,
   InMemoryTimeSeriesStore,
@@ -83,8 +98,10 @@ import {
   InMemoryObjectSetFilterStore,
   InMemoryGraphService,
   InMemoryChangeProposalStore,
+  InMemoryApprovalWorkflowService,
   InMemoryBusinessRulesService,
   InMemoryAgentEvaluationService,
+  InMemoryCommandService,
   InMemoryDataExpectationsService,
   InMemoryConflictResolutionService,
   InMemoryPipelineBuildService,
@@ -95,8 +112,8 @@ import {
   InMemoryGraphAnalysisService,
   InMemoryPlatformAssistantService,
   InMemoryEmbeddedCopilotService,
-  InMemoryBatchTransformService,
   InMemorySqlQueryService,
+  InMemoryBatchTransformService,
   InMemoryVariableTransformService,
   InMemoryRulesEngineService,
   InMemoryPipelineService,
@@ -110,23 +127,74 @@ import {
   InMemoryHumanInTheLoopService,
   InMemoryVectorSearchService,
   InMemoryCopilotService,
+  InMemoryMarkingMembershipStore,
+  InMemoryAgentHoldStore,
 } from '@altius/storage-memory';
-import { PostgresStorageProvider, PostgresLineageStore, PostgresAuditStore, PostgresConsentStore, PostgresSchemaRegistry, PostgresObjectSetStore,
-  PostgresLLMUsageTracker, PostgresLLMRateLimiter,
-  PostgresEmbeddingStore, PostgresBlobStore, PostgresTimeSeriesStore,
-  PostgresBranchStore, PostgresCommentStore, PostgresNotificationStore,
-  PostgresAlertingService, PostgresDataFreshnessService, PostgresDatasetMetadataService,
-  PostgresGeospatialMapService, PostgresJustificationStore, PostgresOntologySqlService,
-  PostgresOntologyUsageMetricsService, PostgresScopedSessionStore,
+import {
+  PostgresStorageProvider,
+  PostgresLineageStore,
+  PostgresAuditStore,
+  PostgresConsentStore,
+  PostgresSchemaRegistry,
+  PostgresObjectSetStore,
+  PostgresLLMUsageTracker,
+  PostgresLLMRateLimiter,
+  PostgresEmbeddingStore,
+  PostgresBlobStore,
+  PostgresTimeSeriesStore,
+  PostgresBranchStore,
+  PostgresCommentStore,
+  PostgresNotificationStore,
+  PostgresFunctionRevisionStore,
+  PostgresAgentService,
+  PostgresWorkshopPlatformService,
+  PostgresAlertingService,
+  PostgresBusinessRulesService,
+  PostgresKioskService,
+  PostgresSavedViewStore,
+  PostgresDataFreshnessService,
+  PostgresDatasetMetadataService,
+  PostgresGeospatialMapService,
+  PostgresJustificationStore,
+  PostgresOntologySqlService,
+  PostgresOntologyUsageMetricsService,
+  PostgresScopedSessionStore,
+  PostgresAgentThreadStore,
+  PostgresChangeProposalStore,
+  PostgresObjectSetFilterStore,
+  PostgresApprovalWorkflowService,
+  PostgresDataExpectationsService,
+  PostgresOntologyChangeHistoryService,
+  PostgresConflictResolutionService,
+  PostgresHumanInTheLoopService,
+  PostgresMultiOntologyGovernanceService,
+  PostgresEventObjectService,
+  PostgresDesignSystemService,
+  PostgresModelRegistryService,
+  PostgresModelInferenceService,
+  PostgresModelChainService,
+  PostgresConnectorCatalogService,
+  PostgresCommandService,
+  PostgresDatasetService,
+  PostgresSqlQueryService,
+  PostgresVariableTransformService,
+  PostgresBatchTransformService,
+  PostgresUserDirectoryService,
+  PostgresLayoutDeviceCaptureService,
+  PostgresWorkshopUxService,
+  PostgresMarkingMembershipStore,
+  PostgresAgentHoldStore,
 } from '@altius/storage-postgres';
 import {
-  ObjectManager, LineageRecorder,
+  ObjectManager,
+  LineageRecorder,
   LinkManager,
   EngineEventEmitter,
   InMemoryObjectSetStore,
   ObjectSetManager,
   FunctionExecutor,
   FunctionRegistry,
+  InMemoryFunctionRevisionStore,
   FunctionPipeline,
   GitFunctionSource,
   WebhookPipelineTrigger,
@@ -143,49 +211,148 @@ import {
   InMemoryAgentThreadStore,
 } from '@altius/engine';
 import type { ModelCatalogEntry } from '@altius/spi';
-import { ActionExecutor, CelClient, SideEffectExecutor } from '@altius/actions';
+import {
+  ActionExecutor,
+  CelClient,
+  SideEffectExecutor,
+  HoldApprovePolicyGuard,
+} from '@altius/actions';
 import type { SecurityLayer, CelEvaluator, EventBus as SideEffectEventBus, HttpClient as SideEffectHttpClient, LinkTupleMap } from '@altius/actions';
-import { AuthorizationService, OidcAuthenticator, AuditWriter, MemoryAuditStore, ConsentService, MemoryConsentStore, MarkingPolicy, DefaultAccessExplanationService } from '@altius/security';
+import {
+  AuthorizationService,
+  OidcAuthenticator,
+  AuditWriter,
+  MemoryAuditStore,
+  ConsentService,
+  MemoryConsentStore,
+  MarkingPolicy,
+  DefaultAccessExplanationService,
+} from '@altius/security';
 import type { OpenFgaClientInterface, FgaClientResolver } from '@altius/security';
-import type { StorageProvider, RequestContext } from '@altius/spi';
-import { createGraphQLServer, buildResolverContext } from './graphql/index.js';
-import { guardWsOperation } from './graphql/ws-gate.js';
-import { generateRestRoutes, generateOpenApiSpec, auditRead } from './rest/index.js';
-import { writeReadAuditFor } from './rest/audit-read.js';
-import { isTypeVisible, missingMarkings } from './markings/enforce.js';
-import { invokeFunction } from './functions/invoke-function.js';
-import { generateAuditRoutes } from './rest/audit-routes.js';
-import { generateLlmRoutes, generateWorkflowRoutes } from './rest/index.js';
-import { generateTraverseRoutes } from './rest/traverse-route.js';
-import { recordRestUsage } from './rest/usage-recording.js';
-import { generateSyncStatusRoutes } from './rest/sync-status-routes.js';
-import { registerAttachmentRoutes } from './rest/attachment-routes.js';
-import { registerTimeSeriesRoutes } from './rest/timeseries-routes.js';
-import { registerBranchRoutes } from './rest/branch-routes.js';
-import { registerCommentRoutes } from './rest/comment-routes.js';
-import { registerNotificationRoutes } from './rest/notification-routes.js';
-import { registerEmbeddingRoutes } from './rest/embedding-routes.js';
-import { registerAlertingRoutes } from './rest/alerting-routes.js';
-import { registerGeospatialRoutes } from './rest/geospatial-routes.js';
-import { registerScenarioRoutes } from './rest/scenario-routes.js';
-import { registerWorkshopRoutes } from './rest/workshop-routes.js';
-import { registerLLMGatewayRoutes } from './rest/llm-gateway-routes.js';
-import { registerAppEmbeddingRoutes } from './rest/app-embedding-routes.js';
-import { registerPlatformResourceRoutes } from './rest/platform-resource-routes.js';
-import { registerAbsentServiceRoutes } from './rest/absent-services-routes.js';
-import { registerSavedViewRoutes } from './rest/saved-view-routes.js';
-import { registerUserDirectoryRoutes } from './rest/user-directory-routes.js';
-import { readPlatformVersion } from './version.js';
-import { createFhirRouter } from './fhir/index.js';
-import { createCdmRouter } from './cdm/index.js';
-import { generateRelationshipRoutes, buildGrantAllowlist } from './relationships/router.js';
-import { generateConsentRoutes, assertConsentConfig } from './consent/router.js';
-import { InMemorySubscribableEventBus, SubscriptionManager, SubscriptionRegistry } from './subscriptions/index.js';
+import type { StorageProvider, RequestContext, ScopedSessionStore, MarkingMembershipStore } from '@altius/spi';
+import {
+  createGraphQLServer,
+  buildResolverContext,
+} from './graphql/index.js';
+import {
+  guardWsOperation,
+} from './graphql/ws-gate.js';
+import {
+  generateRestRoutes,
+  generateOpenApiSpec,
+  auditRead,
+} from './rest/index.js';
+import {
+  writeReadAuditFor,
+} from './rest/audit-read.js';
+import {
+  isTypeVisible,
+  missingMarkings,
+} from './markings/enforce.js';
+import {
+  invokeFunction,
+} from './functions/invoke-function.js';
+import {
+  generateAuditRoutes,
+} from './rest/audit-routes.js';
+import { generateMarkingRoutes } from './rest/marking-routes.js';
+import {
+  generateLlmRoutes,
+  generateWorkflowRoutes,
+} from './rest/index.js';
+import {
+  generateTraverseRoutes,
+} from './rest/traverse-route.js';
+import {
+  recordRestUsage,
+} from './rest/usage-recording.js';
+import {
+  generateSyncStatusRoutes,
+} from './rest/sync-status-routes.js';
+import {
+  generateDataConnectionStatusRoutes,
+} from './rest/data-connection-status-routes.js';
+import {
+  registerAttachmentRoutes,
+} from './rest/attachment-routes.js';
+import {
+  registerTimeSeriesRoutes,
+} from './rest/timeseries-routes.js';
+import {
+  registerBranchRoutes,
+} from './rest/branch-routes.js';
+import {
+  registerCommentRoutes,
+} from './rest/comment-routes.js';
+import {
+  registerNotificationRoutes,
+} from './rest/notification-routes.js';
+import {
+  registerEmbeddingRoutes,
+} from './rest/embedding-routes.js';
+import {
+  registerAlertingRoutes,
+} from './rest/alerting-routes.js';
+import {
+  registerGeospatialRoutes,
+} from './rest/geospatial-routes.js';
+import {
+  registerScenarioRoutes,
+} from './rest/scenario-routes.js';
+import {
+  registerWorkshopRoutes,
+} from './rest/workshop-routes.js';
+import {
+  registerLLMGatewayRoutes,
+} from './rest/llm-gateway-routes.js';
+import {
+  registerAppEmbeddingRoutes,
+} from './rest/app-embedding-routes.js';
+import {
+  registerPlatformResourceRoutes,
+} from './rest/platform-resource-routes.js';
+import {
+  registerAbsentServiceRoutes,
+} from './rest/absent-services-routes.js';
+import {
+  registerSavedViewRoutes,
+} from './rest/saved-view-routes.js';
+import {
+  registerUserDirectoryRoutes,
+} from './rest/user-directory-routes.js';
+import {
+  readPlatformVersion,
+} from './version.js';
+import {
+  createFhirRouter,
+} from './fhir/index.js';
+import {
+  createCdmRouter,
+} from './cdm/index.js';
+import {
+  generateRelationshipRoutes,
+  buildGrantAllowlist,
+} from './relationships/router.js';
+import {
+  generateConsentRoutes,
+  assertConsentConfig,
+} from './consent/router.js';
+import {
+  InMemorySubscribableEventBus,
+  SubscriptionManager,
+  SubscriptionRegistry,
+} from './subscriptions/index.js';
 import type { SubscribableEventBus } from './subscriptions/index.js';
-import { RedpandaEventBus } from './events/index.js';
-import { AutomationRunner } from './automation/index.js';
+import {
+  RedpandaEventBus,
+} from './events/index.js';
+import {
+  AutomationRunner,
+} from './automation/index.js';
 import type { ApiDependencies, ResolverContext } from './graphql/types.js';
-import { DEFAULT_CONSENT_PURPOSE } from './graphql/types.js';
+import {
+  DEFAULT_CONSENT_PURPOSE,
+} from './graphql/types.js';
 import type { RestRequest } from './rest/types.js';
 import {
   parsePostgresUrl,
@@ -199,19 +366,51 @@ import {
   REQUIRED_PROD_VARS,
 } from './config.js';
 import type { ActionAuthzMapping } from './config.js';
-import { createActionEventPublisher } from './events/action-event-publisher.js';
-import { loadDomainPacks } from './schema-loader.js';
-import { generateOpenFGASchema, mergeOpenFGAOverrides, deriveActionAuthzMapping, deriveFunctionAuthzMapping, InMemorySchemaRegistry } from '@altius/odl';
+import {
+  createActionEventPublisher,
+} from './events/action-event-publisher.js';
+import {
+  loadDomainPacks,
+} from './schema-loader.js';
+import {
+  generateOpenFGASchema,
+  mergeOpenFGAOverrides,
+  deriveActionAuthzMapping,
+  deriveFunctionAuthzMapping,
+  InMemorySchemaRegistry,
+} from '@altius/odl';
 import type { SchemaRegistry } from '@altius/odl';
-import { recordSchemaVersion, BreakingSchemaChangeError } from './schema-registry-boot.js';
-import { SlidingWindowRateLimiter, RedisRateLimiter } from './governance/index.js';
+import {
+  recordSchemaVersion,
+  BreakingSchemaChangeError,
+} from './schema-registry-boot.js';
+import {
+  SlidingWindowRateLimiter,
+  RedisRateLimiter,
+} from './governance/index.js';
 import type { RateLimiter, RateLimitIdentity } from './governance/index.js';
-import { toSnakeCase } from './utils.js';
-import { metricsMiddleware, metricsEndpoint, startStorageHealthGauge, startSyncMetricsGauge, syncSchedulerEnabled, packLoaded, podDirectOnly } from './metrics.js';
-import { buildHealthReport } from './health.js';
+import {
+  toSnakeCase,
+} from './utils.js';
+import {
+  metricsMiddleware,
+  metricsEndpoint,
+  startStorageHealthGauge,
+  startSyncMetricsGauge,
+  syncSchedulerEnabled,
+  packLoaded,
+  podDirectOnly,
+} from './metrics.js';
+import {
+  buildHealthReport,
+} from './health.js';
 import type { HealthProbe } from './health.js';
-import { logger } from './logger.js';
-import { pinoSideEffectLogger } from './side-effect-logger.js';
+import {
+  logger,
+} from './logger.js';
+import {
+  pinoSideEffectLogger,
+} from './side-effect-logger.js';
 
 const PORT = parseInt(process.env['PORT'] ?? '4000', 10);
 
@@ -219,7 +418,7 @@ const PORT = parseInt(process.env['PORT'] ?? '4000', 10);
  * Parse DOMAIN_PACKS env var which may be:
  *   - Comma-separated names: "nhs-acute,aml"
  *   - JSON array of objects from Helm: [{"name":"nhs-acute","version":"0.2.0"}]
- *   - undefined (returns undefined → auto-discover)
+ *   - undefined (returns undefined â†’ auto-discover)
  */
 function parseDomainPacksEnv(raw?: string): string[] | undefined {
   if (!raw) return undefined;
@@ -278,7 +477,7 @@ function describeError(err: unknown): string {
  * Build the LLM model catalog from the environment.
  *
  * The catalog is what the governed gateway exposes at GET /api/v1/llm/models.
- * Entries are derived from the configured providers — the primary and
+ * Entries are derived from the configured providers â€” the primary and
  * fallback models are always listed, plus any extra models declared via
  * LLM_EXTRA_MODELS (a JSON array of ModelCatalogEntry).
  *
@@ -337,19 +536,19 @@ function catalogEntryForProvider(
   switch (provider) {
     case 'anthropic':
       modelId = env[`${p}MODEL`]?.trim() || env['LLM_MODEL']?.trim() || 'claude-sonnet-4-5';
-      displayName = `Anthropic — ${modelId}`;
+      displayName = `Anthropic â€” ${modelId}`;
       break;
     case 'daemon':
       modelId = (env['LLM_DAEMON_MODEL'] ?? 'oc/deepseek-v4-flash-free').trim();
-      displayName = `Daemon Protocol — ${modelId}`;
+      displayName = `Daemon Protocol â€” ${modelId}`;
       break;
     case 'openrouter':
       modelId = (env['LLM_OPENROUTER_MODEL'] ?? 'deepseek/deepseek-v4-flash').trim();
-      displayName = `OpenRouter — ${modelId}`;
+      displayName = `OpenRouter â€” ${modelId}`;
       break;
     case 'openai':
       modelId = (env['LLM_OPENAI_MODEL'] ?? 'gpt-4o').trim();
-      displayName = `OpenAI — ${modelId}`;
+      displayName = `OpenAI â€” ${modelId}`;
       break;
     default:
       return undefined;
@@ -370,16 +569,42 @@ function catalogEntryForProvider(
   };
 }
 
+/**
+ * Build a map of ObjectType name → set of @sensitive field names, for the
+ * event emitter to redact from CloudEvent `changes` before publishing to the
+ * bus. Returns an empty map when no type declares @sensitive.
+ */
+function buildSensitiveFieldsByType(
+  schema: import('@altius/odl').ParsedSchema,
+): Map<string, Set<string>> {
+  const map = new Map<string, Set<string>>();
+  for (const ot of schema.objectTypes) {
+    const sensitive = ot.fields
+      .filter((f) => f.directives.some((d) => d.kind === 'sensitive'))
+      .map((f) => f.name);
+    if (sensitive.length > 0) map.set(ot.name, new Set(sensitive));
+  }
+  // Link types can carry @sensitive properties too; their change deltas ride in
+  // link.updated events and must be redacted at emit like object events.
+  for (const lt of schema.linkTypes) {
+    const sensitive = lt.fields
+      .filter((f) => f.directives.some((d) => d.kind === 'sensitive'))
+      .map((f) => f.name);
+    if (sensitive.length > 0) map.set(lt.name, new Set(sensitive));
+  }
+  return map;
+}
+
 async function main(): Promise<void> {
   const isDev = process.env['NODE_ENV'] !== 'production';
 
-  // ── OpenTelemetry ──
+  // â”€â”€ OpenTelemetry â”€â”€
   // Must be initialized before significant work starts so the global
   // TracerProvider is registered for all getTracer()/withSpan() calls.
   const { initTelemetry } = await import('@altius/observability');
   initTelemetry('altius-api');
 
-  // ── Validate production environment ──
+  // â”€â”€ Validate production environment â”€â”€
   if (!isDev) {
     const missing = REQUIRED_PROD_VARS.filter((k) => !process.env[k]);
     if (missing.length > 0) {
@@ -388,13 +613,13 @@ async function main(): Promise<void> {
     }
   }
 
-  // ── Rate Limiter ──
-  // REDIS_URL → distributed rate limiting across pods; otherwise in-memory per-pod.
+  // â”€â”€ Rate Limiter â”€â”€
+  // REDIS_URL â†’ distributed rate limiting across pods; otherwise in-memory per-pod.
   let rateLimiter: RateLimiter;
   let redisClient: import('ioredis').Redis | undefined;
   const redisUrl = process.env['REDIS_URL'];
   if (redisUrl) {
-    // Dynamic import for optional dependency — cast needed for CJS/ESM interop
+    // Dynamic import for optional dependency â€” cast needed for CJS/ESM interop
     const ioredis = await import('ioredis');
     const RedisClient = ioredis.default as unknown as new (url: string, opts: Record<string, unknown>) => import('ioredis').Redis;
     redisClient = new RedisClient(redisUrl, {
@@ -410,11 +635,11 @@ async function main(): Promise<void> {
   } else {
     rateLimiter = new SlidingWindowRateLimiter();
     if (!isDev) {
-      logger.warn('WARNING: Rate limiter is in-memory — limits are per-pod. Set REDIS_URL for distributed rate limiting.');
+      logger.warn('WARNING: Rate limiter is in-memory â€” limits are per-pod. Set REDIS_URL for distributed rate limiting.');
     }
   }
 
-  // ── Storage ──
+  // â”€â”€ Storage â”€â”€
   // Use PostgreSQL when POSTGRES_URL is set, even in development mode.
   // This allows local Docker Compose setups to use persistent storage.
   let storage: StorageProvider;
@@ -429,7 +654,7 @@ async function main(): Promise<void> {
     }
   }
 
-  // ── Schema (load from domain packs) ──
+  // â”€â”€ Schema (load from domain packs) â”€â”€
   // DOMAIN_PACKS may be comma-separated names ("nhs-acute,aml") or JSON from Helm
   // ([{"name":"nhs-acute","version":"0.2.0"}]). Handle both formats.
   const packNames = parseDomainPacksEnv(process.env['DOMAIN_PACKS']);
@@ -439,7 +664,7 @@ async function main(): Promise<void> {
     automationManifests,
   } = await loadDomainPacks(undefined, packNames);
   logger.info(
-    `Schema: loaded ${packs.length} domain pack(s) — ` +
+    `Schema: loaded ${packs.length} domain pack(s) â€” ` +
     `${schema.objectTypes.length} object types, ` +
     `${schema.linkTypes.length} link types, ` +
     `${schema.actionTypes.length} action types, ` +
@@ -455,13 +680,13 @@ async function main(): Promise<void> {
   if (seedManifests.length > 0) {
     const totalSeedObjects = seedManifests.reduce((n, s) => n + s.objects.length, 0);
     const totalSeedLinks = seedManifests.reduce((n, s) => n + s.links.length, 0);
-    logger.info(`Schema: ${seedManifests.length} seed manifest(s) — ${totalSeedObjects} object(s) + ${totalSeedLinks} link(s)`);
+    logger.info(`Schema: ${seedManifests.length} seed manifest(s) â€” ${totalSeedObjects} object(s) + ${totalSeedLinks} link(s)`);
   }
   if (schema.objectTypes.length === 0) {
-    logger.warn('WARNING: No object types loaded — check DOMAIN_PACKS configuration.');
+    logger.warn('WARNING: No object types loaded â€” check DOMAIN_PACKS configuration.');
   }
 
-  // ── Schema breaking-change gate (runs BEFORE DDL) ──
+  // â”€â”€ Schema breaking-change gate (runs BEFORE DDL) â”€â”€
   // The breaking-change gate must run before storage.applySchema so a BREAKING
   // pack change fails boot before any DDL is applied to the database. Under
   // SCHEMA_BREAKING_POLICY=block (default) a BREAKING change fails boot and no
@@ -473,7 +698,7 @@ async function main(): Promise<void> {
   try {
     const result = await recordSchemaVersion(schemaRegistry, schema, schemaBreakingPolicy);
     if (result.breaking) {
-      logger.warn('Schema registry: BREAKING schema change detected at boot — recorded under an auto-approved migration plan. Review schema history before promoting, or set SCHEMA_BREAKING_POLICY=block to fail boot instead.');
+      logger.warn('Schema registry: BREAKING schema change detected at boot â€” recorded under an auto-approved migration plan. Review schema history before promoting, or set SCHEMA_BREAKING_POLICY=block to fail boot instead.');
     }
     if (result.recorded) {
       const backend = storage instanceof PostgresStorageProvider ? 'PostgreSQL' : 'in-memory';
@@ -496,23 +721,23 @@ async function main(): Promise<void> {
 
   // Tenant for bootstrap seed data. Defaults to 'system' (isolated from ordinary
   // request tenants); set SEED_TENANT to the request tenant (e.g. 'default') when
-  // seeded reference data must be readable through the API — otherwise seeds are
+  // seeded reference data must be readable through the API â€” otherwise seeds are
   // invisible to API reads in a different tenant.
   //
   // Treat blank as unset: compose/Helm pass through unset knobs as an empty
   // string (`SEED_TENANT: ${SEED_TENANT:-}`), and `?? 'system'` would not catch
-  // that — seeds would land under a nameless tenant no request could ever read.
+  // that â€” seeds would land under a nameless tenant no request could ever read.
   const seedTenant = process.env['SEED_TENANT']?.trim();
   const seedCtx: RequestContext = {
     tenantId: seedTenant || 'system',
     actorId: 'boot',
   };
 
-  // ── Register loaded packs in _domain_packs table (Postgres only) ──
+  // â”€â”€ Register loaded packs in _domain_packs table (Postgres only) â”€â”€
   //
   // The table is created here rather than assumed. It was only ever created
-  // by the Helm init job, so every other deployment — docker-compose, a bare
-  // Postgres, a managed instance — logged "relation _domain_packs does not
+  // by the Helm init job, so every other deployment â€” docker-compose, a bare
+  // Postgres, a managed instance â€” logged "relation _domain_packs does not
   // exist" at every boot and the table stayed permanently empty. Creating it
   // where it is written makes the feature real in all of them, and IF NOT
   // EXISTS keeps the Helm path unchanged.
@@ -542,8 +767,8 @@ async function main(): Promise<void> {
     }
   }
 
-  // ── Engine ──
-  // REDPANDA_BROKERS → persistent event streaming via Kafka protocol;
+  // â”€â”€ Engine â”€â”€
+  // REDPANDA_BROKERS â†’ persistent event streaming via Kafka protocol;
   // otherwise in-memory (events lost on restart).
   let eventBus: SubscribableEventBus;
   const redpandaBrokers = process.env['REDPANDA_BROKERS'];
@@ -557,12 +782,16 @@ async function main(): Promise<void> {
   } else {
     eventBus = new InMemorySubscribableEventBus();
     if (!isDev) {
-      logger.warn('WARNING: EventBus is in-memory — events will not survive restarts. Set REDPANDA_BROKERS to enable persistent streaming.');
+      logger.warn('WARNING: EventBus is in-memory â€” events will not survive restarts. Set REDPANDA_BROKERS to enable persistent streaming.');
     }
   }
-  const emitter = new EngineEventEmitter(eventBus);
+  const emitter = new EngineEventEmitter(
+    eventBus,
+    'altius://engine/ontology',
+    buildSensitiveFieldsByType(schema),
+  );
 
-  // ── CEL Evaluator ──
+  // â”€â”€ CEL Evaluator â”€â”€
   // Constructed before the ObjectManager so the same instance can be
   // injected into the validation pipeline (field/type @constraint
   // evaluation) AND the action executor (preconditions/effect conditions).
@@ -580,7 +809,7 @@ async function main(): Promise<void> {
     logger.warn('CEL evaluator: allow-all stub (development mode)');
   }
 
-  // ── Function Executor ──
+  // â”€â”€ Function Executor â”€â”€
   // Constructed before the ObjectManager so the ComputedFieldEvaluator
   // can bridge @computed fields to user-authored functions (Section 6).
   // The same CEL evaluator instance is reused for cel-runtime functions
@@ -600,7 +829,7 @@ async function main(): Promise<void> {
   // default for code the platform operator did not write.
   //
   // Both runtimes are listed because `runtimes` REPLACES the built-in set rather
-  // than extending it — omitting CEL here would silently remove cel-runtime
+  // than extending it â€” omitting CEL here would silently remove cel-runtime
   // functions.
   const functionExecutor = new FunctionExecutor({
     schema,
@@ -624,14 +853,21 @@ async function main(): Promise<void> {
     logger.info(`Functions: ${schema.functionTypes.length} function type(s) declared`);
   }
 
-  // ── Function Lifecycle Registry ──
+  // â”€â”€ Function Lifecycle Registry â”€â”€
   // Manages draft/publish/test/rollback revisions for user-authored functions.
   // The REST lifecycle routes at /api/v1/functions-lifecycle/* and the GraphQL
   // lifecycle mutations delegate to this registry.
-  const functionRegistry = new FunctionRegistry();
+  // Durable function-revision persistence when Postgres is configured, so draft/
+  // published revisions survive restart and are shared across replicas (the
+  // registry was previously always in-memory — ungated, lost on every restart).
+  const functionRegistry = new FunctionRegistry(
+    storage instanceof PostgresStorageProvider
+      ? new PostgresFunctionRevisionStore(storage.pool)
+      : new InMemoryFunctionRevisionStore(),
+  );
 
-  // ── Function Pipeline + Webhook Trigger ──
-  // The pipeline orchestrates source→draft→test→publish. The webhook trigger
+  // â”€â”€ Function Pipeline + Webhook Trigger â”€â”€
+  // The pipeline orchestrates sourceâ†’draftâ†’testâ†’publish. The webhook trigger
   // receives Git push events and runs the pipeline for matching functions.
   // Enabled when FUNCTION_WEBHOOK_SECRET is set; otherwise advisory-only.
   const gitSource = new GitFunctionSource(process.env['FUNCTION_GIT_BASE_DIR'] ?? '/tmp/altius-git');
@@ -644,7 +880,7 @@ async function main(): Promise<void> {
       })
     : undefined;
 
-  // ── Computed Field Evaluator ──
+  // â”€â”€ Computed Field Evaluator â”€â”€
   // Bridges @computed fields to built-ins (countLinks, lookupField) and
   // to user-authored FunctionTypes when the fn name matches a declared
   // function. Passed into the ObjectManager so LAZY computed fields
@@ -663,7 +899,7 @@ async function main(): Promise<void> {
   // both declarable strategies have no input and sync clobbers user edits.
   //
   // Postgres only: the in-memory provider has no provenance table, and a
-  // recorder writing nowhere is worse than none — it would make the strategy
+  // recorder writing nowhere is worse than none â€” it would make the strategy
   // look enforced. Without a recorder the sync path stays refused (sync-boot).
   const lineageRecorder = storage instanceof PostgresStorageProvider
     ? new LineageRecorder({ store: new PostgresLineageStore(storage.pool) })
@@ -679,21 +915,21 @@ async function main(): Promise<void> {
   });
   const linkManager = new LinkManager({ storage, schema, eventEmitter: emitter });
 
-  // ── Bootstrap Seeds ──
-  // Apply seed data from domain packs (idempotent — skips objects that already exist).
+  // â”€â”€ Bootstrap Seeds â”€â”€
+  // Apply seed data from domain packs (idempotent â€” skips objects that already exist).
   // Runs through ObjectManager/LinkManager for full validation, events, and audit.
   // Objects can declare a `ref` label; links reference objects by `ref` or literal ID.
   //
   // Seeded links bypass the action executor, so their ReBAC tuples aren't minted
   // by the pipeline. We capture the resolved (type, fromId, toId) here and mint
-  // the matching tuples once the authz layer + linkTupleMap are available below —
+  // the matching tuples once the authz layer + linkTupleMap are available below â€”
   // keeping seeded links consistent with runtime-created ones.
   const seededLinkTuples: Array<{ type: string; fromId: string; toId: string }> = [];
   if (seedManifests.length > 0) {
     let seededObjects = 0;
     let seededLinks = 0;
     let skippedObjects = 0;
-    // ref → generated _id, shared across all seeds for cross-pack references
+    // ref â†’ generated _id, shared across all seeds for cross-pack references
     const refMap = new Map<string, string>();
 
     for (const seed of seedManifests) {
@@ -701,7 +937,7 @@ async function main(): Promise<void> {
       for (const obj of seed.objects) {
         // Idempotency: if this ref was seeded in a prior run, try to find it
         // by a unique field. For objects with a `name` field we use that as
-        // the natural key. This is best-effort — packs with non-unique fields
+        // the natural key. This is best-effort â€” packs with non-unique fields
         // will re-create on each boot (ObjectManager deduplication protects
         // unique-indexed fields from duplicates).
         const nameValue = obj.fields['name'] ?? obj.fields['title'];
@@ -718,7 +954,7 @@ async function main(): Promise<void> {
               continue;
             }
           } catch {
-            // Type may not support filter or field doesn't exist — proceed to create
+            // Type may not support filter or field doesn't exist â€” proceed to create
           }
         }
         try {
@@ -744,9 +980,9 @@ async function main(): Promise<void> {
           seededLinks++;
         } catch (err) {
           const msg = describeError(err);
-          // Duplicate link is expected on re-run — don't warn loudly
+          // Duplicate link is expected on re-run â€” don't warn loudly
           if (msg.includes('already exists') || msg.includes('duplicate') || msg.includes('cardinality')) {
-            logger.info(`Seed: link ${lnk.type} ${fromId}→${toId} already exists, skipping`);
+            logger.info(`Seed: link ${lnk.type} ${fromId}â†’${toId} already exists, skipping`);
           } else {
             logger.warn({ err }, `Seed: failed to create link ${lnk.type} from pack '${seed.packName}': ${msg}`);
           }
@@ -764,7 +1000,7 @@ async function main(): Promise<void> {
       );
       if (!seedTenant) {
         logger.warn(
-          `Seed: SEED_TENANT is unset, so seeds were written under the isolated 'system' tenant — ` +
+          `Seed: SEED_TENANT is unset, so seeds were written under the isolated 'system' tenant â€” ` +
           `API reads in another tenant will NOT see them. Set SEED_TENANT to the request tenant ` +
           `(e.g. 'default') if this reference data should be readable through the API.`,
         );
@@ -772,8 +1008,15 @@ async function main(): Promise<void> {
     }
   }
 
-  // ── Authentication ──
+  // â”€â”€ Authentication â”€â”€
   const oidcIssuer = process.env['OIDC_ISSUER'] ?? 'http://localhost:8180/realms/altius';
+  // Late-bound: constructed with the storage provider further down and shared
+  // with the security-governance routes â€” the resolver must read the SAME
+  // store the REST endpoints write, or enforcement never sees a session.
+  // Until assignment no session can exist, so resolving null is exact.
+  let scopedSessionStore: ScopedSessionStore | undefined;
+  // Marking memberships: runtime MAC grants, additive over token claims.
+  let markingMembershipStore: MarkingMembershipStore | undefined;
   const authenticator = new OidcAuthenticator();
   authenticator.configure({
     issuer: oidcIssuer,
@@ -787,26 +1030,37 @@ async function main(): Promise<void> {
     // deployments set OIDC_DEFAULT_TENANT=default; multi-tenant deployments leave
     // it unset and map real tenants via a tenant_id claim. See issue #1.
     defaultTenantId: process.env['OIDC_DEFAULT_TENANT'],
+    // Scoped-session enforcement (Foundry parity): restrict the caller's
+    // effective markings to their active scoped session on every request,
+    // at the one funnel all surfaces (REST/GraphQL/CDM/FHIR/MCP) share.
+    // ponytail: one store lookup per authenticated request; add a short-TTL
+    // cache here if p99 ever cares â€” revocation latency is the trade.
+    scopedSessionResolver: async (tenantId, userId) =>
+      scopedSessionStore ? scopedSessionStore.getActiveForUser(tenantId, userId) : null,
+    // Store-administered marking grants, unioned with token claims before
+    // scoped-session narrowing (additive-only; errors degrade to claims).
+    markingMembershipResolver: async (tenantId, userId) =>
+      markingMembershipStore ? markingMembershipStore.listForUser(tenantId, userId) : [],
   });
 
-  // ── Authorization (OpenFGA) ──
+  // â”€â”€ Authorization (OpenFGA) â”€â”€
   // One store per tenant: tuples carry no tenant qualifier and object ids are
   // unique only per tenant (storage PK is (_tenant_id, _id)), so a single shared
   // store would let a grant in one tenant authorize the same object id in
   // another. Store ids come from explicit config (parseFgaStoreMap); tenants
-  // with no store resolve to undefined and are denied — never a default store.
+  // with no store resolve to undefined and are denied â€” never a default store.
   let fgaClient: OpenFgaClientInterface | FgaClientResolver;
   let fgaStores: ReadonlyMap<string, string> = new Map();
   if (!isDev && process.env['OPENFGA_URL']) {
     fgaStores = parseFgaStoreMap();
     fgaClient = createFgaClientRegistry(process.env['OPENFGA_URL'], fgaStores);
     logger.info(
-      `Authorization: OpenFGA @ ${process.env['OPENFGA_URL']} — ` +
+      `Authorization: OpenFGA @ ${process.env['OPENFGA_URL']} â€” ` +
       `${fgaStores.size} tenant store(s): ${[...fgaStores.keys()].join(', ')}`,
     );
   } else if (isDev) {
     // Dev stub: allow everything.
-    // listObjects returns ['*'] sentinel — resolvers interpret this as
+    // listObjects returns ['*'] sentinel â€” resolvers interpret this as
     // "all objects authorized" and skip the ID-based filter.
     fgaClient = {
       check: async () => ({ allowed: true }),
@@ -818,14 +1072,14 @@ async function main(): Promise<void> {
   } else {
     // Unreachable in normal operation: the REQUIRED_PROD_VARS guard above exits
     // the process if OPENFGA_URL is missing in production (the store mapping is
-    // validated by parseFgaStoreMap). Defence in depth — fail closed rather than
+    // validated by parseFgaStoreMap). Defence in depth â€” fail closed rather than
     // silently installing an allow-all authorizer if that guard is ever bypassed.
     throw new Error(
       'FATAL: production authorization requires OPENFGA_URL and OPENFGA_STORE_IDS (or OPENFGA_STORE_ID)',
     );
   }
   // Merged OpenFGA model (schema + pack permission overrides). Pure/cheap, so
-  // computed unconditionally — the relationship grant API derives its allowlist
+  // computed unconditionally â€” the relationship grant API derives its allowlist
   // from it even in dev (where the OpenFGA client is the allow-all stub).
   const mergedFgaDsl = permissionOverrides.length > 0
     ? mergeOpenFGAOverrides(generateOpenFGASchema(schema), permissionOverrides)
@@ -837,7 +1091,7 @@ async function main(): Promise<void> {
 
   // Fail fast when the merged model lacks a relation the runtime will check.
   // A pack's permissions/*.fga REPLACES the generated type block, so an override
-  // that omits e.g. `viewer` silently removes it — every read then hits an
+  // that omits e.g. `viewer` silently removes it â€” every read then hits an
   // OpenFGA 400 and surfaced as a retryable 500 (issue #3). Catch it at boot,
   // naming the type and relation, instead of at request time.
   assertFgaModelCoverage(fgaModelJson, schema, isDev);
@@ -855,15 +1109,18 @@ async function main(): Promise<void> {
   // Audit reads expose before/after object snapshots, so they are gated like
   // the other administrative surfaces rather than left open to any caller.
   const auditReaderRoles = parseRoles(process.env['AUDIT_READER_ROLES']) ?? ['admin'];
+  // Raw (unredacted) audit snapshots: default NOBODY — readers get detail
+  // before/after filtered by their own field policy like any object read.
+  const auditUnredactedRoles = parseRoles(process.env['AUDIT_UNREDACTED_ROLES']) ?? [];
 
-  // Deployment-defined consent-purpose vocabulary (env CONSENT_PURPOSES). Unset →
+  // Deployment-defined consent-purpose vocabulary (env CONSENT_PURPOSES). Unset â†’
   // the consent router falls back to the standard NHS/UK-IG preset (back-compat).
   // `DataPurpose` is an open string type, so a non-NHS deployment can define e.g.
   // CONSENT_PURPOSES=KYC,AML_MONITORING. Warn if the default purpose used for
   // read access checks is outside the configured vocabulary.
   const consentPurposes = parseRoles(process.env['CONSENT_PURPOSES']);
   // Object types whose @param marks an action's consent subject (env
-  // CONSENT_SUBJECT_TYPES). Unset → ['Patient'] (back-compat); a non-NHS
+  // CONSENT_SUBJECT_TYPES). Unset â†’ ['Patient'] (back-compat); a non-NHS
   // deployment sets its own subject type(s), e.g. Customer.
   const consentSubjectTypes = parseRoles(process.env['CONSENT_SUBJECT_TYPES']);
   const exemptionEnabled = process.env['CONSENT_DIRECT_CARE_EXEMPTION'] === 'true';
@@ -887,7 +1144,7 @@ async function main(): Promise<void> {
   const mcpEnabled = packCapabilities.has('mcp');
   logger.info(`Capabilities: cdm=${cdmEnabled} fhir=${fhirEnabled} mcp=${mcpEnabled} (declared by loaded packs)`);
 
-  // ── OpenFGA Authorization Model Sync ──
+  // â”€â”€ OpenFGA Authorization Model Sync â”€â”€
   // Push the merged model to OpenFGA so all pack types are authorized.
   let linkTupleMap: LinkTupleMap | undefined;
   if (!isDev && process.env['OPENFGA_URL'] && fgaStores.size > 0) {
@@ -902,7 +1159,7 @@ async function main(): Promise<void> {
       }
       const fgaUrl = process.env['OPENFGA_URL'];
       // Every tenant has its own store, so the model must be pushed to each one
-      // — a store without the model answers every check with a 400 and the
+      // â€” a store without the model answers every check with a 400 and the
       // tenant is (safely, but unusably) denied everything.
       for (const [tenant, storeId] of fgaStores) {
         const resp = await fetch(
@@ -944,7 +1201,7 @@ async function main(): Promise<void> {
     );
   }
 
-  // ── Backfill ReBAC tuples for seeded links ──
+  // â”€â”€ Backfill ReBAC tuples for seeded links â”€â”€
   // Seeded links bypass the action executor (which mints tuples at runtime), so
   // mint their tuples here now that the model + authz layer are ready. Mirrors
   // the executor's syncLinkTuple. Prod-only (linkTupleMap is built from the
@@ -957,7 +1214,7 @@ async function main(): Promise<void> {
       try {
         // Seeded objects live in seedCtx.tenantId, so their tuples belong in
         // that tenant's store. If SEED_TENANT has no store configured this
-        // throws and is caught below as a per-tuple warning — the same
+        // throws and is caught below as a per-tuple warning â€” the same
         // fail-closed posture as a request-time grant for an unmapped tenant.
         await authorizationService.writeRelationship(`${m.toType}:${l.toId}`, m.relation, `${m.fromType}:${l.fromId}`, seedCtx.tenantId);
         minted++;
@@ -968,21 +1225,21 @@ async function main(): Promise<void> {
     if (minted > 0) logger.info(`Seed: minted ${minted} ReBAC tuple(s) for seeded links`);
   }
 
-  // ── Security Layer (for action pipeline) ──
+  // â”€â”€ Security Layer (for action pipeline) â”€â”€
   // Derive action-to-FGA mappings from schema actionTypes.
-  // E.g., AdmitPatient → check can_admit on patient:<id>
+  // E.g., AdmitPatient â†’ check can_admit on patient:<id>
   const actionMappings = deriveActionAuthzMappings(schema);
-  // Actions with no ObjectType @param are allowed by the ReBAC layer by design;
-  // their only gate is the manifest's preconditions, so verify one exists.
+  // Actions with no ObjectType @param are gated by their manifest's
+  // requiredRoles (deny-by-default); verify every such action declares one.
   assertActionAuthzCoverage(schema, manifestRegistry, actionMappings, isDev);
   let security: SecurityLayer;
   if (!isDev) {
-    security = createSecurityLayer(authorizationService, actionMappings);
+    security = createSecurityLayer(authorizationService, actionMappings, manifestRegistry);
   } else {
     security = { async checkPermission() { return { allowed: true }; } };
   }
 
-  // ── Function ReBAC mappings ──
+  // â”€â”€ Function ReBAC mappings â”€â”€
   // Derive per-function FGA mappings from schema functionTypes, mirroring
   // actionMappings. A function with an ObjectType-typed @param (e.g.
   // ComputeTriageScore with patient: Patient! @param) gets a mapping so
@@ -994,7 +1251,7 @@ async function main(): Promise<void> {
     logger.info({ count: functionAuthzMappings.size }, 'Function ReBAC mappings derived');
   }
 
-  // ── Audit Trail ──
+  // â”€â”€ Audit Trail â”€â”€
   const auditStore = (storage instanceof PostgresStorageProvider)
     ? new PostgresAuditStore(storage.pool)
     : new MemoryAuditStore();
@@ -1007,7 +1264,7 @@ async function main(): Promise<void> {
     logger.warn('Audit: in-memory (development mode)');
   }
 
-  // ── Workflow visualization & monitoring ──
+  // â”€â”€ Workflow visualization & monitoring â”€â”€
   // The graph builder derives a provenance graph from the lineage and audit
   // stores. Both are required: a graph from lineage alone misses actions that
   // read without writing, and a graph from audit alone misses the field-level
@@ -1027,7 +1284,7 @@ async function main(): Promise<void> {
   });
   const workflowMonitor = new WorkflowMonitor({ store: new InMemoryWorkflowEventStore() });
 
-  // ── Consent Service (Section 7.3) ──
+  // â”€â”€ Consent Service (Section 7.3) â”€â”€
   // PostgresConsentStore accepts a constructor-level default tenantId but all
   // methods also accept per-call tenantId, threaded from RequestContext by each
   // API layer (GraphQL, REST, FHIR, Actions).
@@ -1035,14 +1292,14 @@ async function main(): Promise<void> {
     ? new PostgresConsentStore(storage.pool)
     : new MemoryConsentStore();
   // Legitimate-relationship consent exemption (NHS s251 is the reference case).
-  // Generic default OFF — a deployment opts in via CONSENT_DIRECT_CARE_EXEMPTION
+  // Generic default OFF â€” a deployment opts in via CONSENT_DIRECT_CARE_EXEMPTION
   // and may set the purpose it applies to (CONSENT_EXEMPTION_PURPOSE, default
   // DIRECT_CARE). The NHS reference stack enables it (see docker-compose).
   // (exemptionEnabled + the impossible-config guards are resolved above.)
-  // FGA subject-type prefix for the exemption ReBAC check (bare subject id →
+  // FGA subject-type prefix for the exemption ReBAC check (bare subject id â†’
   // `${type}:${id}`). Derived from the configured action consent-subject type so
   // a non-NHS deployment (CONSENT_SUBJECT_TYPES=Customer) checks `customer:<id>`,
-  // not `patient:<id>`. Single entry (validated above); snake-cased; unset →
+  // not `patient:<id>`. Single entry (validated above); snake-cased; unset â†’
   // ConsentService default 'patient'.
   const exemptionSubjectType = consentSubjectTypes && consentSubjectTypes.length > 0
     ? toSnakeCase(consentSubjectTypes[0]!)
@@ -1061,9 +1318,9 @@ async function main(): Promise<void> {
     logger.warn('Consent: in-memory (development mode)');
   }
 
-  // ── Action Executor ──
+  // â”€â”€ Action Executor â”€â”€
   const actionEventPublisher = createActionEventPublisher(emitter, schema.linkTypes);
-  // ── Side-effect handler (webhooks + CloudEvents after action commit) ──
+  // â”€â”€ Side-effect handler (webhooks + CloudEvents after action commit) â”€â”€
   const sideEffectHttpClient: SideEffectHttpClient = {
     async post(url, body, options) {
       const controller = new AbortController();
@@ -1090,15 +1347,23 @@ async function main(): Promise<void> {
     httpClient: sideEffectHttpClient,
     eventBus: sideEffectBus,
     env: process.env,
-    // Without this the executor's failure logging is dead code — `logger?.` on
-    // an unset field — and a webhook that exhausts its retries returns
+    // Without this the executor's failure logging is dead code â€” `logger?.` on
+    // an unset field â€” and a webhook that exhausts its retries returns
     // success:true with no trace anywhere in the running system.
     logger: pinoSideEffectLogger(logger),
   });
 
+  // Shared with the /api/v1/justifications routes (deps below) so a record
+  // captured by the executor's checkpoint step is listable over HTTP.
+  // (pgPool is declared later, so derive the pool here the same way.)
+  const justificationStore = storage instanceof PostgresStorageProvider
+    ? new PostgresJustificationStore((storage as PostgresStorageProvider).pool)
+    : new InMemoryJustificationStore();
+
   const actionExecutor = new ActionExecutor({
     storage, security, cel, auditWriter,
     ...(markingPolicy ? { markingPolicy } : {}),
+    justificationStore,
     eventPublisher: actionEventPublisher,
     consentManager: consentService,
     sideEffectHandler,
@@ -1108,7 +1373,7 @@ async function main(): Promise<void> {
     linkTupleMap,
   });
 
-  // ── Operational automation ──
+  // â”€â”€ Operational automation â”€â”€
   // Declared in pack YAML; runs governed actions on object-change events or a
   // fixed schedule, through the same ActionExecutor under a declared actor.
   // Gated by AUTOMATION_ENABLED (default off): event & schedule triggers must
@@ -1132,12 +1397,12 @@ async function main(): Promise<void> {
     logger.info(`Automation: ${automationManifests.length} automation(s) active`);
   } else if (automationManifests.length > 0) {
     logger.info(
-      `Automation: ${automationManifests.length} manifest(s) loaded but AUTOMATION_ENABLED!='true' — not started. ` +
+      `Automation: ${automationManifests.length} manifest(s) loaded but AUTOMATION_ENABLED!='true' â€” not started. ` +
       `Enable on a single instance (running on every replica would fire each trigger N times).`,
     );
   }
 
-  // ── Object Sets ──
+  // â”€â”€ Object Sets â”€â”€
   // Persistent (durable across restarts, shared across pods) when backed by
   // PostgreSQL; in-memory otherwise.
   const objectSetStore = (storage instanceof PostgresStorageProvider)
@@ -1145,7 +1410,7 @@ async function main(): Promise<void> {
     : new InMemoryObjectSetStore();
   const objectSetManager = new ObjectSetManager(objectSetStore, objectManager);
 
-  // ── Connector Registry ──
+  // â”€â”€ Connector Registry â”€â”€
   // Create the default registry (jdbc + rest built-in), then validate that
   // all pack-declared connectors reference a registered plugin type.
   const { createDefaultRegistry } = await import('@altius/sync');
@@ -1158,26 +1423,42 @@ async function main(): Promise<void> {
     }
   }
 
-  // ── Sync Scheduler ──
+  // â”€â”€ Sync Scheduler â”€â”€
   // Opt-in driver loop for POLLING/CDC/BATCH datasources (OVERLAY stays a
   // read-through cache). Writes bypass the action pipeline by design
   // (Spec Section 6) under the sync tenant/actor.
   let syncBoot: import('./sync-boot.js').SyncBootResult = { scheduler: null, scheduled: [], stop: async () => {} };
-  if (process.env.SYNC_SCHEDULER_ENABLED === 'true') {
-    const { startSyncScheduler } = await import('./sync-boot.js');
-    syncBoot = await startSyncScheduler({
-      connectorManifests: connectorManifests.filter(cm => connectorRegistry.has(cm.connector)),
-      registry: connectorRegistry,
-      objectManager,
-      tenantId: process.env.SYNC_TENANT || process.env.SEED_TENANT || 'system',
-    });
-  }
+  // syncBoot is started after pgPool is declared (below), so the scheduler
+  // can receive a Postgres-backed checkpoint store when available.
   // Always exported, 0 or 1. The per-datasource sync gauges only exist once a
   // scheduler has registered a datasource, so without this a deployment with
   // ingestion off emits no sync series at all and every sync alert stays silent
   // rather than firing.
-  syncSchedulerEnabled.set(syncBoot.scheduler ? 1 : 0);
   const stopSyncMetricsGauge = syncBoot.scheduler ? startSyncMetricsGauge(syncBoot.scheduler) : (() => {});
+
+  // ── Data Connection Gateway ──
+  // Agent-based counterpart of the scheduler: runtime-AGENT datasources are
+  // leased to Data Connection Agents enrolled from inside customer networks
+  // (outbound-only HTTPS — the platform never dials into the customer side).
+  // The HTTP endpoints are mounted further down, next to the ingest webhook.
+  let dataConnectionBoot: import('./data-connection-boot.js').DataConnectionBootResult = {
+    gateway: null,
+    leasable: [],
+  };
+  const dataConnectionSecret = process.env.DATA_CONNECTION_ENROLLMENT_SECRET;
+  if (dataConnectionSecret) {
+    const { startAgentGateway } = await import('./data-connection-boot.js');
+    dataConnectionBoot = await startAgentGateway({
+      // Deliberately NOT filtered by the platform's connectorRegistry: an
+      // AGENT datasource's plugin has to exist in the *agent's* local
+      // registry (lease eligibility checks the agent's reported list), not
+      // in this process.
+      connectorManifests,
+      enrollmentSecret: dataConnectionSecret,
+      objectManager,
+      tenantId: process.env.SYNC_TENANT || process.env.SEED_TENANT || 'system',
+    });
+  }
 
   // ── API Dependencies ──
 
@@ -1186,7 +1467,7 @@ async function main(): Promise<void> {
   // no provider still boots and answers 503 on the LLM routes.
   const llmClient = createLLMClient();
 
-  // LLM gateway — wraps the client with a model catalog, usage tracking, and
+  // LLM gateway â€” wraps the client with a model catalog, usage tracking, and
   // rate limiting. Only constructed when the client is configured (not the
   // no-op); a deployment without a provider skips the gateway and the
   // /api/v1/llm/models, /chat/completions, /usage, /rate-limits routes are
@@ -1197,7 +1478,27 @@ async function main(): Promise<void> {
   // in-memory otherwise (lost on restart, single-replica only).
   const isPostgres = storage instanceof PostgresStorageProvider;
   const pgPool = isPostgres ? (storage as PostgresStorageProvider).pool : null;
+  const approvalWorkflowService = pgPool
+    ? new PostgresApprovalWorkflowService(pgPool)
+    : new InMemoryApprovalWorkflowService();
   const embeddingStore = pgPool ? new PostgresEmbeddingStore(pgPool) : new InMemoryEmbeddingStore();
+
+  // ── Sync scheduler boot (after pgPool so checkpoints can be durable) ──
+  if (process.env.SYNC_SCHEDULER_ENABLED === 'true') {
+    const { startSyncScheduler } = await import('./sync-boot.js');
+    const { PostgresCheckpointStore } = await import('@altius/sync');
+    const syncTenantId = process.env.SYNC_TENANT || process.env.SEED_TENANT || 'system';
+    syncBoot = await startSyncScheduler({
+      connectorManifests: connectorManifests.filter(cm => connectorRegistry.has(cm.connector)),
+      registry: connectorRegistry,
+      objectManager,
+      tenantId: syncTenantId,
+      // Durable checkpoints: Postgres-backed when available, so a restart
+      // resumes from the last synced position instead of re-scanning.
+      checkpointStore: pgPool ? new PostgresCheckpointStore(pgPool, syncTenantId) : undefined,
+    });
+  }
+  syncSchedulerEnabled.set(syncBoot.scheduler ? 1 : 0);
 
   // Services with no Postgres implementation keep their state in process memory.
   // Without a Postgres pool that is the only option and matches the deployment
@@ -1222,10 +1523,10 @@ async function main(): Promise<void> {
     });
   }
 
-  // ── Non-durable platform services ──
+  // â”€â”€ Non-durable platform services â”€â”€
   // These have no Postgres implementation: each keeps per-tenant state in a
   // process-local Map, so it is lost on restart and NOT shared across replicas.
-  // Under Postgres they are withheld unless explicitly allowed — registering
+  // Under Postgres they are withheld unless explicitly allowed â€” registering
   // them there would answer 200 while dropping the write, and the shipped Helm
   // values run the gateway at minReplicas 2, so a write served by one pod would
   // already be invisible to the next read. Withholding leaves each route
@@ -1233,95 +1534,94 @@ async function main(): Promise<void> {
   // shouldRegisterNonDurableServices in config.ts.
   //
   // Every entry here is non-durable by definition: give a service a Postgres
-  // implementation and it moves out of this object, up to the `pgPool ? … : …`
-  // stores below — which is exactly what a Postgres-backing PR should do to it.
+  // implementation and it moves out of this object, up to the `pgPool ? â€¦ : â€¦`
+  // stores below â€” which is exactly what a Postgres-backing PR should do to it.
   // The boot log names whatever is in here, so it stays accurate as the set
   // changes.
   //
   // Services that have since gained a Postgres implementation (see the
-  // `pgPool ? … : …` stores in the deps literal below) graduate OUT of this
-  // object — they are durable and belong on the always-registered path. This
+  // `pgPool ? â€¦ : â€¦` stores in the deps literal below) graduate OUT of this
+  // object â€” they are durable and belong on the always-registered path. This
   // object holds only what is still memory-only.
   //
-  // The DatasetService keeps row/transaction state in memory — the metadata
-  // service gets a Postgres implementation in the deps literal, but the row
-  // store does not. The same instance is shared so the in-memory metadata
-  // fallback reads through it.
+  // The in-memory DatasetService is now only the non-Postgres fallback (see
+  // the `datasetService` entry in the deps literal). It is still built here
+  // because the in-memory metadata service reads dataset state through this
+  // same instance.
   const datasets = new InMemoryDatasetService();
+  // One dataset service instance, durable when Postgres is configured, shared by
+  // the datasetService dep and the batch-transform service that reads/writes
+  // through it (PostgresDatasetService is stateless over the pool).
+  const datasetSvc = pgPool ? new PostgresDatasetService(pgPool) : datasets;
+  // Built above the gate so both copilot surfaces can be handed the same store.
+  // Non-durable either way â€” there is no Postgres copilot implementation yet â€”
+  // so it stays inside `nonDurableServices` below rather than graduating.
+  const copilots = new InMemoryEmbeddedCopilotService();
+
   const nonDurableServices = nonDurableServicesEnabled
     ? {
-      // Model inference and chain services — in-memory only.
-      // Scenario service — in-memory, wired to the model services.
+      // Model inference and chain services â€” in-memory only.
+      // Model services â€” Postgres-backed when available; scenario service
+      // wires to the inference/chain services regardless of backing.
       ...(() => {
+        if (pgPool) {
+          const registry = new PostgresModelRegistryService(pgPool);
+          const inference = new PostgresModelInferenceService(pgPool);
+          const chain = new PostgresModelChainService(pgPool);
+          const scenarios = new InMemoryScenarioService({ inferenceService: inference, chainService: chain });
+          return { modelRegistryService: registry, modelInferenceService: inference, modelChainService: chain, scenarioService: scenarios };
+        }
         const registry = new InMemoryModelRegistryService();
         const inference = new InMemoryModelInferenceService(registry);
         const chain = new InMemoryModelChainService(inference);
         const scenarios = new InMemoryScenarioService({ inferenceService: inference, chainService: chain });
-        return {
-          modelInferenceService: inference,
-          modelChainService: chain,
-          scenarioService: scenarios,
-        };
+        return { modelRegistryService: registry, modelInferenceService: inference, modelChainService: chain, scenarioService: scenarios };
       })(),
-      // Workshop platform service — in-memory app definition persistence.
-      workshopPlatformService: new InMemoryWorkshopPlatformService(),
-      // App embedding & cross-app widgets — in-memory app registry, commands, pairing.
+      // Workshop platform service â€” in-memory app definition persistence.
+      // App embedding & cross-app widgets â€” in-memory app registry, commands, pairing.
       embeddingService: new InMemoryEmbeddingService(),
-      // Platform resources — in-memory resource catalog and object linking.
+      // Platform resources â€” in-memory resource catalog and object linking.
       platformResourceService: new InMemoryPlatformResourceService(),
-      // Saved views — in-memory per-user widget view persistence.
-      savedViewStore: new InMemorySavedViewStore(),
-      // User directory — in-memory, seeded from authenticated users.
-      userDirectoryService: new InMemoryUserDirectoryService(),
-      // Datasets — row/transaction state is in-memory only (no Postgres
-      // implementation yet). The metadata service is Postgres-backed when
-      // available (see deps literal below) so metadata/schema survives restarts.
-      datasetService: datasets,
-      // API Tooling services — in-memory only (no Postgres implementations yet).
-      kioskService: new InMemoryKioskService(),
-      layoutDeviceCaptureService: new InMemoryLayoutDeviceCaptureService(),
+      // Saved views, design system, approval workflows, change proposals â€”
+      // graduated to durable services (see deps literal below).
+      // User directory â€” graduated to durable service above.
+      // Layout/device-capture â€” graduated to durable service above.
+      // Genuinely non-durable services (no durable Postgres twin wired). Services
+      // that DO have one — ontology-change-history, design-system, conflict-resolution,
+      // agent-threads, connector-catalog, data-expectations, event-objects,
+      // multi-ontology, sql-query, variable-transform — are intentionally absent:
+      // the deps literal wires them durably and this object spreads last, so an
+      // in-memory copy here would shadow the durable one on Postgres with the gate open.
       ontologyManagerService: new InMemoryOntologyManagerService(),
-      workshopUxService: new InMemoryWorkshopUxService(),
       valueFormattingService: new InMemoryValueFormattingService(),
-      designSystemService: new InMemoryDesignSystemService(),
-      ontologyChangeHistoryService: new InMemoryOntologyChangeHistoryService(),
       // Workshop UI services.
       commandExchangeService: new InMemoryCommandExchangeService(),
-      objectSetFilterStore: new InMemoryObjectSetFilterStore(),
       graphService: new InMemoryGraphService(),
-      // Previously-unreachable services — in-memory only, wired so they have a
+      // Previously-unreachable services â€” in-memory only, wired so they have a
       // REST surface when the non-durable gate is open.
-      changeProposalStore: new InMemoryChangeProposalStore(),
-      businessRulesService: new InMemoryBusinessRulesService(),
       agentEvaluationService: new InMemoryAgentEvaluationService(),
-      agentThreadStore: new InMemoryAgentThreadStore(),
-      conflictResolutionService: new InMemoryConflictResolutionService(),
-      connectorCatalogService: new InMemoryConnectorCatalogService(),
-      dataExpectationsService: new InMemoryDataExpectationsService(),
-      embeddedCopilotService: new InMemoryEmbeddedCopilotService(),
-      eventObjectService: new InMemoryEventObjectService(),
+      // One copilot store, two surfaces. `embeddedCopilotService` configures
+      // copilots; `copilotService` is the view-facing suggest/apply half, and it
+      // is handed the same instance. They used not to be: the second built its
+      // own private store, so a copilot configured with `canExecuteActions:`n      // false` was never found and suggestions came from a fabricated copilot
+      // with it set true â€” bypassing the one place the flag is enforced.
+      embeddedCopilotService: copilots,
       graphAnalysisService: new InMemoryGraphAnalysisService(),
-      multiOntologyGovernanceService: new InMemoryMultiOntologyGovernanceService(),
       pipelineBuildService: new InMemoryPipelineBuildService(),
       platformAssistantService: new InMemoryPlatformAssistantService(),
       processMiningService: new InMemoryProcessMiningService(),
-      // Pipeline Data Ops — Pipeline & Data Ops.
-      batchTransformService: new InMemoryBatchTransformService(datasets),
-      sqlQueryService: new InMemorySqlQueryService(datasets),
-      variableTransformService: new InMemoryVariableTransformService(),
+      // Pipeline Data Ops â€” Pipeline & Data Ops.
       rulesEngineService: new InMemoryRulesEngineService(),
       pipelineService: new InMemoryPipelineService(),
       syncCdcService: new InMemorySyncCdcService(),
       datasourceService: new InMemoryDatasourceService(),
       buildTriggerService: new InMemoryBuildTriggerService(),
       sqlAnalyticsService: new InMemorySqlAnalyticsService(),
-      // AIP LLM — AIP/LLM Platform.
-      agentService: new InMemoryAgentService(llmClient),
+      // AIP LLM â€” AIP/LLM Platform.
       modelCatalogService: new InMemoryModelCatalogService(llmClient),
       evalService: new InMemoryEvalService(),
-      humanInTheLoopService: new InMemoryHumanInTheLoopService(),
       vectorSearchService: new InMemoryVectorSearchService(embeddingStore, llmClient),
-      copilotService: new InMemoryCopilotService(),
+      copilotService: new InMemoryCopilotService(copilots),
       }
     : {};
 
@@ -1329,7 +1629,7 @@ async function main(): Promise<void> {
     const names = Object.keys(nonDurableServices).sort().join(', ');
     if (nonDurableServicesEnabled) {
       logger.warn(
-        `ALLOW_NON_DURABLE_SERVICES=true — these are served from process memory on a Postgres deployment: ${names}. ` +
+        `ALLOW_NON_DURABLE_SERVICES=true â€” these are served from process memory on a Postgres deployment: ${names}. ` +
           'Their state is lost on restart and is not shared across replicas, so run a single gateway replica and do not keep real data in them.',
       );
     } else {
@@ -1339,6 +1639,51 @@ async function main(): Promise<void> {
       );
     }
   }
+
+  // One change-proposal store, two surfaces. `changeProposalStore` and
+  // `humanInTheLoopService` are the same records under two names â€”
+  // /api/v1/change-proposals and /api/v1/ai-proposals â€” so they are handed the
+  // same instance. They used not to be: the human-in-the-loop service built its
+  // own private Map, and an approval recorded on one surface was invisible on
+  // the other with neither erring. The pgPool ternary stays on this line so the
+  // #14 invariant is still visible where the choice is made.
+  const changeProposals = pgPool ? new PostgresChangeProposalStore(pgPool) : new InMemoryChangeProposalStore();
+
+  // High-risk agent actions: destructive effects (deleteObject/deleteLink)
+  // classify by default, plus env additions (MCP_HIGH_RISK_ACTIONS). One
+  // in-memory guard instance is shared by the MCP write gate and the
+  // /api/v1/agent-holds reviewer routes — an approval recorded on one is what
+  // the other checks. ponytail: holds do not survive restarts; back the guard
+  // with a store when agent traffic warrants it.
+  const agentHighRiskActions = new Set<string>(
+    schema.actionTypes
+      .filter(a => manifestRegistry?.get(a.name)?.effects.some(e => e.type === 'deleteObject' || e.type === 'deleteLink'))
+      .map(a => a.name),
+  );
+  for (const name of parseRoles(process.env['MCP_HIGH_RISK_ACTIONS']) ?? []) agentHighRiskActions.add(name);
+  // Agent hold store — Postgres-backed when available, in-memory fallback.
+  // Durable holds survive process restarts so a hold created before a crash
+  // is still answerable after recovery.
+  const agentHoldStore = mcpEnabled
+    ? (pgPool ? new PostgresAgentHoldStore(pgPool) : new InMemoryAgentHoldStore())
+    : undefined;
+  const agentHoldGuard = mcpEnabled
+    ? new HoldApprovePolicyGuard(agentHoldStore ? { holdStore: agentHoldStore } : {})
+    : undefined;
+  if (agentHoldGuard && agentHighRiskActions.size > 0) {
+    logger.info(`Agent governance: ${agentHighRiskActions.size} high-risk action(s) held for human approval on /mcp (${[...agentHighRiskActions].join(', ')})`);
+  }
+
+  // Tenant-scoped ontology reader for SQL Studio: reads one object type through
+  // the governed ObjectManager, so both storage providers evaluate SQL over the
+  // same authorized rows and never touch physical tables.
+  const ontologySqlReader = async (ctx: RequestContext, objectType: string) => {
+    const page = await objectManager.query(objectType, {}, { limit: 10000 }, ctx);
+    return page.items.map((obj: Record<string, unknown>) => ({
+      id: obj['_id'] as string,
+      properties: obj,
+    }));
+  };
 
   const deps: ApiDependencies = {
     schema,
@@ -1362,11 +1707,28 @@ async function main(): Promise<void> {
     granterRoles,
     consentRecorderRoles,
     auditReaderRoles,
+    auditUnredactedRoles,
+    // Scoped-session administrative tier (cross-user create, non-creator
+    // revoke, reading others' sessions). Default admin-only; routes fall
+    // back to DEFAULT_SCOPED_SESSION_ADMIN_ROLES when unset.
+    ...(parseRoles(process.env['SCOPED_SESSION_ADMIN_ROLES'])
+      ? { scopedSessionAdminRoles: parseRoles(process.env['SCOPED_SESSION_ADMIN_ROLES'])! }
+      : {}),
+    // Agent-hold reviewer surface — same guard instance the MCP gate uses.
+    ...(agentHoldGuard ? { agentHoldGuard } : {}),
+    ...(parseRoles(process.env['AGENT_HOLD_APPROVER_ROLES'])
+      ? { agentHoldApproverRoles: parseRoles(process.env['AGENT_HOLD_APPROVER_ROLES'])! }
+      : {}),
+    // Marking administration roles — who can grant/revoke runtime marking
+    // memberships via REST. Default admin; empty = nobody (fail-closed).
+    ...(parseRoles(process.env['MARKING_ADMIN_ROLES'])
+      ? { markingAdminRoles: parseRoles(process.env['MARKING_ADMIN_ROLES'])! }
+      : {}),
     consentPurposes,
     ...(consentSubjectTypes ? { consentSubjectTypes } : {}),
     cdmEnabled,
     llmClient,
-    // Governed LLM gateway — only when a provider is configured.
+    // Governed LLM gateway â€” only when a provider is configured.
     ...(llmGateway ? { llmGateway } : {}),
     // Workflow visualization & monitoring surfaces. Both are opt-in: a
     // deployment without an audit store or lineage store does not register
@@ -1374,11 +1736,11 @@ async function main(): Promise<void> {
     ...(workflowGraphBuilder ? { workflowGraphBuilder } : {}),
     workflowMonitor,
 
-    // ── Platform stores ──
+    // â”€â”€ Platform stores â”€â”€
     // Postgres-backed when a Postgres storage provider is configured
     // (durable, shared across replicas); in-memory otherwise (lost on
     // restart, single-replica only). The REST routes are registered
-    // unconditionally — each route handler checks for the dep and returns
+    // unconditionally â€” each route handler checks for the dep and returns
     // 503 when absent.
     blobStore: pgPool ? new PostgresBlobStore(pgPool) : new InMemoryBlobStore(),
     timeSeriesStore: pgPool ? new PostgresTimeSeriesStore(pgPool) : new InMemoryTimeSeriesStore(),
@@ -1391,16 +1753,16 @@ async function main(): Promise<void> {
     // fallback is for development (no pgPool); under Postgres the durable
     // implementation serves the route.
     alertingService: pgPool ? new PostgresAlertingService(pgPool) : new InMemoryAlertingService(),
-    // Geospatial map service — Postgres-backed when available.
+    // Geospatial map service â€” Postgres-backed when available.
     geospatialMapService: pgPool ? new PostgresGeospatialMapService(pgPool) : new InMemoryGeospatialMapService(),
-    // Data freshness — Postgres-backed when available.
+    // Data freshness â€” Postgres-backed when available.
     dataFreshnessService: pgPool ? new PostgresDataFreshnessService(pgPool) : new InMemoryDataFreshnessService(),
-    // Security governance — JustificationStore is Postgres-backed when
+    // Security governance â€” JustificationStore is Postgres-backed when
     // available; ScopedSessionStore is below. The AccessExplanationService
     // runs the live marking policy and consent service (next block).
-    justificationStore: pgPool ? new PostgresJustificationStore(pgPool) : new InMemoryJustificationStore(),
+    justificationStore,
     // The explanation runs the live marking policy and consent service, not a
-    // default-allow placeholder — an explanation that disagrees with the read
+    // default-allow placeholder â€” an explanation that disagrees with the read
     // path sends the operator to debug the wrong layer.
     accessExplanationService: new DefaultAccessExplanationService({
       authorizationService,
@@ -1408,33 +1770,124 @@ async function main(): Promise<void> {
       ...(consentSubjectTypes ? { consentSubjectTypes } : {}),
       ...(consentService ? { consent: consentService } : {}),
     }),
-    // ScopedSessionStore — Postgres-backed when available.
-    scopedSessionStore: pgPool ? new PostgresScopedSessionStore(pgPool) : new InMemoryScopedSessionStore(),
-    // Ontology SQL — Postgres-backed when available; falls back to in-memory
+    // ScopedSessionStore â€” Postgres-backed when available. Assigned to the
+    // hoisted variable so the authenticator's scopedSessionResolver reads the
+    // same instance these routes write to.
+    scopedSessionStore: (scopedSessionStore = pgPool ? new PostgresScopedSessionStore(pgPool) : new InMemoryScopedSessionStore()),
+    markingMembershipStore: (markingMembershipStore = pgPool ? new PostgresMarkingMembershipStore(pgPool) : new InMemoryMarkingMembershipStore()),
+    // Ontology SQL â€” Postgres-backed when available; falls back to in-memory
     // with ObjectManager delegation for ontology reads.
-    ontologySqlService: pgPool ? new PostgresOntologySqlService(pgPool) : new InMemoryOntologySqlService(async (ctx, objectType) => {
-      const page = await objectManager.query(objectType, {}, { limit: 10000 }, ctx);
-      return page.items.map((obj: Record<string, unknown>) => ({
-        id: obj['_id'] as string,
-        properties: obj,
-      }));
-    }),
-    // Dataset metadata — Postgres-backed when available so dataset
-    // metadata/schema survives restarts. The DatasetService itself (row/
-    // transaction state) remains in-memory only and lives in nonDurableServices
-    // above; the same `datasets` instance is shared so the in-memory metadata
-    // fallback reads through it.
+    // SQL Studio executes over object types (virtual tables), never raw DB
+    // tables. Both providers read through this one tenant-scoped ObjectManager
+    // reader, so a query cannot cross tenants or reach physical tables — the
+    // Postgres service used to run caller SQL straight on the pool.
+    ontologySqlService: pgPool
+      ? new PostgresOntologySqlService(pgPool, ontologySqlReader)
+      : new InMemoryOntologySqlService(ontologySqlReader),
+    // Datasets â€” Postgres-backed when available, so rows, the transaction log
+    // and branches survive a restart and are shared across replicas. This
+    // graduated out of `nonDurableServices`: the dataset routes answered 404 on
+    // a Postgres deployment until there was somewhere durable to put the rows.
+    datasetService: datasetSvc,
+    // Batch transforms — durable when Postgres is configured (graduated out of
+    // nonDurableServices). The Postgres impl reads/writes through datasetSvc.
+    batchTransformService: pgPool
+      ? new PostgresBatchTransformService(pgPool, datasetSvc)
+      : new InMemoryBatchTransformService(datasets),
+    // AIP agents — durable when Postgres is configured (definitions + chat
+    // threads survive restart / are shared across replicas). Graduated out of
+    // nonDurableServices.
+    agentService: pgPool
+      ? new PostgresAgentService(pgPool, llmClient)
+      : new InMemoryAgentService(llmClient),
+    // Workshop platform — durable when Postgres is configured (operator-built
+    // apps/pages/widgets survive restart / shared across replicas). Graduated
+    // out of nonDurableServices.
+    workshopPlatformService: pgPool
+      ? new PostgresWorkshopPlatformService(pgPool)
+      : new InMemoryWorkshopPlatformService(),
+    // Dataset metadata â€” Postgres-backed when available. It reads the same
+    // `dataset.metadata` table PostgresDatasetService writes; before that store
+    // existed nothing populated it, so this answered 200 with an empty list on
+    // every Postgres deployment. The in-memory fallback shares the `datasets`
+    // instance above for the same reason.
     datasetMetadataService: pgPool ? new PostgresDatasetMetadataService(pgPool) : new InMemoryDatasetMetadataService(datasets),
+    // Interactive SQL over datasets — Postgres-backed when available. The job
+    // record is what becomes durable: which query ran, who ran it, and what it
+    // returned, so `results` still answers after the process that ran it is
+    // gone. Execution itself is shared code in @altius/spi, and the rows it
+    // reads have been durable since datasets were. This graduated out of
+    // `nonDurableServices`, where the gate withheld it under Postgres.
+    sqlQueryService: pgPool ? new PostgresSqlQueryService(pgPool) : new InMemorySqlQueryService(datasets),
+    // Change proposals — Postgres-backed when available. This is the audit
+    // Change proposals â€” Postgres-backed when available. This is the audit
+    // trail for AI-driven changes: who approved what, and when. It graduated
+    // out of `nonDurableServices`, where the gate withheld it under Postgres
+    // rather than accept approvals it would lose on restart.
+    changeProposalStore: changeProposals,
+    // Human-in-the-loop — the same proposals, reached through the AI-facing
+    // routes. It holds no state of its own: the five methods are a rename of
+    // the store's, so the adapter lives once in @altius/spi and the store above
+    // decides both durability and *which* record is being approved.
+    humanInTheLoopService: pgPool ? new PostgresHumanInTheLoopService(pgPool) : new InMemoryHumanInTheLoopService(changeProposals),
+    // Variable transforms — Postgres-backed when available.
+    variableTransformService: pgPool ? new PostgresVariableTransformService(pgPool) : new InMemoryVariableTransformService(),
+    // Multi-ontology governance — Postgres-backed when available.
+    multiOntologyGovernanceService: pgPool ? new PostgresMultiOntologyGovernanceService(pgPool) : new InMemoryMultiOntologyGovernanceService(),
+    // Ontology change history — Postgres-backed when available.
+    ontologyChangeHistoryService: pgPool ? new PostgresOntologyChangeHistoryService(pgPool) : new InMemoryOntologyChangeHistoryService(),
+    // Event objects — Postgres-backed when available.
+    eventObjectService: pgPool ? new PostgresEventObjectService(pgPool) : new InMemoryEventObjectService(),
+    // Business rules â€” Postgres-backed when available. `state` is what decides
+    // whether a rule governs anything, so losing it silently reverts a rule to
+    // draft: nothing looks broken, the rule just stops applying.
+    businessRulesService: pgPool ? new PostgresBusinessRulesService(pgPool) : new InMemoryBusinessRulesService(),
+    // Conflict resolution — Postgres-backed when available. Both halves fail
+    // silently when lost: an unresolved conflict that disappears means the
+    // datasource and the user edit quietly keep different values, and a lost
+    // default strategy falls back to `user_edits_win` rather than erroring, so
+    // a tenant that chose otherwise gets the other answer on every conflict.
+    // Graduated out of `nonDurableServices`.
+    conflictResolutionService: pgPool ? new PostgresConflictResolutionService(pgPool) : new InMemoryConflictResolutionService(),
     // Usage metrics — Postgres-backed when available. The record() method is
+    // Usage metrics â€” Postgres-backed when available. The record() method is
     // an instrumentation hook; query/summary endpoints read from Postgres.
     usageMetricsService: pgPool ? new PostgresOntologyUsageMetricsService(pgPool) : new InMemoryOntologyUsageMetricsService(),
+    // Approval workflows â€” Postgres-backed when available. The workflow and
+    // submission tables are tenant-scoped and the same state machine as the
+    // in-memory service.
+    approvalWorkflowService,
+    // Kiosk sessions â€” Postgres-backed when available. Long-lived read-only
+    // display sessions are durable and shared across replicas.
+    kioskService: pgPool ? new PostgresKioskService(pgPool) : new InMemoryKioskService(),
+    // Saved views â€” Postgres-backed when available; private views are owner-only.
+    savedViewStore: pgPool ? new PostgresSavedViewStore(pgPool) : new InMemorySavedViewStore(),
+    // User directory â€” Postgres-backed when available; read-only SPI plus
+    // tenant-isolated administrative group membership.
+    userDirectoryService: pgPool ? new PostgresUserDirectoryService(pgPool) : new InMemoryUserDirectoryService(),
+    // Design system themes â€” Postgres-backed when available.
+    designSystemService: pgPool ? new PostgresDesignSystemService(pgPool) : new InMemoryDesignSystemService(),
+    // Layout, device-capture, and deep-link resolution â€” Postgres-backed when available.
+    layoutDeviceCaptureService: pgPool ? new PostgresLayoutDeviceCaptureService(pgPool) : new InMemoryLayoutDeviceCaptureService(),
+    // Agent threads â€” Postgres-backed when available.
+    agentThreadStore: pgPool ? new PostgresAgentThreadStore(pgPool) : new InMemoryAgentThreadStore(),
+    // Object set filter states â€” Postgres-backed when available.
+    objectSetFilterStore: pgPool ? new PostgresObjectSetFilterStore(pgPool) : new InMemoryObjectSetFilterStore(),
+    // Data expectations â€” Postgres-backed when available; evaluation is computational.
+    dataExpectationsService: pgPool ? new PostgresDataExpectationsService(pgPool) : new InMemoryDataExpectationsService(),
+    // Connector catalog â€” Postgres-backed when available; vendor catalog is static.
+    connectorCatalogService: pgPool ? new PostgresConnectorCatalogService(pgPool) : new InMemoryConnectorCatalogService(),
+    // Commands and chains â€” Postgres-backed when available; execution is delegated.
+    commandService: pgPool ? new PostgresCommandService(pgPool) : new InMemoryCommandService(),
+    // Workshop UX — state saving, redact mode, performance profiles, and i18n — Postgres-backed when available.
+    workshopUxService: pgPool ? new PostgresWorkshopUxService(pgPool) : new InMemoryWorkshopUxService(),
 
-    // Non-durable platform services — withheld under Postgres unless opted in.
+    // Non-durable platform services â€” withheld under Postgres unless opted in.
     // Built and explained above.
     ...nonDurableServices,
   };
 
-  // ── Express + HTTP Server ──
+  // â”€â”€ Express + HTTP Server â”€â”€
   const app = express();
 
   // Trust proxy headers (X-Forwarded-For) when behind ingress/load balancer.
@@ -1446,7 +1899,7 @@ async function main(): Promise<void> {
 
   const httpServer = http.createServer(app);
 
-  // ── GraphQL (Apollo Server + WebSocket Subscriptions) ──
+  // â”€â”€ GraphQL (Apollo Server + WebSocket Subscriptions) â”€â”€
   // Single executable schema shared by both Apollo (HTTP) and graphql-ws (WS)
   // transports. This guarantees mutations and subscriptions use the same PubSub.
   const { server: apolloServer, pubsub, executableSchema, complexityAnalyzer } = createGraphQLServer({ schema, deps, isDev });
@@ -1455,7 +1908,7 @@ async function main(): Promise<void> {
   const wsServer = new WebSocketServer({
     server: httpServer,
     path: '/graphql',
-    maxPayload: 64 * 1024, // 64 KB — GraphQL subscription payloads are small
+    maxPayload: 64 * 1024, // 64 KB â€” GraphQL subscription payloads are small
   });
   const subscriptionRegistry = new SubscriptionRegistry();
   deps.subscriptionRegistry = subscriptionRegistry;
@@ -1474,7 +1927,7 @@ async function main(): Promise<void> {
       if (!token || typeof token !== 'string') {
         // Dev mode is allow-all: HTTP requests without a bearer token get a
         // synthetic dev user (extractUser). Mirror that for WebSocket
-        // subscriptions so the dev experience is consistent — otherwise
+        // subscriptions so the dev experience is consistent â€” otherwise
         // subscriptions fail closed (the change-event filters require a user)
         // even though every other surface is open. Production still requires a
         // token (fail closed below).
@@ -1497,7 +1950,7 @@ async function main(): Promise<void> {
     },
   });
 
-  // Per-connection subscription tracking — prevents subscription-flood DoS.
+  // Per-connection subscription tracking â€” prevents subscription-flood DoS.
   const MAX_SUBSCRIPTIONS_PER_CONNECTION = 50;
   const subscriptionCounts = new WeakMap<object, number>();
 
@@ -1513,7 +1966,7 @@ async function main(): Promise<void> {
         return buildResolverContext(authResult.user, deps);
       },
       // graphql-ws carries QUERIES and MUTATIONS as well as subscriptions, so
-      // this hook is the WebSocket equivalent of the HTTP request path — and it
+      // this hook is the WebSocket equivalent of the HTTP request path â€” and it
       // enforced neither of the two gates that path applies. A principal
       // holding any valid token could run unlimited operations of unbounded
       // depth and cost simply by opening a socket instead of POSTing, which
@@ -1567,7 +2020,7 @@ async function main(): Promise<void> {
   const corsOrigins = process.env['CORS_ALLOWED_ORIGINS']?.split(',').map(s => s.trim()).filter(Boolean);
   if (!isDev && (!corsOrigins || corsOrigins.length === 0)) {
     // Production: deny all cross-origin requests when not configured
-    logger.warn('WARNING: CORS_ALLOWED_ORIGINS not set — all cross-origin requests will be denied. Set CORS_ALLOWED_ORIGINS if a frontend needs API access.');
+    logger.warn('WARNING: CORS_ALLOWED_ORIGINS not set â€” all cross-origin requests will be denied. Set CORS_ALLOWED_ORIGINS if a frontend needs API access.');
     app.use(cors({ origin: false }));
   } else if (!isDev) {
     app.use(cors({ origin: corsOrigins, credentials: true }));
@@ -1579,7 +2032,7 @@ async function main(): Promise<void> {
 
   // Pre-auth IP-based rate limiter: protects against unauthenticated floods
   // (auth+JWKS work is expensive; this gate runs before identity extraction)
-  // Only per-IP (principal) limiting — no global tenant cap for unauthenticated traffic.
+  // Only per-IP (principal) limiting â€” no global tenant cap for unauthenticated traffic.
   // Explicit undefined suppresses defaults from shallow merge in both limiter constructors.
   const ipLimiterConfig = { tenant: undefined, principal: { windowMs: 60_000, maxRequests: 300 }, clientApp: undefined };
   const ipRateLimiter: RateLimiter = redisClient
@@ -1601,15 +2054,15 @@ async function main(): Promise<void> {
     next();
   });
 
-  // ── Prometheus metrics ──
+  // â”€â”€ Prometheus metrics â”€â”€
   app.use(metricsMiddleware);
-  // Block external access to /metrics — Prometheus ServiceMonitor scrapes pod
+  // Block external access to /metrics â€” Prometheus ServiceMonitor scrapes pod
   // directly (bypassing ingress). Requests through ingress carry X-Forwarded-For.
   app.get('/metrics', podDirectOnly(isDev), metricsEndpoint);
   const stopHealthGauge = startStorageHealthGauge(storage);
 
-  // ── Health check ──
-  // /health — used by readiness probe. Storage is the only CRITICAL dependency,
+  // â”€â”€ Health check â”€â”€
+  // /health â€” used by readiness probe. Storage is the only CRITICAL dependency,
   // so only it can return 503: the rest are reported as degraded on a 200
   // because the gateway already survives without them (the rate limiter fails
   // open, the event bus falls back to in-memory). Failing readiness on those
@@ -1643,7 +2096,7 @@ async function main(): Promise<void> {
       res.status(503).json({ status: 'unhealthy', service: 'api-gateway' });
     }
   });
-  // /healthz — liveness probe (lightweight, always pass if process is up)
+  // /healthz â€” liveness probe (lightweight, always pass if process is up)
   app.get('/healthz', (_req, res) => {
     res.json({ status: 'pass' });
   });
@@ -1651,7 +2104,7 @@ async function main(): Promise<void> {
     res.json({ status: 'pass' });
   });
 
-  // ── Admin endpoints ──
+  // â”€â”€ Admin endpoints â”€â”€
   // Register Prometheus gauges for loaded packs
   for (const info of packInfos) {
     packLoaded.set(
@@ -1660,8 +2113,8 @@ async function main(): Promise<void> {
     );
   }
 
-  // GET /admin/packs — introspection of loaded domain packs; pod-internal
-  // only (same posture as /metrics — pack metadata is not for external eyes)
+  // GET /admin/packs â€” introspection of loaded domain packs; pod-internal
+  // only (same posture as /metrics â€” pack metadata is not for external eyes)
   app.get('/admin/packs', podDirectOnly(isDev), (_req, res) => {
     res.json({
       packs: packInfos.map(info => ({
@@ -1687,7 +2140,7 @@ async function main(): Promise<void> {
     });
   });
 
-  // ── GraphQL at /graphql ──
+  // â”€â”€ GraphQL at /graphql â”€â”€
   app.use(
     '/graphql',
     expressMiddleware(apolloServer, {
@@ -1725,21 +2178,28 @@ async function main(): Promise<void> {
     }),
   );
 
-  // ── REST at /api/v1/* ──
+  // â”€â”€ REST at /api/v1/* â”€â”€
   const restRoutes = [
     ...generateRestRoutes(schema, deps),
     ...generateAuditRoutes(deps),
+    ...generateMarkingRoutes(deps),
     ...generateTraverseRoutes(deps),
     ...generateRelationshipRoutes(deps, grantAllowlist),
     ...generateConsentRoutes(deps),
     ...generateLlmRoutes(deps),
     ...generateWorkflowRoutes(deps),
     // Sync scheduler status. Registered unconditionally so the endpoint can
-    // report "not running" — the state an operator most needs to see, and the
+    // report "not running" â€” the state an operator most needs to see, and the
     // one an absent route cannot express.
     ...generateSyncStatusRoutes({
       enabled: syncBoot.scheduler !== null,
       datasources: () => syncBoot.scheduler?.stats() ?? [],
+    }, deps.auditReaderRoles),
+    // Data-connection gateway status — registered unconditionally for the
+    // same reason as sync status: "not running" must be reportable.
+    ...generateDataConnectionStatusRoutes({
+      enabled: dataConnectionBoot.gateway !== null,
+      status: async () => (await dataConnectionBoot.gateway?.status()) ?? { agents: [], datasources: [] },
     }, deps.auditReaderRoles),
   ];
   for (const route of restRoutes) {
@@ -1772,7 +2232,7 @@ async function main(): Promise<void> {
         // authorization: a marking restricts access where a role expands it,
         // so holding `editor` or `admin` must not get past one.
         //
-        // The answer is 404, not 403. Markings restrict DISCOVERY — a 403
+        // The answer is 404, not 403. Markings restrict DISCOVERY â€” a 403
         // confirms the type exists and that something is being withheld,
         // which is the disclosure the marking was applied to prevent.
         if (!isTypeVisible(deps.markingPolicy, user, route.objectType)) {
@@ -1837,25 +2297,25 @@ async function main(): Promise<void> {
     });
   }
 
-  // ── Attachment upload/download routes (raw body, not JSON) ──
+  // â”€â”€ Attachment upload/download routes (raw body, not JSON) â”€â”€
   registerAttachmentRoutes(app, deps, authenticator, isDev);
 
-  // ── Time-series read/write routes ──
+  // â”€â”€ Time-series read/write routes â”€â”€
   registerTimeSeriesRoutes(app, deps, authenticator, isDev);
 
-  // ── Branch management routes ──
+  // â”€â”€ Branch management routes â”€â”€
   registerBranchRoutes(app, deps, authenticator, isDev);
 
-  // ── Comments and collaboration routes ──
+  // â”€â”€ Comments and collaboration routes â”€â”€
   registerCommentRoutes(app, deps, authenticator, isDev);
 
-  // ── Platform notification routes ──
+  // â”€â”€ Platform notification routes â”€â”€
   registerNotificationRoutes(app, deps, authenticator, isDev);
 
-  // ── Embedding / vector search routes ──
+  // â”€â”€ Embedding / vector search routes â”€â”€
   registerEmbeddingRoutes(app, deps, authenticator, isDev);
 
-  // ── Alerting routes ──
+  // â”€â”€ Alerting routes â”€â”€
   registerAlertingRoutes(app, deps, authenticator, isDev);
   registerGeospatialRoutes(app, deps, authenticator, isDev);
   registerScenarioRoutes(app, deps, authenticator, isDev);
@@ -1865,16 +2325,21 @@ async function main(): Promise<void> {
   registerSavedViewRoutes(app, deps, authenticator, isDev);
   registerUserDirectoryRoutes(app, deps, authenticator, isDev);
 
-  // ── Previously-unreachable SPI services (change-proposals, business-rules,
+  // â”€â”€ Previously-unreachable SPI services (change-proposals, business-rules,
   // agent-evals, agent-threads, conflict-resolution, connectors, data-expectations,
   // embedded-copilots, event-objects, graph-analyses, multi-ontology, pipeline-builds,
-  // platform-assistant, process-mining, workshop-ux) ──
-  registerAbsentServiceRoutes(app, deps, authenticator, isDev);
+  // platform-assistant, process-mining, workshop-ux) --
+  // Role-gated as a whole (default admin-only): these services carry no
+  // per-object authorization of their own.
+  const platformServiceRoles = (process.env['PLATFORM_SERVICE_ROLES'] ?? '')
+    .split(',').map(r => r.trim()).filter(Boolean);
+  registerAbsentServiceRoutes(app, deps, authenticator, isDev,
+    platformServiceRoles.length > 0 ? platformServiceRoles : ['admin']);
 
-  // ── LLM gateway routes ──
+  // â”€â”€ LLM gateway routes â”€â”€
   registerLLMGatewayRoutes(app, deps, authenticator, isDev);
 
-  // ── OpenAPI spec at /api/v1/openapi.json ──
+  // â”€â”€ OpenAPI spec at /api/v1/openapi.json â”€â”€
   // Stamp the served contract with the real platform version (root package.json)
   // so it matches the released spec artifact, not the generator's default.
   const openApiSpec = generateOpenApiSpec(schema, readPlatformVersion());
@@ -1882,13 +2347,34 @@ async function main(): Promise<void> {
     res.json(openApiSpec);
   });
 
-  // ── FDP/CDM projection at /api/v1/cdm/* (S1.0) — mounted only with `cdm`.
+  // ── Loaded domain packs (deployment metadata; authenticated) ──
+  // Lets a client (e.g. the web console) list the actually-loaded packs rather
+  // than hardcode them. Pack metadata is deployment-wide config, not tenant data
+  // — so this authenticates but is not per-tenant or per-object gated.
+  const packSummaries = packInfos.map(p => ({
+    name: p.manifest.name,
+    version: p.manifest.version,
+    namespace: p.manifest.namespace,
+    capabilities: p.manifest.capabilities ?? [],
+    objectTypes: p.typeCounts.objectTypes,
+    external: p.external,
+  }));
+  app.get('/api/v1/packs', async (req, res) => {
+    try {
+      await extractUser(req, authenticator, isDev);
+      res.json({ data: packSummaries });
+    } catch {
+      res.status(401).json({ error: { code: 'UNAUTHENTICATED', message: 'Authentication required' } });
+    }
+  });
+
+  // â”€â”€ FDP/CDM projection at /api/v1/cdm/* (S1.0) â€” mounted only with `cdm`.
   // cdmEnabled/fhirEnabled were resolved above (before GraphQL schema build) so
-  // the REST mount, GraphQL SDL, and GraphQL resolvers all gate identically. ──
+  // the REST mount, GraphQL SDL, and GraphQL resolvers all gate identically. â”€â”€
   if (cdmEnabled) {
   const cdmHandler = createCdmRouter({ deps });
   // Public metadata: profile, compatibility matrix, gap register (non-sensitive
-  // schema mapping info — mirrors the public openapi.json endpoint).
+  // schema mapping info â€” mirrors the public openapi.json endpoint).
   // Registered for both GET and HEAD so the advertised contract holds before
   // the authenticated catch-all below.
   const cdmMetadataHandler: express.RequestHandler = async (req, res) => {
@@ -1938,11 +2424,11 @@ async function main(): Promise<void> {
   });
   } // end cdm capability gate
 
-  // ── FHIR at /fhir/* — mounted only when a pack declares the `fhir` capability ──
+  // â”€â”€ FHIR at /fhir/* â€” mounted only when a pack declares the `fhir` capability â”€â”€
   if (fhirEnabled) {
   const fhirBaseUrl = process.env['FHIR_BASE_URL'] ?? `http://localhost:${PORT}/fhir`;
   if (!isDev && !process.env['FHIR_BASE_URL']) {
-    logger.warn('WARNING: FHIR_BASE_URL not set — Bundle fullUrl links will use http://localhost. Set FHIR_BASE_URL to the externally routable address.');
+    logger.warn('WARNING: FHIR_BASE_URL not set â€” Bundle fullUrl links will use http://localhost. Set FHIR_BASE_URL to the externally routable address.');
   }
   const fhirHandler = createFhirRouter({ deps, baseUrl: fhirBaseUrl });
   app.all('/fhir/*', async (req, res) => {
@@ -1982,13 +2468,26 @@ async function main(): Promise<void> {
   });
   } // end fhir capability gate
 
-  // ── MCP at /mcp — mounted only when a pack declares the `mcp` capability ──
+  // â”€â”€ MCP at /mcp â€” mounted only when a pack declares the `mcp` capability â”€â”€
   // Streamable HTTP transport (JSON-RPC 2.0 over POST). Exposes governed
   // actions + FGA-scoped read queries as MCP tools for external AI agents.
-  // Auth is OIDC bearer token — an agent is just another OIDC principal
+  // Auth is OIDC bearer token â€” an agent is just another OIDC principal
   // calling the same 8-stage action pipeline. Stateless: no session storage.
   if (mcpEnabled) {
     const { createMcpServer } = await import('@altius/mcp-server');
+    // Per-user/group enablement (Foundry Control-Panel parity). Unset = every
+    // authenticated principal of an mcp-enabled pack (pre-gate behavior);
+    // set = only listed user ids / group-or-role names, everyone else 403.
+    const mcpAllowedUsers = parseRoles(process.env['MCP_ALLOWED_USERS']);
+    const mcpAllowedGroups = parseRoles(process.env['MCP_ALLOWED_GROUPS']);
+    // Externally routable base URL for OAuth discovery (mirrors FHIR_BASE_URL).
+    const apiPublicUrl = process.env['API_PUBLIC_URL'] ?? `http://localhost:${PORT}`;
+    if (!isDev && !process.env['API_PUBLIC_URL']) {
+      logger.warn('WARNING: API_PUBLIC_URL not set — OAuth resource metadata will advertise http://localhost. Set API_PUBLIC_URL to the externally routable address.');
+    }
+    if (mcpAllowedUsers || mcpAllowedGroups) {
+      logger.info(`MCP access allowlist active (users=${mcpAllowedUsers?.length ?? 0}, groups=${mcpAllowedGroups?.length ?? 0})`);
+    }
     const mcpHandler = createMcpServer({
       deps: {
         schema,
@@ -2039,8 +2538,14 @@ async function main(): Promise<void> {
               },
             }
           : {}),
+        // Human-in-the-loop: destructive actions are held for a reviewer's
+        // approval; the same guard instance backs /api/v1/agent-holds.
+        ...(agentHoldGuard ? { policyGuard: agentHoldGuard, highRiskActions: agentHighRiskActions } : {}),
       },
       isDev,
+      ...(mcpAllowedUsers ? { allowedUsers: mcpAllowedUsers } : {}),
+      ...(mcpAllowedGroups ? { allowedGroups: mcpAllowedGroups } : {}),
+      resourceMetadataUrl: `${apiPublicUrl}/.well-known/oauth-protected-resource`,
     });
     app.post('/mcp', async (req, res) => {
       const out = await mcpHandler({
@@ -2048,11 +2553,23 @@ async function main(): Promise<void> {
         headers: req.headers as Record<string, string | undefined>,
         body: req.body,
       });
+      if (out.headers) res.set(out.headers);
       if (out.body === undefined) {
         res.status(out.status).end();
       } else {
         res.status(out.status).json(out.body);
       }
+    });
+    // RFC 9728 protected-resource metadata: how an OAuth-capable MCP client
+    // discovers the authorization server from the WWW-Authenticate challenge.
+    // Unauthenticated by design — discovery metadata is public by the RFC
+    // (same class as OIDC discovery) and reveals only the issuer URL.
+    app.get('/.well-known/oauth-protected-resource', (_req, res) => {
+      res.json({
+        resource: `${apiPublicUrl}/mcp`,
+        authorization_servers: [oidcIssuer],
+        bearer_methods_supported: ['header'],
+      });
     });
     app.delete('/mcp', async (req, res) => {
       const out = await mcpHandler({
@@ -2069,15 +2586,15 @@ async function main(): Promise<void> {
     logger.info('MCP server mounted at /mcp (Streamable HTTP, tools-only)');
   } // end mcp capability gate
 
-  // ── Webhook ingest at /api/v1/ingest/:datasource (T6) ──
+  // â”€â”€ Webhook ingest at /api/v1/ingest/:datasource (T6) â”€â”€
   // Push-based single-record or batch upsert path. Authenticated via
   // X-Ingest-Secret (sourced from INGEST_SECRET env var). Reuses the same
-  // parseMappingObject → RecordMapper → createEngineChangeApplier pipeline
+  // parseMappingObject â†’ RecordMapper â†’ createEngineChangeApplier pipeline
   // as the sync scheduler.
   const ingestSecret = process.env.INGEST_SECRET;
   if (ingestSecret) {
     const { createIngestHandler } = await import('./ingest-handler.js');
-    // Build datasource name → raw mapping config from connector manifests
+    // Build datasource name â†’ raw mapping config from connector manifests
     const datasourceMappings = new Map<string, Record<string, unknown>>();
     for (const cm of connectorManifests) {
       const ds = cm.config['datasource'] as string | undefined;
@@ -2100,6 +2617,52 @@ async function main(): Promise<void> {
     logger.info(`Ingest webhook mounted at /api/v1/ingest/:datasource (${datasourceMappings.size} datasource(s))`);
   } else {
     logger.info('Ingest webhook disabled (set INGEST_SECRET to enable)');
+  }
+
+  // ── Data Connection Agent endpoints at /api/v1/data-connection/* ──
+  // Agent-facing (not OIDC): enrollment is gated by the shared
+  // X-Enrollment-Secret, everything after by the per-agent bearer token
+  // minted at enrollment — same posture as the ingest webhook's
+  // X-Ingest-Secret. All calls are agent-initiated over the agent's
+  // outbound-only channel; the admin-facing status endpoint lives in the
+  // OIDC-authenticated REST layer instead.
+  if (dataConnectionBoot.gateway) {
+    const gateway = dataConnectionBoot.gateway;
+    const bearer = (req: express.Request): string | undefined => {
+      const header = req.headers.authorization;
+      return header?.startsWith('Bearer ') ? header.slice('Bearer '.length) : undefined;
+    };
+    app.post('/api/v1/data-connection/enroll', express.json({ limit: '256kb' }), (req, res) => {
+      const out = gateway.enroll(
+        req.headers['x-enrollment-secret'] as string | undefined,
+        req.body,
+      );
+      res.status(out.status).json(out.body);
+    });
+    app.post('/api/v1/data-connection/agents/:agentId/heartbeat', express.json({ limit: '1mb' }), async (req, res) => {
+      const out = await gateway.heartbeat(req.params['agentId']!, bearer(req), req.body);
+      res.status(out.status).json(out.body);
+    });
+    app.post(
+      '/api/v1/data-connection/agents/:agentId/datasources/:datasource/records',
+      express.json({ limit: '10mb' }),
+      async (req, res) => {
+        const out = await gateway.upload(
+          req.params['agentId']!,
+          bearer(req),
+          req.params['datasource']!,
+          req.body,
+        );
+        res.status(out.status).json(out.body);
+      },
+    );
+    logger.info(
+      `Data-connection agent gateway mounted at /api/v1/data-connection/* (${dataConnectionBoot.leasable.length} leasable datasource(s))`,
+    );
+  } else {
+    logger.info(
+      'Data-connection agent gateway disabled (set DATA_CONNECTION_ENROLLMENT_SECRET and declare a runtime: AGENT datasource to enable)',
+    );
   }
 
   // ── Function Pipeline Webhook ──
@@ -2145,7 +2708,7 @@ async function main(): Promise<void> {
     logger.info('Function pipeline webhook disabled (set FUNCTION_WEBHOOK_SECRET to enable)');
   }
 
-  // ── Graceful shutdown ──
+  // â”€â”€ Graceful shutdown â”€â”€
   const SHUTDOWN_TIMEOUT_MS = 5_000;
 
   async function shutdown() {
@@ -2203,7 +2766,7 @@ async function main(): Promise<void> {
   process.on('SIGTERM', shutdown);
   process.on('SIGINT', shutdown);
 
-  // ── Start ──
+  // â”€â”€ Start â”€â”€
   await new Promise<void>((resolve) => {
     httpServer.listen(PORT, resolve);
   });
@@ -2219,7 +2782,7 @@ async function main(): Promise<void> {
 }
 
 /**
- * Build the link → ReBAC-tuple sync map. For each link type whose
+ * Build the link â†’ ReBAC-tuple sync map. For each link type whose
  * `snake(linkType)` relation exists on its from-type in the merged OpenFGA
  * model, map it so the action pipeline mints `(toType:toId, relation,
  * fromType:fromId)` tuples on link create/delete. Links without a matching
@@ -2262,7 +2825,7 @@ function buildLinkTupleMap(
  * A pack's `permissions/*.fga` override REPLACES the whole generated type block,
  * so omitting a relation silently deletes it. OpenFGA then answers those checks
  * with a 400 validation error, which reached callers as a retryable 500 on every
- * read while writes kept working — the exact shape reported in issue #3.
+ * read while writes kept working â€” the exact shape reported in issue #3.
  *
  * Dev mode warns instead of throwing: it runs an allow-all stub with no model
  * pushed, so a model gap cannot actually break requests there.
@@ -2308,7 +2871,7 @@ function assertFgaModelCoverage(
     if (relations && !relations.has(mapping.relation)) {
       warnings.push(
         `type '${mapping.objectType}' is missing relation '${mapping.relation}' ` +
-        `(checked when executing action ${actionName}) — that action will be denied`,
+        `(checked when executing action ${actionName}) â€” that action will be denied`,
       );
     }
   }
@@ -2340,7 +2903,7 @@ function deriveActionAuthzMappings(
   const mappings = new Map<string, ActionAuthzMapping>();
   const objectTypeNames = new Set(schema.objectTypes.map(o => o.name));
 
-  // The whole derivation — relation name, target type, id param — comes from
+  // The whole derivation â€” relation name, target type, id param â€” comes from
   // @altius/odl, so the runtime checks exactly what the generated model
   // declares. Deriving any part of it independently is what let the two drift
   // (the generator strips words matching ObjectType names, so adding a
@@ -2373,7 +2936,7 @@ function deriveFunctionAuthzMappings(
   return mappings;
 }
 
-/** OpenFGA relation body — one of direct, computed, tuple-to-userset, or union. */
+/** OpenFGA relation body â€” one of direct, computed, tuple-to-userset, or union. */
 export interface FgaRelationBody {
   this?: Record<string, never>;
   computedUserset?: { relation: string };
@@ -2504,7 +3067,7 @@ export function fgaDslToJson(dsl: string): FgaAuthorizationModel {
   return { schema_version: '1.1', type_definitions: typeDefs };
 }
 
-// Fatal error handlers — log and exit rather than silently dying.
+// Fatal error handlers â€” log and exit rather than silently dying.
 // Must be registered before main() so they catch errors during startup too.
 process.on('uncaughtException', (err) => {
   logger.error({ err }, 'Uncaught exception');

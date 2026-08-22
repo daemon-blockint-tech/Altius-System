@@ -113,12 +113,17 @@ export class InMemoryScopedSessionStore implements ScopedSessionStore {
     const tenantSessions = this.sessions.get(tenantId);
     if (!tenantSessions) return null;
     const now = new Date().toISOString();
+    // The MOST RECENTLY CREATED active session governs — conformance-pinned
+    // (the Postgres store orders created_at DESC; insertion order returned
+    // the oldest here, so which session restricted a caller depended on the
+    // provider).
+    let newest: ScopedSession | null = null;
     for (const s of tenantSessions.values()) {
       if (s.userId === userId && !s.revoked && s.expiresAt > now) {
-        return s;
+        if (!newest || s.createdAt > newest.createdAt) newest = s;
       }
     }
-    return null;
+    return newest;
   }
 
   async list(tenantId: string, userId?: string): Promise<ScopedSession[]> {

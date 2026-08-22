@@ -1,3 +1,4 @@
+import { authedFetch } from './auth-fetch.js';
 /**
  * Geospatial client — helpers for fetching map data from the backend.
  *
@@ -123,7 +124,7 @@ export async function listLayers(
 ): Promise<MapLayer[]> {
   const url = new URL(`${baseUrl}/geo/layers`, window.location.origin);
   if (objectType) url.searchParams.set('objectType', objectType);
-  const res = await fetch(url.toString());
+  const res = await authedFetch(url.toString());
   if (!res.ok) throw new Error(`listLayers: ${res.status}`);
   const data = await res.json() as { layers: MapLayer[] };
   return data.layers;
@@ -144,7 +145,7 @@ export async function createLayer(
   },
   apiBaseUrl = '/api/v1',
 ): Promise<MapLayer> {
-  const res = await fetch(`${apiBaseUrl}/geo/layers`, {
+  const res = await authedFetch(`${apiBaseUrl}/geo/layers`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
@@ -161,7 +162,7 @@ export async function listSavedMaps(
 ): Promise<SavedMap[]> {
   const url = new URL(`${baseUrl}/geo/maps`, window.location.origin);
   if (tags?.length) url.searchParams.set('tags', tags.join(','));
-  const res = await fetch(url.toString());
+  const res = await authedFetch(url.toString());
   if (!res.ok) throw new Error(`listSavedMaps: ${res.status}`);
   const data = await res.json() as { maps: SavedMap[] };
   return data.maps;
@@ -175,7 +176,7 @@ export async function listAnnotations(
 ): Promise<MapAnnotation[]> {
   const url = new URL(`${baseUrl}/geo/annotations`, window.location.origin);
   if (savedMapId) url.searchParams.set('savedMapId', savedMapId);
-  const res = await fetch(url.toString());
+  const res = await authedFetch(url.toString());
   if (!res.ok) throw new Error(`listAnnotations: ${res.status}`);
   const data = await res.json() as { annotations: MapAnnotation[] };
   return data.annotations;
@@ -191,7 +192,7 @@ export async function searchAround(
   limit?: number,
   baseUrl = '/api/v1',
 ): Promise<SpatialSearchResult[]> {
-  const res = await fetch(`${baseUrl}/geo/search/around`, {
+  const res = await authedFetch(`${baseUrl}/geo/search/around`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ objectType, geometryField, center, radiusMeters, limit }),
@@ -207,7 +208,7 @@ export async function searchIntersect(
   shape: GeoShape,
   baseUrl = '/api/v1',
 ): Promise<SpatialSearchResult[]> {
-  const res = await fetch(`${baseUrl}/geo/search/intersect`, {
+  const res = await authedFetch(`${baseUrl}/geo/search/intersect`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ objectType, geometryField, shape }),
@@ -223,7 +224,7 @@ export async function searchBBox(
   bbox: GeoBBox,
   baseUrl = '/api/v1',
 ): Promise<SpatialSearchResult[]> {
-  const res = await fetch(`${baseUrl}/geo/search/bbox`, {
+  const res = await authedFetch(`${baseUrl}/geo/search/bbox`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ objectType, geometryField, bbox }),
@@ -241,7 +242,7 @@ export async function geocode(
 ): Promise<GeocodeResult> {
   const url = new URL(`${baseUrl}/geo/geocode`, window.location.origin);
   url.searchParams.set('q', query);
-  const res = await fetch(url.toString());
+  const res = await authedFetch(url.toString());
   if (!res.ok) throw new Error(`geocode: ${res.status}`);
   return res.json() as Promise<GeocodeResult>;
 }
@@ -254,7 +255,7 @@ export async function reverseGeocode(
   const url = new URL(`${baseUrl}/geo/reverse-geocode`, window.location.origin);
   url.searchParams.set('lat', String(lat));
   url.searchParams.set('lng', String(lng));
-  const res = await fetch(url.toString());
+  const res = await authedFetch(url.toString());
   if (!res.ok) throw new Error(`reverseGeocode: ${res.status}`);
   return res.json() as Promise<ReverseGeocodeResult>;
 }
@@ -266,7 +267,7 @@ export async function distance(
   b: GeoPoint,
   baseUrl = '/api/v1',
 ): Promise<number> {
-  const res = await fetch(`${baseUrl}/geo/geometry/distance`, {
+  const res = await authedFetch(`${baseUrl}/geo/geometry/distance`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ a, b }),

@@ -1,5 +1,7 @@
 # Parity re-grade — 19 Aug 2026, HEAD `96e5b2a`
 
+> **Historical measurement:** retained as reproducible evidence for the named commit. It is not the current parity dashboard; use [../altius-foundry-parity.md](../altius-foundry-parity.md) and the two canonical backlog files for current counts.
+
 The grades in `ALTIUS-BACKLOG.md` are a snapshot from 17 Aug carried forward by hand.
 This is a re-measurement against the current tree, taken from source with the external
 audit's bar: **demote unless the code proves otherwise**, and a capability counts only

@@ -42,6 +42,7 @@ import { isTypeVisible } from '../markings/enforce.js';
 import { writeReadAuditFor } from './audit-read.js';
 import { lowerFirst, toSnakeCase, searchableTextFields } from '../utils.js';
 import { paginateWithConsent } from '../consent-pagination.js';
+import { guardDirectWriteConsent } from '../consent-write-guard.js';
 import { collectRawRecords } from '../cdm/router.js';
 
 // ─── Helpers ───
@@ -1043,6 +1044,21 @@ function generateUpdateRoute(
           user.tenantId,
         );
         if (!allowed) {
+          // Audit the denied attempt — a DPO needs to see denied writes, not
+          // just successful ones. Best-effort: a failed audit write is logged
+          // but never surfaces to the caller. (Same shape as the GraphQL
+          // update<Type> resolver.)
+          if (deps.auditWriter) {
+            try {
+              await deps.auditWriter.write({
+                tenantId: requestContext.tenantId,
+                actor: { type: 'user', id: user.id, roles: user.roles },
+                operation: { type: 'update', objectType: typeName, objectId: id },
+                detail: { result: 'denied' },
+                traceId: requestContext.traceId,
+              });
+            } catch { /* best-effort */ }
+          }
           return createRestErrorResponse({
             code: 'FORBIDDEN',
             category: 'authorization',
@@ -1079,6 +1095,10 @@ function generateUpdateRoute(
           }
         }
 
+        // Consent gate — the action pipeline checks consent before writing;
+        // the direct path must too, or revocation is meaningless for editors.
+        await guardDirectWriteConsent(deps, 'update', typeName, id, user, requestContext);
+
         const updated = await deps.objectManager.update(
           typeName,
           id,
@@ -1087,6 +1107,20 @@ function generateUpdateRoute(
           undefined,
           ifMatch,
         );
+
+        // Audit the successful update — best-effort. Field NAMES only: the
+        // values may be @sensitive, and an audit record is itself an egress.
+        if (deps.auditWriter) {
+          try {
+            await deps.auditWriter.write({
+              tenantId: requestContext.tenantId,
+              actor: { type: 'user', id: user.id, roles: user.roles },
+              operation: { type: 'update', objectType: typeName, objectId: id },
+              detail: { result: 'success', after: Object.fromEntries(Object.keys(properties).map(f => [f, '[changed]'])) },
+              traceId: requestContext.traceId,
+            });
+          } catch { /* best-effort */ }
+        }
 
         let restObj = objectToRest(updated, obj);
 
@@ -1155,6 +1189,19 @@ function generateDeleteRoute(
           user.tenantId,
         );
         if (!allowed) {
+          // Audit the denied attempt — best-effort, same shape as the GraphQL
+          // delete<Type> resolver.
+          if (deps.auditWriter) {
+            try {
+              await deps.auditWriter.write({
+                tenantId: requestContext.tenantId,
+                actor: { type: 'user', id: user.id, roles: user.roles },
+                operation: { type: 'delete', objectType: typeName, objectId: id },
+                detail: { result: 'denied' },
+                traceId: requestContext.traceId,
+              });
+            } catch { /* best-effort */ }
+          }
           return createRestErrorResponse({
             code: 'FORBIDDEN',
             category: 'authorization',
@@ -1163,6 +1210,9 @@ function generateDeleteRoute(
             traceId: requestContext.traceId,
           });
         }
+
+        // Consent gate — parity with the action pipeline; see guardDirectWriteConsent.
+        await guardDirectWriteConsent(deps, 'delete', typeName, id, user, requestContext);
 
         // Fetch-then-check for If-Match (SPI deleteObject has no expectedVersion)
         if (ifMatch !== undefined) {
@@ -1189,6 +1239,21 @@ function generateDeleteRoute(
 
         const mode = (req.query['mode'] as string | undefined) === 'hard' ? 'hard' : 'soft';
         await deps.objectManager.delete(typeName, id, mode, requestContext);
+
+        // Audit the successful delete — best-effort. `query` records the
+        // deletion mode: a hard delete is exactly the event a DPO must be
+        // able to find later.
+        if (deps.auditWriter) {
+          try {
+            await deps.auditWriter.write({
+              tenantId: requestContext.tenantId,
+              actor: { type: 'user', id: user.id, roles: user.roles },
+              operation: { type: 'delete', objectType: typeName, objectId: id },
+              detail: { result: 'success', query: `mode=${mode}` },
+              traceId: requestContext.traceId,
+            });
+          } catch { /* best-effort */ }
+        }
 
         return {
           status: 204,
@@ -1881,6 +1946,10 @@ function generateActionRoute(
           ? Number.parseInt(String(ifMatch).replace(/^W\/|"/g, ''), 10)
           : Number.NaN;
 
+        // Checkpoint justification rides the reserved `_justification` body
+        // field (underscore-prefixed = never a user @param).
+        const justification = input['_justification'];
+
         const actionCtx: ActionContext = {
           requestContext,
           ...(consentSubjectId ? {
@@ -1888,6 +1957,7 @@ function generateActionRoute(
             consentSubjectId,
           } : {}),
           ...(Number.isInteger(expectedVersion) ? { expectedVersion } : {}),
+          ...(typeof justification === 'string' ? { justification } : {}),
         };
 
         // Resolve manifest from registry — fail closed if not found
@@ -2741,7 +2811,7 @@ function generateFunctionLifecycleRoutes(deps: ApiDependencies): RestRoute[] {
           return { status: 503, body: { error: { code: 'NOT_CONFIGURED', message: 'Function registry is not configured' } } };
         }
         const body = req.body as Record<string, unknown>;
-        const rev = deps.functionRegistry.createDraft({
+        const rev = await deps.functionRegistry.createDraft({
           functionName: body['functionName'] as string,
           runtime: body['runtime'] as string,
           entry: body['entry'] as string,
@@ -2767,7 +2837,7 @@ function generateFunctionLifecycleRoutes(deps: ApiDependencies): RestRoute[] {
         if (!deps.functionRegistry) {
           return { status: 503, body: { error: { code: 'NOT_CONFIGURED', message: 'Function registry is not configured' } } };
         }
-        const rev = deps.functionRegistry.getRevision(req.params['id']!);
+        const rev = await deps.functionRegistry.getRevision(ctx.requestContext.tenantId, req.params['id']!);
         if (!rev) return { status: 404, body: { error: { code: 'NOT_FOUND', message: 'Revision not found' } } };
         return { status: 200, body: { data: functionRevisionToRest(rev) } };
       } catch (err) {
@@ -2789,7 +2859,7 @@ function generateFunctionLifecycleRoutes(deps: ApiDependencies): RestRoute[] {
         if (!functionName) {
           return { status: 400, body: { error: { code: 'BAD_REQUEST', message: 'functionName query parameter is required' } } };
         }
-        const revs = deps.functionRegistry.listRevisions(functionName);
+        const revs = await deps.functionRegistry.listRevisions(ctx.requestContext.tenantId, functionName);
         return { status: 200, body: { data: revs.map(functionRevisionToRest) } };
       } catch (err) {
         return wrapErrorToRest(err, ctx.requestContext.traceId);
@@ -2806,7 +2876,7 @@ function generateFunctionLifecycleRoutes(deps: ApiDependencies): RestRoute[] {
         if (!deps.functionRegistry) {
           return { status: 503, body: { error: { code: 'NOT_CONFIGURED', message: 'Function registry is not configured' } } };
         }
-        const rev = deps.functionRegistry.publish(req.params['id']!);
+        const rev = await deps.functionRegistry.publish(ctx.requestContext.tenantId, req.params['id']!);
         return { status: 200, body: { data: functionRevisionToRest(rev) } };
       } catch (err) {
         return wrapErrorToRest(err, ctx.requestContext.traceId);
@@ -2823,11 +2893,11 @@ function generateFunctionLifecycleRoutes(deps: ApiDependencies): RestRoute[] {
         if (!deps.functionRegistry || !deps.functionExecutor) {
           return { status: 503, body: { error: { code: 'NOT_CONFIGURED', message: 'Function registry or executor is not configured' } } };
         }
-        const rev = deps.functionRegistry.getRevision(req.params['id']!);
+        const rev = await deps.functionRegistry.getRevision(ctx.requestContext.tenantId, req.params['id']!);
         if (!rev) return { status: 404, body: { error: { code: 'NOT_FOUND', message: 'Revision not found' } } };
         const fnType = deps.schema.functionTypes.find((f) => f.name === rev.functionName);
         if (!fnType) return { status: 404, body: { error: { code: 'NOT_FOUND', message: `FunctionType ${rev.functionName} not found` } } };
-        const result = await deps.functionRegistry.runTests(req.params['id']!, async (input) => {
+        const result = await deps.functionRegistry.runTests(ctx.requestContext.tenantId, req.params['id']!, async (input) => {
           const execResult = await deps.functionExecutor!.execute(
             rev.functionName,
             input,
@@ -2851,7 +2921,8 @@ function generateFunctionLifecycleRoutes(deps: ApiDependencies): RestRoute[] {
           return { status: 503, body: { error: { code: 'NOT_CONFIGURED', message: 'Function registry is not configured' } } };
         }
         const body = req.body as Record<string, unknown>;
-        const rev = deps.functionRegistry.rollback(
+        const rev = await deps.functionRegistry.rollback(
+          ctx.requestContext.tenantId,
           body['functionName'] as string,
           body['toRevisionId'] as string,
         );

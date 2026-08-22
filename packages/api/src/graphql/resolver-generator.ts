@@ -40,6 +40,7 @@ interface TimeSeriesQueryInput {
 import { DEFAULT_CONSENT_PURPOSE, DEFAULT_CONSENT_SUBJECT_TYPES, DEFAULT_PAGE_SIZE, isConsentSubjectType } from './types.js';
 import { resolvePagination, buildConnection, decodeCursor } from './pagination.js';
 import { paginateWithConsent } from '../consent-pagination.js';
+import { guardDirectWriteConsent } from '../consent-write-guard.js';
 import { createAltiusError, wrapError } from './errors.js';
 import { DEFAULT_AUDIT_READER_ROLES } from '../rest/audit-routes.js';
 import {
@@ -837,7 +838,7 @@ export function generateResolvers(
       args: { notificationId: string },
       ctx: ResolverContext,
     ) => {
-      await deps.notificationStore!.markRead(ctx.user.tenantId, args.notificationId);
+      await deps.notificationStore!.markRead(ctx.user.tenantId, ctx.user.id, args.notificationId);
       return true;
     };
 
@@ -1297,6 +1298,10 @@ function generateUpdateMutationResolver(
         }
       }
 
+      // Consent gate — the action pipeline checks consent before writing;
+      // the direct path must too, or revocation is meaningless for editors.
+      await guardDirectWriteConsent(deps, 'update', typeName, id, user, requestContext);
+
       const updated = await deps.objectManager.update(
         typeName,
         id,
@@ -1389,6 +1394,9 @@ function generateDeleteMutationResolver(
           traceId: requestContext.traceId,
         });
       }
+
+      // Consent gate — parity with the action pipeline; see guardDirectWriteConsent.
+      await guardDirectWriteConsent(deps, 'delete', typeName, id, user, requestContext);
 
       // Fetch-then-check for expectedVersion (SPI deleteObject has no expectedVersion)
       if (args.expectedVersion !== undefined && args.expectedVersion !== null) {
@@ -1851,6 +1859,9 @@ function generateMutationResolver(
       // caller decided on arrives as a reserved input field rather than an
       // If-Match header (the REST equivalent).
       const expectedVersion = args.input?.['_expectedVersion'];
+      // Checkpoint justification: reserved input field, same transport idea
+      // as `_expectedVersion`.
+      const justification = args.input?.['_justification'];
 
       const actionCtx: ActionContext = {
         requestContext,
@@ -1859,6 +1870,7 @@ function generateMutationResolver(
           consentSubjectId,
         } : {}),
         ...(typeof expectedVersion === 'number' ? { expectedVersion } : {}),
+        ...(typeof justification === 'string' ? { justification } : {}),
       };
 
       // Resolve manifest from registry — fail closed if not found
@@ -2854,7 +2866,7 @@ function generateFunctionLifecycleResolvers(
   ) => {
     try {
       if (!deps.functionRegistry) return null;
-      const rev = deps.functionRegistry.getRevision(args.id);
+      const rev = await deps.functionRegistry.getRevision(ctx.requestContext.tenantId, args.id);
       return rev ? functionRevisionToGraphQL(rev) : null;
     } catch (err) {
       throw wrapError(err, ctx.requestContext.traceId);
@@ -2869,7 +2881,7 @@ function generateFunctionLifecycleResolvers(
   ) => {
     try {
       if (!deps.functionRegistry) return [];
-      return deps.functionRegistry.listRevisions(args.functionName).map(functionRevisionToGraphQL);
+      return (await deps.functionRegistry.listRevisions(ctx.requestContext.tenantId, args.functionName)).map(functionRevisionToGraphQL);
     } catch (err) {
       throw wrapError(err, ctx.requestContext.traceId);
     }
@@ -2891,7 +2903,7 @@ function generateFunctionLifecycleResolvers(
           traceId: ctx.requestContext.traceId,
         });
       }
-      const rev = deps.functionRegistry.createDraft({
+      const rev = await deps.functionRegistry.createDraft({
         functionName: args.input['functionName'] as string,
         runtime: args.input['runtime'] as string,
         entry: args.input['entry'] as string,
@@ -2923,7 +2935,7 @@ function generateFunctionLifecycleResolvers(
           traceId: ctx.requestContext.traceId,
         });
       }
-      const rev = deps.functionRegistry.publish(args.id);
+      const rev = await deps.functionRegistry.publish(ctx.requestContext.tenantId, args.id);
       return functionRevisionToGraphQL(rev);
     } catch (err) {
       throw wrapError(err, ctx.requestContext.traceId);
@@ -2946,7 +2958,7 @@ function generateFunctionLifecycleResolvers(
           traceId: ctx.requestContext.traceId,
         });
       }
-      const rev = deps.functionRegistry.getRevision(args.id);
+      const rev = await deps.functionRegistry.getRevision(ctx.requestContext.tenantId, args.id);
       if (!rev) {
         throw createAltiusError({
           code: 'NOT_FOUND',
@@ -2966,7 +2978,7 @@ function generateFunctionLifecycleResolvers(
           traceId: ctx.requestContext.traceId,
         });
       }
-      const result = await deps.functionRegistry.runTests(args.id, async (input) => {
+      const result = await deps.functionRegistry.runTests(ctx.requestContext.tenantId, args.id, async (input) => {
         const execResult = await deps.functionExecutor!.execute(
           rev.functionName,
           input,
@@ -2995,7 +3007,7 @@ function generateFunctionLifecycleResolvers(
           traceId: ctx.requestContext.traceId,
         });
       }
-      const rev = deps.functionRegistry.rollback(args.functionName, args.toRevisionId);
+      const rev = await deps.functionRegistry.rollback(ctx.requestContext.tenantId, args.functionName, args.toRevisionId);
       return functionRevisionToGraphQL(rev);
     } catch (err) {
       throw wrapError(err, ctx.requestContext.traceId);

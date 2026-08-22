@@ -3,6 +3,8 @@
 **Status:** Draft
 **Date:** February 2026
 
+> **Document role (renewed 21 Aug 2026):** target engineering contract, not an implementation-status report. Clauses may lead or differ from the running code. Use [altius-foundry-parity.md](altius-foundry-parity.md), [audit/ALTIUS-BACKLOG.md](audit/ALTIUS-BACKLOG.md), and [audit/ALTIUS-BACKLOG-DONE.md](audit/ALTIUS-BACKLOG-DONE.md) for current evidence and gaps.
+
 ---
 
 ## 1. Overview

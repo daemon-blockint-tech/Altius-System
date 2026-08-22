@@ -178,6 +178,10 @@ export type {
   CreateScopedSessionInput,
 } from './security-governance.js';
 
+// Per-user marking memberships — runtime half of MAC; definitions stay pack-declared.
+export type { MarkingMembership, MarkingMembershipStore } from './marking-membership.js';
+export type { AgentHoldRecord, AgentHoldStore, HoldStatus, HoldRiskLevel, HoldAgentContext } from './agent-hold-store.js';
+
 // Ontology usage metrics
 export type {
   OntologyUsageMetricsService,
@@ -269,6 +273,10 @@ export type {
   CreateScheduleInput,
 } from './data-pipelines.js';
 
+// Data-expectation evaluation, shared so two providers cannot disagree about
+// whether a build gate passed.
+export { evaluateDataExpectation } from './data-expectation-engine.js';
+
 // Process mining and event objects
 export type {
   EventObjectService,
@@ -283,7 +291,9 @@ export type {
   ConformanceResult,
 } from './process-mining.js';
 
-// Business rules engine
+// Business rules engine — the DAG evaluator is shared by every provider, so
+// two of them cannot store the same rule and disagree about what it produces.
+export { executeBusinessRule, validateBusinessRule } from './business-rule-engine.js';
 export type {
   BusinessRulesService,
   BusinessRule,
@@ -362,6 +372,85 @@ export type {
   TransformKind,
   CreateTransformPipelineInput,
 } from './datasets.js';
+
+// Dataset row semantics shared by every DatasetService implementation, so the
+// in-memory and Postgres providers cannot drift on key derivation or filtering.
+export {
+  datasetRowKey,
+  datasetRowMatches,
+  datasetSortRows,
+  datasetProjectColumns,
+} from './dataset-rows.js';
+
+// Whether an event breaches its threshold is written onto the event, so the two
+// providers must not disagree about it — decided once, here.
+export { evaluateEventThreshold } from './event-thresholds.js';
+export type { EventThreshold, EventThresholdBreach } from './event-thresholds.js';
+
+// Applying a transform step is pure, and its output is *data* — two providers
+// that disagreed about what `round` or `dateDiff` means would produce different
+// values from the same pipeline with neither erring. So it is defined once.
+export { applyTransformStep } from './variable-transforms.js';
+
+// Which value wins a conflict is a pure function of the conflict and the
+// strategy, and its output is *data* — two providers that disagreed would write
+// different values into the same field and neither would error. So it is
+// decided once, here.
+export { resolveConflictValue, DEFAULT_CONFLICT_STRATEGY } from './conflict-resolution.js';
+
+// Cross-org ontology access is an authorization decision, so it is evaluated by
+// one shared function rather than once per provider. Two providers that
+// disagreed would mean one deployment granting access the other denies, with
+// neither looking wrong from where it stands.
+export { evaluateOntologyAccess } from './ontology-access.js';
+
+// The SQL parser and the query engine over datasets: both pure, so both live
+// here rather than in a provider. Two providers that disagreed about what a
+// WHERE clause meant would return different rows for the same SQL — a worse
+// failure than either being wrong alone, since neither would look broken.
+export { parseSql } from './sql-parser.js';
+export type { ParsedSqlAst } from './sql-parser.js';
+export { executeSqlQuery } from './sql-query-engine.js';
+export type { SqlQueryResult } from './sql-query-engine.js';
+
+// The ontology-SQL (SQL Studio) evaluator: a SELECT subset over object types,
+// pure and shared so both providers evaluate a query identically — and so
+// neither can reach raw tables. Reading the rows stays the provider's job.
+export { evaluateOntologySql, detectSqlObjectTypes, runOntologySql } from './ontology-sql-engine.js';
+export type { OntologySqlRow, OntologySqlEvalResult } from './ontology-sql-engine.js';
+
+// Function authoring lifecycle — durable revision persistence (FunctionRegistry
+// in @altius/engine holds the transition logic over this store).
+export type {
+  FunctionRevision,
+  FunctionRevisionStatus,
+  CreateFunctionRevisionInput,
+  FunctionRevisionStore,
+} from './function-revisions.js';
+
+// Shared AIP agent runtime — identical response behaviour across providers.
+export { generateAgentResponse } from './aip-agent-runtime.js';
+
+// Workshop platform over a document store — all 52 methods live once here;
+// providers supply only a four-method WorkshopDocStore.
+export { DocStoreWorkshopPlatformService, DEFAULT_WIDGET_CATALOG } from './workshop-doc-store.js';
+export type { WorkshopDocStore, WorkshopDocStoreOptions, IdGenerator } from './workshop-doc-store.js';
+
+// HumanInTheLoopService is a rename of ChangeProposalStore, not a store of its
+// own. Sharing one adapter is what lets the API hand the HITL surface and the
+// change-proposal surface the same store, so an approval recorded through one
+// is visible through the other.
+export { ChangeProposalHumanInTheLoop } from './human-in-the-loop.js';
+
+// Shared DatasetService refusals, so a create/not-found means the same thing
+// and carries the same status whichever provider is wired.
+export {
+  datasetAlreadyExistsError,
+  datasetNotFoundError,
+  datasetBranchExistsError,
+  datasetBranchNotFoundError,
+} from './dataset-contract.js';
+export type { CodedError } from './dataset-contract.js';
 
 // Enterprise connector catalog
 export type {

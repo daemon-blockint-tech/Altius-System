@@ -150,11 +150,13 @@ export class PostgresCommentStore implements CommentStore {
     }));
   }
 
-  async markNotificationRead(tenantId: string, notificationId: string): Promise<void> {
+  async markNotificationRead(tenantId: string, userId: string, notificationId: string): Promise<void> {
+    // Scoped to the recipient: another user's id (or a guessed notification id)
+    // matches no row and marks nothing.
     await this.pool.query(
       `UPDATE "comment"."comment_notifications" SET "read" = TRUE
-       WHERE "id" = $1 AND "tenant_id" = $2`,
-      [notificationId, tenantId],
+       WHERE "id" = $1 AND "tenant_id" = $2 AND "user_id" = $3`,
+      [notificationId, tenantId, userId],
     );
   }
 }

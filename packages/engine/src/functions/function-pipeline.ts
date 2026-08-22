@@ -130,7 +130,7 @@ export class FunctionPipeline {
       const source = await this.gitSource.readFile(repoId, config.entry);
 
       // Create a draft revision
-      const rev = this.registry.createDraft({
+      const rev = await this.registry.createDraft({
         functionName: config.functionName,
         runtime: config.runtime,
         entry: config.entry,
@@ -149,7 +149,7 @@ export class FunctionPipeline {
         throw new Error(`FunctionType ${config.functionName} not found in schema`);
       }
 
-      testResult = await this.registry.runTests(rev.id, async (input) => {
+      testResult = await this.registry.runTests('pipeline', rev.id, async (input) => {
         const execResult = await this.executor.execute(config.functionName, input);
         return execResult.result;
       });
@@ -172,7 +172,7 @@ export class FunctionPipeline {
       // Stage 4: Publish
       if (config.publishOnSuccess !== false) {
         stage = 'publish';
-        const published = this.registry.publish(rev.id);
+        const published = await this.registry.publish('pipeline', rev.id);
         revisionId = published.id;
       }
 

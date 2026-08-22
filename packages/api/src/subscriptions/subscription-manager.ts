@@ -13,6 +13,7 @@ import type { EventBus } from '@altius/engine';
 import type { AuthenticatedUserInfo, ResolverContext } from '../graphql/types.js';
 import { DEFAULT_CONSENT_PURPOSE, isConsentSubjectType } from '../graphql/types.js';
 import { lowerFirst, toSnakeCase } from '../utils.js';
+import { isTypeVisible } from '../markings/enforce.js';
 import { objectToGraphQL } from '../graphql/object-shape.js';
 import { logger } from '../logger.js';
 
@@ -467,6 +468,13 @@ export function createIdFilteredSubscription(
         // whenever the two tenants happen to share an object id.
         if (!event.tenantId || event.tenantId !== tenantId) return false;
 
+        // Markings (MAC), before authorization — same order and discovery-hiding
+        // as every pull surface. A subscriber lacking the object type's markings
+        // must not learn it exists or changed, even if it holds `viewer`. Without
+        // this the push surface was the one place a marked type leaked existence
+        // and change timing.
+        if (!isTypeVisible(ctx?.deps?.markingPolicy, ctx?.user, event.object._type)) return false;
+
         // Authorize: check viewer access on the specific object
         const fgaType = toSnakeCase(event.object._type);
         const allowed = await authzService.check(
@@ -564,6 +572,13 @@ export function createFilteredSubscription(
         // subscriber's OWN store and therefore approves another tenant's event
         // whenever the two tenants happen to share an object id.
         if (!event.tenantId || event.tenantId !== tenantId) return false;
+
+        // Markings (MAC), before authorization — same order and discovery-hiding
+        // as every pull surface. A subscriber lacking the object type's markings
+        // must not learn it exists or changed, even if it holds `viewer`. Without
+        // this the push surface was the one place a marked type leaked existence
+        // and change timing.
+        if (!isTypeVisible(ctx?.deps?.markingPolicy, ctx?.user, event.object._type)) return false;
 
         // Authorize: check viewer access on the specific object
         const fgaType = toSnakeCase(event.object._type);

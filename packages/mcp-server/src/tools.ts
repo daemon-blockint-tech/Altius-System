@@ -292,6 +292,13 @@ function buildActionTool(actionType: ActionType): McpTool {
     description: 'Validate and evaluate preconditions without committing any change.',
   };
 
+  // Checkpoint justification — reserved name, stripped before validation.
+  // Required (non-blank) when the action's manifest declares requiresJustification.
+  properties['_justification'] = {
+    type: 'string',
+    description: 'Stated reason for running this action. Required when the action declares requiresJustification.',
+  };
+
   return {
     name: actionType.name,
     description: actionType.description ?? `Execute ${actionType.name} action`,
@@ -865,6 +872,72 @@ async function invokeActionTool(
   // and shadow it.
   const dryRun = params['dryRun'] === true;
   if ('dryRun' in params) delete params['dryRun'];
+
+  // Checkpoint justification: reserved field, carried on the context, never a param.
+  const justification = params['_justification'];
+  if ('_justification' in params) delete params['_justification'];
+  if (typeof justification === 'string') {
+    actionCtx.justification = justification;
+  }
+
+  // Reserved like dryRun/_justification: stripped before validation.
+  const holdId = params['_holdId'];
+  if ('_holdId' in params) delete params['_holdId'];
+
+  // Human-in-the-loop hold for high-risk actions — the agent-grade control on
+  // top of the human-grade pipeline (authz/consent/preconditions still run
+  // below). Dry-run passes without a hold: it commits nothing.
+  if (!dryRun && deps.policyGuard && deps.highRiskActions?.has(actionType.name)) {
+    const guard = deps.policyGuard;
+    if (typeof holdId === 'string' && holdId.length > 0) {
+      const hold = await guard.getHold(holdId);
+      const approved = hold !== null &&
+        hold.actionName === actionType.name &&
+        hold.agentContext.agentId === user.id &&
+        hold.agentContext.tenantId === user.tenantId &&
+        await guard.isApproved(holdId);
+      const valid = approved;
+      if (!valid) {
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: false,
+              errors: [{
+                code: 'HOLD_NOT_APPROVED',
+                message: `Hold ${holdId} does not authorize ${actionType.name} for this agent — it may be pending, rejected, expired, already used, or belong to a different action, agent, or tenant. Ask a reviewer to approve the hold, then retry once with _holdId.`,
+              }],
+            }),
+          }],
+          isError: true,
+        };
+      }
+      await guard.consume(holdId);
+    } else {
+      const verdict = await guard.evaluate(actionType.name, 'high', {
+        agentId: user.id,
+        dryRun: false,
+        tenantId: user.tenantId,
+        ...(requestContext.traceId ? { sessionId: requestContext.traceId } : {}),
+      });
+      if (!verdict.allowed) {
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: false,
+              holdId: verdict.holdId,
+              errors: [{
+                code: 'POLICY_HOLD',
+                message: verdict.reason ?? `${actionType.name} is held for human approval. Retry with _holdId once a reviewer approves hold ${verdict.holdId}.`,
+              }],
+            }),
+          }],
+          isError: true,
+        };
+      }
+    }
+  }
 
   const result: ActionResult = await deps.actionExecutor.execute(
     manifest,

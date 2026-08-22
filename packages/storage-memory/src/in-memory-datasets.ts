@@ -6,6 +6,16 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import {
+  datasetRowKey,
+  datasetRowMatches as matchesFilter,
+  datasetSortRows as sortRows,
+  datasetProjectColumns as projectColumns,
+  datasetAlreadyExistsError,
+  datasetNotFoundError,
+  datasetBranchExistsError,
+  datasetBranchNotFoundError,
+} from '@altius/spi';
 import type {
   DatasetService,
   Dataset,
@@ -34,72 +44,25 @@ interface DatasetState {
   branchRows: Map<string, Map<string, Record<string, unknown>>>;
 }
 
+/**
+ * Row identity within a branch. A schema with no primary key yields a fresh
+ * UUID per row, so those datasets are append-only and never upsert.
+ */
 function pkOf(schema: DatasetSchema, row: Record<string, unknown>): string {
-  if (schema.primaryKey && schema.primaryKey.length > 0) {
-    return schema.primaryKey.map(k => String(row[k] ?? '')).join('\u0000');
-  }
-  return randomUUID();
-}
-
-function matchesFilter(row: Record<string, unknown>, filter?: Record<string, unknown>): boolean {
-  if (!filter) return true;
-  for (const [field, cond] of Object.entries(filter)) {
-    if (cond === null || cond === undefined) continue;
-    if (typeof cond === 'object' && !Array.isArray(cond)) {
-      const c = cond as Record<string, unknown>;
-      for (const [op, val] of Object.entries(c)) {
-        const rv = row[field];
-        switch (op) {
-          case 'eq': if (rv !== val) return false; break;
-          case 'neq': if (rv === val) return false; break;
-          case 'gt': if (!(typeof rv === 'number' && typeof val === 'number' && rv > val)) return false; break;
-          case 'gte': if (!(typeof rv === 'number' && typeof val === 'number' && rv >= val)) return false; break;
-          case 'lt': if (!(typeof rv === 'number' && typeof val === 'number' && rv < val)) return false; break;
-          case 'lte': if (!(typeof rv === 'number' && typeof val === 'number' && rv <= val)) return false; break;
-          case 'in': if (!Array.isArray(val) || !val.includes(rv)) return false; break;
-          case 'contains': if (typeof rv !== 'string' || typeof val !== 'string' || !rv.includes(val)) return false; break;
-          case 'startsWith': if (typeof rv !== 'string' || typeof val !== 'string' || !rv.startsWith(val)) return false; break;
-        }
-      }
-    } else {
-      // shorthand: { field: value } → equality
-      if (row[field] !== cond) return false;
-    }
-  }
-  return true;
-}
-
-function sortRows(rows: Record<string, unknown>[], orderBy?: { field: string; direction: 'asc' | 'desc' }[]): Record<string, unknown>[] {
-  if (!orderBy || orderBy.length === 0) return rows;
-  const sorted = [...rows];
-  for (const { field, direction } of [...orderBy].reverse()) {
-    sorted.sort((a, b) => {
-      const av = a[field];
-      const bv = b[field];
-      if (av === bv) return 0;
-      if (av === null || av === undefined) return direction === 'asc' ? -1 : 1;
-      if (bv === null || bv === undefined) return direction === 'asc' ? 1 : -1;
-      if (typeof av === 'number' && typeof bv === 'number') return direction === 'asc' ? av - bv : bv - av;
-      const cmp = String(av).localeCompare(String(bv));
-      return direction === 'asc' ? cmp : -cmp;
-    });
-  }
-  return sorted;
-}
-
-function projectColumns(rows: Record<string, unknown>[], columns?: string[]): Record<string, unknown>[] {
-  if (!columns || columns.length === 0) return rows;
-  return rows.map(r => {
-    const out: Record<string, unknown> = {};
-    for (const c of columns) out[c] = r[c];
-    return out;
-  });
+  return datasetRowKey(schema, row) ?? randomUUID();
 }
 
 export class InMemoryDatasetService implements DatasetService {
   private readonly datasets = new Map<string, Map<string, DatasetState>>();
 
   async create(ctx: RequestContext, input: CreateDatasetInput): Promise<Dataset> {
+    // This used to overwrite an existing dataset of the same name, dropping its
+    // rows and transaction log. Harmless-looking against a Map, unrecoverable
+    // against Postgres — so `create` refuses in both providers rather than
+    // meaning something different depending on which one is wired.
+    if (this.datasets.get(ctx.tenantId)?.has(input.name)) {
+      throw datasetAlreadyExistsError(input.name);
+    }
     const branch = input.branch ?? 'main';
     const id = randomUUID();
     const now = new Date().toISOString();
@@ -345,7 +308,7 @@ export class InMemoryDatasetService implements DatasetService {
 
   async createBranch(ctx: RequestContext, name: string, branchName: string, fromTransactionId?: string): Promise<DatasetBranch> {
     const state = this.getState(ctx.tenantId, name);
-    if (state.branches.has(branchName)) throw new Error(`Branch already exists: ${branchName}`);
+    if (state.branches.has(branchName)) throw datasetBranchExistsError(branchName);
     const parentBranch = state.dataset.branch;
     const parentTxId = fromTransactionId ?? state.dataset.latestTransactionId;
     // Snapshot current rows
@@ -372,8 +335,8 @@ export class InMemoryDatasetService implements DatasetService {
   async mergeBranch(ctx: RequestContext, name: string, sourceBranch: string, targetBranch?: string): Promise<{ transactionsApplied: number; mergedAt: string }> {
     const state = this.getState(ctx.tenantId, name);
     const target = targetBranch ?? 'main';
-    if (!state.branches.has(sourceBranch)) throw new Error(`Source branch not found: ${sourceBranch}`);
-    if (!state.branches.has(target)) throw new Error(`Target branch not found: ${target}`);
+    if (!state.branches.has(sourceBranch)) throw datasetBranchNotFoundError('Source', sourceBranch);
+    if (!state.branches.has(target)) throw datasetBranchNotFoundError('Target', target);
     const sourceRows = state.branchRows.get(sourceBranch) ?? new Map();
     const sourceTxs = state.branchTransactions.get(sourceBranch) ?? [];
     const targetRows = state.branchRows.get(target) ?? new Map();
@@ -400,7 +363,7 @@ export class InMemoryDatasetService implements DatasetService {
 
   private getState(tenantId: string, name: string): DatasetState {
     const state = this.datasets.get(tenantId)?.get(name);
-    if (!state) throw new Error(`Dataset not found: ${name}`);
+    if (!state) throw datasetNotFoundError(name);
     return state;
   }
 

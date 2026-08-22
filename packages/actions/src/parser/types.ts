@@ -157,6 +157,21 @@ export interface ActionManifest {
   reversible: boolean;
   /** CEL expressions that must evaluate to true before execution. */
   preconditions: Precondition[];
+  /**
+   * Platform roles allowed to execute an action that has no ObjectType @param
+   * (nothing for ReBAC to check a relation against). The ReBAC bridge denies
+   * such actions unless the caller holds one of these roles — absent or empty
+   * means nobody, mirroring FunctionType.requiredRoles. Ignored for actions
+   * with an ObjectType @param, which are gated by their FGA relation instead.
+   */
+  requiredRoles?: string[];
+  /**
+   * Checkpoint declaration: when true, the executor refuses to run the
+   * action unless the caller supplies a non-empty justification via the
+   * reserved `_justification` input field; the text is captured to the
+   * JustificationStore before effects run and stamped into the audit record.
+   */
+  requiresJustification?: boolean;
   /** Sequential mutations applied within a single transaction. */
   effects: ActionEffect[];
   /** Async operations triggered after effects commit. */

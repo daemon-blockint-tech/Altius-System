@@ -26,8 +26,10 @@
     "@altius/spi": "workspace:*"
   },
   "devDependencies": {
+    "@altius/engine": "workspace:*",
     "@altius/storage-memory": "workspace:*",
     "@altius/storage-postgres": "workspace:*",
+    "@altius/sync": "workspace:*",
     "@types/node": "^22.0.0",
     "vitest": "^3.0.0"
   }

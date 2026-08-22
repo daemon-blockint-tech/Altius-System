@@ -25,11 +25,15 @@ function schemaWith(...names: string[]): ParsedSchema {
   return { actionTypes: names.map(actionType) } as unknown as ParsedSchema;
 }
 
-function registry(manifests: Record<string, { expr: string }[]>): ManifestRegistry {
+function registry(
+  manifests: Record<string, { preconditions?: { expr: string }[]; requiredRoles?: string[] }>,
+): ManifestRegistry {
   return {
     get(action: string) {
-      const preconditions = manifests[action];
-      return preconditions ? ({ preconditions } as never) : undefined;
+      const entry = manifests[action];
+      return entry
+        ? ({ preconditions: entry.preconditions ?? [], requiredRoles: entry.requiredRoles } as never)
+        : undefined;
     },
   } as ManifestRegistry;
 }
@@ -44,11 +48,11 @@ describe('assertActionAuthzCoverage', () => {
     vi.restoreAllMocks();
   });
 
-  it('throws when an object-less action has no preconditions at all', () => {
+  it('throws when an object-less action declares no requiredRoles', () => {
     expect(() =>
       assertActionAuthzCoverage(
         schemaWith('PurgeEverything'),
-        registry({ PurgeEverything: [] }),
+        registry({ PurgeEverything: {} }),
         NO_MAPPINGS,
         false,
       ),
@@ -59,19 +63,19 @@ describe('assertActionAuthzCoverage', () => {
     expect(() =>
       assertActionAuthzCoverage(
         schemaWith('PurgeEverything'),
-        registry({ PurgeEverything: [] }),
+        registry({ PurgeEverything: {} }),
         NO_MAPPINGS,
         true,
       ),
     ).not.toThrow();
   });
 
-  it('accepts an object-less action gated by a role precondition', () => {
+  it('accepts an object-less action that declares requiredRoles', () => {
     expect(() =>
       assertActionAuthzCoverage(
         schemaWith('RegisterPatient'),
         registry({
-          RegisterPatient: [{ expr: "actor.hasRole('receptionist') || actor.hasRole('clinician')" }],
+          RegisterPatient: { requiredRoles: ['receptionist', 'clinician'] },
         }),
         NO_MAPPINGS,
         false,
@@ -79,15 +83,15 @@ describe('assertActionAuthzCoverage', () => {
     ).not.toThrow();
   });
 
-  it('warns but does not block when preconditions gate data rather than the caller', () => {
+  it('throws when preconditions exist but no requiredRoles are declared — preconditions are not the gate', () => {
     expect(() =>
       assertActionAuthzCoverage(
         schemaWith('CreateOrder'),
-        registry({ CreateOrder: [{ expr: 'params.quantity > 0' }] }),
+        registry({ CreateOrder: { preconditions: [{ expr: 'params.quantity > 0' }] } }),
         NO_MAPPINGS,
         false,
       ),
-    ).not.toThrow();
+    ).toThrow(/CreateOrder/);
   });
 
   it('ignores actions the ReBAC layer already gates via an ObjectType param', () => {
@@ -98,7 +102,7 @@ describe('assertActionAuthzCoverage', () => {
     expect(() =>
       assertActionAuthzCoverage(
         schemaWith('AdmitPatient'),
-        registry({ AdmitPatient: [] }),
+        registry({ AdmitPatient: {} }),
         mapped,
         false,
       ),

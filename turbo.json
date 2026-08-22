@@ -9,7 +9,8 @@
     "test": {
       "dependsOn": ["build"],
       "outputs": ["coverage/**"],
-      "cache": false
+      "cache": false,
+      "env": ["PG_TEST_URL", "REQUIRE_PG"]
     },
     "lint": {
       "dependsOn": [],

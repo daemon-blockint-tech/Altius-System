@@ -71,6 +71,8 @@ export {
   IsolatedNodeFunctionRuntime,
   type IsolatedNodeRuntimeConfig,
   FunctionRegistry,
+  InMemoryFunctionRevisionStore,
+  type FunctionRevisionStore,
   type FunctionRevision,
   type FunctionRevisionStatus,
   type CreateFunctionRevisionInput,

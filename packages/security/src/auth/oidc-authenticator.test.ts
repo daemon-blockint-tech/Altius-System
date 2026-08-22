@@ -54,6 +54,10 @@ function createAuthenticator(overrides?: {
   tenantClaim?: string;
   defaultTenantId?: string;
   roleMapping?: { claimName: string; mappings: Record<string, string> };
+  scopedSessionResolver?: (
+    tenantId: string,
+    userId: string,
+  ) => Promise<{ allowedMarkings: string[]; excludedMarkings?: string[] } | null>;
 }): OidcAuthenticator {
   const auth = new OidcAuthenticator();
   auth.configure({
@@ -332,6 +336,46 @@ describe("OidcAuthenticator", () => {
 
       const user = await auth.authenticate(token);
       expect(user.roles).toEqual(["clinician"]);
+    });
+  });
+
+  describe("scoped session enforcement", () => {
+    const MARKED_CLAIMS = {
+      sub: "user-9",
+      tenant_id: "tenant-a",
+      markings: ["SECRET", "TOPSECRET", "PII"],
+    };
+
+    it("restricts effective markings to the active session subset, minus exclusions", async () => {
+      const seen: string[] = [];
+      const auth = createAuthenticator({
+        scopedSessionResolver: async (tenantId, userId) => {
+          seen.push(tenantId, userId);
+          return { allowedMarkings: ["SECRET", "PII"], excludedMarkings: ["PII"] };
+        },
+      });
+
+      const user = await auth.authenticate(await signToken(MARKED_CLAIMS));
+      expect(user.markings).toEqual(["SECRET"]);
+      expect(seen).toEqual(["tenant-a", "user-9"]);
+    });
+
+    it("leaves markings untouched when the caller has no active session", async () => {
+      const auth = createAuthenticator({ scopedSessionResolver: async () => null });
+
+      const user = await auth.authenticate(await signToken(MARKED_CLAIMS));
+      expect(user.markings).toEqual(["SECRET", "TOPSECRET", "PII"]);
+    });
+
+    it("fails closed to zero markings when the resolver errors", async () => {
+      const auth = createAuthenticator({
+        scopedSessionResolver: async () => {
+          throw new Error("session store down");
+        },
+      });
+
+      const user = await auth.authenticate(await signToken(MARKED_CLAIMS));
+      expect(user.markings).toEqual([]);
     });
   });
 });

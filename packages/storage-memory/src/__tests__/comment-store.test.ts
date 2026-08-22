@@ -163,7 +163,11 @@ describe('InMemoryCommentStore', () => {
     await store.createComment({ tenantId: 'test', objectType: 'Patient', objectId: 'p-1', parentCommentId: null, body: 'Hey @alice', authorId: 'user-1' });
     const notifs = await store.getNotifications('test', 'alice');
     const id = notifs[0]!.id;
-    await store.markNotificationRead('test', id);
+    // Another user cannot mark alice's notification read.
+    await store.markNotificationRead('test', 'mallory', id);
+    expect((await store.getNotifications('test', 'alice'))[0]!.read).toBe(false);
+    // The recipient can.
+    await store.markNotificationRead('test', 'alice', id);
     const updated = await store.getNotifications('test', 'alice');
     expect(updated[0]!.read).toBe(true);
   });
@@ -171,7 +175,7 @@ describe('InMemoryCommentStore', () => {
   it('filters unread notifications', async () => {
     await store.createComment({ tenantId: 'test', objectType: 'Patient', objectId: 'p-1', parentCommentId: null, body: 'Hey @alice', authorId: 'user-1' });
     const notifs = await store.getNotifications('test', 'alice');
-    await store.markNotificationRead('test', notifs[0]!.id);
+    await store.markNotificationRead('test', 'alice', notifs[0]!.id);
 
     const unread = await store.getNotifications('test', 'alice', true);
     expect(unread).toHaveLength(0);

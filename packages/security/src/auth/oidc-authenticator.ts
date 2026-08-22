@@ -44,6 +44,8 @@ export class OidcAuthenticator {
   private markingsClaim: string = "markings";
   private defaultTenantId: string | null = null;
   private roleMapping: RoleMappingConfig = DEFAULT_ROLE_MAPPING;
+  private scopedSessionResolver: OidcConfig["scopedSessionResolver"];
+  private markingMembershipResolver: OidcConfig["markingMembershipResolver"];
 
   /**
    * Configure the authenticator with OIDC provider settings.
@@ -58,6 +60,8 @@ export class OidcAuthenticator {
     this.tenantClaim = config.tenantClaim ?? "tenant_id";
     this.markingsClaim = config.markingsClaim ?? "markings";
     this.defaultTenantId = config.defaultTenantId ?? null;
+    this.scopedSessionResolver = config.scopedSessionResolver;
+    this.markingMembershipResolver = config.markingMembershipResolver;
 
     if (config.roleMapping) {
       this.roleMapping = config.roleMapping;
@@ -94,8 +98,43 @@ export class OidcAuthenticator {
       }
 
       const claims = result.payload;
-      return this.extractUser(claims);
+      return this.applyScopedSession(this.extractUser(claims));
     });
+  }
+
+  /**
+   * Restrict the caller's effective markings to their active scoped session
+   * (Foundry: a scoped session limits a session to a subset of the user's
+   * markings). No resolver configured or no active session = markings pass
+   * through unchanged. A resolver failure fails closed: we cannot know the
+   * restriction, so the caller gets no markings rather than all of them —
+   * only marked resources are affected, everything unmarked still works.
+   */
+  private async applyScopedSession(user: AuthenticatedUser): Promise<AuthenticatedUser> {
+    // Union store-administered memberships FIRST — the store adds, never
+    // subtracts, so an error here degrades to token claims (logged upstream
+    // by the resolver), not to zero markings.
+    if (this.markingMembershipResolver) {
+      try {
+        const granted = await this.markingMembershipResolver(user.tenantId, user.id);
+        if (granted.length > 0) {
+          user = { ...user, markings: [...new Set([...(user.markings ?? []), ...granted])] };
+        }
+      } catch {
+        // additive source unavailable → proceed with token claims alone
+      }
+    }
+    if (!this.scopedSessionResolver) return user;
+    try {
+      const session = await this.scopedSessionResolver(user.tenantId, user.id);
+      if (!session) return user;
+      const allowed = new Set(session.allowedMarkings);
+      const excluded = new Set(session.excludedMarkings ?? []);
+      const markings = (user.markings ?? []).filter((m) => allowed.has(m) && !excluded.has(m));
+      return { ...user, markings };
+    } catch {
+      return { ...user, markings: [] };
+    }
   }
 
   /**

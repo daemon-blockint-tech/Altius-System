@@ -13,6 +13,7 @@
  *   GET    /api/v1/security/sessions/:id/check    — check marking allowed
  */
 
+import type { HoldStatus } from '@altius/actions';
 import type { ApiDependencies, ResolverContext } from '../graphql/types.js';
 import type { RestRequest, RestResponse, RestRoute } from './types.js';
 import { createRestErrorResponse, wrapErrorToRest } from './errors.js';
@@ -23,6 +24,22 @@ import { createRestErrorResponse, wrapErrorToRest } from './errors.js';
  * permissions, so it is an administrative read.
  */
 export const DEFAULT_SIMULATION_ROLES = ['admin'] as const;
+
+/**
+ * Roles allowed to manage scoped sessions beyond self-service. A scoped
+ * session RESTRICTS its subject's effective markings (enforced at the auth
+ * funnel), so cross-user create is a denial-of-access on the victim and
+ * revoke of an admin-imposed session is the subject's escape hatch — both
+ * administrative writes. Mirrors the audit-reader default.
+ */
+export const DEFAULT_SCOPED_SESSION_ADMIN_ROLES = ['admin'] as const;
+
+/**
+ * Roles allowed to review agent holds (list/approve/reject). A decision here
+ * releases (or blocks) a high-risk agent write, so it is admin-tier by
+ * default. Env: AGENT_HOLD_APPROVER_ROLES; empty = nobody.
+ */
+export const DEFAULT_AGENT_HOLD_APPROVER_ROLES = ['admin'] as const;
 
 export function generateSecurityGovernanceRoutes(deps: ApiDependencies): RestRoute[] {
   const routes: RestRoute[] = [];
@@ -191,6 +208,9 @@ export function generateSecurityGovernanceRoutes(deps: ApiDependencies): RestRou
 
   if (deps.scopedSessionStore) {
     const store = deps.scopedSessionStore;
+    const sessionAdminRoles = deps.scopedSessionAdminRoles ?? DEFAULT_SCOPED_SESSION_ADMIN_ROLES;
+    const isSessionAdmin = (ctx: ResolverContext): boolean =>
+      sessionAdminRoles.some(role => ctx.user.roles.includes(role));
 
     routes.push({
       method: 'POST',
@@ -204,6 +224,19 @@ export function generateSecurityGovernanceRoutes(deps: ApiDependencies): RestRou
             return createRestErrorResponse({
               code: 'MISSING_PARAMETER', category: 'validation',
               message: 'userId and label are required', retryable: false,
+              traceId: ctx.requestContext.traceId,
+            });
+          }
+          // Self-service stays open (Foundry: users pick their own session);
+          // restricting ANOTHER user's markings is an administrative write.
+          if (userId !== ctx.user.id && !isSessionAdmin(ctx)) {
+            return createRestErrorResponse({
+              code: 'FORBIDDEN',
+              category: 'authorization',
+              message: sessionAdminRoles.length === 0
+                ? 'Creating a scoped session for another user is disabled: no session-admin role is configured.'
+                : `Creating a scoped session for another user requires one of: ${sessionAdminRoles.join(', ')}`,
+              retryable: false,
               traceId: ctx.requestContext.traceId,
             });
           }
@@ -231,7 +264,10 @@ export function generateSecurityGovernanceRoutes(deps: ApiDependencies): RestRou
       readOperation: 'query',
       handler: async (req: RestRequest, ctx: ResolverContext): Promise<RestResponse> => {
         try {
-          const userId = typeof req.query['userId'] === 'string' ? req.query['userId'] : undefined;
+          // Non-admins see only their own sessions: metadata names markings a
+          // user holds, which is administrative information about them.
+          const requested = typeof req.query['userId'] === 'string' ? req.query['userId'] : undefined;
+          const userId = isSessionAdmin(ctx) ? requested : ctx.user.id;
           const sessions = await store.list(ctx.requestContext.tenantId, userId);
           return { status: 200, body: { data: sessions } };
         } catch (err) {
@@ -247,7 +283,11 @@ export function generateSecurityGovernanceRoutes(deps: ApiDependencies): RestRou
       handler: async (req: RestRequest, ctx: ResolverContext): Promise<RestResponse> => {
         try {
           const session = await store.get(ctx.requestContext.tenantId, req.params['id'] ?? '');
-          if (!session) return { status: 404, body: { error: 'NOT_FOUND', message: 'Scoped session not found' } };
+          // 404 (not 403) for sessions the caller may not see: a distinct
+          // status would confirm the id exists — an enumeration oracle.
+          if (!session || (session.userId !== ctx.user.id && session.createdBy !== ctx.user.id && !isSessionAdmin(ctx))) {
+            return { status: 404, body: { error: 'NOT_FOUND', message: 'Scoped session not found' } };
+          }
           return { status: 200, body: { data: session } };
         } catch (err) {
           return wrapErrorToRest(err, ctx.requestContext.traceId);
@@ -260,7 +300,25 @@ export function generateSecurityGovernanceRoutes(deps: ApiDependencies): RestRou
       pattern: '/api/v1/security/sessions/:id/revoke',
       handler: async (req: RestRequest, ctx: ResolverContext): Promise<RestResponse> => {
         try {
-          await store.revoke(ctx.requestContext.tenantId, req.params['id'] ?? '');
+          const session = await store.get(ctx.requestContext.tenantId, req.params['id'] ?? '');
+          if (!session || (session.userId !== ctx.user.id && session.createdBy !== ctx.user.id && !isSessionAdmin(ctx))) {
+            return { status: 404, body: { error: 'NOT_FOUND', message: 'Scoped session not found' } };
+          }
+          // Revoking lifts the restriction. Only the creator (undoing their
+          // own self-service session) or a session admin may do that — the
+          // session's SUBJECT must not be able to shed an imposed restriction.
+          if (session.createdBy !== ctx.user.id && !isSessionAdmin(ctx)) {
+            return createRestErrorResponse({
+              code: 'FORBIDDEN',
+              category: 'authorization',
+              message: sessionAdminRoles.length === 0
+                ? 'Revoking this scoped session is disabled: no session-admin role is configured.'
+                : `Revoking a scoped session you did not create requires one of: ${sessionAdminRoles.join(', ')}`,
+              retryable: false,
+              traceId: ctx.requestContext.traceId,
+            });
+          }
+          await store.revoke(ctx.requestContext.tenantId, session.id);
           return { status: 200, body: { data: { revoked: true } } };
         } catch (err) {
           return wrapErrorToRest(err, ctx.requestContext.traceId);
@@ -282,13 +340,86 @@ export function generateSecurityGovernanceRoutes(deps: ApiDependencies): RestRou
               traceId: ctx.requestContext.traceId,
             });
           }
-          const allowed = await store.isMarkingAllowed(ctx.requestContext.tenantId, req.params['id'] ?? '', marking);
+          const session = await store.get(ctx.requestContext.tenantId, req.params['id'] ?? '');
+          if (!session || (session.userId !== ctx.user.id && session.createdBy !== ctx.user.id && !isSessionAdmin(ctx))) {
+            return { status: 404, body: { error: 'NOT_FOUND', message: 'Scoped session not found' } };
+          }
+          const allowed = await store.isMarkingAllowed(ctx.requestContext.tenantId, session.id, marking);
           return { status: 200, body: { data: { allowed } } };
         } catch (err) {
           return wrapErrorToRest(err, ctx.requestContext.traceId);
         }
       },
     });
+  }
+
+  // ── Agent holds: reviewer surface for human-in-the-loop agent writes ──
+  //
+  // The MCP server creates a hold when an agent calls a high-risk action;
+  // these routes are how a human sees and decides it. Same guard instance —
+  // an approval recorded here is what the agent's _holdId retry checks.
+
+  if (deps.agentHoldGuard) {
+    const guard = deps.agentHoldGuard;
+    const approverRoles = deps.agentHoldApproverRoles ?? DEFAULT_AGENT_HOLD_APPROVER_ROLES;
+    const approverGate = (ctx: ResolverContext): RestResponse | null => {
+      if (approverRoles.some(role => ctx.user.roles.includes(role))) return null;
+      return createRestErrorResponse({
+        code: 'FORBIDDEN',
+        category: 'authorization',
+        message: approverRoles.length === 0
+          ? 'Agent-hold review is disabled: no approver role is configured.'
+          : `Reviewing agent holds requires one of: ${approverRoles.join(', ')}`,
+        retryable: false,
+        traceId: ctx.requestContext.traceId,
+      });
+    };
+    // Holds are tenant-scoped through the agent context stamped at creation.
+    // A hold with no tenant matches no reviewer — fail closed, not shared.
+    const inTenant = (ctx: ResolverContext) => (h: { agentContext: { tenantId?: string } }) =>
+      h.agentContext.tenantId === ctx.requestContext.tenantId;
+
+    routes.push({
+      method: 'GET',
+      pattern: '/api/v1/agent-holds',
+      readOperation: 'query',
+      handler: async (req: RestRequest, ctx: ResolverContext): Promise<RestResponse> => {
+        const denied = approverGate(ctx);
+        if (denied) return denied;
+        const status = typeof req.query['status'] === 'string' ? req.query['status'] as HoldStatus : undefined;
+        const holds = (await guard.listHolds(status)).filter(inTenant(ctx));
+        return { status: 200, body: { data: holds } };
+      },
+    });
+
+    for (const decision of ['approve', 'reject'] as const) {
+      routes.push({
+        method: 'POST',
+        pattern: `/api/v1/agent-holds/:id/${decision}`,
+        handler: async (req: RestRequest, ctx: ResolverContext): Promise<RestResponse> => {
+          const denied = approverGate(ctx);
+          if (denied) return denied;
+          const id = req.params['id'] ?? '';
+          const hold = await guard.getHold(id);
+          if (!hold || !inTenant(ctx)(hold)) {
+            return { status: 404, body: { error: 'NOT_FOUND', message: 'Agent hold not found' } };
+          }
+          try {
+            const body = (req.body ?? {}) as Record<string, unknown>;
+            const decided = decision === 'approve'
+              ? await guard.approve(id, ctx.user.id)
+              : await guard.reject(id, ctx.user.id, typeof body['reason'] === 'string' ? body['reason'] : undefined);
+            return { status: 200, body: { data: decided } };
+          } catch (err) {
+            // Guard throws on non-pending/expired holds: a state conflict, not a 500.
+            return {
+              status: 409,
+              body: { error: 'CONFLICT', message: err instanceof Error ? err.message : 'Hold is not decidable' },
+            };
+          }
+        },
+      });
+    }
   }
 
   return routes;

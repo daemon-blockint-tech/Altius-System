@@ -45,7 +45,7 @@ export function registerNotificationRoutes(
   app.post('/api/v1/notifications/:id/read', async (req, res) => {
     try {
       const user = await extractUser(req, authenticator, isDev);
-      await store.markRead(user.tenantId, req.params['id']!);
+      await store.markRead(user.tenantId, user.id, req.params['id']!);
       res.status(200).json({ read: true });
     } catch (err) {
       res.status(500).json({ error: 'INTERNAL', message: err instanceof Error ? err.message : 'Failed' });
@@ -67,7 +67,7 @@ export function registerNotificationRoutes(
   app.delete('/api/v1/notifications/:id', async (req, res) => {
     try {
       const user = await extractUser(req, authenticator, isDev);
-      await store.delete(user.tenantId, req.params['id']!);
+      await store.delete(user.tenantId, user.id, req.params['id']!);
       res.status(204).send();
     } catch (err) {
       res.status(500).json({ error: 'INTERNAL', message: err instanceof Error ? err.message : 'Failed' });

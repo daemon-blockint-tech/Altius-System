@@ -568,12 +568,18 @@ importers:
         specifier: workspace:*
         version: link:../../packages/spi
     devDependencies:
+      '@altius/engine':
+        specifier: workspace:*
+        version: link:../../packages/engine
       '@altius/storage-memory':
         specifier: workspace:*
         version: link:../../packages/storage-memory
       '@altius/storage-postgres':
         specifier: workspace:*
         version: link:../../packages/storage-postgres
+      '@altius/sync':
+        specifier: workspace:*
+        version: link:../../packages/sync
       '@types/node':
         specifier: ^22.0.0
         version: 22.19.10

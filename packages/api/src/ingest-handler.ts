@@ -12,11 +12,24 @@
  * both feed into the same CdcConsumer/ChangeApplier pipeline.
  */
 
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { parseMappingObject, RecordMapper, type DatasourceMappingConfig, type MappedObject } from '@altius/sync';
 import type { ObjectManager } from '@altius/engine';
 import type { RequestContext } from '@altius/spi';
 import { createLogger } from '@altius/observability';
 import { createEngineChangeApplier } from './sync-boot.js';
+
+/**
+ * Constant-time secret comparison. Hashing both sides to a fixed-length digest
+ * first lets timingSafeEqual run (it rejects differing lengths) and keeps the
+ * comparison independent of the secret's length — a plain `!==` leaks how many
+ * leading characters matched through its short-circuit timing.
+ */
+function secretsMatch(provided: string, expected: string): boolean {
+  const a = createHash('sha256').update(provided).digest();
+  const b = createHash('sha256').update(expected).digest();
+  return timingSafeEqual(a, b);
+}
 
 const logger = createLogger('ingest');
 
@@ -58,7 +71,7 @@ export function createIngestHandler(config: IngestHandlerConfig) {
 
   return async (req: IngestRequest): Promise<IngestResponse> => {
     // 1. Authenticate
-    if (!req.secret || req.secret !== ingestSecret) {
+    if (!req.secret || !secretsMatch(req.secret, ingestSecret)) {
       return { status: 401, body: { accepted: 0, rejected: 0, errors: ['Unauthorized: invalid or missing X-Ingest-Secret'] } };
     }
 

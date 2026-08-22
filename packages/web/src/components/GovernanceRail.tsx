@@ -58,12 +58,16 @@ export function GovernanceRail({ principal, hidden, events, live }: GovernanceRa
       <div>
         <span className="ed-gov-rail__label">WHAT THIS VIEW HIDES</span>
         <div>
-          {hidden.map((item, i) => (
-            <div key={i} className="ed-gov-hidden__item">
-              <p className="ed-gov-hidden__title">{item.title}</p>
-              <p className="ed-gov-hidden__detail">{item.detail}</p>
-            </div>
-          ))}
+          {hidden.length > 0 ? (
+            hidden.map((item, i) => (
+              <div key={i} className="ed-gov-hidden__item">
+                <p className="ed-gov-hidden__title">{item.title}</p>
+                <p className="ed-gov-hidden__detail">{item.detail}</p>
+              </div>
+            ))
+          ) : (
+            <p className="ed-muted">Per-view redaction and filtering are enforced server-side; this deployment does not surface a summary here.</p>
+          )}
         </div>
       </div>
 
@@ -78,12 +82,16 @@ export function GovernanceRail({ principal, hidden, events, live }: GovernanceRa
           <span className="ed-gov-feed__live">{live ? 'live' : 'paused'}</span>
         </div>
         <div className="ed-gov-feed__list">
-          {events.map((event, i) => (
-            <div key={i} className="ed-gov-feed__event">
-              <span className="ed-gov-feed__time">{event.time}</span>
-              <span className="ed-gov-feed__text">{event.text}</span>
-            </div>
-          ))}
+          {events.length > 0 ? (
+            events.map((event, i) => (
+              <div key={i} className="ed-gov-feed__event">
+                <span className="ed-gov-feed__time">{event.time}</span>
+                <span className="ed-gov-feed__text">{event.text}</span>
+              </div>
+            ))
+          ) : (
+            <p className="ed-muted">No recent events.</p>
+          )}
         </div>
       </div>
     </aside>

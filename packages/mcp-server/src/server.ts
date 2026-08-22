@@ -54,6 +54,8 @@ export interface McpHttpRequest {
 export interface McpHttpResponse {
   status: number;
   body: unknown;
+  /** Response headers (e.g. WWW-Authenticate on 401). Adapter must forward them. */
+  headers?: Record<string, string>;
 }
 
 /**
@@ -72,7 +74,13 @@ export interface McpHttpResponse {
  * no session state is retained between calls.
  */
 export function createMcpServer(config: McpServerConfig): (req: McpHttpRequest) => Promise<McpHttpResponse> {
-  const { deps, serverName = 'altius-mcp', serverVersion = '0.1.0', isDev = false } = config;
+  const { deps, serverName = 'altius-mcp', serverVersion = '0.1.0', isDev = false, allowedUsers, allowedGroups, resourceMetadataUrl } = config;
+  // RFC 6750 challenge; with RFC 9728 resource_metadata when the host knows
+  // its public metadata URL — this header is how an OAuth-capable MCP client
+  // discovers the authorization server instead of asking a human for a token.
+  const wwwAuthenticate = resourceMetadataUrl
+    ? `Bearer resource_metadata="${resourceMetadataUrl}"`
+    : 'Bearer';
   const toolList = buildToolList(deps);
 
   return async (req) => {
@@ -104,7 +112,32 @@ export function createMcpServer(config: McpServerConfig): (req: McpHttpRequest) 
       return {
         status: authResult.status,
         body: { error: { code: authResult.status, message: authResult.message } },
+        ...(authResult.status === 401 ? { headers: { 'WWW-Authenticate': wwwAuthenticate } } : {}),
       };
+    }
+
+    // ── Per-user/group enablement gate (before rate limiting: a caller the
+    // admin never enabled should not consume rate budget). Configured lists
+    // are an allowlist; an empty list matches nobody. Unconfigured = open to
+    // every authenticated principal — the per-pack capability is the outer
+    // switch, and per-call authz/markings/consent still apply downstream. ──
+    if (allowedUsers !== undefined || allowedGroups !== undefined) {
+      const memberships = [...(authResult.user.groups ?? []), ...(authResult.user.roles ?? [])];
+      const enabled =
+        (allowedUsers?.includes(authResult.user.id) ?? false) ||
+        (allowedGroups?.some((g) => memberships.includes(g)) ?? false);
+      if (!enabled) {
+        return {
+          status: 403,
+          body: {
+            error: {
+              code: 403,
+              message:
+                'MCP access is not enabled for your user or groups. Ask an administrator to add you to the MCP access allowlist.',
+            },
+          },
+        };
+      }
     }
 
     // ── Per-principal rate limiting (parity with GraphQL/REST/CDM/FHIR) ──

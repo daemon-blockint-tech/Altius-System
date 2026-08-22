@@ -11,6 +11,7 @@
 
 import type { Pool } from 'pg';
 import { randomUUID } from 'node:crypto';
+import { parseSql, evaluateOntologySql, detectSqlObjectTypes } from '@altius/spi';
 import type { RequestContext } from '@altius/spi';
 import type {
   AlertingService,
@@ -307,8 +308,35 @@ export class PostgresDatasetMetadataService implements DatasetMetadataService {
     return r.rows.map((row: any) => row.branch);
   }
 
-  async listTransactions(_ctx: RequestContext, _name: string, _branch?: string, _limit?: number): Promise<DatasetTransaction[]> {
-    return [];
+  /**
+   * Read the dataset transaction log.
+   *
+   * This returned a hardcoded `[]` when the store landed, because nothing wrote
+   * a transaction log on Postgres yet — an empty answer was at least not a
+   * wrong one. PostgresDatasetService now maintains `dataset.transactions`, so
+   * an empty array here would report "no history" for a dataset that has some.
+   */
+  async listTransactions(ctx: RequestContext, name: string, branch?: string, limit = 100): Promise<DatasetTransaction[]> {
+    const r = await this.pool.query(
+      `SELECT * FROM "dataset"."transactions"
+        WHERE "tenant_id"=$1 AND "dataset_name"=$2 AND "branch"=$3
+        ORDER BY "seq" DESC LIMIT $4`,
+      [ctx.tenantId, name, branch ?? 'main', limit],
+    );
+    return r.rows.map((row: any) => ({
+      id: row.id,
+      tenantId: ctx.tenantId,
+      datasetId: row.dataset_id ?? '',
+      type: row.type,
+      rows: typeof row.rows === 'string' ? JSON.parse(row.rows) : (row.rows ?? []),
+      schemaVersion: Number(row.schema_version ?? 0),
+      ...(row.schema_snapshot ? { schemaSnapshot: typeof row.schema_snapshot === 'string' ? JSON.parse(row.schema_snapshot) : row.schema_snapshot } : {}),
+      ...(row.previous_schema_snapshot ? { previousSchemaSnapshot: typeof row.previous_schema_snapshot === 'string' ? JSON.parse(row.previous_schema_snapshot) : row.previous_schema_snapshot } : {}),
+      timestamp: row.timestamp instanceof Date ? row.timestamp.toISOString() : String(row.timestamp),
+      actorId: row.actor_id ?? '',
+      branch: row.branch,
+      ...(row.message === null || row.message === undefined ? {} : { message: String(row.message) }),
+    }));
   }
 
   // Internal helper for creating/updating metadata
@@ -540,30 +568,66 @@ function mapJustification(r: any): JustificationRecord {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export class PostgresOntologySqlService implements OntologySqlService {
-  constructor(private readonly pool: Pool) {}
+  // The reader loads ontology rows for one object type, tenant-scoped and
+  // authorized, through the governed ObjectManager. SQL Studio queries evaluate
+  // over those rows only — never against physical tables. Without a reader the
+  // service is read-inert (empty results): it must not fall back to raw SQL,
+  // which would cross tenants and skip redaction. The pool is for saved-query
+  // persistence, never for user-supplied SQL.
+  constructor(
+    private readonly pool: Pool,
+    private readonly objectReader?: (
+      ctx: RequestContext,
+      objectType: string,
+    ) => Promise<Array<{ id: string; properties: Record<string, unknown> }>>,
+  ) {}
 
-  async execute(_ctx: RequestContext, sql: string, options?: SqlExecutionOptions): Promise<OntologySqlResult> {
+  async execute(ctx: RequestContext, sql: string, options?: SqlExecutionOptions): Promise<OntologySqlResult> {
     const start = Date.now();
-    try {
-      const limit = options?.limit ?? 1000;
-      const r = await this.pool.query(`${sql} LIMIT ${limit}`);
-      const columns = r.fields.map((f: any) => ({ name: f.name, type: 'text' }));
-      const rows = r.rows.map((row: any) => [row as Record<string, unknown>]);
-      const executionTimeMs = Date.now() - start;
-      return { columns, rows, totalRowCount: r.rowCount ?? rows.length, truncated: rows.length >= limit, executionTimeMs, accessedObjectTypes: [] };
-    } catch (err) {
-      return { columns: [], rows: [], totalRowCount: 0, truncated: false, executionTimeMs: Date.now() - start, accessedObjectTypes: [] };
+    const parsed = parseSql(sql);
+    const objectTypes = detectSqlObjectTypes(parsed);
+    const limit = options?.limit ?? parsed.limit ?? 1000;
+
+    if (!this.objectReader) {
+      return { columns: [], rows: [], totalRowCount: 0, truncated: false, executionTimeMs: Date.now() - start, accessedObjectTypes: objectTypes };
     }
+
+    const objectsByType = new Map<string, Array<{ id: string; properties: Record<string, unknown> }>>();
+    for (const ot of objectTypes) {
+      objectsByType.set(ot, await this.objectReader(ctx, ot));
+    }
+    const evaluated = evaluateOntologySql(parsed, objectsByType, limit);
+    return { ...evaluated, executionTimeMs: Date.now() - start };
   }
 
-  async explain(_ctx: RequestContext, _sql: string): Promise<SqlQueryExplanation> {
-    return { parsed: { select: [], from: [], joins: [] }, objectTypes: [], estimatedRows: 0, fullScan: false, warnings: ['EXPLAIN not fully implemented'] };
+  async explain(_ctx: RequestContext, sql: string): Promise<SqlQueryExplanation> {
+    const parsed = parseSql(sql);
+    return {
+      parsed: {
+        select: parsed.columns === '*' ? ['*'] : parsed.columns,
+        from: [parsed.from],
+        joins: parsed.joins,
+        where: parsed.where?.map(w => `${w.field} ${w.op} ${w.value}`).join(' AND '),
+        groupBy: parsed.groupBy,
+        orderBy: parsed.orderBy?.map(o => ({ field: o.field, direction: (o.direction === 'desc' ? 'DESC' : 'ASC') as 'ASC' | 'DESC' })),
+        limit: parsed.limit,
+      },
+      objectTypes: detectSqlObjectTypes(parsed),
+      estimatedRows: 100,
+      fullScan: !parsed.where,
+      warnings: parsed.where ? [] : ['Query has no WHERE clause — will scan all objects'],
+    };
   }
 
   async validate(_ctx: RequestContext, sql: string): Promise<{ valid: boolean; errors: string[]; warnings: string[] }> {
     try {
-      await this.pool.query(`EXPLAIN ${sql}`);
-      return { valid: true, errors: [], warnings: [] };
+      const parsed = parseSql(sql);
+      const errors: string[] = [];
+      const warnings: string[] = [];
+      if (parsed.columns !== '*' && parsed.columns.length === 0) errors.push('SELECT list is empty');
+      if (!parsed.from) errors.push('FROM clause is missing');
+      if (!parsed.where) warnings.push('No WHERE clause — full scan');
+      return { valid: errors.length === 0, errors, warnings };
     } catch (err) {
       return { valid: false, errors: [err instanceof Error ? err.message : 'Invalid SQL'], warnings: [] };
     }
@@ -831,10 +895,17 @@ export class PostgresScopedSessionStore implements ScopedSessionStore {
     const allowed = r.rows[0]!.allowed_markings ?? [];
     const excluded = r.rows[0]!.excluded_markings ?? [];
     if (excluded.includes(marking)) return false;
-    return allowed.length === 0 || allowed.includes(marking);
+    // Empty allowedMarkings allows NOTHING — conformance-pinned, matching the
+    // memory store and the auth funnel's intersection semantics. The previous
+    // `allowed.length === 0 ||` treated an empty list as allow-everything: a
+    // fail-open the other provider did not share.
+    return allowed.includes(marking);
   }
 }
 
 function mapScopedSession(r: any): ScopedSession {
-  return { id: r.id, tenantId: r.tenant_id, userId: r.user_id, allowedMarkings: r.allowed_markings ?? [], excludedMarkings: r.excluded_markings ?? [], label: r.label, createdAt: r.created_at, expiresAt: r.expires_at, revoked: r.revoked ?? false, createdBy: r.created_by };
+  // TIMESTAMPTZ columns come back from the driver as Date objects; the SPI
+  // contract is ISO 8601 strings — conformance-pinned.
+  const iso = (v: unknown): string => (v instanceof Date ? v.toISOString() : String(v));
+  return { id: r.id, tenantId: r.tenant_id, userId: r.user_id, allowedMarkings: r.allowed_markings ?? [], excludedMarkings: r.excluded_markings ?? [], label: r.label, createdAt: iso(r.created_at), expiresAt: iso(r.expires_at), revoked: r.revoked ?? false, createdBy: r.created_by };
 }

@@ -40,6 +40,13 @@ export interface ActionContext {
   /** Subject ID for consent checks (e.g. patient ID). */
   consentSubjectId?: string;
   /**
+   * The caller's stated reason for running the action, from the reserved
+   * `_justification` input field. Required (non-blank) when the manifest
+   * declares `requiresJustification: true`; captured to the
+   * JustificationStore before effects run and stamped into the audit record.
+   */
+  justification?: string;
+  /**
    * The `_version` the caller believes the action's target object carries —
    * i.e. the version the data they decided on was read at.
    *
@@ -219,6 +226,13 @@ export interface ActionExecutorConfig {
   security: SecurityLayer;
   cel: CelEvaluator;
   consentManager?: import('@altius/spi').ConsentManager;
+  /**
+   * Checkpoint capture for actions declaring `requiresJustification`.
+   * Enforced here rather than at each surface for the same reason as
+   * markingPolicy below. Absent while a manifest requires justification →
+   * the requirement still blocks execution; only the capture is skipped.
+   */
+  justificationStore?: import('@altius/spi').JustificationStore;
   sideEffectHandler?: SideEffectHandler;
   auditWriter?: AuditWriter;
   eventPublisher?: ActionEventPublisher;

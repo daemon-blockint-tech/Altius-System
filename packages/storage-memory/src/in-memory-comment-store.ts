@@ -146,11 +146,12 @@ export class InMemoryCommentStore implements CommentStore {
     return results;
   }
 
-  async markNotificationRead(tenantId: string, notificationId: string): Promise<void> {
+  async markNotificationRead(tenantId: string, userId: string, notificationId: string): Promise<void> {
     const tenantNotifs = this.notifications.get(tenantId);
     if (!tenantNotifs) return;
     const notif = tenantNotifs.get(notificationId);
-    if (notif) {
+    // Only the recipient may mark their own notification read.
+    if (notif && notif.userId === userId) {
       tenantNotifs.set(notificationId, { ...notif, read: true });
     }
   }

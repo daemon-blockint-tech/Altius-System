@@ -1,6 +1,6 @@
 import type { ObjectManager, LinkManager, ObjectSetManager, FunctionExecutor, FunctionRegistry, WorkflowGraphBuilder, WorkflowMonitor } from '@altius/engine';
 import type { FunctionAuthzMapping } from '@altius/odl';
-import type { ActionExecutor, ActionManifest } from '@altius/actions';
+import type { ActionExecutor, ActionManifest, HoldRecord, HoldStatus } from '@altius/actions';
 import type {
   AuthorizationService,
   OidcAuthenticator,
@@ -10,7 +10,7 @@ import type {
   MarkingPolicy,
 } from '@altius/security';
 import type { ParsedSchema } from '@altius/odl';
-import type { RequestContext, StorageProvider, LLMClient, BlobStore, TimeSeriesStore, BranchStore, CommentStore, NotificationStore, EmbeddingStore, AlertingService, LLMGateway, DataFreshnessService, JustificationStore, AccessExplanationService, ScopedSessionStore, OntologySqlService, DatasetService, DatasetMetadataService, OntologyUsageMetricsService, GeospatialMapService, ScenarioService, ModelInferenceService, ModelChainService, WorkshopPlatformService, EmbeddingService, PlatformResourceService, SavedViewStore, UserDirectoryService, KioskService, LayoutDeviceCaptureService, OntologyManagerService, WorkshopUxService, ValueFormattingService, DesignSystemService, OntologyChangeHistoryService, CommandExchangeService, ObjectSetFilterStore, GraphService, TransformExpressionService, ChangeProposalStore, BusinessRulesService, AgentEvaluationService, AgentThreadStore, ConflictResolutionService, ConnectorCatalogService, DataExpectationsService, EmbeddedCopilotService, EventObjectService, GraphAnalysisService, MultiOntologyGovernanceService, PipelineBuildService, PlatformAssistantService, ProcessMiningService, BatchTransformService, SqlQueryService, VariableTransformService, RulesEngineService, PipelineService, SyncCdcService, DatasourceService, BuildTriggerService, SqlAnalyticsService, AgentService, ModelCatalogService, EvalService, HumanInTheLoopService, VectorSearchService, CopilotService } from '@altius/spi';
+import type { MarkingMembershipStore, RequestContext, StorageProvider, LLMClient, BlobStore, TimeSeriesStore, BranchStore, CommentStore, NotificationStore, EmbeddingStore, AlertingService, LLMGateway, DataFreshnessService, JustificationStore, AccessExplanationService, ScopedSessionStore, OntologySqlService, DatasetService, DatasetMetadataService, OntologyUsageMetricsService, GeospatialMapService, ScenarioService, ModelInferenceService, ModelChainService, ModelRegistryService, ApprovalWorkflowService, CommandService, WorkshopPlatformService, EmbeddingService, PlatformResourceService, SavedViewStore, UserDirectoryService, KioskService, LayoutDeviceCaptureService, OntologyManagerService, WorkshopUxService, ValueFormattingService, DesignSystemService, OntologyChangeHistoryService, CommandExchangeService, ObjectSetFilterStore, GraphService, TransformExpressionService, ChangeProposalStore, BusinessRulesService, AgentEvaluationService, AgentThreadStore, ConflictResolutionService, ConnectorCatalogService, DataExpectationsService, EmbeddedCopilotService, EventObjectService, GraphAnalysisService, MultiOntologyGovernanceService, PipelineBuildService, PlatformAssistantService, ProcessMiningService, BatchTransformService, SqlQueryService, VariableTransformService, RulesEngineService, PipelineService, SyncCdcService, DatasourceService, BuildTriggerService, SqlAnalyticsService, AgentService, ModelCatalogService, EvalService, HumanInTheLoopService, VectorSearchService, CopilotService } from '@altius/spi';
 import { DataPurpose } from '@altius/spi';
 
 /**
@@ -19,6 +19,18 @@ import { DataPurpose } from '@altius/spi';
  */
 export interface ManifestRegistry {
   get(actionName: string): ActionManifest | undefined;
+}
+
+/**
+ * Structural view of the actions-package HoldApprovePolicyGuard, exposing the
+ * reviewer surface (the MCP server holds the agent-facing half). Structural so
+ * tests can stub it without the concrete class.
+ */
+export interface AgentHoldGuard {
+  listHolds(status?: HoldStatus): Promise<HoldRecord[]>;
+  getHold(holdId: string): Promise<HoldRecord | null>;
+  approve(holdId: string, approvedBy: string): Promise<HoldRecord>;
+  reject(holdId: string, rejectedBy: string, reason?: string): Promise<HoldRecord>;
 }
 
 /**
@@ -34,6 +46,10 @@ export interface ApiDependencies {
   consentService?: ConsentService;
   /** Mandatory marking policy; absent means no markings are configured. */
   markingPolicy?: MarkingPolicy;
+  /** Runtime marking memberships (who holds a marking); definitions stay pack-declared. */
+  markingMembershipStore?: MarkingMembershipStore;
+  /** Roles allowed to administer marking memberships. Default admin; empty = nobody. */
+  markingAdminRoles?: readonly string[];
   /**
    * Live-subscription registry, so consent revocation can close the streams
    * about the revoking subject. Absent means revocation still takes effect —
@@ -83,11 +99,34 @@ export interface ApiDependencies {
    */
   auditReaderRoles?: readonly string[];
   /**
+   * Roles that read audit detail.before/after snapshots UNREDACTED. Default
+   * empty: every reader gets snapshots filtered by their own field policy.
+   */
+  auditUnredactedRoles?: readonly string[];
+  /**
    * Roles allowed to explain another principal's access via
    * POST /api/v1/security/explain with `subjectUserId`. Defaults to ['admin'].
    * An explicitly empty array disables simulation entirely.
    */
   accessExplanationSimulationRoles?: readonly string[];
+  /**
+   * Roles allowed to manage scoped sessions beyond self-service (create for
+   * another user, revoke sessions they did not create, read others'
+   * sessions). Defaults to ['admin']. An explicitly empty array means nobody
+   * holds the administrative tier. Env: SCOPED_SESSION_ADMIN_ROLES.
+   */
+  scopedSessionAdminRoles?: readonly string[];
+  /**
+   * Human-in-the-loop hold guard for high-risk agent writes — the SAME
+   * instance wired into the MCP server, so an approval recorded here is
+   * visible to the agent's retry. Present only when MCP is enabled.
+   */
+  agentHoldGuard?: AgentHoldGuard;
+  /**
+   * Roles allowed to review agent holds (list/approve/reject). Defaults to
+   * ['admin']; empty = nobody. Env: AGENT_HOLD_APPROVER_ROLES.
+   */
+  agentHoldApproverRoles?: readonly string[];
   /**
    * Allowed consent-purpose vocabulary for this deployment (env CONSENT_PURPOSES).
    * `DataPurpose` is an open string type; this is the set accepted when recording
@@ -269,6 +308,16 @@ export interface ApiDependencies {
    */
   modelChainService?: ModelChainService;
   /**
+   * Model registry service — manages model artifacts, lifecycle states,
+   * versioning, and lineage. Postgres-backed when available.
+   */
+  modelRegistryService?: ModelRegistryService;
+  /**
+   * Command service — manages registered application commands and command
+   * chains. Postgres-backed when available.
+   */
+  commandService?: CommandService;
+  /**
    * Scenario simulation service — manages what-if scenarios, execution,
    * comparison, and persistence. When present, REST endpoints for
    * scenario management are registered:
@@ -405,6 +454,11 @@ export interface ApiDependencies {
    *   POST   /api/v1/usage/rules/evaluate      (evaluate monitoring rules)
    */
   usageMetricsService?: OntologyUsageMetricsService;
+  /**
+   * Approval workflow service — manages ABAC-governed approval workflows
+   * and their submissions.
+   */
+  approvalWorkflowService?: ApprovalWorkflowService;
   /**
    * App embedding & cross-app service — app registry, embedding manifests,
    * cross-app commands, and app pairing. When present, REST endpoints

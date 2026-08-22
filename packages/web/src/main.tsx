@@ -1,6 +1,9 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import './editorial.css';
+// Altius design system — must load after editorial.css so its token and
+// component overrides win. See altius-theme.css for the design language.
+import './altius-theme.css';
 import { App } from './App.js';
 import { ErrorBoundary } from './components/ErrorBoundary.js';
 import { loadConfig } from './client.js';

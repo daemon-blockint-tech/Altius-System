@@ -77,6 +77,12 @@ export function parseActionManifest(
   // Step 3: Parse preconditions
   const preconditions = parsePreconditions(doc['preconditions'], errors);
 
+  // Step 3b: Parse requiredRoles (optional; the role gate for object-less actions)
+  const requiredRoles = parseRequiredRoles(doc['requiredRoles'], errors);
+
+  // Step 3c: Parse requiresJustification (optional checkpoint declaration)
+  const requiresJustification = validateBoolean(doc, 'requiresJustification', false);
+
   // Step 4: Parse effects
   const effects = parseEffects(doc['effects'], errors);
 
@@ -98,6 +104,8 @@ export function parseActionManifest(
     version: version!,
     reversible,
     preconditions,
+    ...(requiredRoles !== undefined ? { requiredRoles } : {}),
+    ...(requiresJustification ? { requiresJustification } : {}),
     effects,
     sideEffects,
     rollback,
@@ -239,6 +247,39 @@ function parsePreconditions(
     result.push({ expr: item['expr'], error: item['error'] });
   }
 
+  return result;
+}
+
+// ─── Required roles ───
+
+function parseRequiredRoles(
+  raw: unknown,
+  errors: ManifestIssue[],
+): string[] | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  if (!Array.isArray(raw)) {
+    errors.push({
+      severity: 'error',
+      code: 'INVALID_TYPE',
+      message: 'Field "requiredRoles" must be an array of role names.',
+      path: 'requiredRoles',
+    });
+    return undefined;
+  }
+
+  const result: string[] = [];
+  for (let i = 0; i < raw.length; i++) {
+    if (typeof raw[i] !== 'string' || !raw[i]) {
+      errors.push({
+        severity: 'error',
+        code: 'INVALID_TYPE',
+        message: `requiredRoles[${i}] must be a non-empty string.`,
+        path: `requiredRoles[${i}]`,
+      });
+      continue;
+    }
+    result.push(raw[i] as string);
+  }
   return result;
 }
 
