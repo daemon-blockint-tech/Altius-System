@@ -18,6 +18,12 @@ import type { OidcConfig } from './auth/pkce.js';
 export interface WebConfig {
   endpoint: string;
   oidc: OidcConfig | null;
+  /**
+   * Local dev only: run anonymously against a dev gateway (ALTIUS_DEV_AUTH_BYPASS)
+   * without an identity provider. Set VITE_DEV_NO_AUTH=true. App additionally
+   * gates this on import.meta.env.DEV so a production bundle can never enable it.
+   */
+  devNoAuth: boolean;
 }
 
 /** Shape written by docker-entrypoint.sh and served from the image. */
@@ -110,7 +116,7 @@ export function readConfig(
     ? { issuer, clientId, redirectUri: env['VITE_OIDC_REDIRECT_URI'] ?? origin }
     : null;
 
-  return { endpoint, oidc };
+  return { endpoint, oidc, devNoAuth: env['VITE_DEV_NO_AUTH'] === 'true' };
 }
 
 export function createClient(

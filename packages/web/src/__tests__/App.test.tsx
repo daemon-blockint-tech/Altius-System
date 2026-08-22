@@ -32,7 +32,7 @@ vi.stubGlobal('WebSocket', class {
 
 describe('App with no OIDC configured', () => {
   it('says sign-in is unconfigured instead of rendering data that cannot load', () => {
-    render(<App config={{ endpoint: '/graphql', oidc: null }} />);
+    render(<App config={{ endpoint: '/graphql', oidc: null, devNoAuth: false }} />);
 
     const alert = screen.getByRole('alert');
     expect(alert.textContent).toContain('Sign-in is not configured');
@@ -42,7 +42,7 @@ describe('App with no OIDC configured', () => {
   });
 
   it('renders no data widgets at all', () => {
-    render(<App config={{ endpoint: '/graphql', oidc: null }} />);
+    render(<App config={{ endpoint: '/graphql', oidc: null, devNoAuth: false }} />);
 
     // No table, and no Retry button — the two things that made the old screen
     // read as a broken app rather than an unconfigured one.
@@ -54,7 +54,7 @@ describe('App with no OIDC configured', () => {
     // There is no issuer to redirect to, so a sign-in button would fail on
     // click. startLogin() already returns early in that case; not drawing the
     // button is the honest version of the same fact.
-    render(<App config={{ endpoint: '/graphql', oidc: null }} />);
+    render(<App config={{ endpoint: '/graphql', oidc: null, devNoAuth: false }} />);
     expect(screen.queryByRole('button', { name: 'Sign in' })).toBeNull();
   });
 });
