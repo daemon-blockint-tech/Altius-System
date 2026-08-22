@@ -62,6 +62,11 @@ export interface Dataset {
   updatedAt: string;
   /** Who created the dataset. */
   createdBy: string;
+  /**
+   * Set when the dataset reads a file in place rather than owning rows.
+   * Absent for ordinary datasets, which is every dataset created before this.
+   */
+  externalSource?: ExternalDatasetSource;
 }
 
 /** A transaction log entry — append-only record of dataset mutations. */
@@ -102,6 +107,45 @@ export interface CreateDatasetInput {
   description?: string;
   schema: DatasetSchema;
   branch?: string;
+  /** Register a read-in-place source instead of an ingested dataset. */
+  externalSource?: ExternalDatasetSource;
+}
+
+/**
+ * A dataset whose rows are read where they already are.
+ *
+ * An ordinary dataset owns its rows: they are copied in, versioned, and
+ * mutated through transactions. An external dataset owns nothing — it points at
+ * a file and reads it on demand, so the source system stays authoritative and
+ * there is no copy to go stale. That is also why it is read-only: the platform
+ * cannot version bytes it does not hold.
+ *
+ * `blobId` names a file in the deployment's own blob store. With object storage
+ * configured that is a bucket the customer controls, so a file their pipeline
+ * writes is queryable without an ingest step. Referencing a foreign bucket by
+ * URI needs its own credentials and marking policy and is deliberately not
+ * expressible here yet.
+ */
+export interface ExternalDatasetSource {
+  format: 'parquet';
+  /** Blob id in this deployment's blob store. */
+  blobId: string;
+}
+
+/**
+ * The refusal an external dataset gives to every write.
+ *
+ * Shared so both storage providers refuse identically — a provider that
+ * accepted the write would write rows the read path never returns.
+ */
+export function externalDatasetReadOnlyError(name: string, operation: string): Error {
+  return Object.assign(
+    new Error(
+      `Dataset "${name}" reads an external source in place and cannot be written to ` +
+      `(attempted: ${operation}). Write to the source file instead, or create an ordinary dataset.`,
+    ),
+    { code: 'DATASET_READ_ONLY', status: 409 },
+  );
 }
 
 /** Input for writing rows to a dataset. */

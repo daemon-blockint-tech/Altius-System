@@ -75,6 +75,7 @@ export class InMemoryDatasetService implements DatasetService {
       latestTransactionId: 'init',
       createdAt: now, updatedAt: now,
       createdBy: ctx.actorId ?? 'system',
+      ...(input.externalSource ? { externalSource: input.externalSource } : {}),
     };
     const state: DatasetState = {
       dataset,

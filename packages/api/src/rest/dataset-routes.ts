@@ -22,7 +22,7 @@
 
 import type { ApiDependencies, ResolverContext } from '../graphql/types.js';
 import type { RestRequest, RestResponse, RestRoute } from './types.js';
-import type { DatasetSchema } from '@altius/spi';
+import type { ExternalDatasetSource, DatasetSchema } from '@altius/spi';
 import { createRestErrorResponse, wrapErrorToRest } from './errors.js';
 
 export function generateDatasetRoutes(deps: ApiDependencies): RestRoute[] {
@@ -41,10 +41,28 @@ export function generateDatasetRoutes(deps: ApiDependencies): RestRoute[] {
         if (!name) {
           return createRestErrorResponse({ code: 'MISSING_PARAMETER', category: 'validation', message: 'name is required', retryable: false, traceId: ctx.requestContext.traceId });
         }
+        // A dataset may instead register a file to read in place. Validated
+        // here rather than trusted: this is a request body, and the blob id
+        // becomes a key in the caller's own tenant prefix.
+        const rawSource = body['externalSource'];
+        let externalSource: ExternalDatasetSource | undefined;
+        if (rawSource !== undefined) {
+          const src = rawSource as Record<string, unknown>;
+          if (src['format'] !== 'parquet' || typeof src['blobId'] !== 'string' || !src['blobId']) {
+            return createRestErrorResponse({
+              code: 'INVALID_EXTERNAL_SOURCE', category: 'validation',
+              message: 'externalSource must be { format: "parquet", blobId: string }',
+              retryable: false, traceId: ctx.requestContext.traceId,
+            });
+          }
+          externalSource = { format: 'parquet', blobId: src['blobId'] };
+        }
+
         const ds = await svc.create(ctx.requestContext, {
           name,
           description: typeof body['description'] === 'string' ? body['description'] : '',
           schema: body['schema'] as DatasetSchema,
+          ...(externalSource ? { externalSource } : {}),
         });
         return { status: 201, body: { data: ds } };
       } catch (err) { return wrapErrorToRest(err, ctx.requestContext.traceId); }

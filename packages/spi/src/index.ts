@@ -371,7 +371,11 @@ export type {
   TransformStep,
   TransformKind,
   CreateTransformPipelineInput,
+  ExternalDatasetSource,
 } from './datasets.js';
+// A value export, not a type: both providers call it so they refuse a write to
+// an external dataset in the same words.
+export { externalDatasetReadOnlyError } from './datasets.js';
 
 // Dataset row semantics shared by every DatasetService implementation, so the
 // in-memory and Postgres providers cannot drift on key derivation or filtering.

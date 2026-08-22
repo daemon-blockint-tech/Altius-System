@@ -247,6 +247,7 @@ import {
 } from './rest/audit-read.js';
 import { collectMountedRoutes, mergeMountedRoutes } from './rest/mounted-routes.js';
 import { S3BlobStore, s3ConfigFromEnv } from '@altius/storage-s3';
+import { withExternalDatasets } from './datasets/external-dataset-service.js';
 import {
   isTypeVisible,
   missingMarkings,
@@ -1691,6 +1692,12 @@ async function main(): Promise<void> {
   // database column. Logged at boot because "where did the file go" is the
   // first question when an attachment cannot be read back.
   const s3BlobConfig = s3ConfigFromEnv();
+  // One instance, referenced twice: the deps entry and the external-dataset
+  // reader must be the same store, or a file registered through one is
+  // invisible to the other.
+  const blobStoreImpl = s3BlobConfig
+    ? new S3BlobStore(s3BlobConfig)
+    : (pgPool ? new PostgresBlobStore(pgPool) : new InMemoryBlobStore());
   logger.info(
     s3BlobConfig
       ? `Blob store: S3 bucket "${s3BlobConfig.bucket}"${s3BlobConfig.endpoint ? ` at ${s3BlobConfig.endpoint}` : ''}`
@@ -1757,9 +1764,7 @@ async function main(): Promise<void> {
     // Object storage wins when configured: attachments are media, and a bytea
     // column is a ceiling, not a home for them. Postgres stays the fallback so
     // a deployment without a bucket keeps working exactly as before.
-    blobStore: s3BlobConfig
-      ? new S3BlobStore(s3BlobConfig)
-      : (pgPool ? new PostgresBlobStore(pgPool) : new InMemoryBlobStore()),
+    blobStore: blobStoreImpl,
     timeSeriesStore: pgPool ? new PostgresTimeSeriesStore(pgPool) : new InMemoryTimeSeriesStore(),
     branchStore: pgPool ? new PostgresBranchStore(pgPool) : new InMemoryBranchStore(),
     commentStore: pgPool ? new PostgresCommentStore(pgPool) : new InMemoryCommentStore(),
@@ -1805,7 +1810,9 @@ async function main(): Promise<void> {
     // and branches survive a restart and are shared across replicas. This
     // graduated out of `nonDurableServices`: the dataset routes answered 404 on
     // a Postgres deployment until there was somewhere durable to put the rows.
-    datasetService: datasetSvc,
+    // External datasets read their file in place; the wrapper serves those and
+    // refuses writes to them, and passes everything else straight through.
+    datasetService: withExternalDatasets(datasetSvc, blobStoreImpl),
     // Batch transforms — durable when Postgres is configured (graduated out of
     // nonDurableServices). The Postgres impl reads/writes through datasetSvc.
     batchTransformService: pgPool

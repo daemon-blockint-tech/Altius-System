@@ -58,6 +58,7 @@ import type {
   ReadResult,
   DatasetBranch,
   RequestContext,
+  ExternalDatasetSource,
 } from '@altius/spi';
 import { PgTransaction } from '../transactions/pg-transaction.js';
 
@@ -89,6 +90,7 @@ interface MetaRow {
   createdAt: string;
   updatedAt: string;
   createdBy: string;
+  externalSource?: ExternalDatasetSource;
 }
 
 function mapMeta(r: Record<string, unknown>): MetaRow {
@@ -102,6 +104,7 @@ function mapMeta(r: Record<string, unknown>): MetaRow {
     createdAt: toIso(r['created_at']),
     updatedAt: toIso(r['updated_at']),
     createdBy: String(r['created_by'] ?? ''),
+    ...(r['external_source'] ? { externalSource: parseJson<ExternalDatasetSource>(r['external_source'], undefined as never) } : {}),
   };
 }
 
@@ -117,6 +120,7 @@ function toDataset(m: MetaRow, tenantId: string, branch?: string): Dataset {
     createdAt: m.createdAt,
     updatedAt: m.updatedAt,
     createdBy: m.createdBy,
+    ...(m.externalSource ? { externalSource: m.externalSource } : {}),
   };
 }
 
@@ -164,12 +168,13 @@ export class PostgresDatasetService implements DatasetService {
       await c.query(
         `INSERT INTO "dataset"."metadata"
            ("id","dataset_id","tenant_id","name","branch","schema","description",
-            "latest_transaction_id","row_count","created_by","created_at","updated_at")
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$11)`,
+            "latest_transaction_id","row_count","created_by","created_at","updated_at","external_source")
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$11,$12)`,
         [
           randomUUID(), datasetId, ctx.tenantId, input.name, branch,
           JSON.stringify(input.schema), input.description ?? '',
           'init', 0, ctx.actorId ?? 'system', now,
+          input.externalSource ? JSON.stringify(input.externalSource) : null,
         ],
       );
       // The home branch is self-parented, which is how it is identified later.

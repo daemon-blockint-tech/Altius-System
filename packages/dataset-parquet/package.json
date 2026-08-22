@@ -1,0 +1,31 @@
+{
+  "name": "@altius/dataset-parquet",
+  "version": "0.1.0",
+  "description": "Read Parquet files in place as governed datasets — no ingest, no copy",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "clean": "rm -rf dist coverage *.tsbuildinfo"
+  },
+  "files": ["dist"],
+  "license": "Apache-2.0",
+  "dependencies": {
+    "@altius/spi": "workspace:*",
+    "hyparquet": "^1.29.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "hyparquet-writer": "^0.16.0",
+    "vitest": "^3.0.0"
+  }
+}

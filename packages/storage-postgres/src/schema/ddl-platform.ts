@@ -277,6 +277,11 @@ export function generatePlatformDDL(): string[] {
   // (name, branch). Transactions and branches reference the former.
   statements.push(`ALTER TABLE "dataset"."metadata" ADD COLUMN IF NOT EXISTS "dataset_id" TEXT;`);
 
+  // A dataset that reads a file in place holds no rows of its own; this records
+  // where those rows live. Additive and nullable — every existing dataset is an
+  // ordinary one and reads NULL here.
+  statements.push(`ALTER TABLE "dataset"."metadata" ADD COLUMN IF NOT EXISTS "external_source" JSONB;`);
+
   // Rows are keyed by the dataset's primary key so a re-insert of the same key
   // replaces rather than duplicates. `row_key` is the JSON-encoded PK tuple
   // (see datasetRowKey in @altius/spi); a schema with no primary key gets a

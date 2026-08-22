@@ -156,6 +156,11 @@ export function mapCodeToCategory(code: ErrorCode): ErrorCategory {
     // a deliberate refusal reaches the caller as a 500 with the message
     // withheld, indistinguishable from a crash.
     ALREADY_EXISTS: 'conflict',
+    // A dataset that reads its file in place refuses writes deliberately, and
+    // the refusal names what to do instead — worth reaching the caller rather
+    // than falling through to 'system' and being withheld as a 500.
+    DATASET_READ_ONLY: 'conflict',
+    EXTERNAL_SOURCE_MISSING: 'conflict',
     INTERNAL_ERROR: 'system',
     PROVIDER_ERROR: 'system',
     OPERATION_TIMEOUT: 'timeout',

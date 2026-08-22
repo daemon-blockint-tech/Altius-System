@@ -160,6 +160,9 @@ importers:
       '@altius/actions':
         specifier: workspace:*
         version: link:../actions
+      '@altius/dataset-parquet':
+        specifier: workspace:*
+        version: link:../dataset-parquet
       '@altius/engine':
         specifier: workspace:*
         version: link:../engine
@@ -248,9 +251,31 @@ importers:
       '@types/ws':
         specifier: ^8.5.0
         version: 8.18.1
+      hyparquet-writer:
+        specifier: ^0.16.0
+        version: 0.16.6
       typescript:
         specifier: ^5.7.0
         version: 5.9.3
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.4(@types/node@22.19.10)(jsdom@25.0.1)(tsx@4.21.0)(yaml@2.8.2)
+
+  packages/dataset-parquet:
+    dependencies:
+      '@altius/spi':
+        specifier: workspace:*
+        version: link:../spi
+      hyparquet:
+        specifier: ^1.29.0
+        version: 1.29.1
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.19.10
+      hyparquet-writer:
+        specifier: ^0.16.0
+        version: 0.16.6
       vitest:
         specifier: ^3.0.0
         version: 3.2.4(@types/node@22.19.10)(jsdom@25.0.1)(tsx@4.21.0)(yaml@2.8.2)
@@ -2259,6 +2284,15 @@ packages:
   https-proxy-agent@7.0.6:
     resolution: {integrity: sha512-vK9P5/iUfdl95AI+JVyUuIcVtd4ofvtrOr3HNtM2yxC9bnMbEdp3x01OhQNnjb8IJYi38VlTE3mBXwcfvywuSw==}
     engines: {node: '>= 14'}
+
+  hyparquet-writer@0.16.6:
+    resolution: {integrity: sha512-KK3FhIf/yPhDi63rAEV6Di9tLZXDGYqXcOMVS2Ssm5zerEkrfc71REfGCFcEKtiiATGzd9kq5uWcy8JeCapQVQ==}
+
+  hyparquet@1.28.1:
+    resolution: {integrity: sha512-04PlyhYZpNDVaOjJNX4SP00beWf9Y9vXEOEQXSMFqVQNzxGxTmsJOQgBjar8VzLpT6E2kxNiWKL539e1dHcOVA==}
+
+  hyparquet@1.29.1:
+    resolution: {integrity: sha512-Wa57A2KxGFtRTeDTJp4pT0TaqN8btb7/XTrMs17iM+xJxsbBxRyzaGaRRPQ4lOPbmso/qohDafJD7b+cFMZq8A==}
 
   iconv-lite@0.4.24:
     resolution: {integrity: sha512-v3MXnZAcvnywkTUEZomIActle7RXXeedOR31wwl7VlyoXO4Qi9arvSenNQWne1TcRwhCL1HwLI21bEqdpj8/rA==}
@@ -5181,6 +5215,14 @@ snapshots:
       debug: 4.4.3
     transitivePeerDependencies:
       - supports-color
+
+  hyparquet-writer@0.16.6:
+    dependencies:
+      hyparquet: 1.28.1
+
+  hyparquet@1.28.1: {}
+
+  hyparquet@1.29.1: {}
 
   iconv-lite@0.4.24:
     dependencies:
