@@ -9,6 +9,30 @@ Adapted from Foundry ontology design docs (best-practices, anti-patterns, struct
 3. **Open for extension, closed for modification.** Production type stable. New capability → new linked type | new interface impl, ⊥ new columns on core type.
 4. **Composition over hierarchy.** Capability interfaces (`Locatable`, `Auditable`, `Temporal` — already in domain-packs/core/schema/core.odl), multiple `implements`. ⊥ deep chains, ⊥ combination types (`SchedulableBuilding`).
 
+## Decision procedures (apply before writing the type)
+
+Three tests, in order. Adapted from TypeDB Academy §9.2 / §9.3 / §11.3 — their PERA model is not ours (ODL links are binary; theirs are n-ary), but the modelling tests are model-independent and close gaps this guide had.
+
+**1. Identity test — ObjectType or field?**
+Ask: *would two instances carrying identical property values still be two different things?* Yes → ObjectType (identity independent of properties). No → field on the owning type.
+`Supplier` passes: two suppliers named "Acme" in different countries are different suppliers, and a supplier that renames is the same supplier. `address` fails: two identical addresses are the same address → `@struct`, not a type.
+Corollary: an identifier field (`nhsNumber`, `orderNumber`) is evidence of identity, not a substitute for it — a type whose identity is *only* its identifier is usually an observation about something else (see "Entity ≠ observation" below).
+
+**2. Single functional dependency per parent — where does the link attach?**
+When A determines B and B determines C, chain them; do not also hang C off A.
+⊥ `Shipment → City`, `Shipment → State`, `Shipment → Country` (three links, two of them derivable).
+✓ `Shipment → City`, `City → State`, `State → Country`.
+Duplicate paths are how the same fact ends up stored twice and then disagrees. Reach the far end by traversal (multi-hop is a first-class read: `TraversalStep.maxDepth`), not by a redundant link.
+Exception, stated as a tradeoff not silently: denormalise a hot path only with a `# ponytail:` comment naming the read it serves and the write that must maintain it.
+
+**3. Reify or not — ObjectType-plus-links, or one link with fields?**
+ODL links carry fields, so a plain association needs no extra type: `InventoryAt(InventoryRecord → Facility)` with `quantity` on the link is complete.
+Promote the relationship to its own ObjectType when either holds:
+- **Data fidelity** — the relationship owns attributes that belong to *neither* endpoint. `discount` on a promotion↔product pairing belongs to the pairing (a product is in many promotions at different discounts); moving it to either side loses data.
+- **Type fidelity** — the relationship has its own subtypes or lifecycle. Contribution splitting into authoring | editing | illustrating, or anything with its own status, timestamps and audit trail, is a thing, not an edge.
+Both hold for any relationship joining ≥3 parties: ODL links are binary, so an n-ary relationship *is* an ObjectType plus one link per role — `Shipment` + `ShipmentForOrder`/`ShipsFrom`/`ShipsTo` is the canonical shape, and the role lives in the link name. Name those links for the role they play, never for the FK column (see "Join-table cosplay").
+⊥ reifying a plain binary association "for symmetry" — that is a join table with extra steps.
+
 ## Rules → ODL syntax
 
 | Rule | ODL lever |
