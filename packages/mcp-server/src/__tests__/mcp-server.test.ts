@@ -10,6 +10,12 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { ParsedSchema, ActionType, ObjectType } from '@altius/odl';
 import type { ActionManifest, ActionResult } from '@altius/actions';
+// Imported statically, not with `await import` inside setup(): a dynamic import
+// pays the package's module-load cost inside the test's own 5s budget, and
+// under a full parallel run that alone pushed this file's first hold test to
+// 5133ms and a timeout failure. Loading at collection time takes it off the
+// clock.
+import { HoldApprovePolicyGuard } from '@altius/actions';
 import type { StorageProvider, ObjectPage, OntologyObject } from '@altius/spi';
 import type { AuthorizationService, OidcAuthenticator, AuthenticatedUser, RedactionResult } from '@altius/security';
 import { AuthenticationError } from '@altius/security';
@@ -761,7 +767,6 @@ describe('high-risk action holds (human-in-the-loop)', () => {
   const validHeaders = { authorization: 'Bearer valid-token' };
 
   async function setup() {
-    const { HoldApprovePolicyGuard } = await import('@altius/actions');
     const guard = new HoldApprovePolicyGuard();
     const { deps } = createMockDeps();
     const executeMock = deps.actionExecutor.execute as ReturnType<typeof vi.fn>;

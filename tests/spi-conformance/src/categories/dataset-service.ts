@@ -46,6 +46,49 @@ export function registerDatasetServiceTests(providerName: string, factory: Datas
     let counter = 0;
     const nameFor = (label: string) => `conf_${label}_${Date.now().toString(36)}_${counter++}`;
 
+    describe('external sources round-trip', () => {
+      // A dataset that reads a file in place stores where those rows live and
+      // nothing else. Postgres keeps it in a JSONB column and memory in a
+      // field; a provider that drops it on the way in or out turns an external
+      // dataset into an empty ordinary one, which reads as "the source has no
+      // rows" rather than as a fault.
+      const source = { format: 'parquet', blobId: 'blob-abc-123' } as const;
+
+      it('returns the source it was created with', async () => {
+        const svc = await factory();
+        const ctx: RequestContext = { tenantId: 't-conf', actorId: 'u1' };
+        const name = nameFor('external');
+
+        const created = await svc.create(ctx, { name, schema: SCHEMA, externalSource: { ...source } });
+        expect(created.externalSource).toEqual(source);
+        expect((await svc.get(ctx, name))!.externalSource).toEqual(source);
+      });
+
+      it('lists an external dataset alongside ordinary ones, still carrying its source', async () => {
+        const svc = await factory();
+        const ctx: RequestContext = { tenantId: 't-conf-list', actorId: 'u1' };
+        const external = nameFor('ext_listed');
+        const ordinary = nameFor('ord_listed');
+
+        await svc.create(ctx, { name: external, schema: SCHEMA, externalSource: { ...source } });
+        await svc.create(ctx, { name: ordinary, schema: SCHEMA });
+
+        const listed = await svc.list(ctx);
+        expect(listed.find(d => d.name === external)?.externalSource).toEqual(source);
+        // An ordinary dataset must not acquire one.
+        expect(listed.find(d => d.name === ordinary)?.externalSource).toBeUndefined();
+      });
+
+      it('leaves an ordinary dataset without a source', async () => {
+        const svc = await factory();
+        const ctx: RequestContext = { tenantId: 't-conf', actorId: 'u1' };
+        const name = nameFor('ordinary');
+        const created = await svc.create(ctx, { name, schema: SCHEMA });
+        expect(created.externalSource).toBeUndefined();
+        expect((await svc.get(ctx, name))!.externalSource).toBeUndefined();
+      });
+    });
+
     describe('create is non-destructive', () => {
       it('refuses a name that already exists', async () => {
         const svc = await factory();

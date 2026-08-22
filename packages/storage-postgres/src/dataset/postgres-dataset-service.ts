@@ -201,6 +201,10 @@ export class PostgresDatasetService implements DatasetService {
       createdAt: now,
       updatedAt: now,
       createdBy: ctx.actorId ?? 'system',
+      // The row carries the source; so must the value handed back, or a caller
+      // that trusts create()'s return sees an ordinary dataset and a later
+      // get() sees an external one.
+      ...(input.externalSource ? { externalSource: input.externalSource } : {}),
     };
   }
 
