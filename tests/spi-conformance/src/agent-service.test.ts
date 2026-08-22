@@ -16,6 +16,13 @@ import { InMemoryAgentService } from '@altius/storage-memory';
 import { PostgresStorageProvider, PostgresAgentService, generatePlatformDDL } from '@altius/storage-postgres';
 import { pgTestUrl, parsePgUrl } from './pg-gate.js';
 
+// Tenants are unique per run: Postgres keeps rows between runs where a fresh
+// Map does not, so a fixed name made the listing and isolation cases count
+// every row every previous run had left behind.
+const RUN = `agent_${Date.now().toString(36)}_${Math.trunc(process.hrtime()[1] / 1000)}`;
+const T = (label: string): string => `${RUN}_${label}`;
+
+
 const ctx = (tenantId: string): RequestContext => ({ tenantId, actorId: 'user-1' });
 
 function runTests(name: string, factory: () => Promise<AgentService>): void {
@@ -23,40 +30,40 @@ function runTests(name: string, factory: () => Promise<AgentService>): void {
     it('create/get/list/update/delete, tenant-scoped', async () => {
       const svc = await factory();
       const tool = { name: 'search', description: 'Search the ontology' };
-      const a = await svc.create(ctx('t-1'), { name: 'Helper', systemPrompt: 'Be helpful', tools: [tool] });
+      const a = await svc.create(ctx(T('t_1')), { name: 'Helper', systemPrompt: 'Be helpful', tools: [tool] });
       expect(a.name).toBe('Helper');
       expect(a.tools).toEqual([tool]);
 
-      const got = await svc.get(ctx('t-1'), a.id);
+      const got = await svc.get(ctx(T('t_1')), a.id);
       expect(got!.systemPrompt).toBe('Be helpful');
       // Another tenant sees nothing.
-      expect(await svc.get(ctx('t-2'), a.id)).toBeNull();
-      expect(await svc.list(ctx('t-2'))).toEqual([]);
+      expect(await svc.get(ctx(T('t_2')), a.id)).toBeNull();
+      expect(await svc.list(ctx(T('t_2')))).toEqual([]);
 
-      const upd = await svc.update(ctx('t-1'), a.id, { name: 'Helper2', enabled: false });
+      const upd = await svc.update(ctx(T('t_1')), a.id, { name: 'Helper2', enabled: false });
       expect(upd.name).toBe('Helper2');
       expect(upd.enabled).toBe(false);
       // Unchanged fields preserved.
       expect(upd.systemPrompt).toBe('Be helpful');
 
-      await svc.delete(ctx('t-1'), a.id);
-      expect(await svc.get(ctx('t-1'), a.id)).toBeNull();
+      await svc.delete(ctx(T('t_1')), a.id);
+      expect(await svc.get(ctx(T('t_1')), a.id)).toBeNull();
     });
 
     it('run produces the deterministic reply without an LLM client', async () => {
       const svc = await factory();
-      const a = await svc.create(ctx('t-run'), { name: 'Echo', systemPrompt: 'sys' });
-      const res = await svc.run(ctx('t-run'), a.id, { prompt: 'hi' });
+      const a = await svc.create(ctx(T('t_run')), { name: 'Echo', systemPrompt: 'sys' });
+      const res = await svc.run(ctx(T('t_run')), a.id, { prompt: 'hi' });
       expect(res.response).toBe('Echo says: I received "hi". sys');
       expect(res.model).toBe('local');
     });
 
     it('chat appends turns to a persisted thread', async () => {
       const svc = await factory();
-      const a = await svc.create(ctx('t-chat'), { name: 'Echo', systemPrompt: 'sys' });
-      const t1 = await svc.chat(ctx('t-chat'), a.id, { message: 'one' });
+      const a = await svc.create(ctx(T('t_chat')), { name: 'Echo', systemPrompt: 'sys' });
+      const t1 = await svc.chat(ctx(T('t_chat')), a.id, { message: 'one' });
       expect(t1.messages).toHaveLength(2); // user + assistant
-      const t2 = await svc.chat(ctx('t-chat'), a.id, { threadId: t1.id, message: 'two' });
+      const t2 = await svc.chat(ctx(T('t_chat')), a.id, { threadId: t1.id, message: 'two' });
       expect(t2.id).toBe(t1.id);
       expect(t2.messages).toHaveLength(4); // continued thread persisted
       expect(t2.messages[2]!.content).toBe('two');
@@ -64,9 +71,9 @@ function runTests(name: string, factory: () => Promise<AgentService>): void {
 
     it('isolates agents across tenants', async () => {
       const svc = await factory();
-      await svc.create(ctx('ten-a'), { name: 'A' });
-      await svc.create(ctx('ten-b'), { name: 'B' });
-      const a = await svc.list(ctx('ten-a'));
+      await svc.create(ctx(T('ten_a')), { name: 'A' });
+      await svc.create(ctx(T('ten_b')), { name: 'B' });
+      const a = await svc.list(ctx(T('ten_a')));
       expect(a).toHaveLength(1);
       expect(a[0]!.name).toBe('A');
     });

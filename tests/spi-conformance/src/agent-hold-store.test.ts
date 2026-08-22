@@ -37,134 +37,153 @@ function makeHold(tenantId: string, actionName = 'DeletePatient'): AgentHoldReco
 
 function runTests(name: string, factory: () => Promise<AgentHoldStore>): void {
   describe(`[${name}] SPI Conformance: AgentHoldStore`, () => {
+    // Postgres keeps rows between runs where a fresh Map does not, so the
+    // listing cases used to count every hold any previous run had left for
+    // 't-1' — 48 where the case expected 2. Each case gets tenants no other run
+    // can have used.
+    let counter = 0;
+    const tenantId = (suffix = 'a') => `t_hold_${suffix}_${Date.now().toString(36)}_${counter++}`;
+
     it('create stores a pending hold; get returns it (tenant-scoped)', async () => {
+      const t1 = tenantId('1');
       const store = await factory();
-      const hold = makeHold('t-1');
+      const hold = makeHold(t1);
       const created = await store.create(hold);
       expect(created.id).toBe(hold.id);
       expect(created.status).toBe('pending');
 
-      const got = await store.get('t-1', hold.id);
+      const got = await store.get(t1, hold.id);
       expect(got).not.toBeNull();
       expect(got!.actionName).toBe('DeletePatient');
       expect(got!.status).toBe('pending');
     });
 
     it('approve transitions pending→approved', async () => {
+      const t1 = tenantId('1');
       const store = await factory();
-      const hold = makeHold('t-1');
+      const hold = makeHold(t1);
       await store.create(hold);
 
-      const approved = await store.approve('t-1', hold.id, 'reviewer-1');
+      const approved = await store.approve(t1, hold.id, 'reviewer-1');
       expect(approved.status).toBe('approved');
       expect(approved.decidedBy).toBe('reviewer-1');
       expect(approved.decidedAt).toBeDefined();
     });
 
     it('reject transitions pending→rejected with reason', async () => {
+      const t1 = tenantId('1');
       const store = await factory();
-      const hold = makeHold('t-1');
+      const hold = makeHold(t1);
       await store.create(hold);
 
-      const rejected = await store.reject('t-1', hold.id, 'reviewer-1', 'Too risky');
+      const rejected = await store.reject(t1, hold.id, 'reviewer-1', 'Too risky');
       expect(rejected.status).toBe('rejected');
       expect(rejected.reason).toBe('Too risky');
     });
 
     it('consume transitions approved→consumed (one-shot)', async () => {
+      const t1 = tenantId('1');
       const store = await factory();
-      const hold = makeHold('t-1');
+      const hold = makeHold(t1);
       await store.create(hold);
-      await store.approve('t-1', hold.id, 'reviewer-1');
+      await store.approve(t1, hold.id, 'reviewer-1');
 
-      const consumed = await store.consume('t-1', hold.id);
+      const consumed = await store.consume(t1, hold.id);
       expect(consumed).toBe(true);
 
       // Second consume is a no-op
-      const again = await store.consume('t-1', hold.id);
+      const again = await store.consume(t1, hold.id);
       expect(again).toBe(false);
 
-      const got = await store.get('t-1', hold.id);
+      const got = await store.get(t1, hold.id);
       expect(got!.status).toBe('consumed');
     });
 
     it('consume on a non-approved hold is a no-op', async () => {
+      const t1 = tenantId('1');
       const store = await factory();
-      const hold = makeHold('t-1');
+      const hold = makeHold(t1);
       await store.create(hold);
 
-      const consumed = await store.consume('t-1', hold.id);
+      const consumed = await store.consume(t1, hold.id);
       expect(consumed).toBe(false);
     });
 
     it('approve throws on non-pending hold', async () => {
+      const t1 = tenantId('1');
       const store = await factory();
-      const hold = makeHold('t-1');
+      const hold = makeHold(t1);
       await store.create(hold);
-      await store.approve('t-1', hold.id, 'reviewer-1');
+      await store.approve(t1, hold.id, 'reviewer-1');
 
-      await expect(store.approve('t-1', hold.id, 'reviewer-2')).rejects.toThrow(/not pending/);
+      await expect(store.approve(t1, hold.id, 'reviewer-2')).rejects.toThrow(/not pending/);
     });
 
     it('approve throws on non-existent hold', async () => {
+      const t1 = tenantId('1');
       const store = await factory();
-      await expect(store.approve('t-1', 'nonexistent', 'reviewer-1')).rejects.toThrow(/not found/);
+      await expect(store.approve(t1, 'nonexistent', 'reviewer-1')).rejects.toThrow(/not found/);
     });
 
     it('cross-tenant queries return nothing (fail closed)', async () => {
+      const t1 = tenantId('1');
+      const t2 = tenantId('2');
       const store = await factory();
-      const hold = makeHold('t-1');
+      const hold = makeHold(t1);
       await store.create(hold);
 
       // get from wrong tenant → null
-      const cross = await store.get('t-2', hold.id);
+      const cross = await store.get(t2, hold.id);
       expect(cross).toBeNull();
 
       // approve from wrong tenant → throws not found
-      await expect(store.approve('t-2', hold.id, 'reviewer-2')).rejects.toThrow(/not found/);
+      await expect(store.approve(t2, hold.id, 'reviewer-2')).rejects.toThrow(/not found/);
 
       // list from wrong tenant → empty
-      const crossList = await store.list('t-2');
+      const crossList = await store.list(t2);
       expect(crossList).toEqual([]);
 
       // consume from wrong tenant → false
-      await store.approve('t-1', hold.id, 'reviewer-1');
-      const crossConsume = await store.consume('t-2', hold.id);
+      await store.approve(t1, hold.id, 'reviewer-1');
+      const crossConsume = await store.consume(t2, hold.id);
       expect(crossConsume).toBe(false);
 
       // original tenant still sees the hold
-      const stillThere = await store.get('t-1', hold.id);
+      const stillThere = await store.get(t1, hold.id);
       expect(stillThere).not.toBeNull();
       expect(stillThere!.status).toBe('approved');
     });
 
     it('list returns holds for the tenant, sorted by createdAt desc', async () => {
+      const t1 = tenantId('1');
+      const t2 = tenantId('2');
       const store = await factory();
-      const h1 = makeHold('t-1', 'Action1');
+      const h1 = makeHold(t1, 'Action1');
       h1.createdAt = '2024-01-01T00:00:00.000Z';
-      const h2 = makeHold('t-1', 'Action2');
+      const h2 = makeHold(t1, 'Action2');
       h2.createdAt = '2024-01-02T00:00:00.000Z';
       await store.create(h1);
       await store.create(h2);
       // Different tenant
-      await store.create(makeHold('t-2', 'Action3'));
+      await store.create(makeHold(t2, 'Action3'));
 
-      const all = await store.list('t-1');
+      const all = await store.list(t1);
       expect(all).toHaveLength(2);
       expect(all[0]!.actionName).toBe('Action2'); // newest first
       expect(all[1]!.actionName).toBe('Action1');
     });
 
     it('list filters by status', async () => {
+      const t1 = tenantId('1');
       const store = await factory();
-      const h1 = makeHold('t-1');
-      const h2 = makeHold('t-1');
+      const h1 = makeHold(t1);
+      const h2 = makeHold(t1);
       await store.create(h1);
       await store.create(h2);
-      await store.approve('t-1', h1.id, 'reviewer-1');
+      await store.approve(t1, h1.id, 'reviewer-1');
 
-      const pending = await store.list('t-1', 'pending');
-      const approved = await store.list('t-1', 'approved');
+      const pending = await store.list(t1, 'pending');
+      const approved = await store.list(t1, 'approved');
       expect(pending).toHaveLength(1);
       expect(pending[0]!.id).toBe(h2.id);
       expect(approved).toHaveLength(1);
@@ -172,28 +191,29 @@ function runTests(name: string, factory: () => Promise<AgentHoldStore>): void {
     });
 
     it('cleanupExpired marks expired pending holds', async () => {
+      const t1 = tenantId('1');
       const store = await factory();
       const now = new Date();
       const expired: AgentHoldRecord = {
         id: randomUUID(),
         actionName: 'DeletePatient',
         riskLevel: 'high',
-        agentContext: { agentId: 'agent-1', dryRun: false, tenantId: 't-1' },
+        agentContext: { agentId: 'agent-1', dryRun: false, tenantId: t1 },
         status: 'pending',
         createdAt: new Date(now.getTime() - 120 * 1000).toISOString(),
         expiresAt: new Date(now.getTime() - 60 * 1000).toISOString(), // expired
       };
-      const active = makeHold('t-1');
+      const active = makeHold(t1);
       await store.create(expired);
       await store.create(active);
 
       const cleaned = await store.cleanupExpired();
       expect(cleaned).toBe(1);
 
-      const got = await store.get('t-1', expired.id);
+      const got = await store.get(t1, expired.id);
       expect(got!.status).toBe('expired');
 
-      const stillPending = await store.get('t-1', active.id);
+      const stillPending = await store.get(t1, active.id);
       expect(stillPending!.status).toBe('pending');
     });
   });

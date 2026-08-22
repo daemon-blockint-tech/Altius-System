@@ -43,11 +43,18 @@ describeWithPg('PostgresStorageProvider lifecycle (integration)', () => {
   let provider: PostgresStorageProvider;
   const ctx: RequestContext = { tenantId: 'tenant-provider-001', actorId: 'test-actor' };
 
+  // Types are prefixed `Lc` (lifecycle) rather than named Patient/Ward/Bed.
+  // The conformance suite's fixtures declare exactly those names, so both
+  // suites generated the same public tables in the same database — and this
+  // suite drops its tables in beforeAll and afterAll, which meant it was
+  // deleting the other suite's tables mid-run whenever both were pointed at one
+  // PG_TEST_URL. Distinct names remove the collision without needing a database
+  // per suite.
   const testSchema: OntologySchema = {
     version: 1,
     objectTypes: [
       {
-        name: 'Patient',
+        name: 'LcPatient',
         properties: [
           { name: 'nhsNumber', type: 'String', required: false },
           { name: 'familyName', type: 'String', required: false },
@@ -57,7 +64,7 @@ describeWithPg('PostgresStorageProvider lifecycle (integration)', () => {
         indexes: [],
       },
       {
-        name: 'Ward',
+        name: 'LcWard',
         properties: [
           { name: 'name', type: 'String', required: false },
           { name: 'capacity', type: 'Int', required: false },
@@ -65,7 +72,7 @@ describeWithPg('PostgresStorageProvider lifecycle (integration)', () => {
         indexes: [],
       },
       {
-        name: 'Bed',
+        name: 'LcBed',
         properties: [
           { name: 'bedNumber', type: 'String', required: false },
           { name: 'status', type: 'String', required: false },
@@ -75,9 +82,9 @@ describeWithPg('PostgresStorageProvider lifecycle (integration)', () => {
     ],
     linkTypes: [
       {
-        name: 'AdmittedTo',
-        fromType: 'Patient',
-        toType: 'Ward',
+        name: 'LcAdmittedTo',
+        fromType: 'LcPatient',
+        toType: 'LcWard',
         cardinality: 'MANY_TO_MANY' as const,
         properties: [
           // ODL link types carry `id: ID! @primary`, which convertLinkType maps
@@ -87,9 +94,9 @@ describeWithPg('PostgresStorageProvider lifecycle (integration)', () => {
         ],
       },
       {
-        name: 'BedInWard',
-        fromType: 'Ward',
-        toType: 'Bed',
+        name: 'LcBedInWard',
+        fromType: 'LcWard',
+        toType: 'LcBed',
         cardinality: 'ONE_TO_MANY' as const,
         properties: [
           { name: 'id', type: 'ID', required: true },
@@ -105,14 +112,14 @@ describeWithPg('PostgresStorageProvider lifecycle (integration)', () => {
     // Drop pre-existing tables to start clean
     const pool = provider.pool;
     await pool.query(`
-      DROP TABLE IF EXISTS "public"."patient_history" CASCADE;
-      DROP TABLE IF EXISTS "public"."patient" CASCADE;
-      DROP TABLE IF EXISTS "public"."ward_history" CASCADE;
-      DROP TABLE IF EXISTS "public"."ward" CASCADE;
-      DROP TABLE IF EXISTS "public"."bed_history" CASCADE;
-      DROP TABLE IF EXISTS "public"."bed" CASCADE;
-      DROP TABLE IF EXISTS "public"."admitted_to" CASCADE;
-      DROP TABLE IF EXISTS "public"."bed_in_ward" CASCADE;
+      DROP TABLE IF EXISTS "public"."lc_patient_history" CASCADE;
+      DROP TABLE IF EXISTS "public"."lc_patient" CASCADE;
+      DROP TABLE IF EXISTS "public"."lc_ward_history" CASCADE;
+      DROP TABLE IF EXISTS "public"."lc_ward" CASCADE;
+      DROP TABLE IF EXISTS "public"."lc_bed_history" CASCADE;
+      DROP TABLE IF EXISTS "public"."lc_bed" CASCADE;
+      DROP TABLE IF EXISTS "public"."lc_admitted_to" CASCADE;
+      DROP TABLE IF EXISTS "public"."lc_bed_in_ward" CASCADE;
     `);
 
     // Dropping the tables is not enough: applySchema records the version it
@@ -130,14 +137,14 @@ describeWithPg('PostgresStorageProvider lifecycle (integration)', () => {
   afterAll(async () => {
     if (provider) {
       const pool = provider.pool;
-      await pool.query('DROP TABLE IF EXISTS "public"."admitted_to" CASCADE');
-      await pool.query('DROP TABLE IF EXISTS "public"."bed_in_ward" CASCADE');
-      await pool.query('DROP TABLE IF EXISTS "public"."bed_history" CASCADE');
-      await pool.query('DROP TABLE IF EXISTS "public"."bed" CASCADE');
-      await pool.query('DROP TABLE IF EXISTS "public"."ward_history" CASCADE');
-      await pool.query('DROP TABLE IF EXISTS "public"."ward" CASCADE');
-      await pool.query('DROP TABLE IF EXISTS "public"."patient_history" CASCADE');
-      await pool.query('DROP TABLE IF EXISTS "public"."patient" CASCADE');
+      await pool.query('DROP TABLE IF EXISTS "public"."lc_admitted_to" CASCADE');
+      await pool.query('DROP TABLE IF EXISTS "public"."lc_bed_in_ward" CASCADE');
+      await pool.query('DROP TABLE IF EXISTS "public"."lc_bed_history" CASCADE');
+      await pool.query('DROP TABLE IF EXISTS "public"."lc_bed" CASCADE');
+      await pool.query('DROP TABLE IF EXISTS "public"."lc_ward_history" CASCADE');
+      await pool.query('DROP TABLE IF EXISTS "public"."lc_ward" CASCADE');
+      await pool.query('DROP TABLE IF EXISTS "public"."lc_patient_history" CASCADE');
+      await pool.query('DROP TABLE IF EXISTS "public"."lc_patient" CASCADE');
       await provider.close();
     }
   });
@@ -203,18 +210,18 @@ describeWithPg('PostgresStorageProvider lifecycle (integration)', () => {
     beforeEach(async () => {
       const pool = provider.pool;
       // Clean data tables between tests (tables created by applySchema)
-      await pool.query('DELETE FROM "public"."admitted_to"');
-      await pool.query('DELETE FROM "public"."bed_in_ward"');
-      await pool.query('DELETE FROM "public"."bed_history"');
-      await pool.query('DELETE FROM "public"."bed"');
-      await pool.query('DELETE FROM "public"."ward_history"');
-      await pool.query('DELETE FROM "public"."ward"');
-      await pool.query('DELETE FROM "public"."patient_history"');
-      await pool.query('DELETE FROM "public"."patient"');
+      await pool.query('DELETE FROM "public"."lc_admitted_to"');
+      await pool.query('DELETE FROM "public"."lc_bed_in_ward"');
+      await pool.query('DELETE FROM "public"."lc_bed_history"');
+      await pool.query('DELETE FROM "public"."lc_bed"');
+      await pool.query('DELETE FROM "public"."lc_ward_history"');
+      await pool.query('DELETE FROM "public"."lc_ward"');
+      await pool.query('DELETE FROM "public"."lc_patient_history"');
+      await pool.query('DELETE FROM "public"."lc_patient"');
     });
 
     it('creates and retrieves an object', async () => {
-      const obj = await provider.createObject(ctx, 'Patient', {
+      const obj = await provider.createObject(ctx, 'LcPatient', {
         nhsNumber: '9876543210',
         familyName: 'TestPatient',
         givenName: 'Lifecycle',
@@ -222,22 +229,22 @@ describeWithPg('PostgresStorageProvider lifecycle (integration)', () => {
       });
 
       expect(obj._tenantId).toBe(ctx.tenantId);
-      expect(obj._type).toBe('Patient');
+      expect(obj._type).toBe('LcPatient');
       expect(obj._version).toBe(1);
       expect(obj['nhsNumber']).toBe('9876543210');
 
-      const fetched = await provider.getObject(ctx, 'Patient', obj._id);
+      const fetched = await provider.getObject(ctx, 'LcPatient', obj._id);
       expect(fetched).not.toBeNull();
       expect(fetched!._id).toBe(obj._id);
       expect(fetched!['familyName']).toBe('TestPatient');
     });
 
     it('updates an object', async () => {
-      const obj = await provider.createObject(ctx, 'Patient', {
+      const obj = await provider.createObject(ctx, 'LcPatient', {
         familyName: 'Before',
       });
 
-      const updated = await provider.updateObject(ctx, 'Patient', obj._id, {
+      const updated = await provider.updateObject(ctx, 'LcPatient', obj._id, {
         familyName: 'After',
       });
 
@@ -246,35 +253,35 @@ describeWithPg('PostgresStorageProvider lifecycle (integration)', () => {
     });
 
     it('soft-deletes an object (getObject returns null)', async () => {
-      const obj = await provider.createObject(ctx, 'Patient', {
+      const obj = await provider.createObject(ctx, 'LcPatient', {
         familyName: 'ToDelete',
       });
 
-      await provider.deleteObject(ctx, 'Patient', obj._id, 'soft');
+      await provider.deleteObject(ctx, 'LcPatient', obj._id, 'soft');
 
       // Provider.getObject returns null for soft-deleted
-      const fetched = await provider.getObject(ctx, 'Patient', obj._id);
+      const fetched = await provider.getObject(ctx, 'LcPatient', obj._id);
       expect(fetched).toBeNull();
     });
 
     it('hard-deletes an object', async () => {
-      const obj = await provider.createObject(ctx, 'Patient', {
+      const obj = await provider.createObject(ctx, 'LcPatient', {
         familyName: 'HardDelete',
       });
 
-      await provider.deleteObject(ctx, 'Patient', obj._id, 'hard');
+      await provider.deleteObject(ctx, 'LcPatient', obj._id, 'hard');
 
-      const fetched = await provider.getObject(ctx, 'Patient', obj._id);
+      const fetched = await provider.getObject(ctx, 'LcPatient', obj._id);
       expect(fetched).toBeNull();
     });
 
     it('queries objects with filter', async () => {
-      await provider.createObject(ctx, 'Patient', { familyName: 'Alpha', active: true });
-      await provider.createObject(ctx, 'Patient', { familyName: 'Beta', active: true });
-      await provider.createObject(ctx, 'Patient', { familyName: 'Gamma', active: false });
+      await provider.createObject(ctx, 'LcPatient', { familyName: 'Alpha', active: true });
+      await provider.createObject(ctx, 'LcPatient', { familyName: 'Beta', active: true });
+      await provider.createObject(ctx, 'LcPatient', { familyName: 'Gamma', active: false });
 
       const filter: FilterExpression = { field: 'active', operator: 'eq', value: true };
-      const page = await provider.queryObjects(ctx, 'Patient', filter);
+      const page = await provider.queryObjects(ctx, 'LcPatient', filter);
 
       expect(page.items.length).toBe(2);
       expect(page.totalCount).toBe(2);
@@ -293,29 +300,29 @@ describeWithPg('PostgresStorageProvider lifecycle (integration)', () => {
 
     beforeEach(async () => {
       const pool = provider.pool;
-      await pool.query('DELETE FROM "public"."admitted_to"');
-      await pool.query('DELETE FROM "public"."bed_in_ward"');
-      await pool.query('DELETE FROM "public"."bed_history"');
-      await pool.query('DELETE FROM "public"."bed"');
-      await pool.query('DELETE FROM "public"."ward_history"');
-      await pool.query('DELETE FROM "public"."ward"');
-      await pool.query('DELETE FROM "public"."patient_history"');
-      await pool.query('DELETE FROM "public"."patient"');
+      await pool.query('DELETE FROM "public"."lc_admitted_to"');
+      await pool.query('DELETE FROM "public"."lc_bed_in_ward"');
+      await pool.query('DELETE FROM "public"."lc_bed_history"');
+      await pool.query('DELETE FROM "public"."lc_bed"');
+      await pool.query('DELETE FROM "public"."lc_ward_history"');
+      await pool.query('DELETE FROM "public"."lc_ward"');
+      await pool.query('DELETE FROM "public"."lc_patient_history"');
+      await pool.query('DELETE FROM "public"."lc_patient"');
 
       // Seed objects
-      const patient = await provider.createObject(ctx, 'Patient', {
+      const patient = await provider.createObject(ctx, 'LcPatient', {
         familyName: 'Smith',
         givenName: 'John',
       });
-      const ward = await provider.createObject(ctx, 'Ward', {
+      const ward = await provider.createObject(ctx, 'LcWard', {
         name: 'CardiacUnit',
         capacity: 20,
       });
-      const bed1 = await provider.createObject(ctx, 'Bed', {
+      const bed1 = await provider.createObject(ctx, 'LcBed', {
         bedNumber: 'CU-01',
         status: 'available',
       });
-      const bed2 = await provider.createObject(ctx, 'Bed', {
+      const bed2 = await provider.createObject(ctx, 'LcBed', {
         bedNumber: 'CU-02',
         status: 'occupied',
       });
@@ -327,26 +334,26 @@ describeWithPg('PostgresStorageProvider lifecycle (integration)', () => {
     });
 
     it('creates and retrieves a link', async () => {
-      const link = await provider.createLink(ctx, 'AdmittedTo', patientId, wardId, {
+      const link = await provider.createLink(ctx, 'LcAdmittedTo', patientId, wardId, {
         reason: 'Emergency',
       });
 
-      expect(link._type).toBe('AdmittedTo');
+      expect(link._type).toBe('LcAdmittedTo');
       expect(link._fromId).toBe(patientId);
       expect(link._toId).toBe(wardId);
       expect(link['reason']).toBe('Emergency');
 
-      const fetched = await provider.getLink(ctx, 'AdmittedTo', link._id);
+      const fetched = await provider.getLink(ctx, 'LcAdmittedTo', link._id);
       expect(fetched).not.toBeNull();
       expect(fetched!._id).toBe(link._id);
     });
 
     it('updates a link', async () => {
-      const link = await provider.createLink(ctx, 'AdmittedTo', patientId, wardId, {
+      const link = await provider.createLink(ctx, 'LcAdmittedTo', patientId, wardId, {
         reason: 'Emergency',
       });
 
-      const updated = await provider.updateLink(ctx, 'AdmittedTo', link._id, {
+      const updated = await provider.updateLink(ctx, 'LcAdmittedTo', link._id, {
         reason: 'Scheduled',
       });
 
@@ -355,32 +362,32 @@ describeWithPg('PostgresStorageProvider lifecycle (integration)', () => {
     });
 
     it('deletes a link (soft-delete)', async () => {
-      const link = await provider.createLink(ctx, 'AdmittedTo', patientId, wardId);
-      await provider.deleteLink(ctx, 'AdmittedTo', link._id);
+      const link = await provider.createLink(ctx, 'LcAdmittedTo', patientId, wardId);
+      await provider.deleteLink(ctx, 'LcAdmittedTo', link._id);
 
-      const fetched = await provider.getLink(ctx, 'AdmittedTo', link._id);
+      const fetched = await provider.getLink(ctx, 'LcAdmittedTo', link._id);
       // Provider.getLink returns null for soft-deleted
       expect(fetched).toBeNull();
     });
 
     it('getLinks returns outbound links', async () => {
-      await provider.createLink(ctx, 'BedInWard', wardId, bed1Id);
-      await provider.createLink(ctx, 'BedInWard', wardId, bed2Id);
+      await provider.createLink(ctx, 'LcBedInWard', wardId, bed1Id);
+      await provider.createLink(ctx, 'LcBedInWard', wardId, bed2Id);
 
-      const page = await provider.getLinks(ctx, wardId, 'BedInWard', 'outbound');
+      const page = await provider.getLinks(ctx, wardId, 'LcBedInWard', 'outbound');
       expect(page.items.length).toBe(2);
       expect(page.totalCount).toBe(2);
     });
 
     it('traverses 2-hop path: Patient -> Ward -> Bed', async () => {
-      await provider.createLink(ctx, 'AdmittedTo', patientId, wardId);
-      await provider.createLink(ctx, 'BedInWard', wardId, bed1Id);
-      await provider.createLink(ctx, 'BedInWard', wardId, bed2Id);
+      await provider.createLink(ctx, 'LcAdmittedTo', patientId, wardId);
+      await provider.createLink(ctx, 'LcBedInWard', wardId, bed1Id);
+      await provider.createLink(ctx, 'LcBedInWard', wardId, bed2Id);
 
       const path: TraversalPath = {
         steps: [
-          { linkType: 'AdmittedTo', direction: 'outbound' },
-          { linkType: 'BedInWard', direction: 'outbound' },
+          { linkType: 'LcAdmittedTo', direction: 'outbound' },
+          { linkType: 'LcBedInWard', direction: 'outbound' },
         ],
       };
 
@@ -401,31 +408,31 @@ describeWithPg('PostgresStorageProvider lifecycle (integration)', () => {
   describe('temporal queries', () => {
     beforeEach(async () => {
       const pool = provider.pool;
-      await pool.query('DELETE FROM "public"."patient_history"');
-      await pool.query('DELETE FROM "public"."patient"');
+      await pool.query('DELETE FROM "public"."lc_patient_history"');
+      await pool.query('DELETE FROM "public"."lc_patient"');
     });
 
     it('getObjectAtVersion returns correct version', async () => {
-      const obj = await provider.createObject(ctx, 'Patient', {
+      const obj = await provider.createObject(ctx, 'LcPatient', {
         familyName: 'V1Name',
       });
-      await provider.updateObject(ctx, 'Patient', obj._id, {
+      await provider.updateObject(ctx, 'LcPatient', obj._id, {
         familyName: 'V2Name',
       });
 
-      const v1 = await provider.getObjectAtVersion(ctx, 'Patient', obj._id, 1);
+      const v1 = await provider.getObjectAtVersion(ctx, 'LcPatient', obj._id, 1);
       expect(v1).not.toBeNull();
       expect(v1!._version).toBe(1);
       expect(v1!['familyName']).toBe('V1Name');
 
-      const v2 = await provider.getObjectAtVersion(ctx, 'Patient', obj._id, 2);
+      const v2 = await provider.getObjectAtVersion(ctx, 'LcPatient', obj._id, 2);
       expect(v2).not.toBeNull();
       expect(v2!._version).toBe(2);
       expect(v2!['familyName']).toBe('V2Name');
     });
 
     it('getObjectAtTime returns state at given timestamp', async () => {
-      const obj = await provider.createObject(ctx, 'Patient', {
+      const obj = await provider.createObject(ctx, 'LcPatient', {
         familyName: 'TimeV1',
       });
 
@@ -433,11 +440,11 @@ describeWithPg('PostgresStorageProvider lifecycle (integration)', () => {
       const betweenTime = new Date().toISOString() as DateTime;
       await new Promise((r) => setTimeout(r, 50));
 
-      await provider.updateObject(ctx, 'Patient', obj._id, {
+      await provider.updateObject(ctx, 'LcPatient', obj._id, {
         familyName: 'TimeV2',
       });
 
-      const atBetween = await provider.getObjectAtTime(ctx, 'Patient', obj._id, betweenTime);
+      const atBetween = await provider.getObjectAtTime(ctx, 'LcPatient', obj._id, betweenTime);
       expect(atBetween).not.toBeNull();
       expect(atBetween!._version).toBe(1);
       expect(atBetween!['familyName']).toBe('TimeV1');
@@ -451,17 +458,17 @@ describeWithPg('PostgresStorageProvider lifecycle (integration)', () => {
   describe('bulkMutate', () => {
     beforeEach(async () => {
       const pool = provider.pool;
-      await pool.query('DELETE FROM "public"."patient_history"');
-      await pool.query('DELETE FROM "public"."patient"');
+      await pool.query('DELETE FROM "public"."lc_patient_history"');
+      await pool.query('DELETE FROM "public"."lc_patient"');
     });
 
     it('creates multiple objects in a bulk operation', async () => {
       const result = await provider.bulkMutate(ctx, {
         idempotencyKey: 'bulk-test-001',
         operations: [
-          { type: 'createObject', objectType: 'Patient', properties: { familyName: 'Bulk1' } },
-          { type: 'createObject', objectType: 'Patient', properties: { familyName: 'Bulk2' } },
-          { type: 'createObject', objectType: 'Patient', properties: { familyName: 'Bulk3' } },
+          { type: 'createObject', objectType: 'LcPatient', properties: { familyName: 'Bulk1' } },
+          { type: 'createObject', objectType: 'LcPatient', properties: { familyName: 'Bulk2' } },
+          { type: 'createObject', objectType: 'LcPatient', properties: { familyName: 'Bulk3' } },
         ],
       });
 
@@ -471,7 +478,7 @@ describeWithPg('PostgresStorageProvider lifecycle (integration)', () => {
 
       // Verify objects exist
       const filter: FilterExpression = { field: 'familyName', operator: 'startsWith', value: 'Bulk' };
-      const page = await provider.queryObjects(ctx, 'Patient', filter);
+      const page = await provider.queryObjects(ctx, 'LcPatient', filter);
       expect(page.items.length).toBe(3);
     });
 
@@ -479,7 +486,7 @@ describeWithPg('PostgresStorageProvider lifecycle (integration)', () => {
       const request = {
         idempotencyKey: 'bulk-idem-001',
         operations: [
-          { type: 'createObject' as const, objectType: 'Patient', properties: { familyName: 'Idem1' } },
+          { type: 'createObject' as const, objectType: 'LcPatient', properties: { familyName: 'Idem1' } },
         ],
       };
 
@@ -491,20 +498,20 @@ describeWithPg('PostgresStorageProvider lifecycle (integration)', () => {
 
       // Only one object created (second call was cached)
       const filter: FilterExpression = { field: 'familyName', operator: 'eq', value: 'Idem1' };
-      const page = await provider.queryObjects(ctx, 'Patient', filter);
+      const page = await provider.queryObjects(ctx, 'LcPatient', filter);
       expect(page.items.length).toBe(1);
     });
 
     it('reports per-item errors without aborting batch', async () => {
       // Create one object first, then try to update a nonexistent one
-      await provider.createObject(ctx, 'Patient', { familyName: 'Exists' });
+      await provider.createObject(ctx, 'LcPatient', { familyName: 'Exists' });
 
       const result = await provider.bulkMutate(ctx, {
         idempotencyKey: 'bulk-error-001',
         operations: [
-          { type: 'createObject', objectType: 'Patient', properties: { familyName: 'New' } },
-          { type: 'updateObject', objectType: 'Patient', id: 'nonexistent', properties: { familyName: 'X' } },
-          { type: 'createObject', objectType: 'Patient', properties: { familyName: 'New2' } },
+          { type: 'createObject', objectType: 'LcPatient', properties: { familyName: 'New' } },
+          { type: 'updateObject', objectType: 'LcPatient', id: 'nonexistent', properties: { familyName: 'X' } },
+          { type: 'createObject', objectType: 'LcPatient', properties: { familyName: 'New2' } },
         ],
       });
 
@@ -522,41 +529,41 @@ describeWithPg('PostgresStorageProvider lifecycle (integration)', () => {
   describe('transactions', () => {
     beforeEach(async () => {
       const pool = provider.pool;
-      await pool.query('DELETE FROM "public"."admitted_to"');
-      await pool.query('DELETE FROM "public"."patient_history"');
-      await pool.query('DELETE FROM "public"."patient"');
-      await pool.query('DELETE FROM "public"."ward_history"');
-      await pool.query('DELETE FROM "public"."ward"');
+      await pool.query('DELETE FROM "public"."lc_admitted_to"');
+      await pool.query('DELETE FROM "public"."lc_patient_history"');
+      await pool.query('DELETE FROM "public"."lc_patient"');
+      await pool.query('DELETE FROM "public"."lc_ward_history"');
+      await pool.query('DELETE FROM "public"."lc_ward"');
     });
 
     it('committed transaction persists changes', async () => {
       const tx = await provider.beginTransaction(ctx);
-      await tx.createObject('Patient', { familyName: 'TxTest' });
+      await tx.createObject('LcPatient', { familyName: 'TxTest' });
       await tx.commit();
 
       const filter: FilterExpression = { field: 'familyName', operator: 'eq', value: 'TxTest' };
-      const page = await provider.queryObjects(ctx, 'Patient', filter);
+      const page = await provider.queryObjects(ctx, 'LcPatient', filter);
       expect(page.items.length).toBe(1);
     });
 
     it('rolled-back transaction discards changes', async () => {
       const tx = await provider.beginTransaction(ctx);
-      await tx.createObject('Patient', { familyName: 'TxRollback' });
+      await tx.createObject('LcPatient', { familyName: 'TxRollback' });
       await tx.rollback();
 
       const filter: FilterExpression = { field: 'familyName', operator: 'eq', value: 'TxRollback' };
-      const page = await provider.queryObjects(ctx, 'Patient', filter);
+      const page = await provider.queryObjects(ctx, 'LcPatient', filter);
       expect(page.items.length).toBe(0);
     });
 
     it('multi-operation transaction commits atomically', async () => {
       const tx = await provider.beginTransaction(ctx);
-      const obj = await tx.createObject('Patient', { familyName: 'TxMulti', givenName: 'Step1' });
-      await tx.updateObject('Patient', obj._id, { givenName: 'Step2' });
+      const obj = await tx.createObject('LcPatient', { familyName: 'TxMulti', givenName: 'Step1' });
+      await tx.updateObject('LcPatient', obj._id, { givenName: 'Step2' });
       await tx.commit();
 
       const filter: FilterExpression = { field: 'familyName', operator: 'eq', value: 'TxMulti' };
-      const page = await provider.queryObjects(ctx, 'Patient', filter);
+      const page = await provider.queryObjects(ctx, 'LcPatient', filter);
       expect(page.items.length).toBe(1);
       expect(page.items[0]!['givenName']).toBe('Step2');
       expect(page.items[0]!._version).toBe(2);
@@ -570,11 +577,11 @@ describeWithPg('PostgresStorageProvider lifecycle (integration)', () => {
   describe('ensureIndex', () => {
     it('creates an index without error', async () => {
       // Should not throw
-      await provider.ensureIndex(ctx, 'Patient', { field: 'familyName', indexType: 'BTREE' });
+      await provider.ensureIndex(ctx, 'LcPatient', { field: 'familyName', indexType: 'BTREE' });
 
       // Verify index exists
       const result = await provider.pool.query(
-        `SELECT indexname FROM pg_indexes WHERE tablename = 'patient' AND indexname = 'idx_patient_family_name_btree'`,
+        `SELECT indexname FROM pg_indexes WHERE tablename = 'lc_patient' AND indexname = 'idx_lc_patient_family_name_btree'`,
       );
       expect(result.rows.length).toBe(1);
     });
@@ -587,29 +594,29 @@ describeWithPg('PostgresStorageProvider lifecycle (integration)', () => {
   describe('full lifecycle', () => {
     beforeEach(async () => {
       const pool = provider.pool;
-      await pool.query('DELETE FROM "public"."admitted_to"');
-      await pool.query('DELETE FROM "public"."bed_in_ward"');
-      await pool.query('DELETE FROM "public"."bed_history"');
-      await pool.query('DELETE FROM "public"."bed"');
-      await pool.query('DELETE FROM "public"."ward_history"');
-      await pool.query('DELETE FROM "public"."ward"');
-      await pool.query('DELETE FROM "public"."patient_history"');
-      await pool.query('DELETE FROM "public"."patient"');
+      await pool.query('DELETE FROM "public"."lc_admitted_to"');
+      await pool.query('DELETE FROM "public"."lc_bed_in_ward"');
+      await pool.query('DELETE FROM "public"."lc_bed_history"');
+      await pool.query('DELETE FROM "public"."lc_bed"');
+      await pool.query('DELETE FROM "public"."lc_ward_history"');
+      await pool.query('DELETE FROM "public"."lc_ward"');
+      await pool.query('DELETE FROM "public"."lc_patient_history"');
+      await pool.query('DELETE FROM "public"."lc_patient"');
     });
 
     it('exercises the complete provider lifecycle', async () => {
       // 1. Create objects
-      const patient = await provider.createObject(ctx, 'Patient', {
+      const patient = await provider.createObject(ctx, 'LcPatient', {
         nhsNumber: '1234567890',
         familyName: 'LifecyclePatient',
         givenName: 'Test',
         active: true,
       });
-      const ward = await provider.createObject(ctx, 'Ward', {
+      const ward = await provider.createObject(ctx, 'LcWard', {
         name: 'LifecycleWard',
         capacity: 10,
       });
-      const bed = await provider.createObject(ctx, 'Bed', {
+      const bed = await provider.createObject(ctx, 'LcBed', {
         bedNumber: 'L-01',
         status: 'available',
       });
@@ -619,10 +626,10 @@ describeWithPg('PostgresStorageProvider lifecycle (integration)', () => {
       expect(bed._id).toBeDefined();
 
       // 2. Create links
-      const admLink = await provider.createLink(ctx, 'AdmittedTo', patient._id, ward._id, {
+      const admLink = await provider.createLink(ctx, 'LcAdmittedTo', patient._id, ward._id, {
         reason: 'Routine check',
       });
-      const bedLink = await provider.createLink(ctx, 'BedInWard', ward._id, bed._id);
+      const bedLink = await provider.createLink(ctx, 'LcBedInWard', ward._id, bed._id);
 
       expect(admLink._id).toBeDefined();
       expect(bedLink._id).toBeDefined();
@@ -633,15 +640,15 @@ describeWithPg('PostgresStorageProvider lifecycle (integration)', () => {
         operator: 'eq',
         value: 'LifecyclePatient',
       };
-      const queryResult = await provider.queryObjects(ctx, 'Patient', patientFilter);
+      const queryResult = await provider.queryObjects(ctx, 'LcPatient', patientFilter);
       expect(queryResult.items.length).toBe(1);
       expect(queryResult.items[0]!._id).toBe(patient._id);
 
       // 4. Traverse: Patient -> Ward -> Bed
       const path: TraversalPath = {
         steps: [
-          { linkType: 'AdmittedTo', direction: 'outbound' },
-          { linkType: 'BedInWard', direction: 'outbound' },
+          { linkType: 'LcAdmittedTo', direction: 'outbound' },
+          { linkType: 'LcBedInWard', direction: 'outbound' },
         ],
       };
       const travResult = await provider.traverse(ctx, patient._id, path);
@@ -649,26 +656,26 @@ describeWithPg('PostgresStorageProvider lifecycle (integration)', () => {
       expect(travResult.nodes[0]!['bedNumber']).toBe('L-01');
 
       // 5. Delete link
-      await provider.deleteLink(ctx, 'AdmittedTo', admLink._id);
-      const deletedLink = await provider.getLink(ctx, 'AdmittedTo', admLink._id);
+      await provider.deleteLink(ctx, 'LcAdmittedTo', admLink._id);
+      const deletedLink = await provider.getLink(ctx, 'LcAdmittedTo', admLink._id);
       expect(deletedLink).toBeNull();
 
       // 6. Soft-delete patient
-      await provider.deleteObject(ctx, 'Patient', patient._id, 'soft');
-      const deletedPatient = await provider.getObject(ctx, 'Patient', patient._id);
+      await provider.deleteObject(ctx, 'LcPatient', patient._id, 'soft');
+      const deletedPatient = await provider.getObject(ctx, 'LcPatient', patient._id);
       expect(deletedPatient).toBeNull();
 
       // 7. Temporal: still accessible via version history
-      const v1 = await provider.getObjectAtVersion(ctx, 'Patient', patient._id, 1);
+      const v1 = await provider.getObjectAtVersion(ctx, 'LcPatient', patient._id, 1);
       expect(v1).not.toBeNull();
       expect(v1!['familyName']).toBe('LifecyclePatient');
 
       // 8. Hard-delete remaining
-      await provider.deleteObject(ctx, 'Ward', ward._id, 'hard');
-      expect(await provider.getObject(ctx, 'Ward', ward._id)).toBeNull();
+      await provider.deleteObject(ctx, 'LcWard', ward._id, 'hard');
+      expect(await provider.getObject(ctx, 'LcWard', ward._id)).toBeNull();
 
-      await provider.deleteObject(ctx, 'Bed', bed._id, 'hard');
-      expect(await provider.getObject(ctx, 'Bed', bed._id)).toBeNull();
+      await provider.deleteObject(ctx, 'LcBed', bed._id, 'hard');
+      expect(await provider.getObject(ctx, 'LcBed', bed._id)).toBeNull();
     });
   });
 });
