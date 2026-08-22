@@ -245,6 +245,7 @@ import {
 import {
   writeReadAuditFor,
 } from './rest/audit-read.js';
+import { collectMountedRoutes, mergeMountedRoutes } from './rest/mounted-routes.js';
 import {
   isTypeVisible,
   missingMarkings,
@@ -2343,8 +2344,25 @@ async function main(): Promise<void> {
   // Stamp the served contract with the real platform version (root package.json)
   // so it matches the released spec artifact, not the generator's default.
   const openApiSpec = generateOpenApiSpec(schema, readPlatformVersion());
+  // The generated document describes the ODL-derived routes and the hand-listed
+  // platform families only; attachments, time series, geospatial, workflow and
+  // the other directly-registered families were callable but undocumented, so
+  // no SDK generator could reach them. Filled in from the router on first
+  // request — later than this line, so families mounted below (CDM, FHIR) are
+  // included too.
+  let servedSpec: Record<string, unknown> | null = null;
   app.get('/api/v1/openapi.json', (_req, res) => {
-    res.json(openApiSpec);
+    if (!servedSpec) {
+      const merge = mergeMountedRoutes(openApiSpec, collectMountedRoutes(app));
+      if (merge.added > 0 || merge.skipped.length > 0) {
+        logger.info(
+          `OpenAPI: documented ${merge.added} mounted route(s) not derived from the schema` +
+          (merge.skipped.length > 0 ? `; ${merge.skipped.length} wildcard mount(s) listed but not described` : ''),
+        );
+      }
+      servedSpec = openApiSpec;
+    }
+    res.json(servedSpec);
   });
 
   // ── Loaded domain packs (deployment metadata; authenticated) ──

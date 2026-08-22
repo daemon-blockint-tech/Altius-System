@@ -4,6 +4,8 @@ export { generateOpenApiSpec } from './openapi.js';
 export { auditRead } from './audit-read.js';
 export { generateLlmRoutes } from './llm-routes.js';
 export { generateWorkflowRoutes } from './workflow-routes.js';
+export { collectMountedRoutes, mergeMountedRoutes } from './mounted-routes.js';
+export type { MountedRoute, MergeResult } from './mounted-routes.js';
 export { generateApiToolingObjectRoutes, generateApiToolingPlatformRoutes } from './api-tooling-routes.js';
 export { generateWorkshopUiObjectRoutes, generateWorkshopUiPlatformRoutes } from './workshop-ui-routes.js';
 export { generateOntologySchemaActionFormRoutes, generateOntologySchemaPlatformRoutes } from './ontology-schema-routes.js';

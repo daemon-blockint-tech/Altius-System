@@ -44,18 +44,54 @@ function depsObjectLiteral(src: string): string {
   throw new Error('unbalanced braces in deps object literal');
 }
 
+/**
+ * Re-join a wrapped ternary onto one logical line.
+ *
+ * A property whose ternary does not fit on one line is formatted as
+ *   `x: pgPool\n  ? new PostgresX(pgPool)\n  : new InMemoryX(),`
+ * so a per-line scan sees only the `: new InMemoryX(),` branch and reports a
+ * correctly-wired service. Continuation lines start with `?` or `:`.
+ */
+export function logicalLines(literal: string): string[] {
+  const out: string[] = [];
+  for (const line of literal.split('\n')) {
+    const trimmed = line.trim();
+    if ((trimmed.startsWith('?') || trimmed.startsWith(':')) && out.length > 0) {
+      out[out.length - 1] += ` ${trimmed}`;
+    } else {
+      out.push(trimmed);
+    }
+  }
+  return out;
+}
+
+/** In-memory implementations wired without a `pgPool ? … : …` guard. */
+export function directInMemoryWirings(literal: string): string[] {
+  const offenders: string[] = [];
+  for (const line of logicalLines(literal)) {
+    const m = line.match(/new (InMemory[A-Za-z0-9_]+)\s*\(/);
+    if (!m) continue;
+    // Legitimate: `x: pgPool ? new PostgresX(pgPool) : new InMemoryX()`.
+    if (/pgPool\s*\?/.test(line)) continue;
+    offenders.push(`${m[1]} — ${line.trim()}`);
+  }
+  return offenders;
+}
+
 describe('non-durable service wiring', () => {
+  it('still catches an in-memory service wired with no ternary at all', () => {
+    expect(directInMemoryWirings('{\n  fooService: new InMemoryFooService(),\n}'))
+      .toEqual(['InMemoryFooService — fooService: new InMemoryFooService(),']);
+  });
+
+  it('accepts a ternary the formatter wrapped across lines', () => {
+    expect(directInMemoryWirings('{\n  fooService: pgPool\n    ? new PostgresFooService(pgPool)\n    : new InMemoryFooService(),\n}'))
+      .toEqual([]);
+  });
+
   it('keeps every in-memory implementation in the deps literal behind a pgPool ternary', () => {
     const literal = depsObjectLiteral(source);
-    const offenders: string[] = [];
-
-    for (const line of literal.split('\n')) {
-      const m = line.match(/new (InMemory[A-Za-z0-9_]+)\s*\(/);
-      if (!m) continue;
-      // Legitimate: `x: pgPool ? new PostgresX(pgPool) : new InMemoryX()`.
-      if (/pgPool\s*\?/.test(line)) continue;
-      offenders.push(`${m[1]} — ${line.trim()}`);
-    }
+    const offenders = directInMemoryWirings(literal);
 
     expect(
       offenders,

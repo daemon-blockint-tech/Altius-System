@@ -24,9 +24,21 @@ const LINK_TYPES = [
 
 function stubEmitter() {
   return {
-    emitObjectCreated: vi.fn(async () => {}),
-    emitObjectUpdated: vi.fn(async () => {}),
-    emitObjectDeleted: vi.fn(async () => {}),
+    // Params are spelled out so `.mock.calls` is typed and the version and
+    // change-set positions can be asserted (an untyped `async () => {}` types
+    // every call as the empty tuple, so `args[3]` does not compile).
+    emitObjectCreated: vi.fn(async (
+      _ctx: RequestContext, _objectType: string, _objectId: string,
+      _version: number, _cause?: unknown,
+    ) => {}),
+    emitObjectUpdated: vi.fn(async (
+      _ctx: RequestContext, _objectType: string, _objectId: string,
+      _version: number, _changes?: unknown, _cause?: unknown,
+    ) => {}),
+    emitObjectDeleted: vi.fn(async (
+      _ctx: RequestContext, _objectType: string, _objectId: string,
+      _version: number, _cause?: unknown,
+    ) => {}),
     // Params are spelled out so `.mock.calls` is typed and the fromType/toType
     // positions can be asserted.
     emitLinkCreated: vi.fn(async (
