@@ -14,7 +14,11 @@ import type { JobKey, PackOption, RoleOption } from './components/EditorialShell
 import type { ActiveFilter, FacilityStats } from './components/FacilitiesScreen.js';
 import { ObjectDetailScreen } from './components/ObjectDetailScreen.js';
 import { setWidgetAuthProvider } from './widgets/auth-fetch.js';
-import { jobsFor, findScreen } from './screens/registry.js';
+import { jobsFor, findScreen, screensFor, JOB_LABELS } from './screens/registry.js';
+import { QuickSearch } from './components/QuickSearch.js';
+import type { QuickSearchItem } from './components/QuickSearch.js';
+import { INTROSPECTION, deriveBrowsableTypes } from './components/ObjectBrowserScreen.js';
+import type { IntrospectionData } from './components/ObjectBrowserScreen.js';
 import type { ScreenContext } from './screens/registry.js';
 import { useRoute } from './routing/useRoute.js';
 import type { Route } from './routing/route.js';
@@ -172,6 +176,46 @@ export function App({ config }: { config: WebConfig }): ReactNode {
   const activeScreen = here.screen;
   const detailObject = here.record ?? null;
 
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [objectTypes, setObjectTypes] = useState<string[]>([]);
+
+  // Cmd/Ctrl+K from anywhere. Ctrl+J is what the reference product uses, but
+  // that is Chrome's Downloads shortcut on Windows and Linux.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setSearchOpen(open => !open);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  // The object types the gateway exposes — the same governed introspection the
+  // object browser uses, so the search can only offer what a read would return.
+  useEffect(() => {
+    if (authState !== 'signed-in' && !devNoAuth) { setObjectTypes([]); return; }
+    let live = true;
+    const token = session && authState === 'signed-in' ? session.getAccessToken : null;
+    void (async () => {
+      try {
+        const auth = token ? await token() : '';
+        const res = await fetch(config.endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...(auth ? { Authorization: `Bearer ${auth}` } : {}) },
+          body: JSON.stringify({ query: INTROSPECTION }),
+        });
+        if (!res.ok) return;
+        const json = (await res.json()) as { data?: IntrospectionData };
+        if (live && json.data) setObjectTypes(deriveBrowsableTypes(json.data).map(t => t.typeName));
+      } catch {
+        // A search with no types is still a search over screens.
+      }
+    })();
+    return () => { live = false; };
+  }, [authState, session, config.endpoint, devNoAuth]);
+
   const [activeRole, setActiveRole] = useState('warehouse_manager');
   const [activeFilters, setActiveFilters] = useState<ActiveFilter[]>([]);
 
@@ -290,6 +334,37 @@ export function App({ config }: { config: WebConfig }): ReactNode {
 
   // The role selector reflects the roles the identity token actually grants —
   // roles are server-enforced, so this shows reality rather than a fixed list.
+  /**
+   * What the search can reach: the screens this pack renders, and the object
+   * types this deployment exposes. Both are real — nothing is listed that
+   * clicking it cannot open.
+   */
+  const searchItems: QuickSearchItem[] = [
+    ...screensFor(activePack).map(sc => ({
+      kind: 'screen' as const,
+      id: sc.id,
+      label: sc.label,
+      context: JOB_LABELS[sc.job],
+    })),
+    ...objectTypes.map(name => ({
+      kind: 'type' as const,
+      id: name,
+      label: name,
+      context: 'Object browser',
+    })),
+  ];
+
+  const pickSearchResult = (item: QuickSearchItem): void => {
+    setSearchOpen(false);
+    if (item.kind === 'screen') {
+      const def = findScreen(activePack, item.id);
+      if (def) handleScreenSelect(def.job, def.id);
+      return;
+    }
+    // An object type opens the browser, which is where types are listed.
+    handleScreenSelect('OP', 'objects');
+  };
+
   const screenContext: ScreenContext = {
     packId: activePack,
     client,
@@ -368,6 +443,13 @@ export function App({ config }: { config: WebConfig }): ReactNode {
         )}
     </EditorialShell>
 
+
+    <QuickSearch
+      open={searchOpen}
+      items={searchItems}
+      onClose={() => setSearchOpen(false)}
+      onPick={pickSearchResult}
+    />
 
     {detailObject && (
       <ObjectDetailScreen

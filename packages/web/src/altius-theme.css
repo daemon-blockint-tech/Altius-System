@@ -496,6 +496,135 @@ section[aria-label='Actions'] ul {
   padding: 0;
 }
 
+/* ── Quick search ─────────────────────────────────────────────── */
+
+.al-quick {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(20, 24, 29, 0.45);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 12vh;
+}
+
+.al-quick__panel {
+  width: min(640px, calc(100vw - 32px));
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--ed-surface);
+  border: 1px solid var(--ed-rule);
+  border-radius: 4px;
+  box-shadow: 0 12px 32px rgba(20, 24, 29, 0.28);
+  overflow: hidden;
+}
+
+.al-quick__field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--ed-cell-border);
+}
+.al-quick__icon { color: var(--ed-faint); font-size: 16px; }
+.al-quick__input {
+  flex: 1;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+  font: 400 15px var(--ed-sans);
+  color: var(--ed-fg);
+}
+.al-quick__input:focus { box-shadow: none; }
+.al-quick__close {
+  border: 0;
+  background: none;
+  box-shadow: none;
+  color: var(--ed-faint);
+  font-size: 13px;
+  padding: 2px 6px;
+  border-radius: 2px;
+}
+.al-quick__close:hover { background: var(--ed-row-hover); color: var(--ed-fg); }
+
+.al-quick__filters {
+  display: flex;
+  gap: 6px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--ed-cell-border);
+}
+
+/* Filter chip — square-ish, as in the reference, not a pill. */
+.al-chip {
+  border: 1px solid var(--ed-rule);
+  border-radius: 2px;
+  background: var(--ed-surface);
+  box-shadow: none;
+  padding: 3px 10px;
+  font: 600 12px var(--ed-sans);
+  color: var(--ed-muted);
+}
+.al-chip:hover { background: var(--ed-row-hover); color: var(--ed-fg); }
+.al-chip--on {
+  background: var(--al-blue-light);
+  border-color: var(--al-blue);
+  color: var(--al-blue-dark);
+}
+
+.al-quick__results {
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+  overflow-y: auto;
+  flex: 1;
+}
+.al-quick__result {
+  display: grid;
+  grid-template-columns: 62px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  padding: 7px 14px;
+  font: 400 13px var(--ed-sans);
+}
+.al-quick__result--on, .al-quick__result:hover { background: var(--ed-row-hover); }
+.al-quick__kind {
+  font: 700 9.5px var(--ed-sans);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--ed-faint);
+}
+.al-quick__label { color: var(--ed-fg); font-weight: 600; }
+.al-quick__context { color: var(--ed-muted); font-size: 12px; }
+.al-quick__empty { padding: 16px 14px; color: var(--ed-muted); font: 400 13px var(--ed-sans); }
+
+.al-quick__hint {
+  border-top: 1px solid var(--ed-cell-border);
+  padding: 8px 14px;
+  font: 400 11.5px var(--ed-sans);
+  color: var(--ed-faint);
+  background: var(--ed-bg);
+}
+.al-quick__hint kbd {
+  font: 600 11px var(--ed-mono);
+  border: 1px solid var(--ed-rule);
+  border-radius: 2px;
+  padding: 1px 4px;
+  margin-right: 3px;
+  background: var(--ed-surface);
+}
+
+/* Screens pad their own content; the registry's inline padding moved here. */
+.al-screen-pad { padding: 0 44px 40px; max-width: 1180px; }
+
 /* ── Graph canvas ─────────────────────────────────────────────── */
 
 .al-graph {

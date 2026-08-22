@@ -47,7 +47,8 @@ function leaf(ref: TypeRef | null): { name: string | null; kind: string } {
   return { name: cur?.name ?? null, kind: cur?.kind ?? 'SCALAR' };
 }
 
-const INTROSPECTION = `
+/** Shared with quick search, which lists the same object types. */
+export const INTROSPECTION = `
   query {
     __schema {
       queryType { fields { name type { name kind ofType { name kind ofType { name kind } } } } }
@@ -61,7 +62,7 @@ const INTROSPECTION = `
 
 interface IntrospectedField { name: string; type: TypeRef }
 interface IntrospectedType { name: string; kind: string; fields: IntrospectedField[] | null }
-interface IntrospectionData {
+export interface IntrospectionData {
   __schema: {
     queryType: { fields: IntrospectedField[] };
     types: IntrospectedType[];
