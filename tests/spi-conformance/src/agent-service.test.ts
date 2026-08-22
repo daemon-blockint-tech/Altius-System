@@ -22,9 +22,10 @@ function runTests(name: string, factory: () => Promise<AgentService>): void {
   describe(`[${name}] SPI Conformance: AgentService`, () => {
     it('create/get/list/update/delete, tenant-scoped', async () => {
       const svc = await factory();
-      const a = await svc.create(ctx('t-1'), { name: 'Helper', systemPrompt: 'Be helpful', tools: [{ name: 'search' }] });
+      const tool = { name: 'search', description: 'Search the ontology' };
+      const a = await svc.create(ctx('t-1'), { name: 'Helper', systemPrompt: 'Be helpful', tools: [tool] });
       expect(a.name).toBe('Helper');
-      expect(a.tools).toEqual([{ name: 'search' }]);
+      expect(a.tools).toEqual([tool]);
 
       const got = await svc.get(ctx('t-1'), a.id);
       expect(got!.systemPrompt).toBe('Be helpful');

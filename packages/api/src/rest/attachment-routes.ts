@@ -23,6 +23,22 @@ import type { AttachmentRef } from '@altius/spi';
 import type { ApiDependencies } from '../graphql/types.js';
 import type { OidcAuthenticator } from '@altius/security';
 import { extractUser } from '../config.js';
+import { logger } from '../logger.js';
+
+/**
+ * Report a failure without echoing the store's own words back to the caller.
+ *
+ * The blob store may be an object store: its errors carry bucket names,
+ * endpoints and credential-chain detail, none of which belongs in an HTTP
+ * response. The operator gets the cause in the log; the caller gets what they
+ * can act on.
+ */
+function failed(res: import('express').Response, operation: string, err: unknown): void {
+  logger.error({ err, operation }, `attachment ${operation} failed`);
+  res.status(500).json({
+    error: { code: 'INTERNAL', message: `Attachment ${operation} failed.` },
+  });
+}
 
 export function registerAttachmentRoutes(
   app: Express,
@@ -66,10 +82,7 @@ export function registerAttachmentRoutes(
 
       res.status(201).json(ref);
     } catch (err) {
-      res.status(500).json({
-        error: 'INTERNAL',
-        message: err instanceof Error ? err.message : 'Upload failed',
-      });
+      failed(res, 'upload', err);
     }
   });
 
@@ -85,10 +98,7 @@ export function registerAttachmentRoutes(
       }
       res.json(meta);
     } catch (err) {
-      res.status(500).json({
-        error: 'INTERNAL',
-        message: err instanceof Error ? err.message : 'Metadata fetch failed',
-      });
+      failed(res, 'metadata fetch', err);
     }
   });
 
@@ -123,10 +133,7 @@ export function registerAttachmentRoutes(
 
       res.send(blob.data);
     } catch (err) {
-      res.status(500).json({
-        error: 'INTERNAL',
-        message: err instanceof Error ? err.message : 'Download failed',
-      });
+      failed(res, 'download', err);
     }
   });
 
@@ -139,10 +146,7 @@ export function registerAttachmentRoutes(
       await deps.blobStore!.delete(user.tenantId, blobId);
       res.status(204).send();
     } catch (err) {
-      res.status(500).json({
-        error: 'INTERNAL',
-        message: err instanceof Error ? err.message : 'Delete failed',
-      });
+      failed(res, 'delete', err);
     }
   });
 }

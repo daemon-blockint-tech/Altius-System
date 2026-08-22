@@ -246,6 +246,7 @@ import {
   writeReadAuditFor,
 } from './rest/audit-read.js';
 import { collectMountedRoutes, mergeMountedRoutes } from './rest/mounted-routes.js';
+import { S3BlobStore, s3ConfigFromEnv } from '@altius/storage-s3';
 import {
   isTypeVisible,
   missingMarkings,
@@ -1686,6 +1687,16 @@ async function main(): Promise<void> {
     }));
   };
 
+  // Attachment bytes: object store when a bucket is configured, else the
+  // database column. Logged at boot because "where did the file go" is the
+  // first question when an attachment cannot be read back.
+  const s3BlobConfig = s3ConfigFromEnv();
+  logger.info(
+    s3BlobConfig
+      ? `Blob store: S3 bucket "${s3BlobConfig.bucket}"${s3BlobConfig.endpoint ? ` at ${s3BlobConfig.endpoint}` : ''}`
+      : `Blob store: ${pgPool ? 'Postgres (bytea column)' : 'in-memory (process-local)'} — set ALTIUS_BLOB_S3_BUCKET to use object storage`,
+  );
+
   const deps: ApiDependencies = {
     schema,
     objectManager,
@@ -1743,7 +1754,12 @@ async function main(): Promise<void> {
     // restart, single-replica only). The REST routes are registered
     // unconditionally â€” each route handler checks for the dep and returns
     // 503 when absent.
-    blobStore: pgPool ? new PostgresBlobStore(pgPool) : new InMemoryBlobStore(),
+    // Object storage wins when configured: attachments are media, and a bytea
+    // column is a ceiling, not a home for them. Postgres stays the fallback so
+    // a deployment without a bucket keeps working exactly as before.
+    blobStore: s3BlobConfig
+      ? new S3BlobStore(s3BlobConfig)
+      : (pgPool ? new PostgresBlobStore(pgPool) : new InMemoryBlobStore()),
     timeSeriesStore: pgPool ? new PostgresTimeSeriesStore(pgPool) : new InMemoryTimeSeriesStore(),
     branchStore: pgPool ? new PostgresBranchStore(pgPool) : new InMemoryBranchStore(),
     commentStore: pgPool ? new PostgresCommentStore(pgPool) : new InMemoryCommentStore(),

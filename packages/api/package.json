@@ -38,6 +38,7 @@
     "@altius/spi": "workspace:*",
     "@altius/storage-memory": "workspace:*",
     "@altius/storage-postgres": "workspace:*",
+    "@altius/storage-s3": "workspace:*",
     "@altius/sync": "workspace:*",
     "cors": "^2.8.5",
     "express": "^4.21.0",

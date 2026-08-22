@@ -44,10 +44,18 @@ function runTests(name: string, factory: () => Promise<WorkshopPlatformService>)
       const app = await svc.createApp(ctx('t-pg'), { name: 'A' });
       let updated = await svc.addPage(ctx('t-pg'), app.id, { name: 'Page 1', sections: [{ id: 's1', name: 'S', layout: 'stack', widgets: [] }] });
       const pageId = updated.pages[0]!.id;
-      updated = await svc.addWidget(ctx('t-pg'), app.id, pageId, 's1', { type: 'object_table', config: {}, position: { x: 0, y: 0, w: 6, h: 4 } } as never);
+      updated = await svc.addWidget(ctx('t-pg'), app.id, pageId, 's1', {
+        widgetType: 'object_table',
+        config: {},
+        position: { x: 0, y: 0, w: 6, h: 4 },
+        visible: true,
+      });
       const widgets = updated.pages[0]!.sections[0]!.widgets;
       expect(widgets).toHaveLength(1);
-      expect(widgets[0]!.type).toBe('object_table');
+      // `widgetType` is the field the SPI declares. The earlier version of this
+      // case passed `type` behind an `as never` cast and then asserted `type`,
+      // so it agreed with itself and proved nothing about the stored shape.
+      expect(widgets[0]!.widgetType).toBe('object_table');
       // Version incremented on each structural change (create=1, addPage=2, addWidget=3).
       expect(updated.version).toBe(3);
     });
@@ -64,8 +72,11 @@ function runTests(name: string, factory: () => Promise<WorkshopPlatformService>)
     it('creates variables and computes lineage', async () => {
       const svc = await factory();
       const app = await svc.createApp(ctx('t-v'), { name: 'V' });
-      await svc.createVariable(ctx('t-v'), { appId: app.id, name: 'base', type: 'number', source: { kind: 'static', value: 1 } as never });
-      await svc.createVariable(ctx('t-v'), { appId: app.id, name: 'derived', type: 'number', source: { kind: 'computed', dependencies: ['base'] } as never });
+      await svc.createVariable(ctx('t-v'), { appId: app.id, name: 'base', type: 'number', source: { kind: 'static', value: 1 } });
+      // 'expression' with `dependencies` is the declared shape for a derived
+      // value; the earlier `kind: 'computed'` is not a VariableSource kind and
+      // only typechecked behind a cast.
+      await svc.createVariable(ctx('t-v'), { appId: app.id, name: 'derived', type: 'number', source: { kind: 'expression', expression: 'base + 1', dependencies: ['base'] } });
       const lineage = await svc.getVariableLineage(ctx('t-v'), app.id);
       const derived = lineage.find(l => l.variableName === 'derived')!;
       expect(derived.dependsOn).toEqual(['base']);
@@ -75,8 +86,8 @@ function runTests(name: string, factory: () => Promise<WorkshopPlatformService>)
 
     it('enforces a single default object view per type', async () => {
       const svc = await factory();
-      const v1 = await svc.createObjectView(ctx('t-ov'), { name: 'V1', objectType: 'Patient', columns: [], isDefault: true } as never);
-      const v2 = await svc.createObjectView(ctx('t-ov'), { name: 'V2', objectType: 'Patient', columns: [], isDefault: true } as never);
+      const v1 = await svc.createObjectView(ctx('t-ov'), { name: 'V1', objectType: 'Patient', columns: [], isDefault: true });
+      const v2 = await svc.createObjectView(ctx('t-ov'), { name: 'V2', objectType: 'Patient', columns: [], isDefault: true });
       const def = await svc.getDefaultObjectView(ctx('t-ov'), 'Patient');
       expect(def!.id).toBe(v2.id);
       // v1 was unset when v2 became default.
