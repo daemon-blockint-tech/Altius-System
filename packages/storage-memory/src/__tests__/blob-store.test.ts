@@ -33,7 +33,11 @@ describe('InMemoryBlobStore', () => {
     expect(blob!.data.toString()).toBe('hello world');
   });
 
-  it('deduplicates by SHA-256 hash', async () => {
+  it('gives each upload its own blob, sharing only the content hash', async () => {
+    // Deduplicating by hash needs reference counting that no store implements:
+    // two attachments sharing an id meant deleting one emptied the other, and
+    // the Postgres and S3 stores never did it. The contract is now "one upload,
+    // one blob" for all three (tests/spi-conformance/src/categories/blob-store).
     const data = Buffer.from('same content');
     const r1 = await store.put({
       tenantId: 'tenant-1',
@@ -48,11 +52,16 @@ describe('InMemoryBlobStore', () => {
       data,
     });
 
-    expect(r1.blobId).toBe(r2.blobId);
+    expect(r1.blobId).not.toBe(r2.blobId);
     expect(r1.sha256).toBe(r2.sha256);
+    expect((await store.getMetadata('tenant-1', r1.blobId))!.filename).toBe('a.txt');
+    expect((await store.getMetadata('tenant-1', r2.blobId))!.filename).toBe('b.txt');
+
+    await store.delete('tenant-1', r2.blobId);
+    expect(await store.exists('tenant-1', r1.blobId)).toBe(true);
   });
 
-  it('does not deduplicate across tenants', async () => {
+  it('keeps identical content in separate tenants separate', async () => {
     const data = Buffer.from('same content');
     const r1 = await store.put({
       tenantId: 'tenant-1',

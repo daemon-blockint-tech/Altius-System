@@ -621,9 +621,15 @@ importers:
       '@altius/storage-postgres':
         specifier: workspace:*
         version: link:../../packages/storage-postgres
+      '@altius/storage-s3':
+        specifier: workspace:*
+        version: link:../../packages/storage-s3
       '@altius/sync':
         specifier: workspace:*
         version: link:../../packages/sync
+      '@aws-sdk/client-s3':
+        specifier: ^3.700.0
+        version: 3.1116.0
       '@types/node':
         specifier: ^22.0.0
         version: 22.19.10

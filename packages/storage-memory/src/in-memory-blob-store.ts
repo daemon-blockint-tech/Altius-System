@@ -23,7 +23,6 @@ interface StoredBlob {
 
 export class InMemoryBlobStore implements BlobStore {
   private readonly blobs = new Map<string, Map<string, StoredBlob>>();
-  private readonly hashIndex = new Map<string, Map<string, string>>(); // tenant -> sha256 -> blobId
 
   async put(ctx: {
     tenantId: string;
@@ -34,13 +33,17 @@ export class InMemoryBlobStore implements BlobStore {
   }): Promise<BlobPutResult> {
     const sha256 = createHash('sha256').update(ctx.data).digest('hex');
 
-    // Deduplicate by hash within the same tenant
-    const tenantHashes = this.getOrCreate(this.hashIndex, ctx.tenantId);
-    const existing = tenantHashes.get(sha256);
-    if (existing) {
-      return { blobId: existing, size: ctx.data.length, sha256 };
-    }
-
+    // Every upload is its own blob, as in the Postgres and S3 stores.
+    //
+    // This used to return the existing blob id when the bytes matched one
+    // already held for the tenant. Deduplication needs reference counting to be
+    // safe, and there is none: two attachments sharing an id meant deleting
+    // either one emptied the other, and the second upload's filename was
+    // silently replaced by the first's. It also made a dev box and a Postgres
+    // deployment disagree about how many attachments an upload sequence
+    // produced. The saving was never worth that; sha256 is still returned, so a
+    // caller that wants to deduplicate can, with the bookkeeping to do it
+    // safely.
     const blobId = randomUUID();
     const tenantBlobs = this.getOrCreate(this.blobs, ctx.tenantId);
     tenantBlobs.set(blobId, {
@@ -53,7 +56,6 @@ export class InMemoryBlobStore implements BlobStore {
       uploadedBy: ctx.uploadedBy,
       uploadedAt: new Date().toISOString(),
     });
-    tenantHashes.set(sha256, blobId);
 
     return { blobId, size: ctx.data.length, sha256 };
   }
@@ -90,10 +92,6 @@ export class InMemoryBlobStore implements BlobStore {
   async delete(tenantId: string, blobId: string): Promise<void> {
     const tenantBlobs = this.blobs.get(tenantId);
     if (!tenantBlobs) return;
-    const blob = tenantBlobs.get(blobId);
-    if (blob) {
-      this.hashIndex.get(tenantId)?.delete(blob.sha256);
-    }
     tenantBlobs.delete(blobId);
   }
 

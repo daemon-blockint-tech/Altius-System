@@ -114,6 +114,17 @@ describeWithPg('PostgresStorageProvider lifecycle (integration)', () => {
       DROP TABLE IF EXISTS "public"."admitted_to" CASCADE;
       DROP TABLE IF EXISTS "public"."bed_in_ward" CASCADE;
     `);
+
+    // Dropping the tables is not enough: applySchema records the version it
+    // applied, and skips the DDL when it sees that record again. On a database
+    // this suite has already run against, the tables were dropped above and
+    // never recreated, so every CRUD case failed with "relation
+    // public.admitted_to does not exist" — a failure that looks like a product
+    // bug and is a test-fixture one. Forget the applied version too, so the
+    // schema is genuinely re-applied.
+    await pool
+      .query('DELETE FROM _schema_migrations WHERE version = $1', [testSchema.version])
+      .catch(() => { /* fresh database: the table does not exist yet */ });
   });
 
   afterAll(async () => {
