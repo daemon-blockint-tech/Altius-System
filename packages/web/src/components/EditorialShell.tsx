@@ -16,6 +16,8 @@ import { GovernanceRail } from './GovernanceRail.js';
 import type { GovernancePrincipal, GovernanceHidden, GovernanceEvent } from './GovernanceRail.js';
 import { TraceBar } from './TraceBar.js';
 import type { TraceState } from './TraceBar.js';
+import { Breadcrumb } from './Breadcrumb.js';
+import type { Crumb } from './Breadcrumb.js';
 
 export type JobKey = 'OP' | 'IN' | 'MO' | 'AD';
 
@@ -69,6 +71,9 @@ export interface EditorialShellProps {
   trace: TraceState | null;
   traceLabel?: string;
 
+  /** Path to the current location, rendered above the screen. */
+  crumbs?: Crumb[];
+
   /** Brand mark in the icon rail, e.g. "SC" for supply chain. */
   brand: string;
   /** User initials in the icon rail footer. */
@@ -87,6 +92,7 @@ export function EditorialShell({
   activeRole,
   onRoleChange,
   children,
+  crumbs,
   principal,
   hidden,
   events,
@@ -260,8 +266,11 @@ export function EditorialShell({
         </div>
       </aside>
 
-      {/* Main content — one of the eleven screens */}
-      {children}
+      {/* The screen, under the path that led to it */}
+      <div className="al-content">
+        {crumbs && crumbs.length > 0 && <Breadcrumb items={crumbs} />}
+        {children}
+      </div>
 
       {/* Governance rail */}
       <GovernanceRail

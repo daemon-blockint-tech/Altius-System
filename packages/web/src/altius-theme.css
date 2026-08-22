@@ -317,6 +317,63 @@ code {
 }
 .ed-sidebar button:hover { background: var(--al-nav-hover); color: var(--al-nav-fg-strong); }
 
+/* ── Content column: the path, then the screen ──────────────────── */
+
+.al-content {
+  grid-column: 3;
+  grid-row: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+@media (max-width: 768px) {
+  .al-content { grid-column: 2; }
+}
+/* The screen fills what is left and scrolls inside itself. */
+.al-content > .ed-main { flex: 1; min-height: 0; }
+
+.al-crumbs {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 0 44px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--ed-cell-border);
+  background: var(--ed-surface);
+}
+.al-crumbs__list {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow: hidden;
+}
+.al-crumbs__item { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.al-crumbs__link {
+  border: 0;
+  background: none;
+  box-shadow: none;
+  padding: 2px 4px;
+  border-radius: 2px;
+  font: 400 12.5px var(--ed-sans);
+  color: var(--ed-muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.al-crumbs__link:hover { background: var(--ed-row-hover); color: var(--ed-fg); }
+.al-crumbs__current {
+  font: 600 12.5px var(--ed-sans);
+  color: var(--ed-fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.al-crumbs__sep { color: var(--ed-faint); font-size: 12px; }
+
 /* ── Main content ─────────────────────────────────────────────── */
 
 .ed-main { background: var(--ed-bg); }

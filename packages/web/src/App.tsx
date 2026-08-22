@@ -32,6 +32,9 @@ import { PackManagerScreen } from './components/PackManagerScreen.js';
 import { SyncHealthScreen } from './components/SyncHealthScreen.js';
 import { WorkshopScreen } from './components/WorkshopScreen.js';
 import { setWidgetAuthProvider } from './widgets/auth-fetch.js';
+import { useRoute } from './routing/useRoute.js';
+import type { Route } from './routing/route.js';
+import type { Crumb } from './components/Breadcrumb.js';
 
 type AuthState = 'checking' | 'anonymous' | 'signed-in' | 'error';
 
@@ -216,20 +219,68 @@ export function App({ config }: { config: WebConfig }): ReactNode {
 
   // ── Shell state ──────────────────────────────────────────────
 
-  const [activePack, setActivePack] = useState('supply-chain');
-  const [activeJob, setActiveJob] = useState<JobKey>('OP');
-  const [activeScreen, setActiveScreen] = useState('objects');
+  // Where we are lives in the URL: a breadcrumb can read it, Back works, and a
+  // link to a record can be sent to someone else. `route` is null when the URL
+  // is not a location — the app shows a not-found screen rather than guessing.
+  const { route, navigate, replace } = useRoute();
+  const DEFAULT_ROUTE: Route = { pack: 'supply-chain', job: 'OP', screen: 'objects' };
+  const here = route ?? DEFAULT_ROUTE;
+  const activePack = here.pack;
+  const activeJob = here.job;
+  const activeScreen = here.screen;
+  const detailObject = here.record ?? null;
+
   const [activeRole, setActiveRole] = useState('warehouse_manager');
-  const [detailObject, setDetailObject] = useState<{ type: string; id: string } | null>(null);
   const [activeFilters, setActiveFilters] = useState<ActiveFilter[]>([]);
+
+  // Landing on `/` is not a location; correct it to the default without
+  // leaving a history entry the Back button would have to walk through.
+  useEffect(() => {
+    if (route === null && window.location.pathname === '/') replace(DEFAULT_ROUTE);
+    // DEFAULT_ROUTE is a literal rebuilt each render; its value never changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [route, replace]);
 
   // No fabricated facility stats — the Facilities screen renders without a stats
   // banner until a real source is wired (a placeholder banner invented numbers).
   const facilityStats: FacilityStats | null = null;
 
-  const handleScreenSelect = (job: JobKey, screenId: string) => {
-    setActiveJob(job);
-    setActiveScreen(screenId);
+  /**
+   * The path to here, read off the URL. Each crumb navigates to the location
+   * it names, so the record view has a way back that is not the browser's.
+   */
+  const crumbs = (): Crumb[] => {
+    const job = JOBS.find(j => j.key === activeJob);
+    const screen = job?.screens.find(sc => sc.id === activeScreen);
+    const packName = packs.find(p => p.id === activePack)?.name ?? activePack;
+
+    const path: Crumb[] = [
+      { label: packName },
+      { label: job?.label ?? activeJob, onClick: () => handleScreenSelect(activeJob, job?.screens[0]?.id ?? activeScreen) },
+      {
+        label: screen?.label ?? activeScreen,
+        ...(detailObject ? { onClick: closeRecord } : {}),
+      },
+    ];
+    if (detailObject) path.push({ label: `${detailObject.type} ${detailObject.id}` });
+    return path;
+  };
+
+  const handleScreenSelect = (job: JobKey, screenId: string): void => {
+    navigate({ pack: activePack, job, screen: screenId });
+  };
+
+  const setActivePack = (pack: string): void => {
+    navigate({ pack, job: activeJob, screen: activeScreen });
+  };
+
+  /** Open a record over the current screen — its own address, so it is linkable. */
+  const openRecord = (type: string, id: string): void => {
+    navigate({ pack: activePack, job: activeJob, screen: activeScreen, record: { type, id } });
+  };
+
+  const closeRecord = (): void => {
+    navigate({ pack: activePack, job: activeJob, screen: activeScreen });
   };
 
   const handleRemoveFilter = (field: string, value: string) => {
@@ -310,6 +361,7 @@ export function App({ config }: { config: WebConfig }): ReactNode {
       roles={roleOptions}
       activeRole={roleOptions.some(r => r.id === activeRole) ? activeRole : (roleOptions[0]?.id ?? activeRole)}
       onRoleChange={setActiveRole}
+      crumbs={crumbs()}
       brand="AL"
       userInitials={initialsOf(principal?.name)}
       principal={{
@@ -351,7 +403,7 @@ export function App({ config }: { config: WebConfig }): ReactNode {
         config,
         session,
         authState,
-        (type: string, id: string) => setDetailObject({ type, id }),
+        openRecord,
         principal,
       )}
     </EditorialShell>
@@ -362,7 +414,7 @@ export function App({ config }: { config: WebConfig }): ReactNode {
         objectType={detailObject.type}
         objectId={detailObject.id}
         getToken={session && authState === 'signed-in' ? session.getAccessToken : null}
-        onClose={() => setDetailObject(null)}
+        onClose={closeRecord}
       />
 )}
     </>
