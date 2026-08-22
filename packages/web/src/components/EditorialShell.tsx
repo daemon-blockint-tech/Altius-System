@@ -105,7 +105,8 @@ export function EditorialShell({
     <div className="ed-shell">
       {/* Icon rail */}
       <nav className="ed-icon-rail" aria-label="Jobs">
-        <div className="ed-icon-rail__brand">{brand}</div>
+        <div className="ed-icon-rail__brand" aria-label="Altius">{brand}</div>
+        <span className="ed-icon-rail__rule" />
         <div className="ed-icon-rail__group">
           {jobs.map(job => {
             const active = job.key === activeJob;
@@ -118,7 +119,9 @@ export function EditorialShell({
                 aria-label={job.label}
                 aria-current={active ? 'page' : undefined}
               >
-                <span className={`ed-icon-rail__bar${active ? '' : ' ed-icon-rail__bar--inactive'}`} />
+                <span className={`ed-icon-rail__glyph ed-icon-rail__glyph--${job.key.toLowerCase()}${active ? ' ed-icon-rail__glyph--active' : ''}`}>
+                  {job.key.slice(0, 1)}
+                </span>
                 <span className={`ed-icon-rail__label${active ? '' : ' ed-icon-rail__label--inactive'}`}>
                   {job.key}
                 </span>
@@ -134,6 +137,14 @@ export function EditorialShell({
       <aside className="ed-sidebar" aria-label="Navigation">
         {/* Pack switcher */}
         <div className="ed-sidebar__pack">
+          <div className="ed-sidebar__workspace">
+            <span className="ed-sidebar__workspace-mark">A</span>
+            <span>
+              <span className="ed-sidebar__workspace-name">Altius Operations</span>
+              <span className="ed-sidebar__workspace-meta">EU production</span>
+            </span>
+            <span className="ed-sidebar__chevron">v</span>
+          </div>
           <span className="ed-sidebar__section-label">PACK</span>
           <div className="ed-sidebar__pack-switcher">
             <span className="ed-sidebar__pack-name">
@@ -170,6 +181,7 @@ export function EditorialShell({
         {/* Screen list for active job */}
         <div className="ed-sidebar__group-label">
           <span className="ed-sidebar__section-label">{activeJobGroup.label.toUpperCase()}</span>
+          <span className="ed-sidebar__group-context">workspace views</span>
         </div>
         <div className="ed-sidebar__nav">
           {activeJobGroup.screens.map(screen => {
@@ -219,8 +231,32 @@ export function EditorialShell({
               );
             })}
           </div>
+          <div className="ed-sidebar__footer-links">
+            <button type="button">Settings</button>
+            <button type="button">Help &amp; status</button>
+          </div>
         </div>
       </aside>
+
+      <header className="ed-topbar">
+        <div className="ed-topbar__crumbs">
+          <span className="ed-topbar__product">Altius</span>
+          <span className="ed-topbar__slash">/</span>
+          <span>{activeJobGroup.label}</span>
+          <span className="ed-topbar__slash">/</span>
+          <strong>{packs.find(pack => pack.id === activePack)?.name ?? activePack}</strong>
+        </div>
+        <div className="ed-topbar__tools">
+          <label className="ed-topbar__search">
+            <span aria-hidden="true">/</span>
+            <input aria-label="Search workspace" placeholder="Search workspace" />
+            <kbd>⌘K</kbd>
+          </label>
+          <span className="ed-topbar__status"><i /> Connected</span>
+          <button type="button" className="ed-topbar__icon" aria-label="Notifications">○</button>
+          <button type="button" className="ed-topbar__avatar" aria-label="Account">{userInitials}</button>
+        </div>
+      </header>
 
       {/* Main content — one of the eleven screens */}
       {children}
