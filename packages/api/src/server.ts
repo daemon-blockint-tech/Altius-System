@@ -1670,8 +1670,31 @@ async function main(): Promise<void> {
   const agentHoldStore = mcpEnabled
     ? (pgPool ? new PostgresAgentHoldStore(pgPool) : new InMemoryAgentHoldStore())
     : undefined;
+  // Reviewer notification: when a hold is created, write an audit record
+  // (persistent, queryable via governance REST/GraphQL) and publish a
+  // CloudEvent (real-time push for subscribers). Both are best-effort —
+  // a notification failure must not block the hold itself.
+  const onHoldCreated = async (hold: import('@altius/actions').HoldRecord) => {
+    try {
+      await securityAuditWriter.write({
+        traceId: hold.id,
+        tenantId: hold.agentContext.tenantId ?? '',
+        actor: { id: hold.agentContext.agentId, type: 'agent', roles: [] },
+        operation: { type: 'action', actionType: hold.actionName },
+        detail: { result: 'denied', denialReason: `Held for human approval (risk: ${hold.riskLevel}). Hold ID: ${hold.id}` },
+      });
+    } catch (err) { logger.warn({ err: err instanceof Error ? err.message : String(err), holdId: hold.id }, 'Failed to write hold-created audit record'); }
+    try {
+      await eventBus.publish({
+        id: hold.id, time: hold.createdAt, source: '/altius/governance',
+        type: 'governance.agent_hold.created',
+        data: { holdId: hold.id, actionName: hold.actionName, riskLevel: hold.riskLevel, tenantId: hold.agentContext.tenantId, agentId: hold.agentContext.agentId, expiresAt: hold.expiresAt },
+      } as import('@altius/spi').CloudEvent);
+    } catch (err) { logger.warn({ err: err instanceof Error ? err.message : String(err), holdId: hold.id }, 'Failed to publish hold-created CloudEvent'); }
+  };
+
   const agentHoldGuard = mcpEnabled
-    ? new HoldApprovePolicyGuard(agentHoldStore ? { holdStore: agentHoldStore } : {})
+    ? new HoldApprovePolicyGuard(agentHoldStore ? { holdStore: agentHoldStore, onHoldCreated } : { onHoldCreated })
     : undefined;
   if (agentHoldGuard && agentHighRiskActions.size > 0) {
     logger.info(`Agent governance: ${agentHighRiskActions.size} high-risk action(s) held for human approval on /mcp (${[...agentHighRiskActions].join(', ')})`);

@@ -53,6 +53,12 @@ export interface HoldApprovePolicyGuardConfig {
    * all operations delegate to it. When absent, an in-memory Map is used.
    */
   holdStore?: AgentHoldStore;
+  /**
+   * Optional callback fired when a hold is created. The server wires this
+   * to write an audit record and publish a CloudEvent so reviewers get a
+   * push notification instead of having to poll.
+   */
+  onHoldCreated?: (hold: HoldRecord) => void | Promise<void>;
 }
 
 export class HoldApprovePolicyGuard implements PolicyGuard {
@@ -60,11 +66,13 @@ export class HoldApprovePolicyGuard implements PolicyGuard {
   private readonly holdTtlMs: number;
   private readonly autoApproveMedium: boolean;
   private readonly holdStore?: AgentHoldStore;
+  private readonly onHoldCreated?: (hold: HoldRecord) => void | Promise<void>;
 
   constructor(config: HoldApprovePolicyGuardConfig = {}) {
     this.holdTtlMs = config.holdTtlMs ?? 60 * 60 * 1000;
     this.autoApproveMedium = config.autoApproveMedium ?? false;
     this.holdStore = config.holdStore;
+    this.onHoldCreated = config.onHoldCreated;
   }
 
   async evaluate(
@@ -99,6 +107,12 @@ export class HoldApprovePolicyGuard implements PolicyGuard {
       await this.holdStore.create(hold as AgentHoldRecord);
     } else {
       this.holds.set(holdId, hold);
+    }
+
+    // Notify reviewers — the server wires this to write an audit record
+    // and publish a CloudEvent so reviewers get a push, not a poll.
+    if (this.onHoldCreated) {
+      await this.onHoldCreated(hold);
     }
 
     return {
