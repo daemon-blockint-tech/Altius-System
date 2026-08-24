@@ -69,6 +69,7 @@ export { InMemoryOntologyManagerService } from './in-memory-ontology-manager.js'
 export type { SchemaReader, UsageStatsReader } from './in-memory-ontology-manager.js';
 export { InMemoryWorkshopUxService } from './in-memory-workshop-ux.js';
 export { InMemoryMarkingMembershipStore } from './in-memory-marking-membership.js';
+export { InMemoryMarkingDefinitionStore } from './in-memory-marking-definition-store.js';
 export { InMemoryAgentHoldStore } from './in-memory-agent-hold-store.js';
 export { InMemoryWorkshopPlatformService } from './in-memory-workshop-platform.js';
 

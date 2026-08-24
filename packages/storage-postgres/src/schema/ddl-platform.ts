@@ -1403,6 +1403,25 @@ export function generatePlatformDDL(): string[] {
 );`);
   statements.push(`CREATE INDEX IF NOT EXISTS "idx_marking_members_tenant_marking" ON "governance"."marking_memberships" ("tenant_id", "marking");`);
 
+  // ── Marking definitions (runtime admin API for MAC definitions) ──
+  statements.push(`CREATE TABLE IF NOT EXISTS "governance"."marking_definitions" (
+  "tenant_id" TEXT NOT NULL,
+  "name" TEXT NOT NULL,
+  "category" TEXT,
+  "rank" INTEGER,
+  "created_by" TEXT NOT NULL,
+  "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY ("tenant_id", "name")
+);`);
+  statements.push(`CREATE TABLE IF NOT EXISTS "governance"."marking_categories" (
+  "tenant_id" TEXT NOT NULL,
+  "name" TEXT NOT NULL,
+  "mode" TEXT NOT NULL,
+  "created_by" TEXT NOT NULL,
+  "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY ("tenant_id", "name")
+);`);
+
   // ── Agent approval holds (durable human-in-the-loop for high-risk actions) ──
   statements.push(`CREATE TABLE IF NOT EXISTS "governance"."agent_holds" (
   "id" TEXT NOT NULL,

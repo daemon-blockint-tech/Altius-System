@@ -180,6 +180,13 @@ export type {
 
 // Per-user marking memberships — runtime half of MAC; definitions stay pack-declared.
 export type { MarkingMembership, MarkingMembershipStore } from './marking-membership.js';
+export type {
+  MarkingDefinitionRecord,
+  MarkingCategoryRecord,
+  CreateMarkingDefinitionInput,
+  CreateMarkingCategoryInput,
+  MarkingDefinitionStore,
+} from './marking-definition-store.js';
 export type { AgentHoldRecord, AgentHoldStore, HoldStatus, HoldRiskLevel, HoldAgentContext } from './agent-hold-store.js';
 
 // Ontology usage metrics

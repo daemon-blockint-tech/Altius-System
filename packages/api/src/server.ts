@@ -128,6 +128,7 @@ import {
   InMemoryVectorSearchService,
   InMemoryCopilotService,
   InMemoryMarkingMembershipStore,
+  InMemoryMarkingDefinitionStore,
   InMemoryAgentHoldStore,
 } from '@altius/storage-memory';
 import {
@@ -183,6 +184,7 @@ import {
   PostgresLayoutDeviceCaptureService,
   PostgresWorkshopUxService,
   PostgresMarkingMembershipStore,
+  PostgresMarkingDefinitionStore,
   PostgresAgentHoldStore,
 } from '@altius/storage-postgres';
 import {
@@ -1481,6 +1483,32 @@ async function main(): Promise<void> {
   // in-memory otherwise (lost on restart, single-replica only).
   const isPostgres = storage instanceof PostgresStorageProvider;
   const pgPool = isPostgres ? (storage as PostgresStorageProvider).pool : null;
+
+  // Runtime marking definitions store — Postgres-backed when available.
+  const markingDefinitionStore = pgPool
+    ? new PostgresMarkingDefinitionStore(pgPool)
+    : new InMemoryMarkingDefinitionStore();
+
+  // Load runtime marking definitions and merge into the live policy so
+  // admin-created markings are enforceable on the next request.
+  if (markingPolicy) {
+    try {
+      const tenants = [...fgaStores.keys()];
+      const loadTenant = tenants[0] ?? 'default';
+      const [defs, cats] = await Promise.all([
+        markingDefinitionStore.listDefinitions(loadTenant),
+        markingDefinitionStore.listCategories(loadTenant),
+      ]);
+      for (const cat of cats) markingPolicy.addCategory({ name: cat.name, mode: cat.mode });
+      for (const def of defs) markingPolicy.addDefinition({ name: def.name, category: def.category, rank: def.rank });
+      if (defs.length > 0 || cats.length > 0) {
+        logger.info({ runtimeMarkings: defs.length, runtimeCategories: cats.length }, 'Runtime marking definitions loaded');
+      }
+    } catch (err) {
+      logger.warn({ err: err instanceof Error ? err.message : String(err) }, 'Failed to load runtime marking definitions — pack-declared markings still active');
+    }
+  }
+
   const approvalWorkflowService = pgPool
     ? new PostgresApprovalWorkflowService(pgPool)
     : new InMemoryApprovalWorkflowService();
@@ -1820,6 +1848,7 @@ async function main(): Promise<void> {
     // same instance these routes write to.
     scopedSessionStore: (scopedSessionStore = pgPool ? new PostgresScopedSessionStore(pgPool) : new InMemoryScopedSessionStore()),
     markingMembershipStore: (markingMembershipStore = pgPool ? new PostgresMarkingMembershipStore(pgPool) : new InMemoryMarkingMembershipStore()),
+    markingDefinitionStore,
     // Ontology SQL â€” Postgres-backed when available; falls back to in-memory
     // with ObjectManager delegation for ontology reads.
     // SQL Studio executes over object types (virtual tables), never raw DB
