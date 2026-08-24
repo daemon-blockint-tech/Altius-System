@@ -15,7 +15,6 @@
 import { describe, it, expect } from 'vitest';
 import { InMemoryMarkingDefinitionStore } from '@altius/storage-memory';
 import { MarkingPolicy } from '@altius/security';
-import type { MarkingDefinition, MarkingCategoryDefinition } from '@altius/security';
 
 describe('MarkingDefinitionStore (in-memory)', () => {
   it('creates and lists definitions, scoped per tenant', async () => {
