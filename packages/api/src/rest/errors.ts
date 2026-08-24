@@ -94,9 +94,14 @@ export function wrapErrorToRest(err: unknown, traceId?: string): RestResponse {
   // nothing to search. Log exactly what the caller was not told, keyed by the
   // same id, so the trade is "the client cannot see it" rather than "no one
   // can".
+  //
+  // Defense-in-depth: even with wrapDatabaseError at the storage boundary,
+  // a raw DB message could still reach here from a path the wrapper doesn't
+  // cover. Strip `Key (col)=(value)` patterns — the value is PII, the column
+  // name is not — before the message hits the log.
   if (withheld) {
     logger.error(
-      { traceId, code, err: rawMessage, stack: err instanceof Error ? err.stack : undefined },
+      { traceId, code, err: redactErrorMessage(rawMessage), stack: err instanceof Error ? err.stack : undefined },
       'Request failed with an internal error — message withheld from the caller',
     );
   }
@@ -167,4 +172,20 @@ export function mapCodeToCategory(code: ErrorCode): ErrorCategory {
     LLM_NOT_CONFIGURED: 'unsupported',
   };
   return mapping[code] ?? 'system';
+}
+
+/**
+ * Strip values from database error messages that may contain PII.
+ *
+ * Postgres constraint-violation messages embed row values:
+ *   `duplicate key value violates unique constraint "patient_nhs_number_key"
+ *    Key (nhs_number)=(1234567890) already exists.`
+ * The column name is safe for an operator to see; the value is not. This
+ * replaces the value with `[REDACTED]` in any `Key (...)=(...)` pattern.
+ *
+ * This is defense-in-depth — `wrapDatabaseError` at the storage boundary
+ * is the primary fix. This catches any raw DB error that bypasses it.
+ */
+export function redactErrorMessage(message: string): string {
+  return message.replace(/Key \(([^)]+)\)=\([^)]+\)/g, 'Key ($1)=([REDACTED])');
 }

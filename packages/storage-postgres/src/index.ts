@@ -37,6 +37,7 @@ export {
   hardDeleteObject,
   queryObjects,
   filterToSql,
+  wrapDatabaseError,
 } from './objects/index.js';
 
 export type { SqlFragment } from './objects/index.js';
