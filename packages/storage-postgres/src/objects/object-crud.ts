@@ -23,6 +23,7 @@ import { snakeCase, pgIdent, fieldCol } from '../schema/type-mapping.js';
 import { filterToSql } from './filter-to-sql.js';
 import { isListProperty } from '../list-properties.js';
 import { PgTransaction, resolveQueryable } from '../transactions/index.js';
+import { wrapDatabaseError } from './db-error-wrapper.js';
 
 // An ODL `Date` is a calendar date, and its contract is the string
 // 'YYYY-MM-DD'. node-postgres decodes DATE (oid 1082) to a JS Date in the
@@ -173,7 +174,7 @@ export async function createObject(
   const table = tableName(type, schema);
   const insertSql = `INSERT INTO ${table} (${allCols.join(', ')}) VALUES (${placeholders.join(', ')}) RETURNING *`;
 
-  const result = await q.query(insertSql, allVals);
+  const result = await wrapDatabaseError(() => q.query(insertSql, allVals), { type, operation: 'create' });
   const row = result.rows[0] as Record<string, unknown>;
   const obj = rowToObject(row);
 
@@ -280,7 +281,7 @@ export async function updateObject(
 
   const sql = `UPDATE ${table} SET ${setClauses.join(', ')} WHERE ${whereClause} RETURNING *`;
 
-  const result = await q.query(sql, params);
+  const result = await wrapDatabaseError(() => q.query(sql, params), { type, operation: 'update' });
   if (result.rows.length === 0) {
     if (expectedVersion !== undefined) {
       // Follow-up SELECT to distinguish not-found vs version-mismatch

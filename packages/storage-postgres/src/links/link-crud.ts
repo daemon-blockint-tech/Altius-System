@@ -22,6 +22,7 @@ import { MAX_LINK_QUERY_LIMIT, DEFAULT_LINK_QUERY_LIMIT, encodePageCursor, decod
 import { snakeCase, pgIdent } from '../schema/type-mapping.js';
 import { PgTransaction, resolveQueryable } from '../transactions/index.js';
 import type { Queryable } from '../transactions/index.js';
+import { wrapDatabaseError } from '../objects/db-error-wrapper.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -262,7 +263,7 @@ export async function createLink(
   const table = linkTableName(type, schema);
   const insertSql = `INSERT INTO ${table} (${allCols.join(', ')}) VALUES (${placeholders.join(', ')}) RETURNING *`;
 
-  const result = await q.query(insertSql, allVals);
+  const result = await wrapDatabaseError(() => q.query(insertSql, allVals), { type, operation: 'createLink' });
   const row = result.rows[0] as Record<string, unknown>;
   const link = rowToLink(row);
 
@@ -335,7 +336,7 @@ export async function updateLink(
 
   const sql = `UPDATE ${table} SET ${setClauses.join(', ')} WHERE ${whereClause} RETURNING *`;
 
-  const result = await q.query(sql, params);
+  const result = await wrapDatabaseError(() => q.query(sql, params), { type, operation: 'updateLink' });
   if (result.rows.length === 0) {
     if (expectedVersion !== undefined) {
       // Follow-up SELECT to distinguish not-found vs version-mismatch
