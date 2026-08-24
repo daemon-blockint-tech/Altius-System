@@ -57,7 +57,7 @@ Graded `partial` as capabilities, but each Gap describes an enforcement hole in 
 
 **Status:** `partial`
 
-> 🔒 CLAIMED: loop-0821-a7c3 2026-08-21T15:35+07:00
+> 🔒 CLAIMED: loop-0825-a1b2 2026-08-25T11:00+07:00 (scope: marking definitions admin API — runtime CRUD for marking definitions + categories, REST routes, MarkingPolicy mutation; propagation remains a separate iteration)
 
 > ✅ **RE-VERIFIED against source, 17 Aug 2026.** absent → partial. Marking policy and read-path enforcement exist; write-path bypasses CLOSED in `c246b51`.
 
