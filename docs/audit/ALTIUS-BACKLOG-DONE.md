@@ -836,6 +836,16 @@ All package suites green: 377 ODL + 367 engine + 138 memory + 800 API + 99 web.
 
 ## AIP / agents
 
+### `ai-agent-surface/external-ai-ide-access-via-mcp-external-agen` — External AI/IDE access via MCP (external agents read data+metadata under user-token permissions, admin-enabled per user/group in Control Panel)
+
+**Status:** `full`
+
+> ✅ **RE-VERIFIED + ALL SUB-GAPS CLOSED, 25 Aug 2026 (loop-0825-a1b2).** Upgraded from `partial` to `full` — OAuth discovery landed by concurrent work, .mcp.json manifest shipped.
+
+**Evidence (updated 25 Aug):** All three sub-gaps are now closed. (a) Per-user/group enablement CLOSED (`ff74c77`): createMcpServer gains allowedUsers/allowedGroups — when configured, a caller must match by user id or group/role name or gets 403 before rate limiting; explicitly empty list = nobody. API wires MCP_ALLOWED_USERS / MCP_ALLOWED_GROUPS env vars. Tests: mcp-server.test.ts 'MCP access allowlist' (4 cases). (b) Permission-scoped discovery CLOSED: tools/list calls scopeToolList per caller — hides marking-hidden types' search/traverse tools, function tools without a matching requiredRole, and action tools via the same deriveActionAuthzMapping + listObjects derivation the executor checks. Tests: agent-tooling.test.ts, marking-tools.test.ts. (c) Packaged IDE integration CLOSED: OAuth discovery endpoint landed at `/.well-known/oauth-protected-resource` (RFC 9728 protected-resource metadata, server.ts:2667-2673) — serves `{ resource, authorization_servers, bearer_methods_supported }`, unauthenticated by design. 401 responses on `/mcp` carry `WWW-Authenticate: Bearer resource_metadata="<url>"` (mcp-server/src/server.ts:78-82,115). Tests: mcp-server.test.ts (WWW-Authenticate with and without resource_metadata, 2 cases). `.mcp.json` manifest at repo root — IDE-consumable config pointing at `http://localhost:3000/mcp` with HTTP transport. Two-sided proof: `packages/api/src/__tests__/mcp-manifest.test.ts` (4 tests). API suite: 118 files, 1113 tests green.
+
+**Gap:** None for this row. All three sub-gaps closed: per-user/group enablement, permission-scoped tool discovery, and packaged IDE integration (OAuth discovery + .mcp.json manifest).
+
 ### `aip-agents/agent-construction-and-orchestration-chatbot` — Agent construction and orchestration (Chatbot Studio, AIP Logic, Threads)
 
 **Status:** `full`
