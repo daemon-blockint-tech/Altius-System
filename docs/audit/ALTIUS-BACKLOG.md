@@ -113,7 +113,7 @@ Graded `partial` as capabilities, but each Gap describes an enforcement hole in 
 
 **Status:** `partial`
 
-> 🔒 CLAIMED: loop-0821-e7d1 2026-08-21T15:22+07:00 (scope: OAuth discovery — RFC 9728 protected-resource metadata + WWW-Authenticate challenge on /mcp 401s)
+> 🔒 CLAIMED: loop-0825-a1b2 2026-08-25T12:30+07:00 (scope: .mcp.json manifest for IDE auto-configuration — OAuth discovery already closed)
 
 > ✅ **RE-VERIFIED against source, 21 Aug 2026 (loop-0821-e7d1).** Two of three sub-gaps now closed.
 
