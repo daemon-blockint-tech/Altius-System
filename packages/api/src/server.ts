@@ -1681,14 +1681,21 @@ async function main(): Promise<void> {
   const changeProposals = pgPool ? new PostgresChangeProposalStore(pgPool) : new InMemoryChangeProposalStore();
 
   // High-risk agent actions: destructive effects (deleteObject/deleteLink)
-  // classify by default, plus env additions (MCP_HIGH_RISK_ACTIONS). One
-  // in-memory guard instance is shared by the MCP write gate and the
-  // /api/v1/agent-holds reviewer routes — an approval recorded on one is what
-  // the other checks. ponytail: holds do not survive restarts; back the guard
-  // with a store when agent traffic warrants it.
+  // classify by default, plus manifest-declared riskLevel, plus env additions
+  // (MCP_HIGH_RISK_ACTIONS). A pack author can declare `riskLevel: high` in
+  // the action manifest to classify a non-destructive action as high-risk
+  // (e.g. a bulk export of PII). One in-memory guard instance is shared by
+  // the MCP write gate and the /api/v1/agent-holds reviewer routes.
   const agentHighRiskActions = new Set<string>(
     schema.actionTypes
-      .filter(a => manifestRegistry?.get(a.name)?.effects.some(e => e.type === 'deleteObject' || e.type === 'deleteLink'))
+      .filter(a => {
+        // Manifest-declared riskLevel takes precedence
+        const declared = manifestRegistry?.get(a.name)?.riskLevel;
+        if (declared === 'high') return true;
+        if (declared === 'low' || declared === 'medium') return false;
+        // Fall back to effects-derived classification
+        return manifestRegistry?.get(a.name)?.effects.some(e => e.type === 'deleteObject' || e.type === 'deleteLink') ?? false;
+      })
       .map(a => a.name),
   );
   for (const name of parseRoles(process.env['MCP_HIGH_RISK_ACTIONS']) ?? []) agentHighRiskActions.add(name);

@@ -180,6 +180,14 @@ export interface ActionManifest {
   rollback?: RollbackConfig;
   /** Optional undo configuration (only if reversible=true). */
   undo?: UndoConfig;
+  /**
+   * Declarative risk level for agent governance. When set, this overrides
+   * the effects-derived classification (deleteObject/deleteLink → high) for
+   * this action. A pack author marks a destructive action `riskLevel: high`
+   * here rather than relying on env MCP_HIGH_RISK_ACTIONS. Values: low, medium,
+   * high. Absent means the effects-derived classification applies.
+   */
+  riskLevel?: 'low' | 'medium' | 'high';
 }
 
 // ─── Validation result ───

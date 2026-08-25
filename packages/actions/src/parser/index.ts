@@ -83,6 +83,9 @@ export function parseActionManifest(
   // Step 3c: Parse requiresJustification (optional checkpoint declaration)
   const requiresJustification = validateBoolean(doc, 'requiresJustification', false);
 
+  // Step 3d: Parse riskLevel (optional declarative risk classification)
+  const riskLevel = parseRiskLevel(doc['riskLevel'], errors);
+
   // Step 4: Parse effects
   const effects = parseEffects(doc['effects'], errors);
 
@@ -106,6 +109,7 @@ export function parseActionManifest(
     preconditions,
     ...(requiredRoles !== undefined ? { requiredRoles } : {}),
     ...(requiresJustification ? { requiresJustification } : {}),
+    ...(riskLevel ? { riskLevel } : {}),
     effects,
     sideEffects,
     rollback,
@@ -281,6 +285,26 @@ function parseRequiredRoles(
     result.push(raw[i] as string);
   }
   return result;
+}
+
+/**
+ * Parse the optional `riskLevel` field. Valid values: 'low', 'medium', 'high'.
+ * Any other value is an error — a typo like 'hight' would silently fall back
+ * to effects-derived classification, hiding the pack author's intent.
+ */
+function parseRiskLevel(
+  raw: unknown,
+  errors: ManifestIssue[],
+): 'low' | 'medium' | 'high' | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  if (raw === 'low' || raw === 'medium' || raw === 'high') return raw;
+  errors.push({
+    severity: 'error',
+    code: 'INVALID_RISK_LEVEL',
+    message: `Field "riskLevel" must be 'low', 'medium', or 'high' (got: ${JSON.stringify(raw)}).`,
+    path: 'riskLevel',
+  });
+  return undefined;
 }
 
 // ─── Effects ───
